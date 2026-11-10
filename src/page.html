@@ -1,0 +1,86 @@
+<title>Ore Else</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Anton&family=Bangers&family=Barlow+Condensed:wght@500;600;700&display=swap">
+<style>/*__CSS__*/</style>
+
+<div id="game">
+  <canvas id="c" aria-label="Ore Else game view"></canvas>
+
+  <div class="hud" id="hud" hidden>
+    <div class="hurt" id="hurt"></div>
+    <div id="anchors"></div>
+
+    <div id="hudMain">
+      <div class="mini"><canvas id="mini" width="260" height="180"></canvas></div>
+      <div class="play" id="play"><b>Yard Push</b><span>Open</span><span>Muster</span><span>Push</span></div>
+      <div class="goal c out" id="goal"></div>
+      <div class="res"><span id="resOre"><i style="background:var(--ore);transform:rotate(45deg) scale(.8)"></i><em id="ore" style="font-style:normal">0</em></span><span id="resSup"><i style="background:var(--yel);border-radius:10px 10px 0 0"></i><em id="sup" style="font-style:normal">0/0</em></span></div>
+      <div class="clock d out" id="clock">00:00</div>
+      <div class="qm c out" id="qm"></div>
+      <div class="feed" id="feed"></div>
+      <div class="cross" id="cross"></div>
+      <div class="hitm" id="hitm"></div>
+      <div class="prompt" id="prompt" hidden></div>
+      <div class="who"><div class="frame"><img id="whoImg" alt=""></div><div class="nm d out" id="whoName">Rigger</div><div class="sub c">You · Ironhold Charter</div><div class="bar"><i id="whoBar"></i></div><div class="hp out" id="whoHp">45</div></div>
+      <div class="hint" id="hint"></div>
+      <div class="slots" id="slots"><div><b>1</b><span>Drill</span></div><div><b>2</b><span>Build</span></div></div>
+      <div class="ammo" id="ammo" hidden><div class="n d out" id="ammoN">24</div><div class="l c out" id="ammoL">Rifle · R reload</div></div>
+      <div class="build pan ht" id="build" hidden><h4>Build</h4><div class="rows" id="buildRows"></div><p>Wheel or 2 pick · R rotate · Click place</p></div>
+      <div class="callout" id="callout" hidden><div class="frame"><img id="callImg" alt=""></div><div class="bub"><h5 id="callWho"></h5><div id="callText"></div><div class="ckeys"><span><b>Z</b>Do it</span><span><b>X</b>Hold</span><span><b>V</b>Follow me</span></div><div class="tm" id="callTm"></div></div></div>
+      <div class="count" id="count" hidden><div class="n out" id="countN"></div><div class="l c out">Alpha pushes the east yard</div></div>
+    </div>
+
+    <div class="jump" id="jump" hidden>
+      <div class="ttl d out">Jump</div>
+      <div class="sub c out">Time is slowed. Pick a body.</div>
+      <div class="cards" id="cards"></div>
+      <div class="foot c">Press a number or scroll · Let go of <span class="k">TAB</span> to jump</div>
+    </div>
+
+    <div class="lost" id="lost" hidden><div class="a out">SIGNAL LOST</div><div class="b c out">Finding the nearest body</div></div>
+    <div class="tcard" id="tcard" hidden><div class="in"><div class="frame"><img id="tcImg" alt=""></div><div class="nm d" id="tcName"></div><div class="q" id="tcQuip"></div><div class="s c">Ironhold Charter</div></div></div>
+  </div>
+
+  <div class="screen" id="menu">
+    <div class="box">
+      <h1 class="logo">Ore Else</h1>
+      <p class="tagline">Start as one worker with a drill. Build an army that argues with you. Jump into any body you own.</p>
+      <button class="go" id="start">Clock in</button>
+      <div class="keys">
+        <h3>Smash the three Choir Stones down the east road before the Veyl flatten your Headframe</h3>
+        <div><kbd>WASD</kbd>Move, Shift to sprint</div>
+        <div><kbd>Click</kbd>Drill ore, weld, or shoot</div>
+        <div><kbd>2</kbd>Build menu, click to place</div>
+        <div><kbd>E</kbd>Train at a Headframe or Bunkhouse</div>
+        <div><kbd>Tab</kbd>Hold to jump into another unit</div>
+        <div><kbd>F</kbd>Jump into the unit you are looking at</div>
+        <div><kbd>Q</kbd>Jump back to your last body</div>
+        <div><kbd>Z X</kbd>Say yes or hold when the squad pitches a plan</div>
+        <div><kbd>V</kbd>Squad follows you, or goes home</div>
+        <div><kbd>MMB</kbd>Middle click sends the squad there</div>
+        <div><kbd>G</kbd>Quartermaster builds for you, on or off</div>
+        <div><kbd>Esc</kbd>Pause</div>
+      </div>
+      <p class="small">Needs a keyboard and mouse. The Quartermaster runs your economy by default, so you can mine, fight or wander and the base keeps growing.</p>
+    </div>
+  </div>
+
+  <div class="screen dim" id="pause" hidden>
+    <div class="box">
+      <h2 class="logo sm">On break</h2>
+      <button class="go" id="resume">Back to work</button>
+      <p class="small">Tab jump · F jump to target · Q last body · 2 build · E train · Z yes · X hold · V follow · Middle click send squad · G Quartermaster</p>
+    </div>
+  </div>
+
+  <div class="screen dim" id="end" hidden>
+    <div class="box">
+      <h2 class="logo sm" id="endTitle">Shift over</h2>
+      <p class="tagline" id="endLine"></p>
+      <div class="stats" id="endStats"></div>
+      <button class="go" id="again">Another shift</button>
+    </div>
+  </div>
+</div>
+
+<script>/*__JS__*/</script>

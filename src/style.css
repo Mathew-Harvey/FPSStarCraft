@@ -214,3 +214,7 @@ body{background:var(--bg);color:var(--paper);font-family:var(--cond);font-size:1
 [hidden]{display:none!important}
 #hudMain,#anchors{inset:0}
 #hudMain>*,#anchors>*{position:absolute}
+
+.build .rows div.lock{opacity:.55}.build .rows div.lock span:last-child{color:var(--red);text-transform:uppercase;font-size:17px}
+.cross.scope::before{left:-150vmax;top:-150vmax;width:300vmax;height:300vmax;border-radius:50%;background:none;clip-path:none;border:0;outline:0;box-shadow:inset 0 0 0 calc(150vmax - 46vh) rgba(12,8,14,.96), inset 0 0 0 calc(150vmax - 46vh + 6px) #17121a}
+.cross.scope::after{left:-46vh;top:-46vh;width:92vh;height:92vh;clip-path:none;border:0;background:linear-gradient(#17121a,#17121a) center/100% 2px no-repeat,linear-gradient(#17121a,#17121a) center/2px 100% no-repeat}

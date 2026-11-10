@@ -70,9 +70,9 @@ function muzzle(parent: THREE.Object3D, p: P3, s: number) {
 }
 
 /** Ironhold infantry. The heavy version is the Breacher: bulkier, with a riot shield and a scattergun. */
-function trooper(heavy: boolean): THREE.Group {
+function trooper(heavy: boolean, role = ''): THREE.Group {
   const obj = new THREE.Group(), body = grp('body', obj);
-  const plate = heavy ? M.orange : M.yellowP, hel = heavy ? M.helmetB : M.helmet;
+  const plate = heavy ? M.orange : role === 'long' ? M.cloth : role === 'patch' ? M.red : M.yellowP, hel = heavy ? M.helmetB : role === 'long' ? M.steelD : M.helmet;
   leg(obj, 'legL', -1, M.steelD, true); leg(obj, 'legR', 1, M.steelD, true);
   for (const sx of [-1, 1]) {
     mk(G.sph, plate, [sx * .5, 1.1, 0], heavy ? [.62, .5, .62] : [.5, .42, .5], 0, body);
@@ -108,9 +108,13 @@ function trooper(heavy: boolean): THREE.Group {
     limb(arms, [.5, 0, -.05], [.44, -.3, .16], [.16, -.3, .4], .1, M.steel, M.rubber);
     limb(arms, [-.5, 0, -.05], [-.38, -.3, .34], [-.02, -.26, .72], .1, M.steel, M.rubber);
     const gun = grp('gun', arms, [.1, -.24, .5]);
+    if (role === 'long') { mk(G.cyl, M.steelD, [0, .03, 1.0], [.06, .9, .06], [Math.PI / 2, 0, 0], gun); mk(G.cyl, M.rubber, [0, .03, 1.5], [.1, .16, .1], [Math.PI / 2, 0, 0], gun); mk(G.cyl, M.steel, [0, .2, .1], [.09, .46, .09], [Math.PI / 2, 0, 0], gun); mk(G.cyl, M.visor, [0, .2, .34], [.08, .02, .08], [Math.PI / 2, 0, 0], gun); }
+    if (role === 'patch') { mk(G.box, M.red, [0, .1, .2], [.1, .06, .2], 0, gun); }
     mk(G.box, M.gun, [0, 0, 0], [.13, .2, .8], 0, gun); mk(G.cyl, M.gun, [0, .03, .58], [.07, .45, .07], [Math.PI / 2, 0, 0], gun); mk(G.box, M.yellowP, [0, -.02, .2], [.15, .1, .26], 0, gun); mk(G.box, M.gun, [0, -.2, -.05], [.1, .26, .14], [.3, 0, 0], gun); mk(G.box, M.rubber, [0, -.02, -.5], [.11, .2, .3], 0, gun); mk(G.box, M.steelD, [0, .14, .1], [.05, .08, .2], 0, gun);
     muzzle(gun, [0, .03, .84], 1);
   }
+  if (role === 'long') { mk(G.box, M.cloth, [0, .86, -.5], [.74, .9, .1], [.16, 0, 0], body); mk(G.box, M.cloth, [0, 1.36, -.2], [.8, .14, .6], 0, body); mk(G.box, M.rust, [0, .96, .21], [.52, .32, .11], 0, body); }
+  if (role === 'patch') { mk(G.box, M.steel, [0, .96, .22], [.54, .34, .1], 0, body); mk(G.box, M.red, [0, .96, .28], [.1, .28, .03], 0, body); mk(G.box, M.red, [0, .96, .28], [.28, .1, .03], 0, body); mk(G.box, M.steel, [0, 1.0, -.6], [.56, .6, .3], 0, body); mk(G.box, M.red, [0, 1.0, -.76], [.12, .34, .03], 0, body); mk(G.box, M.red, [0, 1.0, -.76], [.34, .12, .03], 0, body); mk(G.cyl, M.teal, [.34, 1.2, -.6], [.14, .5, .14], 0, body); }
   if (heavy) obj.scale.setScalar(1.14);
   return bake(obj);
 }
@@ -233,8 +237,8 @@ function gantry(): THREE.Group {
   return bake(obj);
 }
 
-const MAKERS: Record<string, () => THREE.Group> = { rigger, linesman: () => trooper(false), breacher: () => trooper(true), gantry, cantor, lancer, warden };
-const HEIGHT: Record<string, number> = { rigger: 1.55, linesman: 1.6, breacher: 1.8, gantry: 3.3, cantor: 2.3, lancer: 2.2, warden: 4.4 };
+const MAKERS: Record<string, () => THREE.Group> = { rigger, linesman: () => trooper(false), breacher: () => trooper(true), longshot: () => trooper(false, 'long'), patch: () => trooper(false, 'patch'), gantry, cantor, lancer, warden };
+const HEIGHT: Record<string, number> = { rigger: 1.55, linesman: 1.6, breacher: 1.8, longshot: 1.6, patch: 1.6, gantry: 3.3, cantor: 2.3, lancer: 2.2, warden: 4.4 };
 const protos: Record<string, THREE.Group> = {};
 /** A fresh copy of a unit model. Geometry is shared between copies. */
 export const atlasUsed = () => atlas ? atlas.cells.size : 0;
@@ -329,6 +333,21 @@ export function machineshop(anim: ((t: number) => void)[]) {
   mk(G.box, M.tealC, [-3.6, .6, 2.9], [1.1, 1.1, 1.1], [0, .3, 0], g); mk(G.cyl, M.rust, [2.2, .6, 2.9], [.8, 1.2, .8], 0, g); mk(G.cyl, M.yellow, [1.3, .6, 3.1], [.8, 1.2, .8], 0, g);
   return bake(g);
 }
+/** Ironhold tier-three works: a furnace hall with a glowing crucible and a tall stack. */
+export function foundry(anim: ((t: number) => void)[]) {
+  const g = new THREE.Group();
+  mk(G.box, M.concrete, [0, .1, 0], [8.8, .2, 7.6], 0, g);
+  mk(G.box, M.steelD, [-.8, 2.2, -.6], [5.8, 4.2, 5.2], 0, g); mk(G.box, M.rust, [-.8, 4.5, -.6], [6.2, .4, 5.6], 0, g);
+  mk(G.box, M.corr, [-.8, 5.1, -.6], [4.6, .9, 4.2], 0, g); mk(G.box, M.hazard, [-.8, 3.5, 2.06], [5.6, .4, .16], 0, g);
+  mk(G.box, M.door, [-1.6, 1.5, 2.04], [2.6, 2.8, .14], 0, g);
+  const glow = mk(G.box, M.fire, [.9, 1.3, 2.05], [1.5, 1.6, .12], 0, g); glow.userData.dyn = true; mk(G.box, M.steelD, [.9, 1.3, 2.1], [.14, 1.7, .1], 0, g); mk(G.box, M.steelD, [.9, 1.3, 2.1], [1.6, .14, .1], 0, g);
+  mk(G.cyl, M.rust, [3.2, 3.6, -1.8], [1.5, 7.2, 1.5], 0, g); mk(G.cyl, M.steelD, [3.2, 7.3, -1.8], [1.8, .4, 1.8], 0, g); mk(G.torusF, M.yellowP, [3.2, 5.2, -1.8], [1.8, 1.8, 1.2], [Math.PI / 2, 0, 0], g); mk(G.torusF, M.yellowP, [3.2, 2.4, -1.8], [1.8, 1.8, 1.2], [Math.PI / 2, 0, 0], g);
+  mk(G.cyl, M.steel, [3.1, .9, 1.6], [1.9, 1.5, 1.9], 0, g); const melt = mk(G.cyl, M.fire, [3.1, 1.68, 1.6], [1.6, .06, 1.6], 0, g); melt.userData.dyn = true; mk(G.torusF, M.steelD, [3.1, 1.6, 1.6], [1.95, 1.95, 1], [Math.PI / 2, 0, 0], g);
+  beam([-3.4, 0, 3.2], [-3.4, 3.2, 3.2], .12, M.yellowP, g); mk(G.box, M.visor, [-3.4, 3.3, 3.2], [.5, .3, .5], 0, g);
+  mk(G.box, M.rust, [-3.3, .5, 3.0], [1.2, .9, .9], [0, .2, 0], g); mk(G.box, M.yellow, [1.2, .45, 3.3], [.9, .7, .7], [0, -.3, 0], g);
+  anim.push(t => { const k = 1 + Math.sin(t * 5) * .06 + Math.sin(t * 13) * .03; melt.scale.set(1.6 * k, .06, 1.6 * k); glow.scale.y = 1.6 * (.94 + Math.sin(t * 7) * .05); });
+  return bake(g);
+}
 /** Veyl spawner: a standing ring that raids walk out of. */
 export function reedgate(anim: ((t: number) => void)[]) {
   const g = new THREE.Group();
@@ -386,6 +405,30 @@ export function vmScatter() {
   vmArm(g, [-.01, -.15, .22], [.14, -.36, .66], M.steel, M.rubber); vmArm(pump, [-.02, -.05, 0], [-.34, -.3, .4], M.steel, M.rubber);
   const flash = vmFlash(g, [0, .03, -1.0], 1.7);
   bake(g); setLayer(g, L_VM); setLayer(flash, L_FX); g.userData.flash = flash; g.userData.mag = pump; g.userData.rest = [.25, -.25, -.5, .02, .1, 0];
+  return g;
+}
+/** The Longshot's rifle: long barrel, fat scope. */
+export function vmLong() {
+  const g = new THREE.Group();
+  mk(G.box, M.gun, [0, 0, .02], [.09, .14, .7], 0, g); mk(G.box, M.cloth, [0, .01, -.12], [.105, .1, .3], 0, g);
+  mk(G.cyl, M.steelD, [0, .02, -.75], [.04, .9, .04], [Math.PI / 2, 0, 0], g); mk(G.cyl, M.rubber, [0, .02, -1.2], [.07, .14, .07], [Math.PI / 2, 0, 0], g);
+  mk(G.cyl, M.steel, [0, .13, -.08], [.075, .42, .075], [Math.PI / 2, 0, 0], g); mk(G.cyl, M.rubber, [0, .13, .15], [.09, .06, .09], [Math.PI / 2, 0, 0], g); mk(G.cyl, M.rubber, [0, .13, -.31], [.095, .06, .095], [Math.PI / 2, 0, 0], g);
+  const mag = grp('mag', g, [0, -.13, -.02]); mk(G.box, M.steelD, [0, 0, 0], [.06, .14, .12], 0, mag);
+  mk(G.box, M.rubber, [0, -.13, .22], [.07, .2, .1], [-.3, 0, 0], g); mk(G.box, M.cloth, [0, -.02, .46], [.08, .16, .3], 0, g); mk(G.box, M.hazard1, [.047, 0, -.12], [.01, .05, .2], 0, g);
+  vmArm(g, [-.01, -.15, .22], [.14, -.36, .66], M.steel, M.rubber); vmArm(g, [-.04, -.09, -.34], [-.34, -.34, .1], M.steel, M.rubber);
+  const flash = vmFlash(g, [0, .02, -1.42], 1.5);
+  bake(g); setLayer(g, L_VM); setLayer(flash, L_FX); g.userData.flash = flash; g.userData.mag = mag; g.userData.rest = [.27, -.24, -.5, .02, .08, 0]; g.userData.ads = [0, -.3, -.2, 0, 0, 0];
+  return g;
+}
+/** The Patch's rivet pistol. */
+export function vmPistol() {
+  const g = new THREE.Group();
+  mk(G.box, M.steel, [0, .02, -.08], [.085, .12, .34], 0, g); mk(G.box, M.red, [0, .085, -.06], [.06, .02, .2], 0, g); mk(G.cyl, M.steelD, [0, .03, -.3], [.05, .14, .05], [Math.PI / 2, 0, 0], g);
+  const mag = grp('mag', g, [0, -.12, .04]); mk(G.box, M.rubber, [0, 0, 0], [.07, .2, .1], [-.2, 0, 0], mag);
+  mk(G.box, M.teal, [.046, .02, -.02], [.01, .05, .12], 0, g);
+  vmArm(g, [0, -.14, .08], [.16, -.36, .6], M.steel, M.rubber);
+  const flash = vmFlash(g, [0, .03, -.5], .7);
+  bake(g); setLayer(g, L_VM); setLayer(flash, L_FX); g.userData.flash = flash; g.userData.mag = mag; g.userData.rest = [.24, -.22, -.52, .02, .06, 0]; g.userData.ads = [0, -.105, -.42, 0, 0, 0];
   return g;
 }
 /** The Gantry's cockpit view: a cannon on each side and a dashboard along the bottom. */

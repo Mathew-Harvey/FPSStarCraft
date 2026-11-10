@@ -23,8 +23,13 @@ One skirmish as the Ironhold Charter against a Veyl outpost. Smash the three Cho
 - **Rigger**: drill ore by hand, place buildings, weld them up faster, patch damage.
 - **Linesman**: rifle with a 24-round magazine, aim-down-sights, headshot crits and a grenade on a cooldown.
 - **Breacher**: scattergun and a riot shield. Hold right-click to brace behind the shield, click while braced to bash.
-- **Gantry**: a two-legged walker from the Machine Shop with a cannon on each side. Click fires explosive shells, `C` stomps and throws everything nearby off its feet.
-- **Buildings**: Bunkhouse (trains soldiers), Depot (beds, and a place to heal), Watchpost (gun tower), Machine Shop (unlocks Breachers, builds Gantry walkers, sells Hollow Points and Plating).
+- **Gantry**: a two-legged walker from the Foundry with a cannon on each side. Click fires explosive shells, `C` stomps and throws everything nearby off its feet.
+- **Longshot**: sniper from the Bunkhouse once a Foundry stands. Hold right-click for the scope; a head shot drops most things.
+- **Patch**: medic from the Bunkhouse once a Machine Shop stands. Mends the most hurt ally nearby on their own; as the Patch, `C` tops up everyone around you.
+- **Buildings and tech tree**:
+  1. Headframe trains Riggers. Bunkhouse trains Linesmen. Depot adds beds. Watchpost is a gun tower.
+  2. Machine Shop (needs a Bunkhouse) unlocks Breachers and Patches and sells Hollow Points and Plating.
+  3. Foundry (needs a Machine Shop) unlocks Longshots, builds Gantry walkers and sells Tungsten Core and Reactive Plating.
 
 **Their side, the Veyl Chorus**
 

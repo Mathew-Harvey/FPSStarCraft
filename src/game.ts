@@ -70,7 +70,8 @@ export class Game {
     this.me = this.units[0]; this.possess(this.me, true); this.yaw = Math.PI * .75;
   }
 
-  model(k: BKind): THREE.Group { return k === 'headframe' ? MD.headframe(this.anim) : k === 'bunkhouse' ? MD.bunkhouse() : k === 'depot' ? MD.depot() : k === 'watchpost' ? MD.watchpost() : k === 'machineshop' ? MD.machineshop(this.anim) : k === 'reedgate' ? MD.reedgate(this.anim) : MD.choir(this.anim); }
+  model(k: BKind): THREE.Group { return MD.atlasify(this.rawModel(k)); }
+  rawModel(k: BKind): THREE.Group { return k === 'headframe' ? MD.headframe(this.anim) : k === 'bunkhouse' ? MD.bunkhouse() : k === 'depot' ? MD.depot() : k === 'watchpost' ? MD.watchpost() : k === 'machineshop' ? MD.machineshop(this.anim) : k === 'reedgate' ? MD.reedgate(this.anim) : MD.choir(this.anim); }
 
   // ------------------------------------------------------------ entities
   spawn(kind: Kind, team: number, x: number, z: number): Unit {

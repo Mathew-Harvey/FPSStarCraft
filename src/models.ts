@@ -3,7 +3,7 @@
 // costs a handful of draw calls, and units are cloned from one prototype per kind.
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
-import { G, M, R, mk, beam, setLayer, L_FX, L_VM, holoLine, V3 } from './gfx';
+import { G, M, R, mk, beam, setLayer, L_FX, L_VM, holoLine, V3, toonMaterial } from './gfx';
 
 export interface Rig { body: THREE.Object3D; head?: THREE.Object3D; arms?: THREE.Object3D; armL?: THREE.Object3D; armR?: THREE.Object3D; legL?: THREE.Object3D; legR?: THREE.Object3D; flash?: THREE.Object3D; halo?: THREE.Object3D; pack?: THREE.Object3D; height: number }
 export interface Model { obj: THREE.Group; rig: Rig }
@@ -16,7 +16,7 @@ export function bake<T extends THREE.Object3D>(root: T): T {
     const m = c as THREE.Mesh;
     if (m.isMesh && !c.userData.dyn && !c.children.length && !Array.isArray(m.material)) {
       c.updateMatrix(); const g = m.geometry.index ? m.geometry.toNonIndexed() : m.geometry.clone(); g.applyMatrix4(c.matrix);
-      for (const k of Object.keys(g.attributes)) if (k !== 'position' && k !== 'normal' && k !== 'uv') g.deleteAttribute(k);
+      for (const k of Object.keys(g.attributes)) if (k !== 'position' && k !== 'normal' && k !== 'uv' && k !== 'aEm') g.deleteAttribute(k);
       let e = by.get(m.material); if (!e) by.set(m.material, e = { g: [], mask: c.layers.mask }); e.g.push(g); rm.push(c);
     } else if (c.children.length) bake(c);
   }
@@ -24,6 +24,33 @@ export function bake<T extends THREE.Object3D>(root: T): T {
   for (const [mat, e] of by) { const mesh = new THREE.Mesh(e.g.length > 1 ? mergeGeometries(e.g) : e.g[0], mat); mesh.layers.mask = e.mask; root.add(mesh); }
   return root;
 }
+// ---------------------------------------------------------------- unit texture atlas
+// Every unit material is copied into one shared texture so that a whole limb is a single draw call.
+const CELL = 256, PAD = 12, COLS = 8, ROWS = 4;
+let atlas: { ctx: CanvasRenderingContext2D; tex: THREE.CanvasTexture; mat: THREE.ShaderMaterial; cells: Map<THREE.Material, number> } | null = null;
+function atlasCell(m: THREE.ShaderMaterial) {
+  if (!atlas) { const c = document.createElement('canvas'); c.width = CELL * COLS; c.height = CELL * ROWS; const tex = new THREE.CanvasTexture(c); tex.anisotropy = 4; atlas = { ctx: c.getContext('2d')!, tex, mat: toonMaterial(tex), cells: new Map() }; }
+  let i = atlas.cells.get(m); if (i !== undefined) return i;
+  i = atlas.cells.size; if (i >= COLS * ROWS) return -1; atlas.cells.set(m, i);
+  const g = atlas.ctx, x = (i % COLS) * CELL, y = Math.floor(i / COLS) * CELL, img = (m.uniforms.uMap.value as THREE.Texture).image as HTMLCanvasElement;
+  g.globalCompositeOperation = 'source-over'; g.fillStyle = '#fff'; g.fillRect(x, y, CELL, CELL); if (img && img.width > 4) { g.drawImage(img, x, y, CELL, CELL); g.drawImage(img, x + PAD, y + PAD, CELL - PAD * 2, CELL - PAD * 2); }
+  g.globalCompositeOperation = 'multiply'; g.fillStyle = '#' + (m.uniforms.uColor.value as THREE.Color).getHexString(); g.fillRect(x, y, CELL, CELL); g.globalCompositeOperation = 'source-over';
+  atlas.tex.needsUpdate = true; return i;
+}
+/** Moves every plain toon mesh under `root` onto the shared atlas material, then merges each group down to one mesh. */
+export function atlasify<T extends THREE.Object3D>(root: T): T {
+  const plain = new Set<THREE.Material>(Object.values(M));
+  root.traverse(o => {
+    const m = o as THREE.Mesh, mat = m.material as THREE.ShaderMaterial; if (!m.isMesh || o.userData.dyn || !plain.has(mat) || mat.side !== THREE.FrontSide || (o.layers.mask & 1) === 0) return;
+    const u = mat.uniforms; if (u.uRep.value.x !== 1 || u.uRep.value.y !== 1 || u.uHatch.value !== 1 || u.uFlat.value !== 0) return;
+    const i = atlasCell(mat); if (i < 0) return;
+    const geo = m.geometry, uv = geo.attributes.uv as THREE.BufferAttribute, n = uv.count, em = new Float32Array(n).fill(u.uEmis.value), cx = i % COLS, cy = Math.floor(i / COLS), k = (CELL - PAD * 2) / CELL;
+    for (let j = 0; j < n; j++) { const a = Math.min(1, Math.max(0, uv.getX(j))), b = Math.min(1, Math.max(0, uv.getY(j))); uv.setXY(j, (cx + PAD / CELL + a * k) / COLS, 1 - (cy + PAD / CELL + (1 - b) * k) / ROWS); }
+    uv.needsUpdate = true; geo.setAttribute('aEm', new THREE.BufferAttribute(em, 1)); m.material = atlas!.mat;
+  });
+  return bake(root);
+}
+
 const grp = (name: string, parent: THREE.Object3D, p?: P3) => { const g = new THREE.Group(); g.name = name; if (p) g.position.set(p[0], p[1], p[2]); parent.add(g); return g; };
 
 function leg(parent: THREE.Object3D, name: string, sx: number, legMat: THREE.Material, knee: boolean) {
@@ -178,8 +205,9 @@ const MAKERS: Record<string, () => THREE.Group> = { rigger, linesman: () => troo
 const HEIGHT: Record<string, number> = { rigger: 1.55, linesman: 1.6, breacher: 1.8, cantor: 2.3, lancer: 2.2, warden: 4.4 };
 const protos: Record<string, THREE.Group> = {};
 /** A fresh copy of a unit model. Geometry is shared between copies. */
+export const atlasUsed = () => atlas ? atlas.cells.size : 0;
 export function unit(kind: string): Model {
-  const proto = protos[kind] || (protos[kind] = MAKERS[kind]());
+  const proto = protos[kind] || (protos[kind] = atlasify(MAKERS[kind]()));
   const obj = proto.clone(true); const f = (n: string) => obj.getObjectByName(n);
   return { obj, rig: { body: f('body')!, head: f('head'), arms: f('arms'), armL: f('armL'), armR: f('armR'), legL: f('legL'), legR: f('legR'), flash: f('flash'), halo: f('halo'), pack: f('pack'), height: HEIGHT[kind] } };
 }

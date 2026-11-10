@@ -111,11 +111,11 @@ export const DUSK = { value: 0 };
 const DUSKFOG = new THREE.Color('#f09a84');
 export const NOISE = `float hash(vec2 p){return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453);}
 float vnoise(vec2 p){vec2 i=floor(p),f=fract(p);f=f*f*(3.-2.*f);return mix(mix(hash(i),hash(i+vec2(1,0)),f.x),mix(hash(i+vec2(0,1)),hash(i+vec2(1,1)),f.x),f.y);}`;
-const TOON_VS = `uniform vec3 uL; uniform vec2 uRep; varying vec3 vN,vL,vP,vW,vWn; varying vec2 vUv;
-void main(){ vUv=uv*uRep; vec4 w=modelMatrix*vec4(position,1.); vW=w.xyz; vec4 mv=viewMatrix*w; vP=mv.xyz; vN=normalize(normalMatrix*normal); vWn=normalize(mat3(modelMatrix)*normal); vL=(viewMatrix*vec4(uL,0.)).xyz; gl_Position=projectionMatrix*mv; }`;
+const TOON_VS = `uniform vec3 uL; uniform vec2 uRep; attribute float aEm; varying vec3 vN,vL,vP,vW,vWn; varying vec2 vUv; varying float vEm;
+void main(){ vUv=uv*uRep; vEm=aEm; vec4 w=modelMatrix*vec4(position,1.); vW=w.xyz; vec4 mv=viewMatrix*w; vP=mv.xyz; vN=normalize(normalMatrix*normal); vWn=normalize(mat3(modelMatrix)*normal); vL=(viewMatrix*vec4(uL,0.)).xyz; gl_Position=projectionMatrix*mv; }`;
 const TOON_FS = `precision highp float;
 uniform vec3 uColor,uFog; uniform sampler2D uMap,uShadow; uniform mat4 uShadowMat; uniform float uEmis,uOpacity,uHatch,uFogK,uFlat,uPx,uShadowTex;
-varying vec3 vN,vL,vP,vW,vWn; varying vec2 vUv;
+varying vec3 vN,vL,vP,vW,vWn; varying vec2 vUv; varying float vEm;
 ${NOISE}
 float shadowAt(vec3 wp){
   vec4 sc=uShadowMat*vec4(wp,1.); vec3 p=sc.xyz/sc.w*.5+.5;
@@ -144,8 +144,8 @@ void main(){
   float hatch=(1.-lit)*l1*.6+deep*l2*.6+mid*l1*.16;
   col=mix(col,col*.38,clamp(hatch,0.,1.)*uHatch);
   float rim=pow(1.-max(dot(n,normalize(-vP)),0.),3.)*(1.-lit)*.4; col+=rim*vec3(.45,.6,.95);
-  col=mix(col,base*1.08,uEmis);
-  float d=length(vP); col=mix(col,uFog,(1.-exp(-d*uFogK))*.92*(1.-uEmis*.6));
+  float em=min(1.,uEmis+vEm); col=mix(col,base*1.08,em);
+  float d=length(vP); col=mix(col,uFog,(1.-exp(-d*uFogK))*.92*(1.-em*.6));
   gl_FragColor=vec4(col,uOpacity);
 }`;
 const WHITE = new THREE.DataTexture(new Uint8Array([255, 255, 255, 255]), 1, 1, THREE.RGBAFormat); WHITE.needsUpdate = true;
@@ -159,6 +159,7 @@ export function T(map?: THREE.Texture | null, o: ToonOpts = {}) {
   });
 }
 export const M: Record<string, THREE.ShaderMaterial> = {};
+export { T as toonMaterial };
 function makeMaterials() {
   Object.assign(M, {
     steel: T(TX.steel), steelD: T(TX.steelD), yellow: T(TX.yellow), yellowP: T(TX.yellowP), hazard: T(TX.hazard, { rx: 3 }), hazard1: T(TX.hazard),

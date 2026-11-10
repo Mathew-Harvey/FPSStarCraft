@@ -95,5 +95,5 @@ function frame(now: number) {
   if (fast > 900 && quality < 1) { quality = Math.min(1, quality / .85); fast = 0; resize(); }
   requestAnimationFrame(frame);
 }
-(window as any).__ore = { game, start, pipe, hud, setFree: (v: boolean) => { freeMouse = v; } };
+(window as any).__ore = { atlasUsed: MD.atlasUsed, game, start, pipe, hud, setFree: (v: boolean) => { freeMouse = v; } };
 requestAnimationFrame(frame);

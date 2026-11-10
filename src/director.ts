@@ -33,7 +33,7 @@ export class Director {
   plan: { phase: 'ask' | 'count' | 'go'; t: number; target: Building | null; book: number; label: string } | null = null;
   nextPlan = 60; callout: Callout | null = null; pushes = 0; lastFailed = false;
   playbook = { name: 'Yard Push', steps: BOOKS[0].steps, idx: 0 };
-  raidIn: number; raidDir: 'east' | 'north' = 'east'; raidN = 0; raidLive = false; warned = false; reinT = 50;
+  raidIn: number; raidDir: 'east' | 'north' = 'east'; raidN = 0; raidLive = false; warned = false; raidAge = 0; raidSeen = false; reinT = 50;
   flags: Record<string, boolean> = {};
 
   constructor(public g: Game) {
@@ -63,6 +63,7 @@ export class Director {
   // ------------------------------------------------------------ events from the simulation
   trained(u: Unit) {
     if (u.kind === 'linesman' && !this.flags.line) { this.flags.line = true; this.say('Quartermaster', 'First Linesman on the payroll. Look at them and press F to jump in, or hold Tab.', 'in'); sfx.callout(); }
+    if (u.kind === 'gantry' && !this.flags.gantry) { this.flags.gantry = true; this.say('Gantry', 'Walker online. Click fires the cannons, C stomps. Jump in, the seat is warm.', 'in'); sfx.callout(); }
     if (u.kind === 'breacher' && !this.flags.breach) { this.flags.breach = true; this.say('Breacher', 'Shield\'s heavy. Hold right-click to hide behind it, click to bash.', 'in'); sfx.callout(); }
   }
   buildingDone(b: Building) {
@@ -125,7 +126,7 @@ export class Director {
     const put = (k: 'bunkhouse' | 'depot' | 'watchpost' | 'machineshop', x: number, z: number, line: string) => { if (g.ore < BLD[k].cost || !g.canPlace(k, x, z, false)) return false; g.place(k, x, z, false); this.say('Quartermaster', line, ''); return true; };
     const wantPosts = army >= 3 ? 1 + (this.raidN >= 2 ? 1 : 0) + (this.raidN >= 4 ? 1 : 0) : 0;
     // One goal at a time, in priority order. While a goal is unpaid, training holds back a reserve so the goal gets bought.
-    let saving = true;
+    let saving = true, hold = 95; const shopB = shop.find(b => b.built);
     if (!bunk.length) put('bunkhouse', 15, 8, 'Staking out a Bunkhouse. Then we get rich.');
     else if (wantDepot) { const s = DEPOT_SLOTS.find(([x, z]) => g.canPlace('depot', x, z, false)); if (s) put('depot', s[0], s[1], 'Running out of beds. Stacking another Depot.'); }
     else if (building) saving = false;
@@ -133,18 +134,20 @@ export class Director {
     else if (bunkUp.length && !shop.length && army >= 4) put('machineshop', 0, -15, 'Machine Shop going in out back. Bigger guns, thicker hats.');
     else if (bunkUp.length && posts < wantPosts) { const s = POST_SLOTS.find(([x, z]) => g.canPlace('watchpost', x, z, false)); if (s) put('watchpost', s[0], s[1], 'Another Watchpost. I sleep better with crossfire.'); }
     else if (shopUp && !g.up.dmg && army >= 5) g.buyUpgrade('dmg');
+    else if (shopB && g.up.dmg && army >= 5 && free >= 4 && g.own('gantry').length + shopB.queue.length < (g.time > 600 ? 2 : 1)) { hold = UNIT.gantry.cost; if (g.ore >= hold) g.train(shopB, 'gantry'); }
     else if (bunkUp.length === 1 && bunk.length === 1 && g.time > 230) put('bunkhouse', 4, 23, 'Second Bunkhouse. Twice the complaints.');
     else if (shopUp && !g.up.armor && army >= 6) g.buyUpgrade('armor');
     else saving = false;
     if (hq && !hq.queue.length && g.own('rigger').length < 8 && free > 0 && g.ore >= 50 && (bunk.length || g.own('rigger').length < 6)) g.train(hq, 'rigger');
     const heavy = g.own('breacher').length, light = g.own('linesman').length;
-    for (const b of bunkUp) if (b.queue.length < 2) { const k: Kind = shopUp && heavy < Math.floor(light / 3) && free >= 2 ? 'breacher' : 'linesman'; if (g.ore >= UNIT[k].cost + (saving ? 95 : 0)) g.train(b, k); }
+    for (const b of bunkUp) if (b.queue.length < 2) { const k: Kind = shopUp && heavy < Math.floor(light / 3) && free >= 2 ? 'breacher' : 'linesman'; if (g.ore >= UNIT[k].cost + (saving ? hold : 0)) g.train(b, k); }
   }
 
   enemy(dt: number) {
     const g = this.g, stones = g.stones(); if (!stones.length) return;
     const gate = g.gate(), src = gate ? { x: GATE.x - 6, z: GATE.z } : { x: OUTPOST.x, z: OUTPOST.z };
-    if (this.raidLive && !g.units.some(u => u.alive && u.team === 1 && u.order.type === 'raid')) { this.raidLive = false; this.say('Alpha', 'Yard\'s clear. Somebody sweep up the purple.', ''); if (this.plan?.phase !== 'go') this.regroup(); }
+    this.raidAge += dt; const close = (r: number) => g.units.some(u => u.alive && u.team === 1 && u.order.type === 'raid' && Math.hypot(u.pos.x, u.pos.z) < r); if (this.raidLive && !this.raidSeen && close(60)) this.raidSeen = true;
+    if (this.raidLive && (this.raidSeen || this.raidAge > 75 ? !close(78) : !g.units.some(u => u.alive && u.team === 1 && u.order.type === 'raid'))) { this.raidLive = false; this.say('Alpha', 'Yard\'s clear. Somebody sweep up the purple.', ''); if (this.plan?.phase !== 'go') this.regroup(); }
     this.raidIn -= dt;
     if (this.raidIn < 15 && !this.warned) {
       this.warned = true; this.raidDir = this.raidN >= 2 && this.raidN % 2 === 0 ? 'north' : 'east';
@@ -152,7 +155,7 @@ export class Director {
       if (this.plan?.phase !== 'go') this.regroup(this.raidDir === 'north');
     }
     if (this.raidIn <= 0) {
-      const n = this.raidN++; this.raidIn = 92 * g.diff.raid; this.warned = false; this.raidLive = true;
+      const n = this.raidN++; this.raidIn = 92 * g.diff.raid; this.warned = false; this.raidLive = true; this.raidAge = 0; this.raidSeen = false;
       let budget = Math.min(16, (2.5 + n * 1.2) * g.diff.enemy) * (gate ? 1 : .6); const north = this.raidDir === 'north'; let count = 0;
       const send = (k: Kind) => { const u = g.spawn(k, 1, src.x - 8 + R(-4, 4), src.z + R(-7, 7)); u.order = { type: 'raid', x: R(-3, 6), z: north ? R(-9, -5) : R(4, 9), path: north ? NORTH_PATH.map(p => [p[0] + R(-3, 3), p[1] + R(-3, 3)]) : undefined }; count++; };
       if (n >= 4 && n % 3 === 1 && budget >= 6) { send('warden'); budget -= 5; }

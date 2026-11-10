@@ -78,8 +78,8 @@ export class Hud {
     // tools
     const rig = me.kind === 'rigger'; this.vis('slots', rig); this.vis('ammo', !rig);
     if (rig) this.set('slots', `<div class="${g.tool === 1 ? 'on' : ''}"><b>1</b><span>Drill</span></div><div class="${g.tool === 2 ? 'on' : ''}"><b>2</b><span>Build</span></div>`, true);
-    else { const w = g.weapon()!; this.set('ammoN', g.reloadT > 0 ? '<small>Reloading</small>' : `${g.ammo}<small> / ${w.mag}</small>`, true); this.cls('ammoN', 'n d out' + (g.ammo <= w.mag / 4 && g.reloadT <= 0 ? ' low' : '')); this.set('ammoL', me.kind === 'breacher' ? `Scattergun · <span class="k">RMB</span> Shield${g.brace ? ' up · click to bash' : ''}` : `Rifle · <span class="k">C</span> Grenade ${g.nadeCd > 0 ? Math.ceil(g.nadeCd) + 's' : 'ready'}`, true); }
-    this.cls('cross', 'cross' + (me.kind === 'breacher' ? ' ring' : me.kind === 'linesman' && g.ads > .6 ? ' dot' : ''));
+    else { const w = g.weapon()!; this.set('ammoN', g.reloadT > 0 ? '<small>Reloading</small>' : `${g.ammo}<small> / ${w.mag}</small>`, true); this.cls('ammoN', 'n d out' + (g.ammo <= w.mag / 4 && g.reloadT <= 0 ? ' low' : '')); this.set('ammoL', me.kind === 'gantry' ? `Autocannon · <span class="k">C</span> Stomp ${g.nadeCd > 0 ? Math.ceil(g.nadeCd) + 's' : 'ready'}` : me.kind === 'breacher' ? `Scattergun · <span class="k">RMB</span> Shield${g.brace ? ' up · click to bash' : ''}` : `Rifle · <span class="k">C</span> Grenade ${g.nadeCd > 0 ? Math.ceil(g.nadeCd) + 's' : 'ready'}`, true); }
+    this.cls('cross', 'cross' + (me.kind === 'breacher' || me.kind === 'gantry' ? ' ring' : me.kind === 'linesman' && g.ads > .6 ? ' dot' : ''));
     const building = rig && g.tool === 2; this.vis('build', building);
     if (building) this.set('buildRows', BUILDABLE.map((k, i) => `<div class="${i === g.buildSel ? 'on' : ''}${g.ore < BLD[k].cost ? ' no' : ''}"><span>${BLD[k].name}<small>${BLD[k].blurb}</small></span><span>${BLD[k].cost} ore</span></div>`).join(''), true);
     this.vis('prompt', !!g.prompt && !building); if (g.prompt) this.set('prompt', g.prompt, true);

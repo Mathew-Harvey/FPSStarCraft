@@ -27,7 +27,7 @@ function portraits() {
   const scene = new THREE.Scene(); scene.add(makeSky());
   const cam = new THREE.PerspectiveCamera(30, 1, .1, 4000);
   pipe.resize(236, 236);
-  for (const kind of ['rigger', 'linesman', 'breacher', 'cantor', 'lancer', 'warden'] as Kind[]) {
+  for (const kind of ['rigger', 'linesman', 'breacher', 'gantry', 'cantor', 'lancer', 'warden'] as Kind[]) {
     const m = MD.unit(kind), st = UNIT[kind], y = st.headY * (kind === 'breacher' ? 1.0 : .97), dist = st.headY * 1.5 + (kind === 'warden' ? 2 : .3); m.obj.rotation.y = .5; scene.add(m.obj);
     if (m.rig.flash) m.rig.flash.visible = false; if (m.rig.pack) m.rig.pack.visible = false;
     cam.position.set(0, y + .15, dist); cam.lookAt(0, y, 0); cam.updateMatrixWorld();

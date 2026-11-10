@@ -17,7 +17,7 @@ type Hit = { unit?: Unit; b?: Building; ore?: OreNode; dist: number; head?: bool
 interface Proj { obj: THREE.Object3D; pos: THREE.Vector3; vel: THREE.Vector3; team: number; dmg: number; nade: boolean; life: number; from: Unit | null }
 interface Corpse { obj: THREE.Object3D; t: number; veyl: boolean; ax: number; az: number; s: number }
 interface Weapon { name: string; mag: number; cd: number; reload: number }
-const GUNS: Record<string, Weapon> = { linesman: { name: 'Rifle', mag: 24, cd: .12, reload: 1.5 }, breacher: { name: 'Scattergun', mag: 6, cd: .78, reload: 2.1 } };
+const GUNS: Record<string, Weapon> = { linesman: { name: 'Rifle', mag: 24, cd: .12, reload: 1.5 }, breacher: { name: 'Scattergun', mag: 6, cd: .78, reload: 2.1 }, gantry: { name: 'Autocannon', mag: 12, cd: .36, reload: 2.4 } };
 
 export class Game {
   scene = new THREE.Scene();
@@ -47,7 +47,7 @@ export class Game {
 
   constructor(public pipe: Pipeline, public hud: Hud, public diff: Difficulty = DIFFS[1]) {
     const s = this.scene; s.add(makeSky()); MD.buildWorld(s, this.spires, this.anim); s.add(this.cam);
-    this.vm = { drill: MD.vmDrill(), rifle: MD.vmRifle(), scatter: MD.vmScatter(), shield: MD.vmShield() };
+    this.vm = { drill: MD.vmDrill(), rifle: MD.vmRifle(), scatter: MD.vmScatter(), shield: MD.vmShield(), cannon: MD.vmCannon() };
     for (const k in this.vm) { this.vm[k].visible = false; this.cam.add(this.vm[k]); }
     for (const k of BUILDABLE) { const src = this.model(k); this.ghost[k] = MD.hologram(src, holoOK); this.ghostBad[k] = MD.hologram(src, holoBad); this.ghost[k].visible = this.ghostBad[k].visible = false; s.add(this.ghost[k], this.ghostBad[k]); }
     const pool = (n: number, geo: THREE.BufferGeometry, mat: THREE.Material, fx: boolean) => { const out: THREE.Mesh[] = []; for (let i = 0; i < n; i++) { const m = mk(geo, mat, 0, 0, 0, s); if (fx) m.layers.set(L_FX); m.visible = false; out.push(m); } return out; };
@@ -232,6 +232,7 @@ export class Game {
     const hot = this.own().filter(u => u !== me && this.time - u.lastHit < 4).sort((a, b) => b.lastHit - a.lastHit)[0];
     if (hot) list.push({ label: UNIT[hot.kind].name + ' under attack', task: 'Jump in and save them', unit: hot, hp: hot.hp / hot.maxHp, alert: true });
     const l = near('linesman'); if (l) list.push({ label: `Linesman ×${this.own('linesman').length}`, task: t, unit: l, hp: l.hp / l.maxHp, alert: false });
+    const w = near('gantry'); if (w) list.push({ label: `Gantry ×${this.own('gantry').length}`, task: t, unit: w, hp: w.hp / w.maxHp, alert: false });
     const b = near('breacher'); if (b) list.push({ label: `Breacher ×${this.own('breacher').length}`, task: t, unit: b, hp: b.hp / b.maxHp, alert: false });
     const r = near('rigger'); if (r) list.push({ label: `Rigger ×${this.own('rigger').length}`, task: r.state === 'build' || r.state === 'toSite' ? 'Building' : 'Mining ore', unit: r, hp: r.hp / r.maxHp, alert: false });
     if (this.lastBody && this.lastBody.alive && this.lastBody !== me && !list.some(e => e.unit === this.lastBody)) list.push({ label: 'Last body · ' + UNIT[this.lastBody.kind].name, task: 'Where you just were', unit: this.lastBody, hp: this.lastBody.hp / this.lastBody.maxHp, alert: false });
@@ -304,10 +305,10 @@ export class Game {
     if (fx || fz) { const l = Math.hypot(fx, fz), sp = me.speed * (sprint ? 1.5 : aiming ? .55 : 1) * dt / l, s = Math.sin(this.yaw), c = Math.cos(this.yaw); me.pos.x += (s * fz - c * fx) * sp; me.pos.z += (c * fz + s * fx) * sp; me.moving = true; this.bob += dt * (sprint ? 13 : 9.5); this.collide(me, me.pos.x, me.pos.z); }
     if (me.hp < me.maxHp && this.time - me.lastHit > 6) me.hp = Math.min(me.maxHp, me.hp + me.maxHp * .05 * dt);
     if (this.kick > 0) { const r = Math.min(this.kick, dt * (.05 + this.kick * 4)); this.kick -= r; this.pitch -= r; }
-    if (me.moving) { const ph = Math.floor(this.bob / Math.PI); if (ph !== this.stepPhase) { this.stepPhase = ph; sfx.step(me.kind === 'breacher'); if (sprint) this.puff(TMP.set(me.pos.x, .1, me.pos.z), 1, .35, M.dust, .3, .6); } }
+    if (me.moving) { const ph = Math.floor(this.bob / Math.PI); if (ph !== this.stepPhase) { this.stepPhase = ph; sfx.step(me.kind !== 'linesman' && me.kind !== 'rigger'); if (me.kind === 'gantry') this.shake = Math.max(this.shake, .22); if (sprint) this.puff(TMP.set(me.pos.x, .1, me.pos.z), 1, .35, M.dust, .3, .6); } }
     this.hopCd = Math.max(0, this.hopCd - dt);
     if (P.has('Space') && this.hopCd <= 0 && !this.brace) { const s = Math.sin(this.yaw), c = Math.cos(this.yaw), l = Math.hypot(fx, fz); let dx = s, dz = c; if (l) { dx = (s * fz - c * fx) / l; dz = (c * fz + s * fx) / l; } this.hopX = dx; this.hopZ = dz; this.hopT = .17; this.hopCd = 1.4; sfx.dash(.8); this.puff(TMP.set(me.pos.x, .15, me.pos.z), 3, .5, M.dust, .3, 1); }
-    if (this.hopT > 0) { this.hopT -= dt; const v = (me.kind === 'breacher' ? 15 : 19) * dt; me.pos.x += this.hopX * v; me.pos.z += this.hopZ * v; me.moving = true; this.collide(me, me.pos.x, me.pos.z); }
+    if (this.hopT > 0) { this.hopT -= dt; const v = (me.kind === 'gantry' ? 11 : me.kind === 'breacher' ? 15 : 19) * dt; me.pos.x += this.hopX * v; me.pos.z += this.hopZ * v; me.moving = true; this.collide(me, me.pos.x, me.pos.z); }
     me.yaw = this.yaw; me.pitch = this.pitch;
     this.fireCd -= dt; this.recoil = Math.max(0, this.recoil - dt * 6); this.nadeCd = Math.max(0, this.nadeCd - dt); this.bashCd = Math.max(0, this.bashCd - dt); this.bashT = Math.max(0, this.bashT - dt);
     const eye = V3(me.pos.x, UNIT[me.kind].eye, me.pos.z), dir = this.lookDir(V3());
@@ -320,8 +321,8 @@ export class Game {
     const lb = look?.b && look.b.team === 0 && look.b.built && look.dist < 10 ? look.b : null;
     if (lb && lb.kind === 'headframe') { this.prompt = `<b>E</b> Train Rigger · 50 ore` + (lb.queue.length ? ` · ${lb.queue.length} queued` : ''); if (P.has('KeyE')) this.train(lb, 'rigger', true); }
     else if (lb && lb.kind === 'bunkhouse') { const shop = this.ownB('machineshop', true).length > 0; this.prompt = `<b>E</b> Linesman · 60 ore &nbsp; <b>T</b> Breacher · ${shop ? '110 ore' : 'needs a Machine Shop'}` + (lb.queue.length ? ` · ${lb.queue.length} queued` : ''); if (P.has('KeyE')) this.train(lb, 'linesman', true); if (P.has('KeyT')) { if (shop) this.train(lb, 'breacher', true); else sfx.deny(); } }
-    else if (lb && lb.kind === 'machineshop') { const open = UPGRADES.filter(u => !this.up[u.key]); this.prompt = open.length ? open.map((u, i) => `<b>${'ET'[i]}</b> ${u.name} · ${u.cost} ore`).join(' &nbsp; ') : 'Every upgrade bought'; open.forEach((u, i) => { if (P.has(i ? 'KeyT' : 'KeyE')) this.buyUpgrade(u.key, true); }); }
-    if (me.kind === 'rigger') this.updateRigger(dt, P, eye, dir, look); else this.updateGun(dt, P, eye, dir, gun);
+    else if (lb && lb.kind === 'machineshop') { const open = UPGRADES.filter(u => !this.up[u.key]); this.prompt = `<b>E</b> Gantry walker · ${UNIT.gantry.cost} ore` + open.map((u, i) => ` &nbsp; <b>${'TY'[i]}</b> ${u.name} · ${u.cost} ore`).join('') + (lb.queue.length ? ` · ${lb.queue.length} queued` : ''); if (P.has('KeyE')) this.train(lb, 'gantry', true); open.forEach((u, i) => { if (P.has(i ? 'KeyY' : 'KeyT')) this.buyUpgrade(u.key, true); }); }
+    if (me.kind === 'rigger') this.updateRigger(dt, P, eye, dir, look); else if (me.kind === 'gantry') this.updateCannon(dt, P, eye, dir, gun); else this.updateGun(dt, P, eye, dir, gun);
   }
   train(b: Building, k: Kind, manual = false) {
     const st = UNIT[k];
@@ -415,6 +416,39 @@ export class Game {
       }
     }
   }
+  /** A small shell burst: splash damage without the full explosion fanfare. */
+  burst(p: THREE.Vector3, dmg: number, radius: number, from: Unit | null, skip: Unit | Building | null = null) {
+    for (const u of this.units) { if (!u.alive || u.team !== 1 || u === skip) continue; const d = Math.hypot(u.pos.x - p.x, u.pos.z - p.z); if (d > radius + UNIT[u.kind].rad || Math.abs(p.y - UNIT[u.kind].bodyY) > radius + 1.5) continue; const k = 1 - .6 * Math.min(1, d / radius); this.damage(u, dmg * k, from); if (d > .1 && u.kind !== 'warden') { u.kx += (u.pos.x - p.x) / d * 4 * k; u.kz += (u.pos.z - p.z) / d * 4 * k; } }
+    this.puff(p, 3, radius * .3, M.fire, 1.4, 1.2); this.puff(p, 2, radius * .32, M.smoke, 1, 1.6); this.debris(p, 3, .14, M.rock, 5); if (p.y < .6) this.scorchAt(p, radius * .7);
+    const v = this.vol(p); this.shake = Math.max(this.shake, v * .35); sfx.boom(v * .45);
+  }
+  stomp(u: Unit) {
+    const p = V3(u.pos.x, 0, u.pos.z); let any = false;
+    for (const e of this.units) { if (!e.alive || e.team === u.team) continue; const dx = e.pos.x - p.x, dz = e.pos.z - p.z, d = Math.hypot(dx, dz); if (d > 6.5 + UNIT[e.kind].rad) continue; this.damage(e, 46 * (1 - .5 * Math.min(1, d / 6.5)), u); const k = e.kind === 'warden' ? 3 : 16; e.kx += dx / (d || 1) * k; e.kz += dz / (d || 1) * k; any = true; }
+    for (let i = 0; i < 10; i++) { const a = i / 10 * 6.283; this.puff(TMP.set(p.x + Math.cos(a) * 2.6, .3, p.z + Math.sin(a) * 2.6), 1, 1.1, M.dust, 1.6, .5); }
+    this.debris(TMP.set(p.x, .3, p.z), 8, .22, M.rock, 7); this.scorchAt(p, 5); this.warn(p.x, p.z, 6.5, .35);
+    const v = this.vol(p); this.shake = Math.max(this.shake, v * 1.2); sfx.boom(v); sfx.clang();
+    if (u === this.me || any) this.hud.damage(V3(p.x, 2.4, p.z), 'STOMP!', 'ko');
+  }
+  side = 1;
+  updateCannon(dt: number, P: Set<string>, eye: THREE.Vector3, dir: THREE.Vector3, gun: Weapon) {
+    const me = this.me!, vm = this.vm.cannon; vm.userData.flash.visible = vm.userData.flashL.visible = false;
+    if (P.has('KeyC')) { if (this.nadeCd <= 0) { this.nadeCd = 10; this.stomp(me); } else sfx.deny(); }
+    if (this.reloadT > 0) { this.reloadT -= dt; if (this.reloadT <= 0) this.ammo = gun.mag; return; }
+    if ((P.has('KeyR') && this.ammo < gun.mag) || (this.ammo <= 0 && this.lmb)) { this.reloadT = gun.reload; sfx.reload(); return; }
+    if (this.lmb && this.fireCd <= 0 && this.ammo > 0) {
+      this.fireCd = gun.cd; this.ammo--; this.side = -this.side; const flash = this.side > 0 ? vm.userData.flash : vm.userData.flashL; flash.visible = true; flash.rotation.z = R(0, 3);
+      const mul = this.gunMul(), muzzle = V3(); flash.getWorldPosition(muzzle);
+      this.recoil = 1; this.pitch = Math.min(1.45, this.pitch + .012); this.kick += .01; this.shake = Math.min(1, this.shake + .22); sfx.blast();
+      const sp = .012, d = V3().copy(dir); d.x += R(-sp, sp); d.y += R(-sp, sp); d.z += R(-sp, sp); d.normalize();
+      let hit = this.ray(eye, d, 140, -1, me); if (hit && ((hit.unit && hit.unit.team === 0) || (hit.b && hit.b.team === 0 && hit.dist < 4))) hit = this.ray(eye, d, 140, 1, me);
+      let dist = hit ? hit.dist : 140; if (!hit && d.y < 0) dist = Math.min(dist, -eye.y / d.y);
+      const end = V3().copy(eye).addScaledVector(d, dist); this.tracer(muzzle, end, tracerMat, .16);
+      const tgt = hit && (hit.unit && hit.unit.team === 1 ? hit.unit : hit.b && hit.b.team === 1 ? hit.b : null);
+      if (tgt) { this.damage(tgt, (hit!.head ? 34 : 22) * mul, me, !!hit!.head); this.hud.hitmark(!!hit!.head); hit!.head ? sfx.crit() : sfx.hit(); }
+      if (dist < 139) this.burst(end, 14 * mul, 3.2, me, tgt);
+    }
+  }
   impact(eye: THREE.Vector3, d: THREE.Vector3, hit: Hit | null, end: THREE.Vector3) { if (!hit && d.y < 0) { const t = -eye.y / d.y; if (t < 150) end.copy(eye).addScaledVector(d, t); else return; } else if (!hit) return; this.puff(end, 1, .35, M.dust, .6); this.debris(end, 1, .07, M.rock, 3); }
   shoot(pos: THREE.Vector3, vel: THREE.Vector3, team: number, dmg: number, nade: boolean, from: Unit | null) {
     const obj = (nade ? this.nadeProto : this.boltProto).clone(true); obj.position.copy(pos); this.scene.add(obj);
@@ -451,7 +485,7 @@ export class Game {
     for (const u of us) {
       if (!u.alive) continue; const r = u.rig, o = u.obj; o.position.x = u.pos.x; o.position.z = u.pos.z;
       let dy = u.yaw - o.rotation.y; dy = Math.atan2(Math.sin(dy), Math.cos(dy)); o.rotation.y += dy * Math.min(1, dt * 12);
-      if (u.moving) u.phase += dt * (u.kind === 'breacher' ? 9 : 11); const amp = u.moving ? .75 : 0, ease = Math.min(1, dt * 14), base = u.kind === 'breacher' ? 1.14 : 1, sc = base * (1 + u.pop * .1);
+      if (u.moving) u.phase += dt * (u.kind === 'gantry' ? 6.5 : u.kind === 'breacher' ? 9 : 11); const amp = u.moving ? .75 : 0, ease = Math.min(1, dt * 14), base = u.kind === 'breacher' ? 1.14 : 1, sc = base * (1 + u.pop * .1);
       o.scale.set(sc, base * (1 - u.pop * .06), sc);
       if (r.legL && r.legR) {
         const s = Math.sin(u.phase) * amp; r.legL.rotation.x += (s - r.legL.rotation.x) * ease; r.legR.rotation.x += (-s - r.legR.rotation.x) * ease; o.position.y = u.moving ? Math.abs(Math.cos(u.phase)) * .07 : 0;
@@ -490,7 +524,7 @@ export class Game {
   }
   aimAt(u: Unit, t: Unit | Building, fromY: number) { const ty = isUnit(t) ? UNIT[t.kind].bodyY : Math.min(t.h * .5, 3), d = Math.hypot(t.pos.x - u.pos.x, t.pos.z - u.pos.z); u.yaw = Math.atan2(t.pos.x - u.pos.x, t.pos.z - u.pos.z); u.pitch += (Math.atan2(ty - fromY, d) - u.pitch) * .3; return ty; }
   aiSoldier(u: Unit, dt: number) {
-    const heavy = u.kind === 'breacher', range = heavy ? 10 : 19;
+    const heavy = u.kind === 'breacher', big = u.kind === 'gantry', range = big ? 24 : heavy ? 10 : 19;
     if (u.think <= 0) { u.think = .3; u.target = this.acquire(u, 30, u.order.type === 'guard' ? 0 : 28); }
     const t = u.target;
     if (t && t.alive) {
@@ -498,7 +532,8 @@ export class Game {
       if (d > range) this.moveTo(u, t.pos.x, t.pos.z, dt, 1, heavy ? 1.15 : 1);
       else if (u.cd <= 0) {
         const mul = this.gunMul(), a = V3(u.pos.x + Math.sin(u.yaw) * 1.1, 1.0, u.pos.z + Math.cos(u.yaw) * 1.1); u.swing = 1; u.flashT = .07;
-        if (heavy) { u.cd = 1.05 + R(0, .2); let dm = 0; for (let i = 0; i < 5; i++) { const hit = isB || Math.random() < .7; if (hit) dm += isB ? 4 : 6; if (i % 2 === 0) this.tracer(a, V3(t.pos.x + R(-1, 1), ty + R(-.6, .6), t.pos.z + R(-1, 1))); } sfx.blast(this.vol(u.pos) * .5); this.damage(t, dm * mul, u); }
+        if (big) { u.cd = .8 + R(0, .15); a.y = 2.3; const b = V3(t.pos.x + R(-.8, .8), isB ? ty : .3, t.pos.z + R(-.8, .8)); this.tracer(a, b, tracerMat, .16); sfx.blast(this.vol(u.pos) * .6); this.damage(t, (isB ? 16 : 12) * mul, u); this.burst(b, 12 * mul, 3.2, u, t); if (this.time > u.dashCd && !isB && d < 6) { u.dashCd = this.time + 12; this.stomp(u); } }
+        else if (heavy) { u.cd = 1.05 + R(0, .2); let dm = 0; for (let i = 0; i < 5; i++) { const hit = isB || Math.random() < .7; if (hit) dm += isB ? 4 : 6; if (i % 2 === 0) this.tracer(a, V3(t.pos.x + R(-1, 1), ty + R(-.6, .6), t.pos.z + R(-1, 1))); } sfx.blast(this.vol(u.pos) * .5); this.damage(t, dm * mul, u); }
         else { u.cd = .38 + R(0, .08); const hit = isB || Math.random() < .7, b = V3(t.pos.x, ty, t.pos.z); if (!hit) b.add(TMP.set(R(-1.5, 1.5), R(-.5, 1.5), R(-1.5, 1.5))); this.tracer(a, b); sfx.shot(this.vol(u.pos) * .5); if (hit) this.damage(t, (isB ? 5 : 8) * mul, u); }
       }
       return;
@@ -610,6 +645,7 @@ export class Game {
         const gun = GUNS[me.kind], rl = this.reloadT > 0 && gun ? Math.sin(Math.min(1, this.reloadT / gun.reload) * Math.PI) : 0;
         if (me.kind === 'rigger') pose(vm.drill, 0, this.lmb && this.tool === 1 ? -.03 + R(-.004, .004) : 0, this.tool === 2 ? .12 : 0);
         else if (me.kind === 'linesman') { pose(vm.rifle, this.ads, this.recoil * .05, rl * .14); vm.rifle.userData.mag.position.y = -.17 - (rl > .5 ? (rl - .5) * .5 : 0); }
+        else if (me.kind === 'gantry') { pose(vm.cannon, 0, 0, rl * .1); const k = this.recoil * .09; vm.cannon.userData.gunR.position.z = this.side > 0 ? k : 0; vm.cannon.userData.gunL.position.z = this.side < 0 ? k : 0; }
         else { const pump = this.fireCd > 0 ? Math.sin(Math.min(1, (gun.cd - this.fireCd) / (gun.cd * .8)) * Math.PI) : 0; pose(vm.scatter, 0, this.recoil * .12, rl * .12 + this.ads * .16); vm.scatter.userData.mag.position.z = -.42 + pump * .12 + (rl > 0 ? Math.abs(Math.sin(this.reloadT * 9)) * .1 : 0); pose(vm.shield, this.ads, -this.bashT * 1.2, 0); }
       }
     }

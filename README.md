@@ -23,7 +23,8 @@ One skirmish as the Ironhold Charter against a Veyl outpost. Smash the three Cho
 - **Rigger**: drill ore by hand, place buildings, weld them up faster, patch damage.
 - **Linesman**: rifle with a 24-round magazine, aim-down-sights, headshot crits and a grenade on a cooldown.
 - **Breacher**: scattergun and a riot shield. Hold right-click to brace behind the shield, click while braced to bash.
-- **Buildings**: Bunkhouse (trains soldiers), Depot (beds, and a place to heal), Watchpost (gun tower), Machine Shop (unlocks Breachers, sells Hollow Points and Plating).
+- **Gantry**: a two-legged walker from the Machine Shop with a cannon on each side. Click fires explosive shells, `C` stomps and throws everything nearby off its feet.
+- **Buildings**: Bunkhouse (trains soldiers), Depot (beds, and a place to heal), Watchpost (gun tower), Machine Shop (unlocks Breachers, builds Gantry walkers, sells Hollow Points and Plating).
 
 **Their side, the Veyl Chorus**
 
@@ -58,6 +59,8 @@ One skirmish as the Ironhold Charter against a Veyl outpost. Smash the three Cho
 ![The cast: Warden, Lancer, Cantor, Breacher, Linesman, Rigger](docs/screenshots/lineup.jpg)
 
 ![Pushing the outpost at sunset](docs/screenshots/dusk.jpg)
+
+![From the Gantry's cockpit](docs/screenshots/gantry.jpg)
 
 ## How it is built
 

@@ -201,8 +201,40 @@ function warden(): THREE.Group {
   return bake(obj);
 }
 
-const MAKERS: Record<string, () => THREE.Group> = { rigger, linesman: () => trooper(false), breacher: () => trooper(true), cantor, lancer, warden };
-const HEIGHT: Record<string, number> = { rigger: 1.55, linesman: 1.6, breacher: 1.8, cantor: 2.3, lancer: 2.2, warden: 4.4 };
+
+/** Ironhold walker: a two-legged loader rig with a cannon bolted to each side. */
+function gantry(): THREE.Group {
+  const obj = new THREE.Group(), body = grp('body', obj);
+  for (const sx of [-1, 1]) {
+    const l = grp(sx < 0 ? 'legL' : 'legR', obj, [sx * .78, 1.55, 0]);
+    mk(G.cyl, M.yellowP, [0, 0, 0], [.5, .34, .5], [0, 0, Math.PI / 2], l);
+    beam([0, 0, 0], [0, -.62, -.3], .17, M.steelD, l); mk(G.sph, M.rust, [0, -.62, -.3], [.44, .44, .44], 0, l);
+    beam([0, -.62, -.3], [0, -1.32, .08], .15, M.steel, l); mk(G.box, M.hazard1, [sx * .17, -.95, -.12], [.06, .5, .26], [-.5, 0, 0], l);
+    mk(G.box, M.steelD, [0, -1.44, .14], [.6, .22, .96], 0, l); mk(G.box, M.rubber, [0, -1.52, .14], [.66, .08, 1.02], 0, l); mk(G.box, M.yellowP, [0, -1.36, .56], [.5, .2, .2], 0, l);
+  }
+  mk(G.box, M.steelD, [0, 1.6, 0], [1.3, .36, .8], 0, body);
+  mk(G.box, M.yellow, [0, 2.2, -.05], [1.5, 1.0, 1.5], 0, body);
+  mk(G.box, M.hazard1, [0, 1.84, .68], [1.44, .22, .1], 0, body);
+  mk(G.box, M.steel, [0, 2.36, .62], [1.1, .56, .34], [-.2, 0, 0], body);
+  mk(G.box, M.visor, [0, 2.4, .8], [.9, .3, .06], [-.2, 0, 0], body);
+  mk(G.box, M.steelD, [0, 2.24, -.9], [1.2, .8, .4], 0, body);
+  for (const sx of [-1, 1]) { mk(G.cyl, M.rust, [sx * .4, 2.9, -.86], [.2, .7, .2], 0, body); mk(G.cyl, M.rubber, [sx * .4, 3.26, -.86], [.25, .08, .25], 0, body); mk(G.box, M.orange, [sx * .62, 2.74, .5], [.2, .12, .2], 0, body); }
+  mk(G.box, M.rubber, [0, 1.66, .5], [.5, .2, .3], 0, body);
+  const head = grp('head', body, [0, 2.7, 0]);
+  mk(G.box, M.steelD, [0, .08, 0], [.7, .16, .7], 0, head); mk(G.box, M.visor, [0, .2, .26], [.34, .14, .2], 0, head); mk(G.cyl, M.rubber, [-.24, .5, -.2], [.035, .8, .035], 0, head); mk(G.sph, M.red, [-.24, .92, -.2], [.1, .1, .1], 0, head);
+  const arms = grp('arms', body, [0, 2.25, .1]);
+  for (const sx of [-1, 1]) {
+    mk(G.cyl, M.steelD, [sx * .84, 0, 0], [.3, .3, .3], [0, 0, Math.PI / 2], arms);
+    mk(G.box, M.gun, [sx * 1.12, 0, .1], [.4, .46, 1.1], 0, arms); mk(G.box, M.orange, [sx * 1.12, .25, 0], [.3, .08, .6], 0, arms);
+    mk(G.cyl, M.steelD, [sx * 1.12, .02, .95], [.2, .9, .2], [Math.PI / 2, 0, 0], arms); mk(G.cyl, M.rubber, [sx * 1.12, .02, 1.4], [.26, .12, .26], [Math.PI / 2, 0, 0], arms);
+    mk(G.box, M.hazard1, [sx * 1.33, 0, .1], [.03, .3, .7], 0, arms);
+  }
+  muzzle(arms, [1.12, .02, 1.6], 2.4);
+  return bake(obj);
+}
+
+const MAKERS: Record<string, () => THREE.Group> = { rigger, linesman: () => trooper(false), breacher: () => trooper(true), gantry, cantor, lancer, warden };
+const HEIGHT: Record<string, number> = { rigger: 1.55, linesman: 1.6, breacher: 1.8, gantry: 3.3, cantor: 2.3, lancer: 2.2, warden: 4.4 };
 const protos: Record<string, THREE.Group> = {};
 /** A fresh copy of a unit model. Geometry is shared between copies. */
 export const atlasUsed = () => atlas ? atlas.cells.size : 0;
@@ -354,6 +386,22 @@ export function vmScatter() {
   vmArm(g, [-.01, -.15, .22], [.14, -.36, .66], M.steel, M.rubber); vmArm(pump, [-.02, -.05, 0], [-.34, -.3, .4], M.steel, M.rubber);
   const flash = vmFlash(g, [0, .03, -1.0], 1.7);
   bake(g); setLayer(g, L_VM); setLayer(flash, L_FX); g.userData.flash = flash; g.userData.mag = pump; g.userData.rest = [.25, -.25, -.5, .02, .1, 0];
+  return g;
+}
+/** The Gantry's cockpit view: a cannon on each side and a dashboard along the bottom. */
+export function vmCannon() {
+  const g = new THREE.Group();
+  for (const sx of [-1, 1]) {
+    const c = grp(sx < 0 ? 'gunL' : 'gunR', g, [sx * .46, 0, 0]);
+    mk(G.box, M.gun, [0, 0, -.1], [.2, .22, .7], 0, c); mk(G.box, M.orange, [0, .12, -.05], [.15, .04, .4], 0, c);
+    mk(G.cyl, M.steelD, [0, .01, -.72], [.12, .7, .12], [Math.PI / 2, 0, 0], c); mk(G.cyl, M.rubber, [0, .01, -1.06], [.15, .07, .15], [Math.PI / 2, 0, 0], c);
+    mk(G.box, M.hazard1, [-sx * .105, 0, -.1], [.012, .14, .5], 0, c);
+  }
+  mk(G.box, M.steelD, [0, -.17, -.3], [1.3, .1, .5], [.25, 0, 0], g); mk(G.box, M.hazard1, [0, -.1, -.52], [1.2, .05, .04], [.25, 0, 0], g);
+  mk(G.box, M.yellow, [0, -.11, -.36], [.3, .05, .2], [.25, 0, 0], g); mk(G.box, M.visor, [0, -.085, -.38], [.2, .02, .1], [.25, 0, 0], g);
+  for (const sx of [-1, 1]) mk(G.cyl, M.rust, [sx * .24, -.1, -.34], [.06, .04, .06], [.25, 0, 0], g);
+  const flashL = vmFlash(g.getObjectByName('gunL')!, [0, .01, -1.2], 2.2), flash = vmFlash(g.getObjectByName('gunR')!, [0, .01, -1.2], 2.2);
+  bake(g); setLayer(g, L_VM); setLayer(flash, L_FX); setLayer(flashL, L_FX); g.userData.flash = flash; g.userData.flashL = flashL; g.userData.gunL = g.getObjectByName('gunL'); g.userData.gunR = g.getObjectByName('gunR'); g.userData.rest = [0, -.42, -.5, 0, 0, 0];
   return g;
 }
 /** The Breacher's shield as seen from behind it in first person. */

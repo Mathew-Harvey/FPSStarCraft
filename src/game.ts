@@ -3,7 +3,7 @@
 import * as THREE from 'three';
 import { Pipeline, V3, M, G, R, mk, setLayer, L_FX, L_SELF, holoOK, holoBad, ringMat, tracerMat, makeSky } from './gfx';
 import * as MD from './models';
-import { sfx, drillSound, setMood } from './audio';
+import { sfx, drillSound, setMood, babble } from './audio';
 import type { Hud } from './hud';
 import { Kind, BKind, UNIT, BLD, BUILDABLE, UPGRADES, Unit, Building, OreNode, Difficulty, DIFFS, OUTPOST, GATE, isUnit, isSoldier } from './data';
 import { Director } from './director';
@@ -43,6 +43,7 @@ export class Game {
   bubbles: { m: THREE.Mesh; t: number; u: Unit | null }[] = []; warns: { m: THREE.Mesh; t: number; life: number; r: number }[] = [];
   projs: Proj[] = []; corpses: Corpse[] = []; boltProto = MD.bolt(); nadeProto = MD.grenade();
   shake = 0; noRender = false; alertT = 0; mood = 0;
+  introT = 0; menuPos = V3(); menuQuat = new THREE.Quaternion(); hitStop = 0; streak = 0; streakT = 0; kick = 0; stepPhase = 0; dustT = 0;
 
   constructor(public pipe: Pipeline, public hud: Hud, public diff: Difficulty = DIFFS[1]) {
     const s = this.scene; s.add(makeSky()); MD.buildWorld(s, this.spires, this.anim); s.add(this.cam);
@@ -121,7 +122,7 @@ export class Game {
     return this.moveTo(u, o.x, o.z, dt, stop, mul);
   }
   vol(p: THREE.Vector3) { const d = this.me ? p.distanceTo(this.me.pos) : 50; return Math.max(0, 1 - d / 90) ** 2; }
-  feed(who: string, msg: string, cls = '') { this.hud.feed(who, msg, cls); }
+  feed(who: string, msg: string, cls = '') { this.hud.feed(who, msg, cls); if (!this.noRender) babble(who, msg.length); }
 
   // ------------------------------------------------------------ effects
   tracer(a: THREE.Vector3, b: THREE.Vector3, mat: THREE.Material = tracerMat, w = .07) {
@@ -169,6 +170,7 @@ export class Game {
     u.ring.visible = false; if (u.rig.flash) u.rig.flash.visible = false; this.bodyLayer(u, false);
     let ax = R(-1, 1), az = R(-1, 1); if (from) { ax = u.pos.x - from.pos.x; az = u.pos.z - from.pos.z; } const al = Math.hypot(ax, az) || 1;
     this.corpses.push({ obj: u.obj, t: 0, veyl, ax: ax / al, az: az / al, s: u.obj.scale.x });
+    if (veyl && from === this.me && this.me) { this.hitStop = u.kind === 'warden' ? .25 : .06; this.streak = this.time < this.streakT ? this.streak + 1 : 1; this.streakT = this.time + 4; if (this.streak >= 2) { this.hud.streak(['', '', 'DOUBLE KO!', 'TRIPLE!', 'OVERTIME!', 'RAMPAGE!'][Math.min(5, this.streak)]); sfx.streak(this.streak); } }
     if (veyl) { this.stats.kills++; if (u.kind === 'warden') { this.shake = Math.max(this.shake, v); this.feed('Alpha', 'Warden down! Did everybody see that? I did that.', ''); } else if (from && isUnit(from) && from.team === 0 && from !== this.me && Math.random() < .12) this.dir.bark(from, 'kill'); }
     else { this.stats.lost++; if (u !== this.me && isSoldier(u) && Math.random() < .35) this.dir.bark(u, 'down'); }
     if (u.site) u.site.builder = null;
@@ -245,7 +247,8 @@ export class Game {
       if (!tabNow && this.tab) { const e = this.tabList[this.tabSel]; if (e && e.unit.alive) this.possess(e.unit); }
       this.tab = tabNow;
       if (this.tab) { for (let i = 0; i < this.tabList.length; i++) if (P.has('Digit' + (i + 1))) { this.tabSel = i; sfx.blip(); } if (this.wheel) { this.tabSel = (this.tabSel + (this.wheel > 0 ? 1 : this.tabList.length - 1)) % Math.max(1, this.tabList.length); sfx.blip(); } }
-      const dt = dtReal * (this.tab ? .25 : 1);
+      this.hitStop = Math.max(0, this.hitStop - dtReal); this.introT = Math.max(0, this.introT - dtReal);
+      const dt = dtReal * (this.tab ? .25 : this.hitStop > 0 ? .12 : 1);
       this.time += dt; this.jumpCd = Math.max(0, this.jumpCd - dtReal);
       if (this.staticT > 0) { this.staticT -= dtReal; if (this.staticT <= 0) this.respawn(); }
       else if (this.me?.alive && !this.tab) this.updatePlayer(dt, P);
@@ -260,6 +263,7 @@ export class Game {
   }
   updateFx(dt: number) {
     if (dt <= 0) return;
+    this.dustT -= dt; if (this.dustT <= 0 && this.me) { this.dustT = .35; const f = this.puffs.find(x => x.t <= 0), c = this.phase === 'menu' ? TMP2.set(0, 0, 0) : this.me.pos; if (f) { f.m.material = M.dust; f.m.position.set(c.x + R(-34, 20), R(.1, .5), c.z + R(-28, 28)); f.v.set(R(2.5, 4.5), R(.05, .25), R(.6, 1.6)); f.s = R(.25, .6); f.life = f.t = R(1.2, 2); f.m.visible = true; f.m.scale.setScalar(.01); } }
     for (const tr of this.tracers) if (tr.t > 0) { tr.t -= dt; if (tr.t <= 0) tr.m.visible = false; }
     for (const f of this.puffs) if (f.t > 0) { f.t -= dt; const k = 1 - f.t / f.life; f.m.position.addScaledVector(f.v, dt * 2.2); const s = f.s * (.4 + k) * (1 - k * k); f.m.scale.set(s, s, s); if (f.t <= 0) f.m.visible = false; }
     for (const f of this.bits) if (f.t > 0) { f.t -= dt; f.v.y -= 22 * dt; f.m.position.addScaledVector(f.v, dt); f.m.rotation.x += f.spin * dt; f.m.rotation.z += f.spin * .7 * dt; if (f.m.position.y < .08) { f.m.position.y = .08; f.v.y *= -.35; f.v.x *= .5; f.v.z *= .5; f.spin *= .4; } if (f.t < .3) f.m.scale.multiplyScalar(Math.max(0, 1 - dt * 6)); if (f.t <= 0) f.m.visible = false; }
@@ -294,6 +298,8 @@ export class Game {
     let fx = 0, fz = 0; if (K.has('KeyW')) fz += 1; if (K.has('KeyS')) fz -= 1; if (K.has('KeyD')) fx += 1; if (K.has('KeyA')) fx -= 1;
     const sprint = K.has('ShiftLeft') && fz > 0 && !aiming; me.moving = false;
     if (fx || fz) { const l = Math.hypot(fx, fz), sp = me.speed * (sprint ? 1.5 : aiming ? .55 : 1) * dt / l, s = Math.sin(this.yaw), c = Math.cos(this.yaw); me.pos.x += (s * fz - c * fx) * sp; me.pos.z += (c * fz + s * fx) * sp; me.moving = true; this.bob += dt * (sprint ? 13 : 9.5); this.collide(me, me.pos.x, me.pos.z); }
+    if (this.kick > 0) { const r = Math.min(this.kick, dt * (.05 + this.kick * 4)); this.kick -= r; this.pitch -= r; }
+    if (me.moving) { const ph = Math.floor(this.bob / Math.PI); if (ph !== this.stepPhase) { this.stepPhase = ph; sfx.step(me.kind === 'breacher'); if (sprint) this.puff(TMP.set(me.pos.x, .1, me.pos.z), 1, .35, M.dust, .3, .6); } }
     me.yaw = this.yaw; me.pitch = this.pitch;
     this.fireCd -= dt; this.recoil = Math.max(0, this.recoil - dt * 6); this.nadeCd = Math.max(0, this.nadeCd - dt); this.bashCd = Math.max(0, this.bashCd - dt); this.bashT = Math.max(0, this.bashT - dt);
     const eye = V3(me.pos.x, UNIT[me.kind].eye, me.pos.z), dir = this.lookDir(V3());
@@ -378,7 +384,7 @@ export class Game {
       this.fireCd = gun.cd; this.ammo--; flash.visible = true; flash.rotation.z = R(0, 3); const mul = this.gunMul();
       const muzzle = V3(); flash.getWorldPosition(muzzle);
       if (heavy) {
-        this.recoil = 1; this.pitch = Math.min(1.45, this.pitch + .03); this.shake = Math.min(1, this.shake + .35); sfx.blast(); let hits = 0, total = 0, last: Unit | Building | null = null, crit = false;
+        this.recoil = 1; this.pitch = Math.min(1.45, this.pitch + .03); this.kick += .024; this.shake = Math.min(1, this.shake + .35); sfx.blast(); let hits = 0, total = 0, last: Unit | Building | null = null, crit = false;
         this.quiet = true;
         for (let i = 0; i < 9; i++) {
           const d = V3().copy(dir); d.x += R(-.075, .075); d.y += R(-.05, .05); d.z += R(-.075, .075); d.normalize();
@@ -390,11 +396,11 @@ export class Game {
         this.quiet = false;
         if (last) { this.hud.hitmark(crit); sfx.hit(); this.hud.damage(V3(last.pos.x, (isUnit(last) ? UNIT[last.kind].headY : last.h * .6) + .4, last.pos.z), String(Math.round(total)), hits >= 7 ? 'crit' : ''); }
       } else {
-        this.recoil = Math.min(1, this.recoil + .35); this.pitch = Math.min(1.45, this.pitch + .006 * (1 - this.ads * .5)); this.shake = Math.min(1, this.shake + .1); sfx.shot();
+        this.recoil = Math.min(1, this.recoil + .35); { const k = .007 * (1 - this.ads * .5); this.pitch = Math.min(1.45, this.pitch + k); this.kick += k * .8; this.yaw += R(-.0025, .0025); } this.shake = Math.min(1, this.shake + .1); sfx.shot();
         const sp = .011 * (1 - this.ads * .75) * (me.moving ? 1.6 : 1), d = V3().copy(dir); d.x += R(-sp, sp); d.y += R(-sp, sp); d.z += R(-sp, sp); d.normalize();
         let hit = this.ray(eye, d, 150, -1, me); if (hit && ((hit.unit && hit.unit.team === 0) || (hit.b && hit.b.team === 0 && hit.dist < 3))) hit = this.ray(eye, d, 150, 1, me);
         const dist = hit ? hit.dist : 150, end = V3().copy(eye).addScaledVector(d, dist); this.tracer(muzzle, end);
-        if (hit?.unit && hit.unit.team === 1) { const sh = hit.unit.shield > 0; this.damage(hit.unit, (hit.head ? 15 : 7) * mul, me, !!hit.head); sfx.hit(); this.hud.hitmark(!!hit.head); this.puff(end, 2, .35, sh ? M.cyan : M.teal, .6); this.debris(end, 1, .07, M.crys, 3); }
+        if (hit?.unit && hit.unit.team === 1) { const sh = hit.unit.shield > 0; this.damage(hit.unit, (hit.head ? 15 : 7) * mul, me, !!hit.head); hit.head ? sfx.crit() : sfx.hit(); this.hud.hitmark(!!hit.head); this.puff(end, 2, .35, sh ? M.cyan : M.teal, .6); this.debris(end, 1, .07, M.crys, 3); }
         else if (hit?.b && hit.b.team === 1) { this.damage(hit.b, 7 * mul, me); this.hud.hitmark(false); this.puff(end, 1, .5, M.teal, .6); this.debris(end, 2, .1, M.indigo, 4); }
         else this.impact(eye, d, hit, end);
         const f = this.bits.find(x => x.t <= 0); if (f) { f.m.material = M.spark; f.m.position.copy(muzzle).addScaledVector(dir, -.5); f.v.set(-Math.cos(this.yaw) * 2.5 + R(-.5, .5), 2.5, Math.sin(this.yaw) * 2.5 + R(-.5, .5)); f.m.scale.set(.03, .03, .07); f.spin = 20; f.t = .8; f.m.visible = true; }
@@ -562,7 +568,7 @@ export class Game {
   // ------------------------------------------------------------ render
   render(dt: number) {
     const me = this.me, cam = this.cam, pipe = this.pipe, vm = this.vm;
-    cam.aspect = pipe.w / pipe.h;
+    cam.aspect = pipe.w / pipe.h; pipe.setDusk(Math.min(1, Math.max(0, (this.time - 120) / 780)));
     const build = this.phase !== 'menu' && this.tool === 2 && me?.kind === 'rigger' && me.alive && !this.tab && this.staticT <= 0;
     for (const k of BUILDABLE) { const on = build && BUILDABLE[this.buildSel] === k; this.ghost[k].visible = on && this.placeOK; this.ghostBad[k].visible = on && !this.placeOK; if (on) { const g = this.placeOK ? this.ghost[k] : this.ghostBad[k]; g.position.copy(this.placePos); g.rotation.y = this.buildRot ? Math.PI / 2 : 0; } }
     holoOK.opacity = .3 + Math.sin(pipe.time * 3) * .07; warnMat.opacity = .6 + Math.sin(pipe.time * 30) * .3;
@@ -571,6 +577,7 @@ export class Game {
     for (const k in vm) vm[k].visible = false;
     if (this.phase === 'menu') {
       const a = pipe.time * .07; cam.fov = 46; cam.position.set(Math.sin(a) * 36 + 4, 8 + Math.sin(a * 2) * 2, Math.cos(a) * 36); cam.lookAt(2, 5.5, 0); if (me) this.bodyLayer(me, false);
+      this.menuPos.copy(cam.position); this.menuQuat.copy(cam.quaternion);
       cam.updateProjectionMatrix(); cam.updateMatrixWorld(); pipe.draw(this.scene, cam, V3(0, 0, 0), 120); return;
     }
     if (this.tab && me) {
@@ -583,7 +590,9 @@ export class Game {
       const sprint = this.keys.has('ShiftLeft') && me.moving && this.ads < .3, fovT = (sprint ? 75 : 68) - this.ads * (me.kind === 'linesman' ? 24 : 6); cam.fov += (fovT - cam.fov) * Math.min(1, dt * 10);
       const bobY = me.moving ? Math.sin(this.bob) * .035 * (1 - this.ads * .7) : 0, sh = this.shake * .03;
       cam.position.set(me.pos.x + R(-sh, sh), UNIT[me.kind].eye + bobY + R(-sh, sh), me.pos.z + R(-sh, sh)); cam.rotation.set(this.pitch + this.recoil * .012, this.yaw + Math.PI, Math.sin(this.bob * .5) * (me.moving ? .004 : 0) - this.swayX * .6, 'YXZ');
-      if (me.alive && this.staticT <= 0) {
+      const intro = this.introT > 0 ? 1 - this.introT / 1.8 : 1;
+      if (intro < 1) { const k = intro * intro * (3 - 2 * intro), q = cam.quaternion.clone(); TMP2.copy(cam.position); cam.position.lerpVectors(this.menuPos, TMP2, k); cam.quaternion.slerpQuaternions(this.menuQuat, q, k); cam.fov = 46 + (68 - 46) * k; if (me.alive) this.bodyLayer(me, k > .9); }
+      if (me.alive && this.staticT <= 0 && intro > .92) {
         const pose = (g: THREE.Group, k: number, kick: number, dip: number) => {
           const a = g.userData.rest, b = g.userData.ads || a, mv = me.moving ? 1 - k * .8 : 0; g.visible = true;
           g.position.set(a[0] + (b[0] - a[0]) * k + Math.cos(this.bob) * .008 * mv + this.swayX, a[1] + (b[1] - a[1]) * k + Math.sin(this.bob * 2) * .006 * mv - dip + this.swayY, a[2] + (b[2] - a[2]) * k + kick);

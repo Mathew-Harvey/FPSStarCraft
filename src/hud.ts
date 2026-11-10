@@ -46,6 +46,8 @@ export class Hud {
   }
   hurt(ang: number | null) { this.hurtA = Math.min(1, this.hurtA + .55); if (ang !== null) { this.dirA = 1; $('hurtDir').style.transform = `rotate(${(-ang).toFixed(2)}rad)`; } }
   hitmark(crit: boolean) { this.hitT = .14; this.cls('hitm', crit ? 'hitm crit' : 'hitm'); }
+  streak(text: string) { const e = $('streak'); e.textContent = text; e.hidden = false; e.style.animation = 'none'; void e.offsetWidth; e.style.animation = ''; clearTimeout(this.streakTimer); this.streakTimer = setTimeout(() => { e.hidden = true; }, 1300) as any; }
+  private streakTimer = 0;
   ping(p: THREE.Vector3) { this.pingPos.copy(p); this.pingT = 3; }
   titleCard(kind: string, name: string, quip: string) { const e = $('tcard'); if (!name) { e.hidden = true; return; } $('tcName').textContent = name; $('tcQuip').textContent = quip; const src = this.portraits[kind]; if (src) ($('tcImg') as HTMLImageElement).src = src; e.hidden = false; }
   showEnd(g: Game) {

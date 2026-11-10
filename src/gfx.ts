@@ -106,6 +106,9 @@ function makeTextures() {
 
 // ---------------------------------------------------------------- toon shader
 const FOG = new THREE.Color('#f3c9a0');
+/** 0 is midday, 1 is full sunset. Shared by the sky and the final grade. */
+export const DUSK = { value: 0 };
+const DUSKFOG = new THREE.Color('#f09a84');
 export const NOISE = `float hash(vec2 p){return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453);}
 float vnoise(vec2 p){vec2 i=floor(p),f=fract(p);f=f*f*(3.-2.*f);return mix(mix(hash(i),hash(i+vec2(1,0)),f.x),mix(hash(i+vec2(0,1)),hash(i+vec2(1,1)),f.x),f.y);}`;
 const TOON_VS = `uniform vec3 uL; uniform vec2 uRep; varying vec3 vN,vL,vP,vW,vWn; varying vec2 vUv;
@@ -118,8 +121,11 @@ float shadowAt(vec3 wp){
   vec4 sc=uShadowMat*vec4(wp,1.); vec3 p=sc.xyz/sc.w*.5+.5;
   if(p.x<0.||p.x>1.||p.y<0.||p.y>1.||p.z>1.) return 1.;
   float s=0.; float b=.0016;
-  for(int i=0;i<4;i++){ vec2 o=vec2(i==0||i==3?-.7:.7, i<2?-.7:.7)*uShadowTex; s+=step(p.z-b,texture2D(uShadow,p.xy+o).x); }
-  return s*.25;
+  vec2 uv=p.xy/uShadowTex-.5, f=fract(uv), c=(floor(uv)+.5)*uShadowTex; float z=p.z-b, t=uShadowTex;
+  float r0=mix(step(z,texture2D(uShadow,c+vec2(-t,-t)).x),step(z,texture2D(uShadow,c+vec2(0.,-t)).x),f.x)+mix(step(z,texture2D(uShadow,c+vec2(0.,-t)).x),step(z,texture2D(uShadow,c+vec2(t,-t)).x),f.x);
+  float r1=mix(step(z,texture2D(uShadow,c+vec2(-t,0.)).x),step(z,texture2D(uShadow,c).x),f.x)+mix(step(z,texture2D(uShadow,c).x),step(z,texture2D(uShadow,c+vec2(t,0.)).x),f.x);
+  float r2=mix(step(z,texture2D(uShadow,c+vec2(-t,t)).x),step(z,texture2D(uShadow,c+vec2(0.,t)).x),f.x)+mix(step(z,texture2D(uShadow,c+vec2(0.,t)).x),step(z,texture2D(uShadow,c+vec2(t,t)).x),f.x);
+  return (mix(r0,r1,f.y)+mix(r1,r2,f.y))*.25;
 }
 void main(){
   vec3 n=normalize(vN); vec3 wn=normalize(vWn); if(!gl_FrontFacing){ n=-n; wn=-wn; }
@@ -195,12 +201,12 @@ export function setLayer(o: THREE.Object3D, layer: number) { o.traverse(x => x.l
 // ---------------------------------------------------------------- sky
 export function makeSky() {
   const mat = new THREE.ShaderMaterial({
-    uniforms: { uL: { value: LIGHT }, uPx: SHARED.uPx }, side: THREE.BackSide, depthWrite: false,
+    uniforms: { uL: { value: LIGHT }, uPx: SHARED.uPx, uDusk: DUSK }, side: THREE.BackSide, depthWrite: false,
     vertexShader: `varying vec3 vD; void main(){ vD=position; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.); }`,
-    fragmentShader: `precision highp float; varying vec3 vD; uniform vec3 uL; uniform float uPx; ${NOISE}
+    fragmentShader: `precision highp float; varying vec3 vD; uniform vec3 uL; uniform float uPx; uniform float uDusk; ${NOISE}
     void main(){ vec3 d=normalize(vD); float h=d.y;
       float t=h+(vnoise(d.xz*5.+d.y*3.)-.5)*.05; t=floor(t*14.)/14.;
-      vec3 hor=vec3(1.,.86,.58), mid=vec3(.36,.78,.76), top=vec3(.07,.33,.50);
+      vec3 hor=mix(vec3(1.,.86,.58),vec3(1.,.58,.3),uDusk), mid=mix(vec3(.36,.78,.76),vec3(.86,.42,.5),uDusk), top=mix(vec3(.07,.33,.50),vec3(.15,.09,.34),uDusk);
       vec3 col=t<.14?mix(hor,mid,clamp(t/.14,0.,1.)):mix(mid,top,clamp((t-.14)/.55,0.,1.));
       vec2 p=vec2(d.x*4.+d.z*2.7,h*24.); float c=vnoise(p)*.65+vnoise(p*2.3+7.)*.35;
       float band=smoothstep(.03,.1,h)*(1.-smoothstep(.34,.5,h));
@@ -208,6 +214,7 @@ export function makeSky() {
       float sd=dot(d,normalize(uL)); col=mix(col,vec3(1.,.95,.7),smoothstep(.9965,.9972,sd)); col=mix(col,vec3(1.,.9,.6),smoothstep(.985,.9855,sd)*.35);
       vec2 q=gl_FragCoord.xy/uPx/8.; q.x+=mod(floor(q.y),2.)*.5; float dt=length(fract(q)-.5);
       col=mix(col,col*.84,step(dt,.36*(1.-clamp(h*3.2,0.,1.))));
+      vec2 sg=floor(vec2(atan(d.z,d.x)*90.,h*150.)); col=mix(col,vec3(1.,.95,.85),step(.992,hash(sg))*smoothstep(.5,.9,uDusk)*smoothstep(.25,.5,h));
       if(h<0.) col=hor;
       gl_FragColor=vec4(col,1.); }`,
   });
@@ -222,7 +229,7 @@ export function makeSky() {
 }
 
 // ---------------------------------------------------------------- pipeline
-const POST_FS = `precision highp float; varying vec2 vUv; uniform sampler2D tC,tD,tN; uniform vec2 uRes; uniform float uNear,uFar,uOrtho,uPx,uSat,uStatic,uTime,uFlash; ${NOISE}
+const POST_FS = `precision highp float; varying vec2 vUv; uniform sampler2D tC,tD,tN; uniform vec2 uRes; uniform float uNear,uFar,uOrtho,uPx,uSat,uStatic,uTime,uFlash,uDusk; ${NOISE}
 float lin(vec2 uv){ float d=texture2D(tD,uv).x; if(uOrtho>.5) return uNear+d*(uFar-uNear); float z=d*2.-1.; return 2.*uNear*uFar/(uFar+uNear-z*(uFar-uNear)); }
 vec3 nrm(vec2 uv){ return texture2D(tN,uv).xyz*2.-1.; }
 float edgeAt(vec2 u, vec2 sp){
@@ -245,6 +252,7 @@ void main(){
   float edge=(edgeAt(u+h,sp)+edgeAt(u-h,sp)+edgeAt(u+h*vec2(1.,-1.),sp)+edgeAt(u+h*vec2(-1.,1.),sp))*.25;
   vec3 col=texture2D(tC,vUv).rgb;
   col=mix(col,vec3(.055,.05,.08),edge*.97);
+  col=mix(col,col*vec3(1.1,.8,.84)+vec3(.03,0.,.07),uDusk*.75);
   col=mix(vec3(dot(col,vec3(.3,.59,.11))),col,1.18*uSat);
   col*=.95+.08*vnoise(sp*.5);
   float v=smoothstep(1.3,.5,length((vUv-.5)*vec2(1.25,1.))); col*=mix(.7,1.,v);
@@ -275,7 +283,7 @@ export class Pipeline {
     SHARED.uShadow.value = this.rtS.depthTexture; SHARED.uShadowTex.value = 1 / S;
     this.rtC = new THREE.WebGLRenderTarget(4, 4); this.rtN = new THREE.WebGLRenderTarget(4, 4);
     this.postMat = new THREE.ShaderMaterial({
-      uniforms: { tC: { value: null }, tD: { value: null }, tN: { value: null }, uRes: { value: new THREE.Vector2(1, 1) }, uNear: { value: .06 }, uFar: { value: 4000 }, uOrtho: { value: 0 }, uPx: SHARED.uPx, uSat: { value: 1 }, uFlash: { value: 0 }, uStatic: { value: 0 }, uTime: { value: 0 } },
+      uniforms: { tC: { value: null }, tD: { value: null }, tN: { value: null }, uRes: { value: new THREE.Vector2(1, 1) }, uNear: { value: .06 }, uFar: { value: 4000 }, uOrtho: { value: 0 }, uPx: SHARED.uPx, uSat: { value: 1 }, uFlash: { value: 0 }, uStatic: { value: 0 }, uTime: { value: 0 }, uDusk: DUSK },
       vertexShader: `varying vec2 vUv; void main(){ vUv=uv; gl_Position=vec4(position.xy,0.,1.); }`, fragmentShader: POST_FS, depthTest: false, depthWrite: false,
     });
     this.postScene.add(new THREE.Mesh(new THREE.PlaneGeometry(2, 2), this.postMat));
@@ -293,6 +301,8 @@ export class Pipeline {
     const u = this.postMat.uniforms; u.tC.value = this.rtC.texture; u.tD.value = this.rtC.depthTexture; u.tN.value = this.rtN.texture; u.uRes.value.set(w, h);
   }
 
+  /** Moves the sun toward the horizon and warms the grade. 0 is midday, 1 is sunset. */
+  setDusk(k: number) { if (Math.abs(k - DUSK.value) < .002 && k !== 0) return; DUSK.value = k; LIGHT.set(-.55 - k * .2, .62 - k * .22, .56).normalize(); FOG.set('#f3c9a0').lerp(DUSKFOG, k); }
   /** Renders the scene with shadows centred on `focus`, covering `span` metres. */
   draw(scene: THREE.Scene, cam: THREE.PerspectiveCamera | THREE.OrthographicCamera, focus: THREE.Vector3, span: number) {
     const r = this.renderer, sun = this.sun;

@@ -48,7 +48,7 @@ export interface Difficulty { name: string; enemy: number; raid: number; blurb: 
 export const DIFFS: Difficulty[] = [
   { name: 'Day shift', enemy: .75, raid: 1.25, blurb: 'Smaller raids, more time' },
   { name: 'Night shift', enemy: 1, raid: 1, blurb: 'The intended fight' },
-  { name: 'Double shift', enemy: 1.3, raid: .85, blurb: 'Bigger raids, sooner' },
+  { name: 'Double shift', enemy: 1.45, raid: .78, blurb: 'Bigger raids, sooner' },
 ];
 
 export const OUTPOST = { x: 124, z: 13 };

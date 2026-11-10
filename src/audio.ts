@@ -12,10 +12,15 @@ export function initAudio() {
   if (ctx) { ctx.resume(); return; }
   try {
     ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
+    noiseBuf = ctx.createBuffer(1, ctx.sampleRate * 2, ctx.sampleRate);
+    const d = noiseBuf.getChannelData(0); for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
     master = ctx.createGain(); master.gain.value = volume; const comp = ctx.createDynamicsCompressor(); comp.threshold.value = -14; comp.ratio.value = 5; master.connect(comp); comp.connect(ctx.destination);
     music = ctx.createGain(); music.gain.value = .0001; music.connect(master); setInterval(tick, 90);
-    noiseBuf = ctx.createBuffer(1, ctx.sampleRate, ctx.sampleRate);
-    const d = noiseBuf.getChannelData(0); for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+    // a bed of desert wind that never quite repeats
+    const w = ctx.createBufferSource(), wf = ctx.createBiquadFilter(), wg = ctx.createGain(), lfo = ctx.createOscillator(), lg = ctx.createGain();
+    w.buffer = noiseBuf; w.loop = true; wf.type = 'bandpass'; wf.frequency.value = 420; wf.Q.value = .6; wg.gain.value = .05; lfo.frequency.value = .13; lg.gain.value = 190;
+    lfo.connect(lg); lg.connect(wf.frequency); w.connect(wf); wf.connect(wg); wg.connect(master); w.start(); lfo.start();
+
   } catch (e) { ctx = null; }
 }
 function env(g: GainNode, t: number, peak: number, dur: number) { peak = Math.max(peak, .0002); g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(peak, t + .005); g.gain.exponentialRampToValueAtTime(0.0001, t + dur); }
@@ -36,6 +41,9 @@ export const sfx = {
   hit: (vol = 1) => { noise(.06, 900, .35 * vol, 'bandpass'); },
   slash: (vol = 1) => { noise(.18, 3200, .3 * vol, 'highpass'); tone(900, 300, .16, .12 * vol, 'sine'); },
   ko: (vol = 1, veyl = true) => { if (veyl) { tone(900, 120, .35, .22 * vol, 'sine'); tone(1350, 200, .3, .1 * vol, 'triangle'); noise(.25, 2600, .2 * vol, 'highpass'); } else { tone(300, 60, .3, .3 * vol, 'triangle'); noise(.25, 600, .3 * vol); } },
+  step: (heavy = false) => { noise(.07, heavy ? 260 : 420, heavy ? .16 : .1); },
+  crit: () => { tone(1320, 1760, .09, .16, 'triangle'); },
+  streak: (n: number) => { [0, 4, 7, 12].slice(0, Math.min(4, n)).forEach((st, i) => setTimeout(() => tone(440 * Math.pow(2, st / 12), 440 * Math.pow(2, st / 12), .12, .2, 'square'), i * 70)); },
   boom: (vol = 1) => { noise(.7, 420, .9 * vol); tone(120, 28, .55, .6 * vol, 'sine'); noise(.12, 3000, .3 * vol, 'highpass'); },
   blast: (vol = 1) => { noise(.26, 1300, .75 * vol); tone(150, 40, .2, .45 * vol, 'sawtooth'); },
   clang: () => { tone(620, 540, .22, .22, 'square'); tone(931, 860, .3, .14, 'triangle'); noise(.05, 4000, .3, 'highpass'); },
@@ -90,4 +98,19 @@ function tick() {
     }
     step++; nextT += spb;
   }
+}
+
+// ---------------------------------------------------------------- voices
+const VOICE: Record<string, [number, OscillatorType]> = { Quartermaster: [150, 'sawtooth'], Lookout: [290, 'square'], Alpha: [200, 'square'], 'Alpha Lead': [200, 'square'], Linesman: [230, 'square'], Breacher: [115, 'sawtooth'], Rigger: [330, 'triangle'] };
+let voiceT = 0;
+/** A few syllables of gibberish in the speaker's register, so lines in the feed feel spoken. */
+export function babble(who: string, len: number) {
+  const v = VOICE[who]; if (!ctx || !master || !v) return; const now = ctx.currentTime; if (now < voiceT) return;
+  const n = Math.max(3, Math.min(9, Math.round(len / 9))); let t = now + .02;
+  for (let i = 0; i < n; i++) {
+    const o = ctx.createOscillator(), g = ctx.createGain(), f = ctx.createBiquadFilter(), d = .05 + Math.random() * .05, hz = v[0] * (1 + (Math.random() - .4) * .5);
+    o.type = v[1]; o.frequency.setValueAtTime(hz, t); o.frequency.linearRampToValueAtTime(hz * (.85 + Math.random() * .3), t + d); f.type = 'bandpass'; f.frequency.value = 700 + Math.random() * 900; f.Q.value = 2;
+    g.gain.setValueAtTime(.0001, t); g.gain.exponentialRampToValueAtTime(.09, t + .012); g.gain.exponentialRampToValueAtTime(.0001, t + d); o.connect(f); f.connect(g); g.connect(master); o.start(t); o.stop(t + d + .03); t += d + .015 + (Math.random() < .2 ? .06 : 0);
+  }
+  voiceT = t + .25;
 }

@@ -49,7 +49,7 @@ window.addEventListener('resize', resize);
 const locked = () => document.pointerLockElement === canvas;
 const live = () => game.phase === 'play' || game.phase === 'card';
 addEventListener('keydown', e => {
-  if (live()) { if (e.code !== 'Escape' && !e.code.startsWith('F') || e.code === 'KeyF') e.preventDefault(); if (!e.repeat) game.pressed.add(e.code); game.keys.add(e.code); }
+  if (live()) { if (!e.ctrlKey && !e.metaKey && e.code !== 'Escape' && !/^F\d/.test(e.code)) e.preventDefault(); if (!e.repeat) game.pressed.add(e.code); game.keys.add(e.code); }
   if (e.code === 'Escape' && freeMouse) { if (game.phase === 'play') pause(); else if (game.phase === 'paused') resume(); }
 });
 addEventListener('keyup', e => game.keys.delete(e.code));
@@ -66,7 +66,7 @@ document.addEventListener('pointerlockerror', () => { freeMouse = true; });
 document.addEventListener('pointerlockchange', () => { if (!locked() && live() && !freeMouse) pause(); });
 
 function fresh() { hud.reset(); game = new Game(pipe, hud, DIFFS[diffI]); game.sens = sens; (window as any).__ore.game = game; }
-function start() { initAudio(); setVolume(vol); if (game.diff !== DIFFS[diffI]) fresh(); $('menu').hidden = true; $('pause').hidden = true; $('end').hidden = true; hud.show(true); game.phase = 'play'; lock(); }
+function start() { initAudio(); setVolume(vol); if (game.diff !== DIFFS[diffI]) fresh(); $('menu').hidden = true; $('pause').hidden = true; $('end').hidden = true; hud.show(true); game.phase = 'play'; game.introT = 1.8; lock(); }
 function pause() { if (game.phase !== 'play' && game.phase !== 'card') return; game.phase = 'paused'; game.keys.clear(); game.lmb = game.rmb = false; $('pause').hidden = false; }
 function resume() { if (game.phase !== 'paused') return; initAudio(); $('pause').hidden = true; game.phase = 'play'; lock(); }
 $('start').addEventListener('click', start);

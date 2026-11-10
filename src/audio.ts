@@ -6,6 +6,8 @@ let music: GainNode | null = null, volume = .5, mood = 0, moodNow = 0, step = 0,
 export function setVolume(v: number) { volume = v; if (master && ctx) master.gain.setTargetAtTime(v, ctx.currentTime, .05); }
 /** 0 is silence, .25 is calm base music, 1 is a full fight. */
 export function setMood(x: number) { mood = x; }
+let musicOn = true;
+export function setMusic(on: boolean) { musicOn = on; }
 let drillOsc: OscillatorNode | null = null, drillGain: GainNode | null = null;
 
 export function initAudio() {
@@ -85,7 +87,7 @@ function drum(t: number, freq: number, dur: number, peak: number, type: BiquadFi
 }
 function tick() {
   if (!ctx || !music || ctx.state !== 'running') return; const now = ctx.currentTime;
-  moodNow += (mood - moodNow) * .12; music.gain.setTargetAtTime(mood > .05 ? .5 : .0001, now, .4);
+  moodNow += (mood - moodNow) * .12; music.gain.setTargetAtTime(mood > .05 && musicOn ? .5 : .0001, now, .4);
   if (nextT < now) nextT = now + .05;
   while (nextT < now + .25) {
     const hot = moodNow > .55, spb = 60 / (hot ? 118 : 96) / 4, i = step % 16, bar = Math.floor(step / 16), root = ROOTS[bar % 4] * 1, t = nextT, semi = (n: number) => Math.pow(2, n / 12);

@@ -31,6 +31,7 @@
       <div class="count" id="count" hidden><div class="n out" id="countN"></div><div class="l c out" id="countL"></div></div>
       <div class="raid" id="raid" hidden></div>
       <div class="streak out" id="streak" hidden></div>
+      <div class="edge c out" id="edgeNote" hidden>Cursor at the screen edge turns you</div>
       <div class="objs" id="objs" hidden></div>
       <div class="boss" id="boss" hidden><div class="nm d out">Warden</div><div class="bar"><i id="bossHp"></i></div><div class="bar sh"><i id="bossSh"></i></div></div>
     </div>
@@ -60,7 +61,7 @@
       </div>
       <div class="keys">
         <h3>Smash the three Choir Stones down the east road before the Veyl flatten your Headframe</h3>
-        <div><kbd>WASD</kbd>Move, Shift to sprint</div>
+        <div><kbd>WASD</kbd>Move, Shift to sprint, Space to dash</div>
         <div><kbd>Click</kbd>Drill ore, weld, or shoot</div>
         <div><kbd>RMB</kbd>Aim the rifle, or raise the Breacher's shield</div>
         <div><kbd>C</kbd>Linesman grenade</div>
@@ -75,6 +76,7 @@
         <div><kbd>G</kbd>Quartermaster builds for you, on or off</div>
         <div><kbd>Esc</kbd>Pause</div>
       </div>
+      <p class="small" id="freeNote" hidden>Your browser would not capture the mouse here, so move the cursor to the left or right edge of the screen to turn. Opening the game in its own tab usually fixes it.</p>
       <p class="small">Needs a keyboard and mouse. The Quartermaster runs your economy by default, so you can mine, fight or wander and the base keeps growing.</p>
     </div>
   </div>
@@ -86,8 +88,10 @@
       <div class="opts">
         <label>Mouse speed <input type="range" id="sens" min="0.3" max="2.5" step="0.1" value="1"></label>
         <label>Volume <input type="range" id="vol" min="0" max="1" step="0.05" value="0.5"></label>
+        <label><input type="checkbox" id="mus" checked> Music</label>
+        <button type="button" class="mini-btn" id="full">Fullscreen</button>
       </div>
-      <p class="small">Tab jump · F jump to target · Q last body · RMB aim or shield · C grenade · 2 build · E and T train or upgrade · Z yes · C other route · X hold · V follow · Middle click send squad · G Quartermaster</p>
+      <p class="small">Space dash · Tab jump · F jump to target · Q last body · RMB aim or shield · C grenade · 2 build · E and T train or upgrade · Z yes · C other route · X hold · V follow · Middle click send squad · G Quartermaster</p>
     </div>
   </div>
 

@@ -42,7 +42,7 @@ One skirmish as the Ironhold Charter against a Veyl outpost. Smash the three Cho
 
 | Key | Action |
 | --- | --- |
-| `WASD`, `Shift` | Move, sprint |
+| `WASD`, `Shift`, `Space` | Move, sprint, dash |
 | Click | Drill, weld, shoot |
 | Right-click | Aim the rifle, raise the shield |
 | `C` | Grenade (Linesman) |

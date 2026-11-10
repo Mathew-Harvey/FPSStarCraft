@@ -203,6 +203,10 @@ body{background:var(--bg);color:var(--paper);font-family:var(--cond);font-size:1
 .diff button small{display:block;font-family:var(--cond);font-weight:700;font-size:13px;letter-spacing:.1em;color:var(--muted)}
 .diff button.on{background:var(--paper);color:var(--ink)}.diff button.on small{color:#5b430a}
 .diff button:focus-visible{outline:4px solid var(--teal);outline-offset:3px}
+.mini-btn{font-family:var(--display);font-size:17px;text-transform:uppercase;color:var(--paper);background:rgba(14,13,20,.86);border:3px solid var(--ink);padding:3px 14px 5px;cursor:pointer;transform:skewX(-8deg);box-shadow:3px 3px 0 var(--ink)}
+.mini-btn:focus-visible{outline:4px solid var(--teal);outline-offset:3px}
+.opts input[type=checkbox]{width:20px;height:20px}
+.edge{left:50%;bottom:74px;transform:translateX(-50%);font-size:14px;color:var(--muted);white-space:nowrap}
 .opts{display:flex;flex-wrap:wrap;gap:12px 30px;font-size:18px;font-weight:700;letter-spacing:.08em;text-transform:uppercase}
 .opts label{display:flex;align-items:center;gap:12px}
 .opts input{accent-color:var(--yel);width:200px;max-width:50vw}

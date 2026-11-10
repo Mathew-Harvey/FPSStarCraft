@@ -70,7 +70,7 @@ export class Hud {
     const used = g.supplyUsed(), cap = g.supplyCap(); this.set('sup', `${used}/${cap}`); this.cls('resSup', used >= cap ? 'low' : '');
     const m = Math.floor(g.time / 60), s = Math.floor(g.time % 60); this.set('clock', `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`);
     const D = g.dir, pb = D.playbook, ph = pb.idx; this.set('play', `<b>${pb.name}</b>` + pb.steps.map((n, i) => `<span class="${i === ph ? 'on' : i < ph ? 'dn' : ''}">${n}</span>`).join(''), true);
-    const st = g.stones().length; this.set('goal', `Smash the Choir Stones · <em>${st} left</em>`, true);
+    const st = g.stones().length, sq = g.soldiers().length; this.set('goal', `Smash the Choir Stones · <em>${st} left</em>` + (sq ? ` · Squad ${sq}` : ''), true);
     this.set('qm', `<span class="k" style="font-size:13px">G</span> Quartermaster <b>${D.auto ? 'Auto' : 'Off'}</b>`, true); this.cls('qm', 'qm c out' + (D.auto ? '' : ' off'));
     // who
     this.set('whoName', UNIT[me.kind].name); this.img('whoImg', me.kind); this.set('whoHp', String(Math.max(0, Math.ceil(me.hp))));
@@ -143,6 +143,7 @@ export class Hud {
     c.lineWidth = 1.5; c.strokeStyle = '#0e0d14';
     for (const b of g.buildings) { if (!b.alive) continue; const w = Math.max(5, b.hx * 2 * k), h = Math.max(5, b.hz * 2 * k); c.fillStyle = b.kind === 'reedgate' ? '#c58bff' : b.team ? '#35e0c8' : b.built ? '#ffc21a' : '#7ef0ff'; c.fillRect(X(b.pos.x) - w / 2, Z(b.pos.z) - h / 2, w, h); c.strokeRect(X(b.pos.x) - w / 2, Z(b.pos.z) - h / 2, w, h); }
     for (const u of g.units) { if (!u.alive || u === g.me) continue; c.fillStyle = u.team ? '#ff4f9a' : u.kind === 'rigger' ? '#8be04e' : '#f4ead2'; c.beginPath(); c.arc(X(u.pos.x), Z(u.pos.z), u.kind === 'warden' ? 5 : u.team ? 2.6 : 2.2, 0, 7); c.fill(); }
+    const D = g.dir; if ((D.raidIn < 15 || D.raidLive) && g.stones().length && Math.floor(performance.now() / 300) % 2) { c.fillStyle = '#ff4b3a'; c.strokeStyle = '#0e0d14'; c.lineWidth = 2; c.beginPath(); if (D.raidDir === 'north') { c.moveTo(X(40), Z(-42)); c.lineTo(X(52), Z(-52)); c.lineTo(X(50), Z(-36)); } else { c.moveTo(X(60), Z(14)); c.lineTo(X(72), Z(7)); c.lineTo(X(72), Z(21)); } c.closePath(); c.fill(); c.stroke(); }
     if (this.pingT > 0) { c.strokeStyle = '#ffc21a'; c.lineWidth = 2; c.beginPath(); c.arc(X(this.pingPos.x), Z(this.pingPos.z), 5, 0, 7); c.stroke(); }
     const me = g.me; if (me) { c.save(); c.translate(X(me.pos.x), Z(me.pos.z)); c.rotate(-g.yaw); c.fillStyle = '#fff'; c.strokeStyle = '#0e0d14'; c.lineWidth = 1.5; c.beginPath(); c.moveTo(0, 8); c.lineTo(5, -5); c.lineTo(0, -2); c.lineTo(-5, -5); c.closePath(); c.fill(); c.stroke(); c.restore(); }
   }

@@ -4,7 +4,7 @@ import { Pipeline, V3, makeSky } from './gfx';
 import * as MD from './models';
 import { Game } from './game';
 import { Hud } from './hud';
-import { initAudio, setVolume } from './audio';
+import { initAudio, setVolume, setMusic } from './audio';
 import { UNIT, DIFFS, Kind } from './data';
 
 THREE.ColorManagement.enabled = false;
@@ -39,9 +39,9 @@ function portraits() {
 
 portraits();
 pipe.w = 0; resize();
-let diffI = 1, sens = 1, vol = .5;
-try { const o = JSON.parse(localStorage.getItem('ore-else') || '{}'); if (o.d >= 0 && o.d < 3) diffI = o.d; if (o.s > 0) sens = o.s; if (o.v >= 0) vol = o.v; } catch (e) { /* storage is optional */ }
-const save = () => { try { localStorage.setItem('ore-else', JSON.stringify({ d: diffI, s: sens, v: vol })); } catch (e) { /* storage is optional */ } };
+let diffI = 1, sens = 1, vol = .5, mus = true, curX = .5, moved = false;
+try { const o = JSON.parse(localStorage.getItem('ore-else') || '{}'); if (o.d >= 0 && o.d < 3) diffI = o.d; if (o.s > 0) sens = o.s; if (o.v >= 0) vol = o.v; if (o.m === false) mus = false; } catch (e) { /* storage is optional */ }
+const save = () => { try { localStorage.setItem('ore-else', JSON.stringify({ d: diffI, s: sens, v: vol, m: mus })); } catch (e) { /* storage is optional */ } };
 let game = new Game(pipe, hud, DIFFS[diffI]); game.sens = sens;
 window.addEventListener('resize', resize);
 
@@ -56,7 +56,7 @@ addEventListener('keyup', e => game.keys.delete(e.code));
 addEventListener('blur', () => { game.keys.clear(); game.lmb = game.rmb = false; });
 canvas.addEventListener('mousedown', e => { if (!live()) return; e.preventDefault(); game.pressed.add('Mouse' + e.button); if (e.button === 0) game.lmb = true; if (e.button === 2) game.rmb = true; if (!locked() && !freeMouse) lock(); });
 addEventListener('mouseup', e => { if (e.button === 0) game.lmb = false; if (e.button === 2) game.rmb = false; });
-addEventListener('mousemove', e => { if (live() && (locked() || freeMouse)) { game.mdx += e.movementX || 0; game.mdy += e.movementY || 0; } });
+addEventListener('mousemove', e => { curX = e.clientX / innerWidth; if (e.movementX || e.movementY) moved = true; if (live() && (locked() || freeMouse)) { game.mdx += e.movementX || 0; game.mdy += e.movementY || 0; } });
 addEventListener('wheel', e => { if (live()) { game.wheel = Math.sign(e.deltaY); e.preventDefault(); } }, { passive: false });
 addEventListener('contextmenu', e => e.preventDefault());
 canvas.addEventListener('auxclick', e => e.preventDefault());
@@ -66,7 +66,7 @@ document.addEventListener('pointerlockerror', () => { freeMouse = true; });
 document.addEventListener('pointerlockchange', () => { if (!locked() && live() && !freeMouse) pause(); });
 
 function fresh() { hud.reset(); game = new Game(pipe, hud, DIFFS[diffI]); game.sens = sens; (window as any).__ore.game = game; }
-function start() { initAudio(); setVolume(vol); if (game.diff !== DIFFS[diffI]) fresh(); $('menu').hidden = true; $('pause').hidden = true; $('end').hidden = true; hud.show(true); game.phase = 'play'; game.introT = 1.8; lock(); }
+function start() { initAudio(); setVolume(vol); setMusic(mus); if (game.diff !== DIFFS[diffI]) fresh(); $('menu').hidden = true; $('pause').hidden = true; $('end').hidden = true; hud.show(true); game.phase = 'play'; game.introT = 1.8; lock(); }
 function pause() { if (game.phase !== 'play' && game.phase !== 'card') return; game.phase = 'paused'; game.keys.clear(); game.lmb = game.rmb = false; $('pause').hidden = false; }
 function resume() { if (game.phase !== 'paused') return; initAudio(); $('pause').hidden = true; game.phase = 'play'; lock(); }
 $('start').addEventListener('click', start);
@@ -78,11 +78,16 @@ diffBtns.forEach((b, i) => b.addEventListener('click', () => { diffI = i; showDi
 const sensEl = $('sens') as HTMLInputElement, volEl = $('vol') as HTMLInputElement; sensEl.value = String(sens); volEl.value = String(vol);
 sensEl.addEventListener('input', () => { sens = +sensEl.value; game.sens = sens; save(); });
 volEl.addEventListener('input', () => { vol = +volEl.value; setVolume(vol); save(); });
+const musEl = $('mus') as HTMLInputElement; musEl.checked = mus; musEl.addEventListener('change', () => { mus = musEl.checked; setMusic(mus); save(); });
+$('full').addEventListener('click', () => { try { const p: any = document.fullscreenElement ? document.exitFullscreen() : $('game').requestFullscreen(); if (p && p.catch) p.catch(() => { /* optional */ }); } catch (e) { /* optional */ } });
 
 // ---------------------------------------------------------------- loop
-let last = performance.now();
+let last = performance.now(), freeShown = false;
 function frame(now: number) {
   const dt = (now - last) / 1000; last = now;
+  // Without mouse capture, holding the cursor near a screen edge turns the view.
+  if (freeMouse && moved && live() && !game.tab) { const ex = curX < .1 ? (curX - .1) / .1 : curX > .9 ? (curX - .9) / .1 : 0; game.mdx += ex * 900 * dt; }
+  if (freeMouse !== freeShown) { freeShown = freeMouse; $('edgeNote').hidden = !freeMouse; $('freeNote').hidden = !freeMouse; }
   game.update(dt);
   // Drop the render resolution if the machine can't keep up, and bring it back if it can.
   if (dt > .034) { slow++; fast = 0; } else if (dt < .02) { fast++; slow = Math.max(0, slow - 1); }

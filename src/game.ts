@@ -263,7 +263,7 @@ export class Game {
   }
   updateFx(dt: number) {
     if (dt <= 0) return;
-    this.dustT -= dt; if (this.dustT <= 0 && this.me) { this.dustT = .35; const f = this.puffs.find(x => x.t <= 0), c = this.phase === 'menu' ? TMP2.set(0, 0, 0) : this.me.pos; if (f) { f.m.material = M.dust; f.m.position.set(c.x + R(-34, 20), R(.1, .5), c.z + R(-28, 28)); f.v.set(R(2.5, 4.5), R(.05, .25), R(.6, 1.6)); f.s = R(.25, .6); f.life = f.t = R(1.2, 2); f.m.visible = true; f.m.scale.setScalar(.01); } }
+    this.dustT -= dt; if (this.dustT <= 0 && this.me) { this.dustT = .35; const f = this.puffs.find(x => x.t <= 0), c = this.phase === 'menu' ? TMP2.set(0, 0, 0) : this.me.pos; if (f) { f.m.material = M.dust; f.m.position.set(c.x + R(-34, 20), R(.1, .5), c.z + R(-28, 28)); f.v.set(R(2.5, 4.5), R(.05, .25), R(.6, 1.6)); f.s = R(.07, .16); f.life = f.t = R(1.2, 2); f.m.visible = true; f.m.scale.setScalar(.01); } }
     for (const tr of this.tracers) if (tr.t > 0) { tr.t -= dt; if (tr.t <= 0) tr.m.visible = false; }
     for (const f of this.puffs) if (f.t > 0) { f.t -= dt; const k = 1 - f.t / f.life; f.m.position.addScaledVector(f.v, dt * 2.2); const s = f.s * (.4 + k) * (1 - k * k); f.m.scale.set(s, s, s); if (f.t <= 0) f.m.visible = false; }
     for (const f of this.bits) if (f.t > 0) { f.t -= dt; f.v.y -= 22 * dt; f.m.position.addScaledVector(f.v, dt); f.m.rotation.x += f.spin * dt; f.m.rotation.z += f.spin * .7 * dt; if (f.m.position.y < .08) { f.m.position.y = .08; f.v.y *= -.35; f.v.x *= .5; f.v.z *= .5; f.spin *= .4; } if (f.t < .3) f.m.scale.multiplyScalar(Math.max(0, 1 - dt * 6)); if (f.t <= 0) f.m.visible = false; }
@@ -298,6 +298,7 @@ export class Game {
     let fx = 0, fz = 0; if (K.has('KeyW')) fz += 1; if (K.has('KeyS')) fz -= 1; if (K.has('KeyD')) fx += 1; if (K.has('KeyA')) fx -= 1;
     const sprint = K.has('ShiftLeft') && fz > 0 && !aiming; me.moving = false;
     if (fx || fz) { const l = Math.hypot(fx, fz), sp = me.speed * (sprint ? 1.5 : aiming ? .55 : 1) * dt / l, s = Math.sin(this.yaw), c = Math.cos(this.yaw); me.pos.x += (s * fz - c * fx) * sp; me.pos.z += (c * fz + s * fx) * sp; me.moving = true; this.bob += dt * (sprint ? 13 : 9.5); this.collide(me, me.pos.x, me.pos.z); }
+    if (me.hp < me.maxHp && this.time - me.lastHit > 6) me.hp = Math.min(me.maxHp, me.hp + me.maxHp * .05 * dt);
     if (this.kick > 0) { const r = Math.min(this.kick, dt * (.05 + this.kick * 4)); this.kick -= r; this.pitch -= r; }
     if (me.moving) { const ph = Math.floor(this.bob / Math.PI); if (ph !== this.stepPhase) { this.stepPhase = ph; sfx.step(me.kind === 'breacher'); if (sprint) this.puff(TMP.set(me.pos.x, .1, me.pos.z), 1, .35, M.dust, .3, .6); } }
     me.yaw = this.yaw; me.pitch = this.pitch;
@@ -438,7 +439,7 @@ export class Game {
       if (u !== me || this.staticT > 0) { if (u.kind === 'rigger') this.aiRigger(u, dt); else if (u.team === 0) this.aiSoldier(u, dt); else if (u.kind === 'cantor') this.aiCantor(u, dt); else if (u.kind === 'lancer') this.aiLancer(u, dt); else this.aiWarden(u, dt); }
     }
     // keep bodies apart
-    for (let i = 0; i < us.length; i++) { const a = us[i]; if (!a.alive) continue; const ra = UNIT[a.kind].rad; for (let j = i + 1; j < us.length; j++) { const b = us[j]; if (!b.alive) continue; const dx = b.pos.x - a.pos.x; if (dx > 4 || dx < -4) continue; const dz = b.pos.z - a.pos.z, mine = a === me || b === me, lim = (ra + UNIT[b.kind].rad) * (mine ? 1.25 : .8), d2 = dx * dx + dz * dz; if (d2 < lim * lim && d2 > 1e-5) { const d = Math.sqrt(d2), p = (lim - d) * .5; const wa = a === me ? 0 : b.kind === 'warden' ? 2 : mine ? 2 : 1, wb = b === me ? 0 : a.kind === 'warden' ? 2 : mine ? 2 : 1; a.pos.x -= dx / d * p * wa; a.pos.z -= dz / d * p * wa; b.pos.x += dx / d * p * wb; b.pos.z += dz / d * p * wb; } } }
+    for (let i = 0; i < us.length; i++) { const a = us[i]; if (!a.alive) continue; const ra = UNIT[a.kind].rad; for (let j = i + 1; j < us.length; j++) { const b = us[j]; if (!b.alive) continue; const dx = b.pos.x - a.pos.x; if (dx > 4 || dx < -4) continue; const dz = b.pos.z - a.pos.z, mine = a === me || b === me, lim = (ra + UNIT[b.kind].rad) * (mine ? 1.25 : 1.12), d2 = dx * dx + dz * dz; if (d2 < lim * lim && d2 > 1e-5) { const d = Math.sqrt(d2), p = (lim - d) * .5; const wa = a === me ? 0 : b.kind === 'warden' ? 2 : mine ? 2 : 1, wb = b === me ? 0 : a.kind === 'warden' ? 2 : mine ? 2 : 1; a.pos.x -= dx / d * p * wa; a.pos.z -= dz / d * p * wa; b.pos.x += dx / d * p * wb; b.pos.z += dz / d * p * wb; } } }
     // pose
     for (const u of us) {
       if (!u.alive) continue; const r = u.rig, o = u.obj; o.position.x = u.pos.x; o.position.z = u.pos.z;

@@ -1,14 +1,14 @@
-# Proxy Front — Game Design Document (Phase 1)
+# Claimjumpers — Game Design Document (Phase 1)
 
 *Working title. Status: design for review, no game code yet.*
 
-Proxy Front is a first-person real-time strategy game. You start a match as a single worker with a drill. You mine, you build, your base starts producing an army, and at any moment you can jump into the body of any unit you own. Everything you are not controlling is run by AI teammates who follow recognisable RTS strategies and tell you out loud what they are about to do.
+Claimjumpers is a first-person real-time strategy game. You start a match as a single worker with a drill. You mine, you build, your base starts producing an army, and at any moment you can jump into the body of any unit you own. Everything you are not controlling is run by AI teammates who follow recognisable RTS strategies and tell you out loud what they are about to do.
 
 The mockups that go with this document are in [`mockups/index.html`](mockups/index.html) (open it in a browser). Screenshots are embedded below.
 
 ## 1. An original game in a familiar genre
 
-The brief was a first-person take on classic 90s base-building RTS play with two asymmetric factions: a human industrial side and a psionic alien side. This design keeps that play pattern and that feeling, and builds its own world on top of it. The factions, units, names, story and art here are original, so the game can be shown, shared and eventually sold without leaning on anyone else's property. The art direction tips its hat to the era (chunky bevelled consoles, pixel type, talking unit portraits, green selection rings, a top-down tactical map) without copying any one game's look.
+The brief was a first-person take on classic 90s base-building RTS play with two asymmetric factions: a human industrial side and a psionic alien side. This design keeps that play pattern and that feeling, and builds its own world on top of it. The factions, units, names, story and art here are original, so the game can be shown, shared and eventually sold without leaning on anyone else's property. The look is comic-book ink and flat colour with chunky cartoon proportions, and it tips its hat to the era (talking unit portraits, green selection rings, a classic overhead RTS view when you hold Tab) without copying any one game's look.
 
 ## 2. Design pillars
 
@@ -16,7 +16,7 @@ The brief was a first-person take on classic 90s base-building RTS play with two
 2. **The army has a plan and says it out loud.** AI squads never act silently. Before they commit to anything they announce it, and the player can approve, delay or redirect with one key.
 3. **Macro is a choice, not a chore.** A player who loves building can do every build order by hand as a worker. A player who wants to shoot can hand the economy to the AI and never open the build wheel.
 4. **Small armies, readable fights.** Dozens of units, not hundreds. Every unit on the field matters enough to be worth jumping into.
-5. **Ink and flat colour.** Cel shading with heavy outlines, so that a unit's faction, type and health read at a glance from eye level.
+5. **Comic ink, cartoon swagger.** Inked outlines, hatched shadows, hand-painted surfaces and chunky proportions, with a sense of humour in every callout. A unit's faction and type should read at a glance from eye level.
 
 ## 3. The match loop
 
@@ -129,7 +129,7 @@ A species that thinks and builds with sound. Their structures are grown from gla
 | Unit | Role | Cost (ore/flux) | Supply | What makes it fun to control |
 |---|---|---|---|---|
 | Tuner | Worker | 50 / 0 | 1 | Seeds buildings quickly, can retune a Choir Stone to boost nearby growth |
-| Cantor | Melee vanguard | 100 / 0 | 2 | Resonance blade, short dash (Glide-step), shockwave (Shatter Chord) |
+| Cantor | Melee vanguard | 100 / 0 | 2 | Resonance fork, short dash (Glide-step), shockwave (Shatter Chord) |
 | Lancer | Ranged | 125 / 50 | 2 | Charged tone-lance shot that pierces a line of targets |
 | Veil | Cloaked scout | 75 / 75 | 1 | Invisible while still, marks targets for the whole army |
 | Warden | Floating support | 100 / 100 | 2 | Projects a Hush Dome that blocks incoming fire |
@@ -240,52 +240,69 @@ You are playing a Rigger at the south choke. Alpha squad jogs past. Alpha Lead's
 
 See the mockups for layout. The principles:
 
-- **Faction-specific frames.** Ironhold's HUD is riveted steel panels with pixel type. Veyl's is thin curved glass lines and soft glows. Swapping faction changes how the whole screen feels.
+- **Faction-specific frames.** Ironhold's HUD is slanted ink panels with hard shadows. Veyl's is round glass shapes and glow. Swapping faction changes how the whole screen feels.
 - **Always visible:** minimap, resources and supply, playbook phase, current body's portrait, health and abilities, callout feed.
 - **On demand:** build list (build mode), reply keys (during a callout), Jump overlay.
 - **In the world, not on the screen, where possible:** objective diamonds, route chevrons, ghost blueprints, enemy health bars.
 
 ## 10. Art direction
 
-### Look
+The target is a playable comic book: the inked, hand-painted look of the best cel-shaded shooters, with the chunky, exaggerated proportions of a cartoon. The mockups are rendered in real time in the browser with the shading described here, so what they show is achievable on the target platform.
 
-- **Shading.** Two flat tones per surface (lit and shadow) with a hard edge between them. No smooth gradients. A thin rim light on the shadow side to separate characters from the background.
-- **Outlines.** Dark ink outlines on every character, vehicle and building, thicker on silhouettes than on interior detail.
-- **Shapes.** Chunky, slightly exaggerated proportions. Ironhold is boxes, wedges and bolts. Veyl is tall, tapered and curved.
-- **Team colour.** Shoulder pads, stripes and lights carry the team colour so sides are readable in a mirror match.
-- **World.** Cinder Basin is a slate grey ash plain under a banded dusk sky with a ringed planet. Grey ground lets both factions' colours stand out.
+### The look
+
+- **Ink outlines on everything.** Drawn as a screen-space pass from scene depth and surface angle. Lines are thicker up close and thinner far away, with a slight wobble so they look hand-drawn.
+- **Three flat tones.** Highlight, base colour, and a cool purple shadow. The edge between light and shadow is hard and slightly ragged.
+- **Cross-hatched shadows.** Pen-style hatching fills shadowed areas, with a second hatch direction in the deepest shadow.
+- **Hand-painted surfaces.** Every material carries inked panel lines, chipped paint, scratches, rivets, stencilled numbers and grime. Nothing is a flat untextured colour.
+- **Chunky proportions.** Big helmets, big shoulders, big boots, short legs. Units read from their silhouette alone. Ironhold is boxes, wedges and bolts. Veyl is tall, tapered and curved, with floating glowing parts.
+- **Team colour.** Shoulders, chest plates and stripes carry the team colour so sides are readable in a mirror match.
+- **World.** Cinder Basin is a rust-orange desert of banded mesas under a teal sky with painted clouds and a ringed planet. Yellow Ironhold steel and glowing Veyl teal and magenta both stand out against it.
+- **Atmosphere.** Warm dust haze fades distant mesas. A halftone dot pattern sits in the sky near the horizon. A light paper grain and vignette cover the frame.
+
+### HUD style
+
+- Slanted ink-black panels with hard offset drop shadows and a halftone texture.
+- Heavy condensed display type. Comic lettering for damage numbers and one-liners.
+- Callouts arrive as a speech bubble with the speaker's portrait.
+- **Title cards.** The first time you jump into a unit type, the game freezes for half a second on a comic title card with the unit's name and a one-liner.
+- Veyl swaps the slanted ink panels for round glass shapes and glow.
+
+### Tone
+
+Light and cheeky. Units have personality and complain, brag and joke in their callouts ("You building it, or what?"). Information always comes first in a line and the joke second, so the humour never hides what the army is doing.
 
 ### Palette
 
 | Use | Colour |
 |---|---|
-| Ink outline | `#10121a` |
-| Ironhold primary | `#f2a33a` amber |
-| Ironhold metal | `#6b7486` / shadow `#4a5264` |
-| Veyl body | `#2b2f6b` indigo |
-| Veyl light | `#3fd6c4` teal, `#e0569b` magenta |
-| Ground | `#6f8088` / shadow `#55666e` |
-| Sky bands | `#27325f`, `#4a4585`, `#a0588c`, `#ee8f6e`, `#ffd08a` |
-| HUD selection green | `#7be06a` |
-| Alert | `#ef5a4c` |
+| Ink | `#0e0d14` |
+| Ironhold yellow | `#ffc21a` |
+| Ironhold steel | `#b4bac2` / dark `#5d6474` |
+| Rigger hi-vis | `#ff7d1a` |
+| Veyl body | `#4433b8` indigo |
+| Veyl light | `#35e0c8` teal, `#ff4f9a` magenta |
+| Ground and mesas | `#c9743f`, `#c8653c` |
+| Sky | `#124f73` to `#5cc7c2` to `#ffdb94` |
+| Shadow tint | cool purple, about 45% of base |
+| Ore | `#b8f58c` |
 
 ### Nods to 90s RTS games
 
-- A heavy bevelled console at the bottom of the screen with a framed unit portrait.
-- Pixel type for numbers and labels.
-- Green selection rings under friendly units on the tactical map.
-- Short, characterful acknowledgement lines when you jump into a unit.
-- The top-down tactical map itself: holding `Tab` briefly turns the game back into the genre it came from.
+- A framed, scanlined unit portrait for whoever is talking.
+- Green selection rings under your units in the overhead view.
+- A short, characterful line when you jump into a unit.
+- The overhead view itself: holding `Tab` lifts the camera to the classic RTS angle over the same live scene.
 
 ## 11. Mockups
 
-Open [`mockups/index.html`](mockups/index.html) for the full sheet. Stills:
+Open [`mockups/index.html`](mockups/index.html) in a browser for the live version: a real-time 3D scene with five camera shots you can switch between. The characters and buildings in it are stand-ins assembled from simple shapes in code. Judge the shading, colour, proportions and HUD; final models would be sculpted properly and use the same shader. Stills:
 
-**Starting as a Rigger: mining, build mode and the Ironhold HUD**
+**Starting as a Rigger: build mode and the Ironhold HUD**
 
 ![Rigger HUD](mockups/01-rigger-hud.png)
 
-**Jump: swapping control to another unit**
+**Jump: the same scene from the classic RTS angle, with your squads listed**
 
 ![Jump overlay](mockups/02-jump.png)
 
@@ -293,27 +310,30 @@ Open [`mockups/index.html`](mockups/index.html) for the full sheet. Stills:
 
 ![Squad callout](mockups/03-callout.png)
 
+**The title card when you first jump into a Linesman**
+
+![Title card](mockups/04-title-card.png)
+
 **Playing the other side: a Veyl Cantor in combat**
 
-![Veyl Cantor HUD](mockups/04-veyl-combat.png)
+![Veyl Cantor HUD](mockups/05-veyl-combat.png)
 
 ## 12. Proposed build plan
 
-Recommended technology: TypeScript with three.js in the browser. It supports toon shading and outlines well, a build can be shared as a link with nothing to install, and it can be built and tested automatically. The game simulation (economy, AI, combat rules) is kept separate from rendering so that it can run on a server for PvP later. Unit and building models can be made in Blender.
+Platform: the browser, using TypeScript and three.js (WebGL). The mockups already run the target shading this way. A build can be shared as a link with nothing to install, and it can be built and tested automatically. The game simulation (economy, AI, combat rules) is kept separate from rendering so that it can run on a server for PvP later. Unit and building models can be made in Blender.
 
 | Milestone | Contents | Proves |
 |---|---|---|
-| M1 Greybox slice | Cinder Basin blocked out, Ironhold only, Rigger mines and builds, Bunkhouse makes Linesmen, Jump works, static enemy targets | The core loop of worker, build, jump is fun |
+| M1 First playable | The comic-ink shader from day one, Cinder Basin blocked out, Ironhold only, Rigger mines and builds, Bunkhouse makes Linesmen, Jump works, static enemy targets | The core loop of worker, build, jump is fun |
 | M2 Talking army | Squad leads, Yard Push and First Light playbooks, callouts with replies, Quartermaster on Auto | AI teammates feel like teammates |
 | M3 The enemy | AI commander opponent, win and lose conditions, fog of war, PvE skirmish playable start to finish | A full match works |
 | M4 Veyl Chorus | Second faction with Hush, resonance fields and its own HUD | Asymmetry works in first person |
-| M5 Art pass | Cel shader, outlines, real models, voice lines, HUD art | The look |
+| M5 Art pass | Sculpted models and animation in the comic-ink shader, voice lines, title cards, HUD art | The look |
 | M6 PvP | Server-authoritative simulation, 1v1 Duel | Multiplayer |
 
 ## 13. Open questions for review
 
-1. **Name.** Is "Proxy Front" acceptable as a working title?
-2. **Platform.** Browser first (recommended above), or a desktop engine such as Godot or Unreal?
-3. **Player power.** This design gives a possessed unit no stat bonus. Would you rather the player's unit be noticeably stronger?
-4. **Default autonomy.** Should the AI run the economy by default (current design), or should new players be asked to build by hand first?
-5. **Match length.** 12 to 20 minutes is the target. Shorter?
+1. **Name.** "Claimjumpers" is the current working title (mining claims, and jumping between bodies). Other candidates: Ore Else, Hard Hat Havoc.
+2. **Player power.** This design gives a possessed unit no stat bonus. Would you rather the player's unit be noticeably stronger?
+3. **Default autonomy.** Should the AI run the economy by default (current design), or should new players be asked to build by hand first?
+4. **Match length.** 12 to 20 minutes is the target. Shorter?

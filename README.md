@@ -26,6 +26,7 @@ One skirmish as the Ironhold Charter against a Veyl outpost. Smash the three Cho
 - **Gantry**: a two-legged walker from the Foundry with a cannon on each side. Click fires explosive shells, `C` stomps and throws everything nearby off its feet.
 - **Longshot**: sniper from the Bunkhouse once a Foundry stands. Hold right-click for the scope; a head shot drops most things.
 - **Patch**: medic from the Bunkhouse once a Machine Shop stands. Mends the most hurt ally nearby on their own; as the Patch, `C` tops up everyone around you.
+- **Everything breaks**: all 339 pieces of scenery inside the map take damage, from fuel drums (which explode and set each other off) and crates to rock spires, the road arch, buttes and the enemy brood domes. Big rocks crumble in stages. Rubble is simulated: chunks fall, bounce, tumble, pile up against walls, get thrown by blasts and kicked when you walk through them. The Rigger's drill works on rock too. Building health follows classic RTS proportions (a production building takes a rifleman about 100 seconds).
 - **Buildings and tech tree**:
   1. Headframe trains Riggers. Bunkhouse trains Linesmen. Depot adds beds. Watchpost is a gun tower.
   2. Machine Shop (needs a Bunkhouse) unlocks Breachers and Patches and sells Hollow Points and Plating.

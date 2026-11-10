@@ -19,14 +19,14 @@ export const UNIT: Record<Kind, UnitDef> = {
 };
 export interface BldDef { name: string; hp: number; hx: number; hz: number; h: number; cost: number; time: number; blurb: string; needs?: BKind }
 export const BLD: Record<BKind, BldDef> = {
-  headframe: { name: 'Headframe', hp: 2200, hx: 6.6, hz: 4.6, h: 5, cost: 0, time: 0, blurb: '' },
-  bunkhouse: { name: 'Bunkhouse', hp: 600, hx: 3.9, hz: 3.0, h: 2.8, cost: 150, time: 14, blurb: 'Trains your soldiers' },
-  depot: { name: 'Depot', hp: 400, hx: 2.8, hz: 2.6, h: 4.6, cost: 100, time: 9, blurb: 'Eight more beds' },
-  watchpost: { name: 'Watchpost', hp: 450, hx: 1.6, hz: 1.6, h: 8, cost: 125, time: 11, blurb: 'Gun tower' },
-  machineshop: { name: 'Machine Shop', hp: 650, hx: 4.6, hz: 3.6, h: 4, cost: 150, time: 16, blurb: 'Breachers, Patches, upgrades', needs: 'bunkhouse' },
-  foundry: { name: 'Foundry', hp: 800, hx: 4.4, hz: 3.8, h: 6, cost: 200, time: 20, blurb: 'Longshots, Gantry walkers, top upgrades', needs: 'machineshop' },
-  choir: { name: 'Choir Stone', hp: 1800, hx: 1.5, hz: 1.5, h: 11, cost: 0, time: 0, blurb: '' },
-  reedgate: { name: 'Reed Gate', hp: 1400, hx: 3.6, hz: 1.4, h: 8, cost: 0, time: 0, blurb: '' },
+  headframe: { name: 'Headframe', hp: 2400, hx: 6.6, hz: 4.6, h: 5, cost: 0, time: 0, blurb: '' },
+  bunkhouse: { name: 'Bunkhouse', hp: 1500, hx: 3.9, hz: 3.0, h: 2.8, cost: 150, time: 14, blurb: 'Trains your soldiers' },
+  depot: { name: 'Depot', hp: 800, hx: 2.8, hz: 2.6, h: 4.6, cost: 100, time: 9, blurb: 'Eight more beds' },
+  watchpost: { name: 'Watchpost', hp: 550, hx: 1.6, hz: 1.6, h: 8, cost: 125, time: 11, blurb: 'Gun tower' },
+  machineshop: { name: 'Machine Shop', hp: 1900, hx: 4.6, hz: 3.6, h: 4, cost: 150, time: 16, blurb: 'Breachers, Patches, upgrades', needs: 'bunkhouse' },
+  foundry: { name: 'Foundry', hp: 2000, hx: 4.4, hz: 3.8, h: 6, cost: 200, time: 20, blurb: 'Longshots, Gantry walkers, top upgrades', needs: 'machineshop' },
+  choir: { name: 'Choir Stone', hp: 2400, hx: 1.5, hz: 1.5, h: 11, cost: 0, time: 0, blurb: '' },
+  reedgate: { name: 'Reed Gate', hp: 1600, hx: 3.6, hz: 1.4, h: 8, cost: 0, time: 0, blurb: '' },
 };
 export const BUILDABLE: BKind[] = ['bunkhouse', 'depot', 'watchpost', 'machineshop', 'foundry'];
 export type UpKey = 'dmg' | 'armor' | 'dmg2' | 'armor2';
@@ -48,6 +48,12 @@ export interface Unit {
 export interface Building {
   id: number; kind: BKind; team: number; pos: THREE.Vector3; hx: number; hz: number; h: number; hp: number; maxHp: number; obj: THREE.Group; holo: THREE.Group | null;
   built: boolean; progress: number; queue: { kind: Kind; t: number }[]; alive: boolean; cd: number; builder: Unit | null; lastHit: number; rot: boolean; smokeT: number;
+}
+/** A piece of map scenery that can be shot, blown up or drilled apart. */
+export interface Prop {
+  id: number; kind: 'rock' | 'mesa' | 'metal' | 'barrel' | 'plant' | 'crystal' | 'veyl'; name: string; x: number; z: number; r: number; y0: number; h: number;
+  hp: number; maxHp: number; alive: boolean; solid: boolean; stage: number; stages: number;
+  ranges: { attr: THREE.BufferAttribute; start: number; count: number }[]; obj?: THREE.Object3D; owner?: Prop; link: Prop[];
 }
 export interface OreNode { pos: THREE.Vector3; amount: number; max: number; obj: THREE.Group }
 export interface Callout { who: string; text: string; t: number; dur: number; keys: [string, string][] }

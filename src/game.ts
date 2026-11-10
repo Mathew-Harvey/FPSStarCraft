@@ -5,7 +5,7 @@ import { Pipeline, V3, M, G, R, mk, setLayer, L_FX, L_SELF, holoOK, holoBad, rin
 import * as MD from './models';
 import { sfx, drillSound, setMood, babble } from './audio';
 import type { Hud } from './hud';
-import { Kind, BKind, UNIT, BLD, BUILDABLE, UPGRADES, UpKey, Unit, Building, OreNode, Difficulty, DIFFS, OUTPOST, GATE, isUnit, isSoldier } from './data';
+import { Kind, BKind, UNIT, BLD, BUILDABLE, UPGRADES, UpKey, Unit, Building, Prop, OreNode, Difficulty, DIFFS, OUTPOST, GATE, isUnit, isSoldier } from './data';
 import { Director } from './director';
 
 const TMP = V3(), TMP2 = V3(), UP = V3(0, 1, 0);
@@ -13,7 +13,7 @@ const beamMat = new THREE.MeshBasicMaterial({ color: 0x6dfff0, depthWrite: false
 const bubbleMat = new THREE.MeshBasicMaterial({ color: 0x6dfff0, transparent: true, opacity: .4, depthWrite: false, blending: THREE.AdditiveBlending });
 const warnMat = new THREE.MeshBasicMaterial({ color: 0xff4f9a, transparent: true, opacity: .9, depthWrite: false, side: THREE.DoubleSide });
 let nextId = 1;
-type Hit = { unit?: Unit; b?: Building; ore?: OreNode; dist: number; head?: boolean };
+type Hit = { unit?: Unit; b?: Building; ore?: OreNode; prop?: Prop; dist: number; head?: boolean };
 interface Proj { obj: THREE.Object3D; pos: THREE.Vector3; vel: THREE.Vector3; team: number; dmg: number; nade: boolean; life: number; from: Unit | null }
 interface Corpse { obj: THREE.Object3D; t: number; veyl: boolean; ax: number; az: number; s: number }
 interface Weapon { name: string; mag: number; cd: number; reload: number }
@@ -29,7 +29,8 @@ export class Game {
   scene = new THREE.Scene();
   cam = new THREE.PerspectiveCamera(68, 1, .06, 4000);
   iso = new THREE.OrthographicCamera(-40, 40, 22, -22, 1, 700);
-  units: Unit[] = []; buildings: Building[] = []; ores: OreNode[] = []; spires: { x: number; z: number; r: number }[] = [];
+  units: Unit[] = []; buildings: Building[] = []; ores: OreNode[] = []; spires: Prop[] = []; props: Prop[] = [];
+  chunks: { m: THREE.Mesh; t: number; v: THREE.Vector3; w: THREE.Vector3; s: number; rest: boolean }[] = []; thudT = 0;
   anim: ((t: number) => void)[] = [];
   ore = 100; time = 0; phase: 'menu' | 'play' | 'paused' | 'card' | 'over' = 'menu'; won = false;
   up: Record<UpKey, boolean> = { dmg: false, armor: false, dmg2: false, armor2: false };
@@ -52,7 +53,7 @@ export class Game {
   introT = 0; menuPos = V3(); menuQuat = new THREE.Quaternion(); hitStop = 0; streak = 0; streakT = 0; kick = 0; stepPhase = 0; dustT = 0; hopT = 0; hopCd = 0; hopX = 0; hopZ = 0; endT = 0; endWon = false;
 
   constructor(public pipe: Pipeline, public hud: Hud, public diff: Difficulty = DIFFS[1]) {
-    const s = this.scene; s.add(makeSky()); MD.buildWorld(s, this.spires, this.anim); s.add(this.cam);
+    const s = this.scene; s.add(makeSky()); MD.buildWorld(s, this.props, this.anim); this.spires = this.props.filter(p => p.solid); s.add(this.cam);
     this.vm = { drill: MD.vmDrill(), rifle: MD.vmRifle(), scatter: MD.vmScatter(), shield: MD.vmShield(), cannon: MD.vmCannon(), long: MD.vmLong(), pistol: MD.vmPistol() };
     for (const k in this.vm) { this.vm[k].visible = false; this.cam.add(this.vm[k]); }
     for (const k of BUILDABLE) { const src = this.model(k); this.ghost[k] = MD.hologram(src, holoOK); this.ghostBad[k] = MD.hologram(src, holoBad); this.ghost[k].visible = this.ghostBad[k].visible = false; s.add(this.ghost[k], this.ghostBad[k]); }
@@ -60,6 +61,7 @@ export class Game {
     this.tracers = pool(36, G.cyl8, tracerMat, true).map(m => ({ m, t: 0 }));
     this.puffs = pool(80, G.sph, M.dust, false).map(m => ({ m, t: 0, life: 1, v: V3(), s: 1 }));
     this.bits = pool(90, G.box, M.rust, false).map(m => ({ m, t: 0, v: V3(), spin: 0 }));
+    this.chunks = pool(150, G.dod, M.rock, false).map(m => ({ m, t: 0, v: V3(), w: V3(), s: 1, rest: false }));
     this.scorch = pool(18, G.disc, M.scorch, false).map(m => { m.rotation.x = -Math.PI / 2; return { m, t: 0, s: 1 }; });
     this.bubbles = pool(10, G.sph, bubbleMat, true).map(m => ({ m, t: 0, u: null }));
     this.warns = pool(6, G.ringG, warnMat, true).map(m => { m.rotation.x = -Math.PI / 2; return { m, t: 0, life: 1, r: 1 }; });
@@ -151,6 +153,7 @@ export class Game {
   explode(p: THREE.Vector3, team: number, dmg: number, radius: number, from: Unit | null, veyl = false) {
     for (const u of this.units) { if (!u.alive || u.team === team) continue; const d = Math.hypot(u.pos.x - p.x, u.pos.z - p.z); if (d > radius + UNIT[u.kind].rad) continue; const k = 1 - .6 * Math.min(1, d / radius); this.damage(u, dmg * k, from); if (d > .1) { u.kx += (u.pos.x - p.x) / d * 9 * k; u.kz += (u.pos.z - p.z) / d * 9 * k; } }
     for (const b of this.buildings) { if (!b.alive || b.team === team) continue; if (this.distToBox(b, p.x, p.z) < radius * .7) this.damage(b, dmg * 1.4, from); }
+    this.blastProps(p, radius, dmg, from); this.shove(p, radius * 1.6, 9);
     const g = V3(p.x, .6, p.z); this.puff(g, 7, radius * .5, veyl ? M.teal : M.fire, 2.2, 1.6); this.puff(g, 5, radius * .55, veyl ? M.indigoL : M.smoke, 1.4, 2.2); this.debris(g, 8, .3, veyl ? M.crys : M.rock, 7); this.scorchAt(p, radius * 1.5);
     const v = this.vol(p); this.shake = Math.max(this.shake, v * 1.1); if (!veyl) this.pipe.flash = Math.max(this.pipe.flash, v * .5); sfx.boom(v);
     this.hud.damage(V3(p.x, 2.2, p.z), veyl ? 'WHUMM!' : 'BOOM!', veyl ? 'kobad' : 'ko');
@@ -190,6 +193,8 @@ export class Game {
   killBuilding(b: Building) {
     b.alive = false; this.scene.remove(b.obj); if (b.holo) this.scene.remove(b.holo); const veyl = b.team === 1, v = this.vol(b.pos);
     for (let i = 0; i < 5; i++) { const p = V3(b.pos.x + R(-b.hx, b.hx), R(1, b.h), b.pos.z + R(-b.hz, b.hz)); this.puff(p, 4, 2.6, veyl ? M.teal : i % 2 ? M.fire : M.smoke, 2, 1.5); this.debris(p, 6, .7, veyl ? (i % 2 ? M.indigo : M.crys) : (i % 2 ? M.rust : M.steel), 9); }
+    for (let i = 0; i < 18; i++) this.chunk(V3(b.pos.x + R(-b.hx, b.hx), R(.6, b.h), b.pos.z + R(-b.hz, b.hz)), R(.5, 1.3), veyl ? (i % 3 ? M.indigo : M.crys) : (i % 3 === 0 ? M.rust : i % 3 === 1 ? M.steel : M.steelD), 7, b.pos, !veyl);
+    this.shove(b.pos, Math.max(b.hx, b.hz) * 3, 8);
     this.scorchAt(b.pos, Math.max(b.hx, b.hz) * 2.6); this.pipe.flash = Math.max(this.pipe.flash, v * .6);
     this.hud.damage(V3(b.pos.x, b.h * .6, b.pos.z), veyl ? 'KRA-KOOM!' : 'CRUNCH!', veyl ? 'ko' : 'kobad'); sfx.boom(Math.max(.3, v)); this.shake = Math.max(this.shake, v);
     if (b.builder) { b.builder.site = null; b.builder.state = 'idle'; }
@@ -216,6 +221,12 @@ export class Game {
       let t0 = 0, t1 = best, ok = true; const mn = [b.pos.x - b.hx, 0, b.pos.z - b.hz], mx = [b.pos.x + b.hx, b.h, b.pos.z + b.hz], oo = [o.x, o.y, o.z], dd = [d.x, d.y, d.z];
       for (let i = 0; i < 3 && ok; i++) { if (Math.abs(dd[i]) < 1e-6) { if (oo[i] < mn[i] || oo[i] > mx[i]) ok = false; } else { let a = (mn[i] - oo[i]) / dd[i], c = (mx[i] - oo[i]) / dd[i]; if (a > c) { const s = a; a = c; c = s; } t0 = Math.max(t0, a); t1 = Math.min(t1, c); if (t0 > t1) ok = false; } }
       if (ok && t0 > 0 && t0 < best) { best = t0; hit = { b, dist: t0 }; }
+    }
+    for (const p of this.props) {
+      if (!p.alive) continue; const ox = o.x - p.x, oz = o.z - p.z, a = d.x * d.x + d.z * d.z; if (a < 1e-6) continue;
+      const bb = ox * d.x + oz * d.z, c = ox * ox + oz * oz - p.r * p.r, disc = bb * bb - a * c; if (disc < 0) continue;
+      const t = (-bb - Math.sqrt(disc)) / a; if (t <= 0 || t >= best) continue; const y = o.y + d.y * t; if (y < p.y0 || y > p.h) continue;
+      best = t; hit = { prop: p, dist: t };
     }
     if (team < 0) for (const n of this.ores) { if (n.amount <= 0) continue; const t = sphere(n.pos.x, 1, n.pos.z, 2.1); if (t > 0 && t < best) { best = t; hit = { ore: n, dist: t }; } }
     return hit;
@@ -266,7 +277,7 @@ export class Game {
       this.time += dt; this.safeT = Math.max(0, this.safeT - dt); this.jumpCd = Math.max(0, this.jumpCd - dtReal);
       if (this.staticT > 0) { this.staticT -= dtReal; if (this.staticT <= 0) this.respawn(); }
       else if (this.me?.alive && !this.tab) this.updatePlayer(dt, P);
-      this.updateUnits(dt); this.updateBuildings(dt); this.updateProjs(dt); this.dir.update(dt);
+      this.updateUnits(dt); this.updateBuildings(dt); this.updateProjs(dt); this.updateChunks(dt); this.dir.update(dt);
       this.updateFx(dt);
     } else this.updateFx(this.phase === 'menu' ? dtReal : 0);
     const t = this.pipe.time; for (const f of this.anim) f(t);
@@ -340,6 +351,7 @@ export class Game {
       this.prompt = (fdy ? `<b>E</b> Gantry walker · ${UNIT.gantry.cost} &nbsp; ` : '') + (open.length ? open.map((u, i) => `<b>${keys[i]}</b> ${u.name} · ${u.cost} <i>${u.blurb}</i>`).join(' &nbsp; ') : fdy ? '' : 'Both upgrades bought' + (this.ownB('foundry').length ? '' : ' · a Foundry is the next step')) + (lb.queue.length ? ` · ${lb.queue.length} queued` : '');
       if (fdy && P.has('KeyE')) this.train(lb, 'gantry', true); open.forEach((u, i) => { if (P.has('Key' + keys[i])) this.buyUpgrade(u.key, true); });
     }
+    if (!this.prompt && look?.prop && me.kind !== 'rigger' && look.dist < 60) { const q = look.prop.owner || look.prop; if (q.hp < q.maxHp) this.prompt = `${q.name} · <b>${Math.ceil(q.hp / q.maxHp * 100)}%</b>`; }
     if (me.kind === 'rigger') this.updateRigger(dt, P, eye, dir, look); else if (me.kind === 'gantry') this.updateCannon(dt, P, eye, dir, gun); else this.updateGun(dt, P, eye, dir, gun);
   }
   train(b: Building, k: Kind, manual = false) {
@@ -387,11 +399,12 @@ export class Game {
         if (look.ore) { biting = true; if (this.mineT <= 0) { this.mineT = .42; const n = Math.min(3, look.ore.amount); look.ore.amount -= n; this.ore += n; this.stats.mined += n; this.obj.drilled += n; sfx.ore(); this.debris(at, 3, .12, M.ore, 3); this.hud.damage(at, '+' + n, 'ore'); this.oreCheck(look.ore); this.shake = Math.max(this.shake, .12); } }
         else if (look.b && look.b.team === 0 && !look.b.built) { biting = true; look.b.progress += dt / BLD[look.b.kind].time * 1.6; if (this.mineT <= 0) { this.mineT = .16; this.debris(at, 2, .06, M.spark, 4); } }
         else if (look.b && look.b.team === 0 && look.b.built && look.b.hp < look.b.maxHp) { biting = true; look.b.hp = Math.min(look.b.maxHp, look.b.hp + 40 * dt); if (this.mineT <= 0) { this.mineT = .16; this.debris(at, 2, .06, M.spark, 4); } }
+        else if (look.prop) { biting = true; if (this.mineT <= 0) { this.mineT = .2; this.damageProp(look.prop, 11, me, at); sfx.hit(); } }
         else if ((look.unit && look.unit.team === 1 && look.dist < 3) || (look.b && look.b.team === 1 && look.dist < 3)) { biting = true; if (this.mineT <= 0) { this.mineT = .25; this.damage((look.unit || look.b)!, 10, me); sfx.hit(); this.debris(at, 2, .08, M.spark, 4); } }
       }
       this.vm.drill.userData.bit.rotation.z += dt * (biting ? 34 : 24); if (biting) this.shake = Math.max(this.shake, .06);
     }
-    if (!this.prompt && this.tool === 1 && look && look.dist < 4.2) { if (look.ore) this.prompt = '<b>Hold click</b> Drill ore'; else if (look.b && look.b.team === 0 && !look.b.built) this.prompt = '<b>Hold click</b> Weld it up faster'; else if (look.b && look.b.team === 0 && look.b.hp < look.b.maxHp) this.prompt = '<b>Hold click</b> Patch it up'; }
+    if (!this.prompt && this.tool === 1 && look && look.dist < 4.2) { if (look.ore) this.prompt = '<b>Hold click</b> Drill ore'; else if (look.prop) this.prompt = `<b>Hold click</b> Drill the ${(look.prop.owner || look.prop).name.toLowerCase()} apart`; else if (look.b && look.b.team === 0 && !look.b.built) this.prompt = '<b>Hold click</b> Weld it up faster'; else if (look.b && look.b.team === 0 && look.b.hp < look.b.maxHp) this.prompt = '<b>Hold click</b> Patch it up'; }
     drillSound(drilling, biting);
   }
   oreCheck(n: OreNode) { if (n.amount <= 0) { n.obj.traverse((m: any) => { if (m.isMesh && m.material === M.ore) m.material = M.oreDead; }); n.obj.scale.setScalar(.6); } else n.obj.scale.setScalar(.75 + .25 * n.amount / n.max); }
@@ -419,7 +432,7 @@ export class Game {
           let hit = this.ray(eye, d, 34, -1, me); if (hit && ((hit.unit && hit.unit.team === 0) || (hit.b && hit.b.team === 0 && hit.dist < 3))) hit = this.ray(eye, d, 34, 1, me);
           const dist = hit ? hit.dist : 34, end = V3().copy(eye).addScaledVector(d, dist); if (i % 2 === 0) this.tracer(muzzle, end);
           const fall = dist < 10 ? 1 : Math.max(.3, 1 - (dist - 10) / 24), tgt = hit && (hit.unit && hit.unit.team === 1 ? hit.unit : hit.b && hit.b.team === 1 ? hit.b : null);
-          if (tgt) { const dm = (hit!.head ? 9 : 6) * fall * mul; total += dm; hits++; last = tgt; crit = crit || !!hit!.head; this.damage(tgt, dm, me); if (i % 3 === 0) this.puff(end, 1, .4, M.teal, .6); } else this.impact(eye, d, hit, end);
+          if (tgt) { const dm = (hit!.head ? 9 : 6) * fall * mul; total += dm; hits++; last = tgt; crit = crit || !!hit!.head; this.damage(tgt, dm, me); if (i % 3 === 0) this.puff(end, 1, .4, M.teal, .6); } else this.impact(eye, d, hit, end, 6 * fall * mul);
         }
         this.quiet = false;
         if (last) { this.hud.hitmark(crit); sfx.hit(); this.hud.damage(V3(last.pos.x, (isUnit(last) ? UNIT[last.kind].headY : last.h * .6) + .4, last.pos.z), String(Math.round(total)), hits >= 7 ? 'crit' : ''); }
@@ -430,9 +443,74 @@ export class Game {
         const dist = hit ? hit.dist : 150, end = V3().copy(eye).addScaledVector(d, dist); this.tracer(muzzle, end, tracerMat, long ? .14 : .07);
         if (hit?.unit && hit.unit.team === 1) { const sh = hit.unit.shield > 0; this.damage(hit.unit, (hit.head ? S.head : S.body) * mul, me, !!hit.head); hit.head ? sfx.crit() : sfx.hit(); this.hud.hitmark(!!hit.head); this.puff(end, 2, .35, sh ? M.cyan : M.teal, .6); this.debris(end, 1, .07, M.crys, 3); }
         else if (hit?.b && hit.b.team === 1) { this.damage(hit.b, S.bld * mul, me); this.hud.hitmark(false); this.puff(end, 1, .5, M.teal, .6); this.debris(end, 2, .1, M.indigo, 4); }
-        else this.impact(eye, d, hit, end);
+        else this.impact(eye, d, hit, end, S.bld * mul);
         const f = this.bits.find(x => x.t <= 0); if (f) { f.m.material = M.spark; f.m.position.copy(muzzle).addScaledVector(dir, -.5); f.v.set(-Math.cos(this.yaw) * 2.5 + R(-.5, .5), 2.5, Math.sin(this.yaw) * 2.5 + R(-.5, .5)); f.m.scale.set(.03, .03, .07); f.spin = 20; f.t = .8; f.m.visible = true; }
       }
+    }
+  }
+  // ------------------------------------------------------------ destructible scenery and rubble physics
+  private touch(r: Prop['ranges'][0]) { const a = r.attr as any; if (a.addUpdateRange) a.addUpdateRange(r.start * 3, r.count * 3); a.needsUpdate = true; }
+  propMat(p: Prop) { return p.kind === 'metal' ? (p.id % 2 ? M.rust : M.steelD) : p.kind === 'barrel' ? M.rust : p.kind === 'crystal' ? M.crys : p.kind === 'veyl' ? M.indigo : p.kind === 'plant' ? M.cloth : M.rock; }
+  blastProps(p: THREE.Vector3, radius: number, dmg: number, from: Unit | Building | null, skip: any = null) {
+    for (const q of this.props) { if (!q.alive || q.owner) continue; const d = Math.hypot(q.x - p.x, q.z - p.z) - q.r; if (d > radius || p.y > q.h + radius || p.y < q.y0 - radius) continue; this.damageProp(q, dmg * (1 - .6 * Math.max(0, Math.min(1, d / radius))) * (q.kind === 'barrel' ? 3 : 1), from); }
+  }
+  damageProp(q: Prop, amt: number, from: Unit | Building | null, at?: THREE.Vector3) {
+    const p = q.owner || q; if (!p.alive || amt <= 0) return; p.hp -= amt; const mat = this.propMat(p);
+    if (at) { this.puff(at, 1, .35, p.kind === 'crystal' || p.kind === 'veyl' ? M.teal : M.dust, .6); if (p.kind !== 'plant' && Math.random() < .5) this.debris(at, 1, .09, mat, 3); if (p.kind === 'metal' || p.kind === 'barrel') this.debris(at, 1, .04, M.spark, 4); }
+    if (p.hp <= 0) { this.killProp(p); return; }
+    // big things come apart in stages: each one sheds rubble and leaves a shorter, narrower stump
+    if (p.stages && p.hp / p.maxHp < 1 - (p.stage + 1) / (p.stages + 1)) {
+      p.stage++; const topY = p.h;
+      for (const r of p.ranges) { const a = r.attr.array as Float32Array; for (let k = r.start * 3, e = (r.start + r.count) * 3; k < e; k += 3) { a[k] = p.x + (a[k] - p.x) * .9; a[k + 1] *= .76; a[k + 2] = p.z + (a[k + 2] - p.z) * .9; } this.touch(r); }
+      p.h *= .76; p.r *= .93; const n = Math.min(12, 4 + Math.round(p.r * 1.5));
+      for (let i = 0; i < n; i++) { const a = R(0, 6.283), rr = p.r * R(.3, 1); this.chunk(V3(p.x + Math.cos(a) * rr, R(p.h, topY), p.z + Math.sin(a) * rr), Math.min(2.2, Math.max(.3, p.r * R(.2, .45))), mat, 4 + p.r * .3, V3(p.x, 0, p.z)); }
+      for (let i = 0; i < 4; i++) this.puff(TMP.set(p.x + R(-p.r, p.r), R(p.h * .5, topY), p.z + R(-p.r, p.r)), 3, Math.min(4, p.r * .7 + .6), M.dust, 1.2, 1.5);
+      const v = this.vol(TMP.set(p.x, 0, p.z)); this.shake = Math.max(this.shake, v * .7); sfx.boom(v * .6); this.hud.damage(V3(p.x, Math.min(p.h, 9) + 1, p.z), 'CRACK!', 'ko');
+    }
+  }
+  killProp(p: Prop) {
+    if (!p.alive) return; p.alive = false; const i = this.spires.indexOf(p); if (i >= 0) this.spires.splice(i, 1);
+    for (const r of p.ranges) { const a = r.attr.array as Float32Array; for (let k = r.start * 3, e = (r.start + r.count) * 3; k < e; k += 3) { a[k] = p.x; a[k + 1] = -80; a[k + 2] = p.z; } this.touch(r); }
+    if (p.obj) this.scene.remove(p.obj);
+    if (!p.owner) {
+      const mat = this.propMat(p), hh = Math.min(p.h - p.y0, 14), c = V3(p.x, p.y0, p.z), v = this.vol(c), big = p.maxHp >= 800;
+      if (p.kind === 'plant') this.puff(TMP.set(p.x, .6, p.z), 3, .5, M.violet, 1, .6);
+      else {
+        const n = Math.max(3, Math.min(22, Math.round(2 + p.r * hh * .7))), sz = Math.min(2.6, Math.max(.16, p.r * (p.kind === 'rock' || p.kind === 'mesa' ? .55 : .42)));
+        for (let k = 0; k < n; k++) { const a = R(0, 6.283), rr = p.r * R(0, .9); this.chunk(V3(p.x + Math.cos(a) * rr, p.y0 + R(.2, hh), p.z + Math.sin(a) * rr), sz * R(.55, 1.25), mat, 3 + Math.min(6, p.r), c, p.kind === 'metal' || p.kind === 'barrel'); }
+        for (let k = 0; k < (big ? 6 : 2); k++) this.puff(TMP.set(p.x + R(-p.r, p.r), p.y0 + R(.3, hh), p.z + R(-p.r, p.r)), 3, Math.min(5, p.r * .8 + .5), p.kind === 'crystal' || p.kind === 'veyl' ? M.teal : M.dust, 1.4, 1.6);
+        if (p.y0 < 1) this.scorchAt(c, Math.min(9, p.r * 2.2 + .6));
+        if (big) { this.shake = Math.max(this.shake, v * 1.1); sfx.boom(v); this.hud.damage(V3(p.x, Math.min(hh, 8) + 1.5, p.z), p.kind === 'metal' ? 'KRUNCH!' : 'CRUMBLE!', 'ko'); } else if (p.kind === 'metal') sfx.clang(); else sfx.boom(v * .35);
+      }
+      if (p.kind === 'barrel') this.explode(V3(p.x, .6, p.z), -1, 55, 5.5, null);
+    }
+    for (const l of p.link) this.killProp(l);
+  }
+  /** One piece of rubble: a rigid chunk that falls, bounces, tumbles and comes to rest. */
+  chunk(p: THREE.Vector3, size: number, mat: THREE.Material, power: number, from: THREE.Vector3, boxy = false) {
+    let c = this.chunks.find(x => x.t <= 0); if (!c) { c = this.chunks.reduce((a, b) => a.t < b.t ? a : b); }
+    c.m.geometry = boxy ? G.box : G.dod; c.m.material = mat; c.m.position.copy(p); c.s = size; c.m.scale.set(size * R(.8, 1.3), size * R(.6, 1), size * R(.8, 1.3)); c.m.rotation.set(R(0, 6), R(0, 6), R(0, 6));
+    const dx = p.x - from.x, dz = p.z - from.z, d = Math.hypot(dx, dz) || 1; c.v.set(dx / d * power * R(.3, 1) + R(-1, 1), power * R(.2, .9), dz / d * power * R(.3, 1) + R(-1, 1)); c.w.set(R(-6, 6), R(-6, 6), R(-6, 6)); c.rest = false; c.t = R(35, 50); c.m.visible = true;
+  }
+  /** A blast or a stomp throws nearby rubble, including pieces that had settled. */
+  shove(p: THREE.Vector3, radius: number, power: number) {
+    for (const c of this.chunks) { if (c.t <= 0) continue; const q = c.m.position, dx = q.x - p.x, dz = q.z - p.z, d = Math.hypot(dx, dz); if (d > radius) continue; const k = (1 - d / radius) / Math.max(.5, c.s); c.rest = false; c.v.x += dx / (d || 1) * power * k; c.v.z += dz / (d || 1) * power * k; c.v.y += power * .8 * k; c.w.set(R(-8, 8), R(-8, 8), R(-8, 8)); }
+  }
+  updateChunks(dt: number) {
+    const me = this.me; this.thudT -= dt;
+    for (const c of this.chunks) {
+      if (c.t <= 0) continue; c.t -= dt; const q = c.m.position;
+      if (c.t <= 0) { c.m.visible = false; continue; } if (c.t < 1.5) { q.y -= dt * c.s * .5; continue; }
+      if (c.rest) { if (me && me.alive && c.s < 1 && Math.abs(q.x - me.pos.x) < .8 && Math.abs(q.z - me.pos.z) < .8 && me.moving) { const dx = q.x - me.pos.x, dz = q.z - me.pos.z, d = Math.hypot(dx, dz) || 1; c.rest = false; c.v.set(dx / d * 3.5, 2.2, dz / d * 3.5); c.w.set(R(-6, 6), 0, R(-6, 6)); } continue; }
+      c.v.y -= 26 * dt; q.addScaledVector(c.v, dt); c.m.rotation.x += c.w.x * dt; c.m.rotation.y += c.w.y * dt; c.m.rotation.z += c.w.z * dt;
+      const floor = c.s * .36;
+      if (q.y < floor) {
+        q.y = floor;
+        if (c.v.y < -2.4) { const hard = -c.v.y; c.v.y *= -.36; c.v.x *= .7; c.v.z *= .7; c.w.multiplyScalar(.55); if (c.s > .55 && hard > 6) { this.puff(TMP.set(q.x, .2, q.z), 1, c.s * .7, M.dust, .5, .8); if (this.thudT <= 0 && this.vol(q) > .25) { this.thudT = .12; sfx.step(true); this.shake = Math.max(this.shake, this.vol(q) * .25 * c.s); } } }
+        else { c.v.y = 0; const f = Math.max(0, 1 - dt * 5); c.v.x *= f; c.v.z *= f; c.w.multiplyScalar(Math.max(0, 1 - dt * 7)); if (c.v.x * c.v.x + c.v.z * c.v.z < .06) { c.rest = true; c.v.set(0, 0, 0); } }
+      }
+      for (const b of this.buildings) { if (!b.alive || q.y > b.h) continue; const dx = q.x - b.pos.x, dz = q.z - b.pos.z, ex = b.hx + c.s * .3, ez = b.hz + c.s * .3; if (Math.abs(dx) >= ex || Math.abs(dz) >= ez) continue; const px = ex - Math.abs(dx), pz = ez - Math.abs(dz); if (px < pz) { q.x += Math.sign(dx || 1) * px; c.v.x = Math.abs(c.v.x) * .4 * Math.sign(dx || 1); } else { q.z += Math.sign(dz || 1) * pz; c.v.z = Math.abs(c.v.z) * .4 * Math.sign(dz || 1); } }
+      for (const s of this.spires) { const dx = q.x - s.x, dz = q.z - s.z, m = s.r + c.s * .3; if (Math.abs(dx) > m || Math.abs(dz) > m || q.y > s.h) continue; const d = Math.hypot(dx, dz); if (d >= m || d < .001) continue; const nx = dx / d, nz = dz / d, vn = c.v.x * nx + c.v.z * nz; q.x += nx * (m - d); q.z += nz * (m - d); if (vn < 0) { c.v.x -= 1.4 * vn * nx; c.v.z -= 1.4 * vn * nz; } }
     }
   }
   /** The Patch's pulse: tops up every friendly body nearby, the caster included. */
@@ -443,12 +521,14 @@ export class Game {
   /** A small shell burst: splash damage without the full explosion fanfare. */
   burst(p: THREE.Vector3, dmg: number, radius: number, from: Unit | null, skip: Unit | Building | null = null) {
     for (const u of this.units) { if (!u.alive || u.team !== 1 || u === skip) continue; const d = Math.hypot(u.pos.x - p.x, u.pos.z - p.z); if (d > radius + UNIT[u.kind].rad || Math.abs(p.y - UNIT[u.kind].bodyY) > radius + 1.5) continue; const k = 1 - .6 * Math.min(1, d / radius); this.damage(u, dmg * k, from); if (d > .1 && u.kind !== 'warden') { u.kx += (u.pos.x - p.x) / d * 4 * k; u.kz += (u.pos.z - p.z) / d * 4 * k; } }
+    this.blastProps(p, radius, dmg, from, skip); this.shove(p, radius * 1.5, 5);
     this.puff(p, 3, radius * .3, M.fire, 1.4, 1.2); this.puff(p, 2, radius * .32, M.smoke, 1, 1.6); this.debris(p, 3, .14, M.rock, 5); if (p.y < .6) this.scorchAt(p, radius * .7);
     const v = this.vol(p); this.shake = Math.max(this.shake, v * .35); sfx.boom(v * .45);
   }
   stomp(u: Unit) {
     const p = V3(u.pos.x, 0, u.pos.z); let any = false;
     for (const e of this.units) { if (!e.alive || e.team === u.team) continue; const dx = e.pos.x - p.x, dz = e.pos.z - p.z, d = Math.hypot(dx, dz); if (d > 6.5 + UNIT[e.kind].rad) continue; this.damage(e, 46 * (1 - .5 * Math.min(1, d / 6.5)), u); const k = e.kind === 'warden' ? 3 : 16; e.kx += dx / (d || 1) * k; e.kz += dz / (d || 1) * k; any = true; }
+    this.blastProps(p, 6.5, 60, u); this.shove(p, 9, 10);
     for (let i = 0; i < 10; i++) { const a = i / 10 * 6.283; this.puff(TMP.set(p.x + Math.cos(a) * 2.6, .3, p.z + Math.sin(a) * 2.6), 1, 1.1, M.dust, 1.6, .5); }
     this.debris(TMP.set(p.x, .3, p.z), 8, .22, M.rock, 7); this.scorchAt(p, 5); this.warn(p.x, p.z, 6.5, .35);
     const v = this.vol(p); this.shake = Math.max(this.shake, v * 1.2); sfx.boom(v); sfx.clang();
@@ -470,10 +550,13 @@ export class Game {
       const end = V3().copy(eye).addScaledVector(d, dist); this.tracer(muzzle, end, tracerMat, .16);
       const tgt = hit && (hit.unit && hit.unit.team === 1 ? hit.unit : hit.b && hit.b.team === 1 ? hit.b : null);
       if (tgt) { this.damage(tgt, (hit!.head ? 34 : 22) * mul, me, !!hit!.head); this.hud.hitmark(!!hit!.head); hit!.head ? sfx.crit() : sfx.hit(); }
+      if (hit?.prop) this.damageProp(hit.prop, 22 * mul, me, end);
       if (dist < 139) this.burst(end, 14 * mul, 3.2, me, tgt);
     }
   }
-  impact(eye: THREE.Vector3, d: THREE.Vector3, hit: Hit | null, end: THREE.Vector3) { if (!hit && d.y < 0) { const t = -eye.y / d.y; if (t < 150) end.copy(eye).addScaledVector(d, t); else return; } else if (!hit) return; this.puff(end, 1, .35, M.dust, .6); this.debris(end, 1, .07, M.rock, 3); }
+  impact(eye: THREE.Vector3, d: THREE.Vector3, hit: Hit | null, end: THREE.Vector3, dmg = 7) {
+    if (hit?.prop) { this.damageProp(hit.prop, dmg, this.me, end); return; }
+    if (!hit && d.y < 0) { const t = -eye.y / d.y; if (t < 150) end.copy(eye).addScaledVector(d, t); else return; } else if (!hit) return; this.puff(end, 1, .35, M.dust, .6); this.debris(end, 1, .07, M.rock, 3); }
   shoot(pos: THREE.Vector3, vel: THREE.Vector3, team: number, dmg: number, nade: boolean, from: Unit | null) {
     const obj = (nade ? this.nadeProto : this.boltProto).clone(true); obj.position.copy(pos); this.scene.add(obj);
     this.projs.push({ obj, pos: pos.clone(), vel: vel.clone(), team, dmg, nade, life: nade ? 4 : 2.2, from });
@@ -485,7 +568,7 @@ export class Game {
       let hit = p.life <= 0 || p.pos.y <= .12, tgt: Unit | Building | null = null;
       if (!hit) for (const u of this.units) { if (!u.alive || u.team === p.team) continue; const st = UNIT[u.kind]; if (Math.abs(u.pos.x - p.pos.x) > 3) continue; if (Math.hypot(u.pos.x - p.pos.x, u.pos.z - p.pos.z) < st.rad + .3 && p.pos.y < st.headY + .5) { hit = true; tgt = u; break; } }
       if (!hit) for (const b of this.buildings) { if (!b.alive || (b.team === p.team && !p.nade)) continue; if (Math.abs(p.pos.x - b.pos.x) < b.hx && Math.abs(p.pos.z - b.pos.z) < b.hz && p.pos.y < b.h) { hit = true; if (b.team !== p.team) tgt = b; break; } }
-      if (!hit) for (const s of this.spires) if (Math.abs(p.pos.x - s.x) < s.r && Math.abs(p.pos.z - s.z) < s.r && p.pos.y < 8) { hit = true; break; }
+      if (!hit) for (const s of this.spires) if (Math.abs(p.pos.x - s.x) < s.r && Math.abs(p.pos.z - s.z) < s.r && p.pos.y < s.h) { hit = true; if (!p.nade) this.damageProp(s, p.dmg, p.from); break; }
       if (!hit) continue;
       if (p.nade) this.explode(p.pos, p.team, p.dmg, 5.5, p.from);
       else { if (tgt) this.damage(tgt, p.dmg, p.from); this.puff(p.pos, 3, .5, M.cyan, .8); this.debris(p.pos, 2, .1, M.crys, 4); sfx.zap(this.vol(p.pos) * .6); }

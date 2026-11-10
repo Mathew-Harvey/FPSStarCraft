@@ -4,6 +4,7 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { G, M, R, mk, beam, setLayer, L_FX, L_VM, holoLine, V3, toonMaterial } from './gfx';
+import type { Prop } from './data';
 
 export interface Rig { body: THREE.Object3D; head?: THREE.Object3D; arms?: THREE.Object3D; armL?: THREE.Object3D; armR?: THREE.Object3D; legL?: THREE.Object3D; legR?: THREE.Object3D; flash?: THREE.Object3D; halo?: THREE.Object3D; pack?: THREE.Object3D; height: number }
 export interface Model { obj: THREE.Group; rig: Rig }
@@ -467,58 +468,77 @@ function flora(g: THREE.Object3D, x: number, z: number, s: number) {
   const n = 2 + Math.floor(R(0, 3));
   for (let i = 0; i < n; i++) { const a = R(0, 6.3), l = R(.6, 1.6) * s, tx = x + Math.cos(a) * .3 * s, tz = z + Math.sin(a) * .3 * s; beam([x, 0, z], [tx + Math.cos(a) * l * .4, l, tz + Math.sin(a) * l * .4], .05 * s, M.cloth, g); mk(G.sph, i % 2 ? M.mag : M.violet, [tx + Math.cos(a) * l * .4, l + .1 * s, tz + Math.sin(a) * l * .4], [.3 * s, .34 * s, .3 * s], 0, g); }
 }
-export function buildWorld(scene: THREE.Scene, spires: { x: number; z: number; r: number }[], anim: ((t: number) => void)[]) {
+export function buildWorld(scene: THREE.Scene, props: Prop[], anim: ((t: number) => void)[]) {
   const w = new THREE.Group(); scene.add(w);
+  // Scenery is drawn as a few big merged meshes. Each prop remembers which vertices are its own, so it can crumble or vanish without costing a draw call.
+  const batches = new Map<THREE.Material, { geos: THREE.BufferGeometry[]; recs: { p: Prop; start: number; count: number }[]; n: number }>();
+  type Opt = { solid?: boolean; stages?: number; y0?: number };
+  const prop = (kind: Prop['kind'], name: string, x: number, z: number, r: number, h: number, hp: number, o: Opt, build?: (g: THREE.Group) => void): Prop => {
+    const p: Prop = { id: props.length, kind, name, x, z, r, y0: o.y0 || 0, h, hp, maxHp: hp, alive: true, solid: !!o.solid, stage: 0, stages: o.stages || 0, ranges: [], link: [] }; props.push(p);
+    if (build) {
+      const g = new THREE.Group(); build(g); g.updateMatrixWorld(true);
+      g.traverse(c => { const m = c as THREE.Mesh; if (!m.isMesh) return; const geo = m.geometry.index ? m.geometry.toNonIndexed() : m.geometry.clone(); geo.applyMatrix4(m.matrixWorld);
+        for (const k of Object.keys(geo.attributes)) if (k !== 'position' && k !== 'normal' && k !== 'uv') geo.deleteAttribute(k);
+        const mat = m.material as THREE.Material; let b = batches.get(mat); if (!b) batches.set(mat, b = { geos: [], recs: [], n: 0 }); const count = geo.attributes.position.count; b.recs.push({ p, start: b.n, count }); b.n += count; b.geos.push(geo); });
+    }
+    return p;
+  };
   mk(new THREE.PlaneGeometry(3000, 3000), M.ground, 0, 0, [-Math.PI / 2, 0, 0], w);
   mk(new THREE.PlaneGeometry(190, 6), M.road, [70, .02, ROAD_Z], 0, [-Math.PI / 2, 0, 0], w);
-  // far mesas
+  // far mesas: the skyline, well outside the map edge
   for (let i = 0; i < 36; i++) {
     const a = i / 36 * 6.283 + R(-.06, .06), d = R(250, 430), r = R(34, 80), h = R(24, 90);
     const m = mk(new THREE.CylinderGeometry(r * R(.55, .8), r, h, 7 + (i % 3)), M.mesa, [60 + Math.cos(a) * d, h / 2 - 1, 10 + Math.sin(a) * d], 0, [0, R(0, 3), 0], w);
     if (i % 3 === 0) mk(new THREE.CylinderGeometry(r * .3, r * .42, h * .5, 6), M.mesa, [m.position.x + R(-10, 10), h + h * .22, m.position.z + R(-10, 10)], 0, [0, R(0, 3), 0], w);
   }
-  // nearer buttes for parallax, solid
-  for (let i = 0; i < 9; i++) { const a = i / 9 * 6.283 + .4, d = R(150, 185), r = R(10, 20), h = R(14, 34), x = 60 + Math.cos(a) * d, z = 10 + Math.sin(a) * d * .8; if (isClear(x, z, r + 6)) continue; mk(new THREE.CylinderGeometry(r * .7, r, h, 7), M.mesa, [x, h / 2 - .5, z], 0, [0, R(0, 3), 0], w); mk(new THREE.CylinderGeometry(r * .4, r * .55, h * .4, 6), M.mesa, [x + R(-3, 3), h * 1.18, z + R(-3, 3)], 0, [0, R(0, 3), 0], w); spires.push({ x, z, r: r * .95 }); }
+  // nearer buttes inside the map: big, slow to bring down, but they do come down
+  for (let i = 0; i < 9; i++) { const a = i / 9 * 6.283 + .4, d = R(150, 185), r = R(10, 20), h = R(14, 34), x = 60 + Math.cos(a) * d, z = 10 + Math.sin(a) * d * .8; if (isClear(x, z, r + 6)) continue;
+    prop('mesa', 'Butte', x, z, r * .95, h * 1.3, 2600 + r * h * 6, { solid: true, stages: 3 }, g => { mk(new THREE.CylinderGeometry(r * .7, r, h, 7), M.mesa, [x, h / 2 - .5, z], 0, [0, R(0, 3), 0], g); mk(new THREE.CylinderGeometry(r * .4, r * .55, h * .4, 6), M.mesa, [x + R(-3, 3), h * 1.18, z + R(-3, 3)], 0, [0, R(0, 3), 0], g); }); }
   // rocks, spires and plants
   for (let i = 0; i < 260; i++) {
     const x = R(-110, 230), z = R(-130, 150);
-    if (i % 8 === 0) { const h = R(8, 20), ww = h * .34; if (isClear(x, z, ww + 2)) continue; mk(G.hexT, M.rock, [x, h / 2 - .5, z], [ww, h, ww], [R(-.08, .08), R(0, 3), R(-.08, .08)], w); mk(G.dod, M.rock, [x + 1, h + .6, z], [h * .3, h * .22, h * .3], [R(0, 3), R(0, 3), 0], w); if (i % 16 === 0) mk(G.hexT, M.rock, [x + ww * .9, h * .22, z + ww * .5], [ww * .7, h * .5, ww * .7], [R(-.2, .2), R(0, 3), R(-.2, .2)], w); spires.push({ x, z, r: ww * .5 }); }
-    else if (i % 8 < 5) { if (isClear(x, z, -3) && i % 3) continue; const s = R(.4, 2.0); mk(G.dod, M.rock, [x, s * .25, z], [s, s * R(.5, .9), s * R(.7, 1.2)], [R(0, 3), R(0, 3), R(0, 3)], w); }
-    else if (!isClear(x, z, -6) || Math.hypot(x, z) > 30) flora(w, x, z, R(.7, 1.5));
+    if (i % 8 === 0) { const h = R(8, 20), ww = h * .34; if (isClear(x, z, ww + 2)) continue;
+      prop('rock', 'Rock spire', x, z, ww * .5, h + 1, 350 + h * 45, { solid: true, stages: 2 }, g => { mk(G.hexT, M.rock, [x, h / 2 - .5, z], [ww, h, ww], [R(-.08, .08), R(0, 3), R(-.08, .08)], g); mk(G.dod, M.rock, [x + 1, h + .6, z], [h * .3, h * .22, h * .3], [R(0, 3), R(0, 3), 0], g); if (i % 16 === 0) mk(G.hexT, M.rock, [x + ww * .9, h * .22, z + ww * .5], [ww * .7, h * .5, ww * .7], [R(-.2, .2), R(0, 3), R(-.2, .2)], g); }); }
+    else if (i % 8 < 5) { if (isClear(x, z, -3) && i % 3) continue; const sc = R(.4, 2.0); prop('rock', 'Boulder', x, z, sc * .55, sc * .6, 40 + sc * 70, {}, g => { mk(G.dod, M.rock, [x, sc * .25, z], [sc, sc * R(.5, .9), sc * R(.7, 1.2)], [R(0, 3), R(0, 3), R(0, 3)], g); }); }
+    else if (!isClear(x, z, -6) || Math.hypot(x, z) > 30) { const sc = R(.7, 1.5); prop('plant', 'Bulb weed', x, z, .5 * sc, 1.8 * sc, 8, {}, g => flora(g, x, z, sc)); }
   }
-  // The Needle's Eye: a rock arch over the road halfway to the outpost
-  for (const sz of [-1, 1]) { const z = ROAD_Z + sz * 8.5; mk(G.hexT, M.rock, [68, 6, z], [5, 13, 5], [0, sz, sz * .06], w); mk(G.dod, M.rock, [68.5, .8, z + sz * 2.6], [3, 2, 3], [1, 2, 0], w); spires.push({ x: 68, z, r: 2.6 }); }
-  mk(G.box, M.rock, [68, 12.6, ROAD_Z], [4.4, 3, 22], [0, 0, .04], w); mk(G.dod, M.rock, [68, 14.6, ROAD_Z - 4], [5, 3, 6], [0, 1, 0], w); mk(G.dod, M.rock, [68.4, 14.2, ROAD_Z + 5], [4, 2.6, 5], [0, 2, 0], w);
-  beam([67, 11, ROAD_Z - 3], [67, 8.6, ROAD_Z - 3], .03, M.rubber, w); mk(G.box, M.sign, [67, 7.9, ROAD_Z - 3], [.1, 1.3, 3.6], 0, w);
+  // The Needle's Eye: a rock arch over the road halfway to the outpost. Knock out a leg and the lintel comes down.
+  { const legs: Prop[] = [];
+    for (const sz of [-1, 1]) { const z = ROAD_Z + sz * 8.5; legs.push(prop('rock', 'Needle\'s Eye', 68, z, 2.6, 12, 1500, { solid: true, stages: 2 }, g => { mk(G.hexT, M.rock, [68, 6, z], [5, 13, 5], [0, sz, sz * .06], g); mk(G.dod, M.rock, [68.5, .8, z + sz * 2.6], [3, 2, 3], [1, 2, 0], g); })); }
+    const top = prop('rock', 'Needle\'s Eye', 68, ROAD_Z, 2.4, 16, 900, { y0: 11.2 }, g => { mk(G.box, M.rock, [68, 12.6, ROAD_Z], [4.4, 3, 22], [0, 0, .04], g); mk(G.dod, M.rock, [68, 14.6, ROAD_Z - 4], [5, 3, 6], [0, 1, 0], g); mk(G.dod, M.rock, [68.4, 14.2, ROAD_Z + 5], [4, 2.6, 5], [0, 2, 0], g); beam([67, 11, ROAD_Z - 3], [67, 8.6, ROAD_Z - 3], .03, M.rubber, g); mk(G.box, M.sign, [67, 7.9, ROAD_Z - 3], [.1, 1.3, 3.6], 0, g); });
+    for (const l of legs) l.link.push(top); }
   // crashed ore hauler south of the road
-  { const g = new THREE.Group(); g.position.set(46, 0, 30); g.rotation.set(0, .5, .12); w.add(g);
-    mk(G.box, M.rust, [0, 1.6, 0], [9, 3, 3.6], 0, g); mk(G.box, M.tealC, [-6.6, 1.3, .4], [3.6, 2.6, 3.4], [0, .2, .1], g); mk(G.box, M.steelD, [5.4, 1.9, 0], [2.2, 2.6, 3.2], 0, g); mk(G.box, M.visor, [6.52, 2.3, 0], [.1, .9, 2.4], 0, g);
-    for (const x of [-3, 0, 3, 5.4]) for (const sz of [-1, 1]) mk(G.cyl, M.rubber, [x, .5, sz * 1.9], [1.5, .7, 1.5], [Math.PI / 2, 0, 0], g);
-    mk(G.cyl, M.steelD, [4.6, 3.9, -1], [.3, 1.6, .3], 0, g); for (let i = 0; i < 5; i++) mk(G.oct, M.ore, [-2.5 + i * 1.2 + R(-.3, .3), 3.3, R(-.8, .8)], [.6, R(1, 1.8), .6], [R(-.4, .4), 0, R(-.4, .4)], g);
-    bake(g); spires.push({ x: 46, z: 30, r: 3.2 }, { x: 42, z: 28, r: 2.6 }, { x: 50, z: 32.4, r: 2.6 }); }
-  for (let i = 0; i < 6; i++) mk(G.oct, M.ore, [38 + R(-4, 4), .5, 34 + R(-3, 3)], [.5, R(.8, 1.4), .5], [R(-1, 1), 0, R(-1, 1)], w);
+  { const hull = prop('metal', 'Wrecked hauler', 46, 30, 3.2, 3.6, 1400, { solid: true, stages: 1 }, gg => { const g = new THREE.Group(); g.position.set(46, 0, 30); g.rotation.set(0, .5, .12); gg.add(g);
+      mk(G.box, M.rust, [0, 1.6, 0], [9, 3, 3.6], 0, g); mk(G.box, M.tealC, [-6.6, 1.3, .4], [3.6, 2.6, 3.4], [0, .2, .1], g); mk(G.box, M.steelD, [5.4, 1.9, 0], [2.2, 2.6, 3.2], 0, g); mk(G.box, M.visor, [6.52, 2.3, 0], [.1, .9, 2.4], 0, g);
+      for (const x of [-3, 0, 3, 5.4]) for (const sz of [-1, 1]) mk(G.cyl, M.rubber, [x, .5, sz * 1.9], [1.5, .7, 1.5], [Math.PI / 2, 0, 0], g);
+      mk(G.cyl, M.steelD, [4.6, 3.9, -1], [.3, 1.6, .3], 0, g); for (let i = 0; i < 5; i++) mk(G.oct, M.ore, [-2.5 + i * 1.2 + R(-.3, .3), 3.3, R(-.8, .8)], [.6, R(1, 1.8), .6], [R(-.4, .4), 0, R(-.4, .4)], g); });
+    for (const [x, z] of [[42, 28], [50, 32.4]]) { const part = prop('metal', 'Wrecked hauler', x, z, 2.6, 3.4, 1, { solid: true }); part.owner = hull; hull.link.push(part); } }
+  prop('crystal', 'Spilled ore', 38, 34, 3.5, 1.2, 80, {}, g => { for (let i = 0; i < 6; i++) mk(G.oct, M.ore, [38 + R(-4, 4), .5, 34 + R(-3, 3)], [.5, R(.8, 1.4), .5], [R(-1, 1), 0, R(-1, 1)], g); });
   // base dressing
-  for (const [x, z, r] of [[-9, 13, 0], [12, 16, .4], [-14, -4, 1.2], [9, -14, 2]] as P3[]) { const g = new THREE.Group(); g.position.set(x, 0, z); g.rotation.y = r; w.add(g); beam([0, 0, 0], [0, 7, 0], .12, M.steelD, g); beam([0, 7, 0], [1.2, 7.6, 0], .08, M.steelD, g); mk(G.box, M.visor, [1.4, 7.5, 0], [.9, .3, .7], [0, 0, -.5], g); mk(G.box, M.concrete, [0, .2, 0], [.8, .4, .8], 0, g); bake(g); }
-  for (const [x, z] of [[-8, 9], [-9.4, 9.6], [-8.6, 10.6], [8.5, 8.2], [14, -4], [15.2, -3.4]]) mk(G.cyl, i3(x) ? M.rust : M.yellow, [x, .6, z], [.8, 1.2, .8], [0, R(0, 3), 0], w);
-  for (const [x, z, m] of [[-11.5, 6, 0], [-11.2, 4.6, 1], [-11.6, 5.3, 2]] as P3[]) mk(G.box, [M.tealC, M.rust, M.yellow][m], [x, m === 2 ? 1.75 : .6, z], [1.2, 1.2, 1.2], [0, R(0, 1), 0], w);
-  spires.push({ x: -11.4, z: 5.3, r: 1.3 }, { x: -8.6, z: 9.8, r: 1.2 });
-  beam([7, .25, 1], [20, .25, -11], .22, M.steelD, w); beam([7, .25, 1], [7, .25, 4], .22, M.steelD, w); for (let i = 0; i < 5; i++) mk(G.box, M.concrete, [8.6 + i * 2.6, .2, -.5 - i * 2.4], [.6, .5, .6], 0, w);
-  for (let i = 0; i < 7; i++) { const a = -2.2 + i * .34; beam([Math.cos(a) * 36, 0, Math.sin(a) * 36], [Math.cos(a) * 36, 1.5, Math.sin(a) * 36], .07, M.steelD, w); if (i) beam([Math.cos(a) * 36, 1.2, Math.sin(a) * 36], [Math.cos(a - .34) * 36, 1.2, Math.sin(a - .34) * 36], .04, M.rubber, w); }
-  { const g = new THREE.Group(); g.position.set(26, 0, 2); w.add(g); mk(G.torusF, M.rock, [0, .15, 0], [3, 3, 4], [Math.PI / 2, 0, 0], g); mk(G.disc, M.violet, [0, .22, 0], [2.6, 2.6, 1], [-Math.PI / 2, 0, 0], g); bake(g); }
+  for (const [x, z, r] of [[-9, 13, 0], [12, 16, .4], [-14, -4, 1.2], [9, -14, 2]] as P3[]) prop('metal', 'Floodlight', x, z, .4, 7.8, 160, {}, gg => { const g = new THREE.Group(); g.position.set(x, 0, z); g.rotation.y = r; gg.add(g); beam([0, 0, 0], [0, 7, 0], .12, M.steelD, g); beam([0, 7, 0], [1.2, 7.6, 0], .08, M.steelD, g); mk(G.box, M.visor, [1.4, 7.5, 0], [.9, .3, .7], [0, 0, -.5], g); mk(G.box, M.concrete, [0, .2, 0], [.8, .4, .8], 0, g); });
+  for (const [x, z] of [[-8, 9], [-9.4, 9.6], [-8.6, 10.6], [8.5, 8.2], [14, -4], [15.2, -3.4], [30, 20], [31.2, 20.6], [58, 9], [59, 9.9], [88, 19], [96, 8.5], [97.2, 8.2]]) prop('barrel', 'Fuel drum', x, z, .48, 1.25, 30, { solid: x < -7 }, g => { mk(G.cyl, i3(x) ? M.rust : M.yellow, [x, .6, z], [.8, 1.2, .8], [0, R(0, 3), 0], g); mk(G.cyl, M.red, [x, 1.0, z], [.83, .12, .83], 0, g); });
+  for (const [x, z, m] of [[-11.5, 6, 0], [-11.2, 4.6, 1], [-11.6, 5.3, 2]] as P3[]) prop('metal', 'Crate', x, z, .75, m === 2 ? 2.4 : 1.2, 90, { solid: m !== 2, y0: m === 2 ? 1.15 : 0 }, g => { mk(G.box, [M.tealC, M.rust, M.yellow][m], [x, m === 2 ? 1.75 : .6, z], [1.2, 1.2, 1.2], [0, R(0, 1), 0], g); });
+  { const pipe = prop('metal', 'Pipeline', 13.5, -5, .5, .6, 260, {}, g => { beam([7, .25, 1], [20, .25, -11], .22, M.steelD, g); beam([7, .25, 1], [7, .25, 4], .22, M.steelD, g); for (let i = 0; i < 5; i++) mk(G.box, M.concrete, [8.6 + i * 2.6, .2, -.5 - i * 2.4], [.6, .5, .6], 0, g); });
+    for (let i = 0; i <= 6; i++) { if (i === 3) continue; const part = prop('metal', 'Pipeline', 7 + 13 * i / 6, 1 - 12 * i / 6, .5, .6, 1, {}); part.owner = pipe; pipe.link.push(part); } }
+  for (let i = 0; i < 7; i++) { const a = -2.2 + i * .34, x = Math.cos(a) * 36, z = Math.sin(a) * 36; prop('metal', 'Fence', x, z, .35, 1.6, 40, {}, g => { beam([x, 0, z], [x, 1.5, z], .07, M.steelD, g); if (i) beam([x, 1.2, z], [Math.cos(a - .34) * 36, 1.2, Math.sin(a - .34) * 36], .04, M.rubber, g); }); }
+  prop('rock', 'Seep pool', 26, 2, 3, .5, 300, {}, gg => { const g = new THREE.Group(); g.position.set(26, 0, 2); gg.add(g); mk(G.torusF, M.rock, [0, .15, 0], [3, 3, 4], [Math.PI / 2, 0, 0], g); mk(G.disc, M.violet, [0, .22, 0], [2.6, 2.6, 1], [-Math.PI / 2, 0, 0], g); });
   // road markers
-  for (let x = 16; x < 112; x += 16) { if (Math.abs(x - 68) < 6) continue; const z = ROAD_Z + (x % 32 ? 4.6 : -4.6); beam([x, 0, z], [x, 2.2, z], .06, M.steelD, w); mk(G.box, M.hazard1, [x, 2.4, z], [.1, .6, .9], 0, w); }
+  for (let x = 16; x < 112; x += 16) { if (Math.abs(x - 68) < 6) continue; const z = ROAD_Z + (x % 32 ? 4.6 : -4.6); prop('metal', 'Road marker', x, z, .35, 2.8, 60, {}, g => { beam([x, 0, z], [x, 2.2, z], .06, M.steelD, g); mk(G.box, M.hazard1, [x, 2.4, z], [.1, .6, .9], 0, g); }); }
   // Veyl ground: glowing veins and crystal growths around the outpost
   for (let i = 0; i < 26; i++) { const a = R(0, 6.3), d = R(8, 34), x = 126 + Math.cos(a) * d, z = 13 + Math.sin(a) * d, l = R(3, 9), ra = a + R(-.6, .6); mk(G.box, M.teal, [x, .03, z], [l, .04, .16], [0, -ra, 0], w); if (i % 2) mk(G.box, M.teal, [x + Math.cos(ra) * l * .5, .03, z + Math.sin(ra) * l * .5], [l * .5, .04, .12], [0, -ra + .9, 0], w); }
-  for (let i = 0; i < 22; i++) { const a = R(0, 6.3), d = R(18, 38), x = 126 + Math.cos(a) * d, z = 13 + Math.sin(a) * d; if (segDist(x, z, 0, ROAD_Z, 130, ROAD_Z) < 6) continue; const n = 2 + Math.floor(R(0, 3)); for (let k = 0; k < n; k++) { const h = R(1.2, 4.5); mk(G.oct, k % 3 ? M.crys : M.indigoL, [x + R(-.8, .8), h * .3, z + R(-.8, .8)], [h * .3, h, h * .3], [R(-.5, .5), R(0, 3), R(-.5, .5)], w); } if (i % 4 === 0) spires.push({ x, z, r: 1 }); }
+  for (let i = 0; i < 22; i++) { const a = R(0, 6.3), d = R(18, 38), x = 126 + Math.cos(a) * d, z = 13 + Math.sin(a) * d; if (segDist(x, z, 0, ROAD_Z, 130, ROAD_Z) < 6) continue; const n = 2 + Math.floor(R(0, 3));
+    prop('crystal', 'Crystal growth', x, z, 1, 3.4, 120, { solid: i % 4 === 0 }, g => { for (let k = 0; k < n; k++) { const h = R(1.2, 4.5); mk(G.oct, k % 3 ? M.crys : M.indigoL, [x + R(-.8, .8), h * .3, z + R(-.8, .8)], [h * .3, h, h * .3], [R(-.5, .5), R(0, 3), R(-.5, .5)], g); } }); }
   // Veyl outpost dressing: brood domes, tall reeds and a dais in the middle
-  for (const [x, z, sc] of [[112, -6, 1], [136, -4, 1.2], [141, 27, 1], [128, 34, 1.3], [107, 32, .9]]) { const g = new THREE.Group(); g.position.set(x, 0, z); g.scale.setScalar(sc); g.rotation.y = R(0, 6); w.add(g);
+  for (const [x, z, sc] of [[112, -6, 1], [136, -4, 1.2], [141, 27, 1], [128, 34, 1.3], [107, 32, .9]]) prop('veyl', 'Brood dome', x, z, 3 * sc, 4.6 * sc, 900, { solid: true, stages: 2 }, gg => { const g = new THREE.Group(); g.position.set(x, 0, z); g.scale.setScalar(sc); g.rotation.y = R(0, 6); gg.add(g);
     mk(G.sph, M.indigo, [0, .2, 0], [6, 5, 6], 0, g); mk(G.torus, M.mag, [0, 1.5, 0], [5.4, 5.4, 3], [Math.PI / 2, 0, 0], g); mk(G.cone6, M.teal, [0, 3.4, 0], [.5, 2.2, .5], 0, g); mk(G.disc, M.violet, [0, 1.1, 2.86], [1.5, 1.9, 1], 0, g); mk(G.torusF, M.indigoL, [0, 1.1, 2.8], [.95, 1.2, 2], 0, g);
-    for (let i = 0; i < 4; i++) { const a = i * 1.57 + .8; mk(G.oct, M.crys, [Math.cos(a) * 3, .5, Math.sin(a) * 3], [.4, 1.3, .4], [R(-.4, .4), 0, R(-.4, .4)], g); } bake(g); spires.push({ x, z, r: 3 * sc }); }
-  for (const [x, z] of [[104, -2], [146, 8], [134, 38], [100, 24], [118, 40], [144, -8]]) for (let k = 0; k < 6; k++) { const h = R(5, 11), rx = x + R(-2, 2), rz = z + R(-2, 2), lean = R(-.6, .6); beam([rx, 0, rz], [rx + lean, h, rz + R(-.5, .5)], .09, M.indigoL, w); mk(G.oct, M.teal, [rx + lean, h + .3, rz], [.22, .7, .22], 0, w); }
+    for (let i = 0; i < 4; i++) { const a = i * 1.57 + .8; mk(G.oct, M.crys, [Math.cos(a) * 3, .5, Math.sin(a) * 3], [.4, 1.3, .4], [R(-.4, .4), 0, R(-.4, .4)], g); } });
+  for (const [x, z] of [[104, -2], [146, 8], [134, 38], [100, 24], [118, 40], [144, -8]]) prop('veyl', 'Reed stand', x, z, 2.4, 9, 140, {}, g => { for (let k = 0; k < 6; k++) { const h = R(5, 11), rx = x + R(-2, 2), rz = z + R(-2, 2), lean = R(-.6, .6); beam([rx, 0, rz], [rx + lean, h, rz + R(-.5, .5)], .09, M.indigoL, g); mk(G.oct, M.teal, [rx + lean, h + .3, rz], [.22, .7, .22], 0, g); } });
   mk(G.hexT, M.indigoL, [124, .06, 13], [11, .12, 11], 0, w); mk(G.torusF, M.teal, [124, .16, 13], [4.6, 4.6, .6], [Math.PI / 2, 0, 0], w); mk(G.torusF, M.mag, [124, .16, 13], [2.2, 2.2, .6], [Math.PI / 2, 0, 0], w);
   bake(w);
+  for (const [mat, b] of batches) { const geo = b.geos.length > 1 ? mergeGeometries(b.geos) : b.geos[0], mesh = new THREE.Mesh(geo, mat); mesh.frustumCulled = false; w.add(mesh); const attr = geo.attributes.position as THREE.BufferAttribute; for (const r of b.recs) r.p.ranges.push({ attr, start: r.start, count: r.count }); }
   // floating shards over the outpost
-  for (let i = 0; i < 9; i++) { const a = i / 9 * 6.283, d = 12 + (i % 3) * 7, y0 = 9 + (i % 4) * 2.5; const m = mk(G.oct, i % 2 ? M.crys : M.indigo, [126 + Math.cos(a) * d, y0, 13 + Math.sin(a) * d], [1.2, 2.6 + (i % 3), 1.2], [R(-.3, .3), 0, R(-.3, .3)], scene); anim.push(t => { m.position.y = y0 + Math.sin(t * .6 + i) * .7; m.rotation.y = t * .2 + i; }); }
+  for (let i = 0; i < 9; i++) { const a = i / 9 * 6.283, d = 12 + (i % 3) * 7, y0 = 9 + (i % 4) * 2.5, x = 126 + Math.cos(a) * d, z = 13 + Math.sin(a) * d; const m = mk(G.oct, i % 2 ? M.crys : M.indigo, [x, y0, z], [1.2, 2.6 + (i % 3), 1.2], [R(-.3, .3), 0, R(-.3, .3)], scene); anim.push(t => { m.position.y = y0 + Math.sin(t * .6 + i) * .7; m.rotation.y = t * .2 + i; });
+    prop('crystal', 'Sky shard', x, z, .9, y0 + 2.6, 90, { y0: y0 - 2.4 }).obj = m; }
 }
 const i3 = (x: number) => Math.round(x * 10) % 3 === 0;
 export { V3 };

@@ -4,7 +4,8 @@ import { Pipeline, V3, makeSky } from './gfx';
 import * as MD from './models';
 import { Game } from './game';
 import { Hud } from './hud';
-import { initAudio } from './audio';
+import { initAudio, setVolume } from './audio';
+import { UNIT, DIFFS, Kind } from './data';
 
 THREE.ColorManagement.enabled = false;
 const $ = (id: string) => document.getElementById(id)!;
@@ -26,8 +27,9 @@ function portraits() {
   const scene = new THREE.Scene(); scene.add(makeSky());
   const cam = new THREE.PerspectiveCamera(30, 1, .1, 4000);
   pipe.resize(236, 236);
-  for (const [kind, make, y, dist] of [['rigger', () => MD.rigger(), 1.45, 2.5], ['linesman', () => MD.trooper(), 1.5, 2.5], ['cantor', () => MD.cantor(), 2.3, 3.2]] as [string, () => MD.Model, number, number][]) {
-    const m = make(); m.obj.rotation.y = .5; scene.add(m.obj);
+  for (const kind of ['rigger', 'linesman', 'breacher', 'cantor', 'lancer', 'warden'] as Kind[]) {
+    const m = MD.unit(kind), st = UNIT[kind], y = st.headY * (kind === 'breacher' ? 1.0 : .97), dist = st.headY * 1.5 + (kind === 'warden' ? 2 : .3); m.obj.rotation.y = .5; scene.add(m.obj);
+    if (m.rig.flash) m.rig.flash.visible = false; if (m.rig.pack) m.rig.pack.visible = false;
     cam.position.set(0, y + .15, dist); cam.lookAt(0, y, 0); cam.updateMatrixWorld();
     pipe.draw(scene, cam, V3(0, 0, 0), 8);
     hud.portraits[kind] = canvas.toDataURL('image/jpeg', .85);
@@ -37,20 +39,23 @@ function portraits() {
 
 portraits();
 pipe.w = 0; resize();
-let game = new Game(pipe, hud);
+let diffI = 1, sens = 1, vol = .5;
+try { const o = JSON.parse(localStorage.getItem('ore-else') || '{}'); if (o.d >= 0 && o.d < 3) diffI = o.d; if (o.s > 0) sens = o.s; if (o.v >= 0) vol = o.v; } catch (e) { /* storage is optional */ }
+const save = () => { try { localStorage.setItem('ore-else', JSON.stringify({ d: diffI, s: sens, v: vol })); } catch (e) { /* storage is optional */ } };
+let game = new Game(pipe, hud, DIFFS[diffI]); game.sens = sens;
 window.addEventListener('resize', resize);
 
 // ---------------------------------------------------------------- input
 const locked = () => document.pointerLockElement === canvas;
 const live = () => game.phase === 'play' || game.phase === 'card';
 addEventListener('keydown', e => {
-  if (live()) { if (e.code === 'Tab' || e.code === 'Space' || e.code.startsWith('Digit') || e.code === 'KeyF' || e.code === 'KeyG') e.preventDefault(); if (!e.repeat) game.pressed.add(e.code); game.keys.add(e.code); }
+  if (live()) { if (e.code !== 'Escape' && !e.code.startsWith('F') || e.code === 'KeyF') e.preventDefault(); if (!e.repeat) game.pressed.add(e.code); game.keys.add(e.code); }
   if (e.code === 'Escape' && freeMouse) { if (game.phase === 'play') pause(); else if (game.phase === 'paused') resume(); }
 });
 addEventListener('keyup', e => game.keys.delete(e.code));
-addEventListener('blur', () => { game.keys.clear(); game.lmb = false; });
-canvas.addEventListener('mousedown', e => { if (!live()) return; e.preventDefault(); game.pressed.add('Mouse' + e.button); if (e.button === 0) game.lmb = true; if (!locked() && !freeMouse) lock(); });
-addEventListener('mouseup', e => { if (e.button === 0) game.lmb = false; });
+addEventListener('blur', () => { game.keys.clear(); game.lmb = game.rmb = false; });
+canvas.addEventListener('mousedown', e => { if (!live()) return; e.preventDefault(); game.pressed.add('Mouse' + e.button); if (e.button === 0) game.lmb = true; if (e.button === 2) game.rmb = true; if (!locked() && !freeMouse) lock(); });
+addEventListener('mouseup', e => { if (e.button === 0) game.lmb = false; if (e.button === 2) game.rmb = false; });
 addEventListener('mousemove', e => { if (live() && (locked() || freeMouse)) { game.mdx += e.movementX || 0; game.mdy += e.movementY || 0; } });
 addEventListener('wheel', e => { if (live()) { game.wheel = Math.sign(e.deltaY); e.preventDefault(); } }, { passive: false });
 addEventListener('contextmenu', e => e.preventDefault());
@@ -60,12 +65,19 @@ function lock() { try { const p: any = (canvas as any).requestPointerLock(); if 
 document.addEventListener('pointerlockerror', () => { freeMouse = true; });
 document.addEventListener('pointerlockchange', () => { if (!locked() && live() && !freeMouse) pause(); });
 
-function start() { initAudio(); $('menu').hidden = true; $('pause').hidden = true; $('end').hidden = true; hud.show(true); game.phase = 'play'; lock(); }
-function pause() { if (game.phase !== 'play' && game.phase !== 'card') return; game.phase = 'paused'; game.keys.clear(); game.lmb = false; $('pause').hidden = false; }
+function fresh() { hud.reset(); game = new Game(pipe, hud, DIFFS[diffI]); game.sens = sens; (window as any).__ore.game = game; }
+function start() { initAudio(); setVolume(vol); if (game.diff !== DIFFS[diffI]) fresh(); $('menu').hidden = true; $('pause').hidden = true; $('end').hidden = true; hud.show(true); game.phase = 'play'; lock(); }
+function pause() { if (game.phase !== 'play' && game.phase !== 'card') return; game.phase = 'paused'; game.keys.clear(); game.lmb = game.rmb = false; $('pause').hidden = false; }
 function resume() { if (game.phase !== 'paused') return; initAudio(); $('pause').hidden = true; game.phase = 'play'; lock(); }
 $('start').addEventListener('click', start);
 $('resume').addEventListener('click', resume);
-$('again').addEventListener('click', () => { hud.reset(); game = new Game(pipe, hud); (window as any).__ore.game = game; start(); });
+$('again').addEventListener('click', () => { fresh(); start(); });
+const diffBtns = Array.from($('diff').querySelectorAll('button')) as HTMLButtonElement[];
+const showDiff = () => diffBtns.forEach((b, i) => { b.classList.toggle('on', i === diffI); b.setAttribute('aria-pressed', String(i === diffI)); });
+diffBtns.forEach((b, i) => b.addEventListener('click', () => { diffI = i; showDiff(); save(); })); showDiff();
+const sensEl = $('sens') as HTMLInputElement, volEl = $('vol') as HTMLInputElement; sensEl.value = String(sens); volEl.value = String(vol);
+sensEl.addEventListener('input', () => { sens = +sensEl.value; game.sens = sens; save(); });
+volEl.addEventListener('input', () => { vol = +volEl.value; setVolume(vol); save(); });
 
 // ---------------------------------------------------------------- loop
 let last = performance.now();

@@ -2,13 +2,18 @@
 let ctx: AudioContext | null = null;
 let master: GainNode | null = null;
 let noiseBuf: AudioBuffer | null = null;
+let music: GainNode | null = null, volume = .5, mood = 0, moodNow = 0, step = 0, nextT = 0;
+export function setVolume(v: number) { volume = v; if (master && ctx) master.gain.setTargetAtTime(v, ctx.currentTime, .05); }
+/** 0 is silence, .25 is calm base music, 1 is a full fight. */
+export function setMood(x: number) { mood = x; }
 let drillOsc: OscillatorNode | null = null, drillGain: GainNode | null = null;
 
 export function initAudio() {
   if (ctx) { ctx.resume(); return; }
   try {
     ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
-    master = ctx.createGain(); master.gain.value = .5; master.connect(ctx.destination);
+    master = ctx.createGain(); master.gain.value = volume; const comp = ctx.createDynamicsCompressor(); comp.threshold.value = -14; comp.ratio.value = 5; master.connect(comp); comp.connect(ctx.destination);
+    music = ctx.createGain(); music.gain.value = .0001; music.connect(master); setInterval(tick, 90);
     noiseBuf = ctx.createBuffer(1, ctx.sampleRate, ctx.sampleRate);
     const d = noiseBuf.getChannelData(0); for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
   } catch (e) { ctx = null; }
@@ -30,7 +35,15 @@ export const sfx = {
   turret: (vol = 1) => { noise(.16, 1200, .4 * vol); tone(140, 50, .12, .25 * vol, 'sawtooth'); },
   hit: (vol = 1) => { noise(.06, 900, .35 * vol, 'bandpass'); },
   slash: (vol = 1) => { noise(.18, 3200, .3 * vol, 'highpass'); tone(900, 300, .16, .12 * vol, 'sine'); },
-  ko: (vol = 1) => { tone(300, 60, .3, .3 * vol, 'triangle'); noise(.25, 600, .3 * vol); },
+  ko: (vol = 1, veyl = true) => { if (veyl) { tone(900, 120, .35, .22 * vol, 'sine'); tone(1350, 200, .3, .1 * vol, 'triangle'); noise(.25, 2600, .2 * vol, 'highpass'); } else { tone(300, 60, .3, .3 * vol, 'triangle'); noise(.25, 600, .3 * vol); } },
+  boom: (vol = 1) => { noise(.7, 420, .9 * vol); tone(120, 28, .55, .6 * vol, 'sine'); noise(.12, 3000, .3 * vol, 'highpass'); },
+  blast: (vol = 1) => { noise(.26, 1300, .75 * vol); tone(150, 40, .2, .45 * vol, 'sawtooth'); },
+  clang: () => { tone(620, 540, .22, .22, 'square'); tone(931, 860, .3, .14, 'triangle'); noise(.05, 4000, .3, 'highpass'); },
+  hurt: () => { tone(170, 80, .16, .3, 'sawtooth'); noise(.1, 500, .3); },
+  throw: () => { noise(.2, 1800, .2, 'bandpass'); tone(300, 520, .16, .1, 'sine'); },
+  zap: (vol = 1) => { tone(1500, 320, .2, .16 * vol, 'sawtooth'); tone(2200, 700, .12, .1 * vol, 'sine'); },
+  dash: (vol = 1) => { noise(.3, 2600, .22 * vol, 'bandpass'); tone(400, 900, .25, .08 * vol, 'sine'); },
+  charge: (vol = 1) => { tone(70, 240, .85, .35 * vol, 'sawtooth'); tone(140, 480, .85, .12 * vol, 'sine'); },
   ore: () => { tone(880, 1320, .09, .18, 'triangle'); },
   blip: () => { tone(660, 660, .05, .12); },
   deny: () => { tone(160, 110, .16, .2); },
@@ -48,4 +61,33 @@ export function drillSound(on: boolean, biting: boolean) {
   if (!ctx || !master) return;
   if (on && !drillOsc) { drillOsc = ctx.createOscillator(); drillGain = ctx.createGain(); drillOsc.type = 'sawtooth'; drillGain.gain.value = .0001; drillOsc.connect(drillGain); drillGain.connect(master); drillOsc.start(); }
   if (drillOsc && drillGain) { const t = ctx.currentTime; drillGain.gain.setTargetAtTime(on ? (biting ? .13 : .06) : .0001, t, .04); drillOsc.frequency.setTargetAtTime(biting ? 95 + Math.random() * 20 : 150, t, .05); }
+}
+
+// ---------------------------------------------------------------- music
+// A small step sequencer: dusty bass and a twangy lead when calm, drums and a driving bass when it kicks off.
+const ROOTS = [73.42, 73.42, 87.31, 65.41], LEAD = [0, 3, 5, 7, 10, 12, 7, 5], BASS = [0, -1, 0, 7, 0, -1, 10, 7, 0, -1, 0, 7, 12, -1, 10, 7];
+function voice(t: number, f: number, dur: number, peak: number, type: OscillatorType, cut: number) {
+  if (!ctx || !music) return; const o = ctx.createOscillator(), g = ctx.createGain(), fl = ctx.createBiquadFilter();
+  o.type = type; o.frequency.setValueAtTime(f, t); fl.type = 'lowpass'; fl.frequency.setValueAtTime(cut, t); fl.frequency.exponentialRampToValueAtTime(Math.max(120, cut * .3), t + dur);
+  g.gain.setValueAtTime(.0001, t); g.gain.exponentialRampToValueAtTime(peak, t + .008); g.gain.exponentialRampToValueAtTime(.0001, t + dur); o.connect(fl); fl.connect(g); g.connect(music); o.start(t); o.stop(t + dur + .05);
+}
+function drum(t: number, freq: number, dur: number, peak: number, type: BiquadFilterType) {
+  if (!ctx || !music || !noiseBuf) return; const s = ctx.createBufferSource(), f = ctx.createBiquadFilter(), g = ctx.createGain();
+  s.buffer = noiseBuf; f.type = type; f.frequency.value = freq; g.gain.setValueAtTime(peak, t); g.gain.exponentialRampToValueAtTime(.0001, t + dur); s.connect(f); f.connect(g); g.connect(music); s.start(t, Math.random() * .5, dur + .02);
+}
+function tick() {
+  if (!ctx || !music || ctx.state !== 'running') return; const now = ctx.currentTime;
+  moodNow += (mood - moodNow) * .12; music.gain.setTargetAtTime(mood > .05 ? .5 : .0001, now, .4);
+  if (nextT < now) nextT = now + .05;
+  while (nextT < now + .25) {
+    const hot = moodNow > .55, spb = 60 / (hot ? 118 : 96) / 4, i = step % 16, bar = Math.floor(step / 16), root = ROOTS[bar % 4] * 1, t = nextT, semi = (n: number) => Math.pow(2, n / 12);
+    if (moodNow > .05) {
+      const b = BASS[i]; if (b >= 0 && (hot || i % 4 === 0 || i === 10)) voice(t, root * semi(b), hot ? spb * 1.6 : spb * 3.5, hot ? .3 : .2, 'sawtooth', hot ? 900 : 420);
+      if (i === 0 && bar % 2 === 0) { voice(t, root * 2 * semi(7), spb * 30, .035, 'sawtooth', 700); voice(t, root * 2 * semi(3), spb * 30, .03, 'triangle', 900); }
+      if (!hot && (i % 4 === 2 || i === 15) && (bar + i) % 3 !== 0) voice(t, root * 4 * semi(LEAD[(step * 5 + bar * 3) % 8]), spb * 3, .05, 'square', 1500);
+      if (hot) { if (i % 8 === 0 || i === 10) { voice(t, 110, .16, .5, 'sine', 400); drum(t, 200, .1, .25, 'lowpass'); } if (i % 8 === 4) drum(t, 1800, .14, .22, 'bandpass'); if (i % 2 === 0) drum(t, 7000, .03, .07 + (i % 4 === 2 ? .05 : 0), 'highpass'); if (moodNow > .8 && i % 4 === 3) voice(t, root * 4 * semi(LEAD[(step + bar) % 8]), spb * 1.5, .05, 'square', 2200); }
+      else if (i % 8 === 4) drum(t, 5000, .05, .04, 'highpass');
+    }
+    step++; nextT += spb;
+  }
 }

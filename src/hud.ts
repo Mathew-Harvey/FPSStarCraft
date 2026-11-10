@@ -1,7 +1,7 @@
 // The heads-up display: plain HTML over the canvas, laid out in a 900-unit-tall space and scaled to fit.
 import * as THREE from 'three';
-import type { Game, Unit, Building } from './game';
-import { UNIT, BLD, BUILDABLE } from './game';
+import type { Game } from './game';
+import { UNIT, BLD, BUILDABLE, Unit, Building } from './data';
 
 const $ = (id: string) => document.getElementById(id)!;
 const V = new THREE.Vector3();
@@ -14,7 +14,7 @@ export class Hud {
   private cache = new Map<string, string>();
   private bars: HTMLElement[] = []; private barFill: HTMLElement[] = []; private labs: HTMLElement[] = [];
   private floats: Floater[] = []; private pingPos = new THREE.Vector3(); private pingT = 0;
-  private hurtA = 0; private hitT = 0; private miniT = 0; private last = 0; private feedN = 0;
+  private hurtA = 0; private dirA = 0; private hitT = 0; private miniT = 0; private last = 0; private feedN = 0;
   private mini = ($('mini') as HTMLCanvasElement).getContext('2d')!;
 
   constructor() {
@@ -26,7 +26,7 @@ export class Hud {
     const s = this.root.style; s.width = this.W + 'px'; s.height = this.H + 'px'; s.transform = `scale(${this.scale})`;
   }
   show(on: boolean) { this.root.hidden = !on; }
-  reset() { $('feed').innerHTML = ''; for (const f of this.floats) f.el.remove(); this.floats = []; this.cache.clear(); this.pingT = 0; this.hurtA = 0; this.titleCard('', ''); $('end').hidden = true; $('lost').hidden = true; }
+  reset() { $('feed').innerHTML = ''; for (const f of this.floats) f.el.remove(); this.floats = []; this.cache.clear(); this.pingT = 0; this.hurtA = 0; this.titleCard('', '', ''); $('end').hidden = true; $('lost').hidden = true; }
 
   /** Sets text or HTML only when it has changed, so the page is not rebuilt every frame. */
   private set(id: string, v: string, html = false) { if (this.cache.get(id) === v) return; this.cache.set(id, v); const e = $(id); if (html) e.innerHTML = v; else e.textContent = v; }
@@ -44,15 +44,15 @@ export class Hud {
     const el = document.createElement('div'); el.className = 'fl out ' + cls; el.textContent = text; el.style.opacity = '0'; this.anchors.appendChild(el);
     const life = cls === 'ko' || cls === 'kobad' ? 1.1 : .75; this.floats.push({ el, pos: pos.clone().add(V.set((Math.random() - .5) * .5, 0, (Math.random() - .5) * .5)), t: life, life });
   }
-  hurt() { this.hurtA = Math.min(1, this.hurtA + .55); }
+  hurt(ang: number | null) { this.hurtA = Math.min(1, this.hurtA + .55); if (ang !== null) { this.dirA = 1; $('hurtDir').style.transform = `rotate(${(-ang).toFixed(2)}rad)`; } }
   hitmark(crit: boolean) { this.hitT = .14; this.cls('hitm', crit ? 'hitm crit' : 'hitm'); }
   ping(p: THREE.Vector3) { this.pingPos.copy(p); this.pingT = 3; }
-  titleCard(name: string, quip: string) { const e = $('tcard'); if (!name) { e.hidden = true; return; } $('tcName').textContent = name; $('tcQuip').textContent = quip; const src = this.portraits[name.toLowerCase()]; if (src) ($('tcImg') as HTMLImageElement).src = src; e.hidden = false; }
+  titleCard(kind: string, name: string, quip: string) { const e = $('tcard'); if (!name) { e.hidden = true; return; } $('tcName').textContent = name; $('tcQuip').textContent = quip; const src = this.portraits[kind]; if (src) ($('tcImg') as HTMLImageElement).src = src; e.hidden = false; }
   showEnd(g: Game) {
     $('endTitle').textContent = g.won ? 'Paid in full' : 'Shift over'; $('endTitle').className = 'logo sm' + (g.won ? '' : ' bad');
     $('endLine').textContent = g.won ? 'Every Choir Stone is gravel. The Charter thanks you with a smaller invoice.' : 'The Headframe is scrap. The Charter will be billing your next of kin.';
     const m = Math.floor(g.time / 60), s = Math.floor(g.time % 60);
-    $('endStats').innerHTML = [[`${m}:${String(s).padStart(2, '0')}`, 'Shift length'], [g.stats.mined, 'Ore dug'], [g.stats.kills, 'Veyl dropped'], [g.stats.lost, 'Crew lost']].map(([a, b]) => `<div><b>${a}</b><span>${b}</span></div>`).join('');
+    $('endStats').innerHTML = [[`${m}:${String(s).padStart(2, '0')}`, 'Shift length'], [Math.floor(g.stats.mined), 'Ore dug'], [g.stats.built, 'Buildings up'], [g.stats.kills, 'Veyl dropped'], [g.stats.lost, 'Crew lost']].map(([a, b]) => `<div><b>${a}</b><span>${b}</span></div>`).join('');
     $('end').hidden = false; this.show(false);
   }
 
@@ -67,28 +67,33 @@ export class Hud {
     this.set('ore', String(Math.floor(g.ore)));
     const used = g.supplyUsed(), cap = g.supplyCap(); this.set('sup', `${used}/${cap}`); this.cls('resSup', used >= cap ? 'low' : '');
     const m = Math.floor(g.time / 60), s = Math.floor(g.time % 60); this.set('clock', `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`);
-    const ph = g.playbookPhase(); this.set('play', `<b>Yard Push</b>` + ['Open', 'Muster', 'Push'].map((n, i) => `<span class="${i === ph ? 'on' : i < ph ? 'dn' : ''}">${n}</span>`).join(''), true);
+    const D = g.dir, pb = D.playbook, ph = pb.idx; this.set('play', `<b>${pb.name}</b>` + pb.steps.map((n, i) => `<span class="${i === ph ? 'on' : i < ph ? 'dn' : ''}">${n}</span>`).join(''), true);
     const st = g.stones().length; this.set('goal', `Smash the Choir Stones · <em>${st} left</em>`, true);
-    this.set('qm', `<span class="k" style="font-size:13px">G</span> Quartermaster <b>${g.auto ? 'Auto' : 'Off'}</b>`, true); this.cls('qm', 'qm c out' + (g.auto ? '' : ' off'));
+    this.set('qm', `<span class="k" style="font-size:13px">G</span> Quartermaster <b>${D.auto ? 'Auto' : 'Off'}</b>`, true); this.cls('qm', 'qm c out' + (D.auto ? '' : ' off'));
     // who
     this.set('whoName', UNIT[me.kind].name); this.img('whoImg', me.kind); this.set('whoHp', String(Math.max(0, Math.ceil(me.hp))));
     const hpw = Math.max(0, me.hp / me.maxHp * 100).toFixed(0); if (this.cache.get('hpw') !== hpw) { this.cache.set('hpw', hpw); const b = $('whoBar'); b.style.width = hpw + '%'; b.style.background = +hpw < 35 ? 'var(--red)' : 'var(--grn)'; }
     // tools
     const rig = me.kind === 'rigger'; this.vis('slots', rig); this.vis('ammo', !rig);
     if (rig) this.set('slots', `<div class="${g.tool === 1 ? 'on' : ''}"><b>1</b><span>Drill</span></div><div class="${g.tool === 2 ? 'on' : ''}"><b>2</b><span>Build</span></div>`, true);
-    else { this.set('ammoN', g.reloadT > 0 ? '<small>Reloading</small>' : `${g.ammo}<small> / 24</small>`, true); this.cls('ammoN', 'n d out' + (g.ammo <= 6 && g.reloadT <= 0 ? ' low' : '')); }
+    else { const w = g.weapon()!; this.set('ammoN', g.reloadT > 0 ? '<small>Reloading</small>' : `${g.ammo}<small> / ${w.mag}</small>`, true); this.cls('ammoN', 'n d out' + (g.ammo <= w.mag / 4 && g.reloadT <= 0 ? ' low' : '')); this.set('ammoL', me.kind === 'breacher' ? `Scattergun · <span class="k">RMB</span> Shield${g.brace ? ' up · click to bash' : ''}` : `Rifle · <span class="k">C</span> Grenade ${g.nadeCd > 0 ? Math.ceil(g.nadeCd) + 's' : 'ready'}`, true); }
+    this.cls('cross', 'cross' + (me.kind === 'breacher' ? ' ring' : me.kind === 'linesman' && g.ads > .6 ? ' dot' : ''));
     const building = rig && g.tool === 2; this.vis('build', building);
-    if (building) this.set('buildRows', BUILDABLE.map((k, i) => `<div class="${i === g.buildSel ? 'on' : ''}${g.ore < BLD[k].cost ? ' no' : ''}"><span>${BLD[k].name}</span><span>${BLD[k].cost} ore</span></div>`).join(''), true);
+    if (building) this.set('buildRows', BUILDABLE.map((k, i) => `<div class="${i === g.buildSel ? 'on' : ''}${g.ore < BLD[k].cost ? ' no' : ''}"><span>${BLD[k].name}<small>${BLD[k].blurb}</small></span><span>${BLD[k].cost} ore</span></div>`).join(''), true);
     this.vis('prompt', !!g.prompt && !building); if (g.prompt) this.set('prompt', g.prompt, true);
-    this.set('hint', `<span><span class="k">TAB</span> Jump${g.jumpCd > 0 ? ` <span class="cd">${g.jumpCd.toFixed(1)}s</span>` : ''}</span>` + (g.lastBody?.alive ? `<span><span class="k">Q</span> Last body</span>` : '') + (g.own('linesman').length > (me.kind === 'linesman' ? 1 : 0) ? `<span><span class="k">V</span> ${g.following() ? 'Send squad home' : 'Squad on me'}</span>` : ''), true);
+    this.set('hint', `<span><span class="k">TAB</span> Jump${g.jumpCd > 0 ? ` <span class="cd">${g.jumpCd.toFixed(1)}s</span>` : ''}</span>` + (g.lastBody?.alive ? `<span><span class="k">Q</span> Last body</span>` : '') + (g.soldiers().some(u => u !== me) ? `<span><span class="k">V</span> ${D.following() ? 'Send squad home' : 'Squad on me'}</span><span><span class="k">MMB</span> Send</span>` : ''), true);
     // squad callout and countdown
-    const co = g.callout; this.vis('callout', !!co && !tab);
-    if (co) { this.set('callWho', co.who); this.set('callText', co.text, true); this.img('callImg', 'linesman'); $('callTm').style.width = Math.max(0, co.t / co.dur * 100) + '%'; }
-    const cnt = g.plan?.phase === 'count'; this.vis('count', !!cnt); if (cnt) this.set('countN', 'PUSH IN ' + Math.ceil(g.plan!.t));
+    const co = D.callout; this.vis('callout', !!co && !tab);
+    if (co) { this.set('callKeys', co.keys.map(k => `<span><b>${k[0]}</b>${k[1]}</span>`).join(''), true); this.set('callWho', co.who); this.set('callText', co.text, true); this.img('callImg', 'linesman'); $('callTm').style.width = Math.max(0, co.t / co.dur * 100) + '%'; }
+    const cnt = D.plan?.phase === 'count'; this.vis('count', !!cnt); if (cnt) { this.set('countN', 'GO IN ' + Math.ceil(D.plan!.t)); this.set('countL', D.plan!.label); }
+    const raid = D.raidIn < 15 && g.stones().length > 0 && !co && !cnt; this.vis('raid', raid); if (raid) this.set('raid', `Raid in ${Math.max(0, Math.ceil(D.raidIn))} · ${D.raidDir === 'north' ? 'North ridge' : 'East road'}`);
+    const objs = D.objectives(), teach = !(objs[0].done && objs[1].done && objs[2].done) && g.time < 600; this.vis('objs', teach && !building); if (teach) this.set('objs', '<h6>First shift</h6>' + objs.map(o => `<div class="${o.done ? 'dn' : ''}">${o.text}</div>`).join(''), true);
+    let boss: Unit | null = null; for (const u of g.units) if (u.alive && u.kind === 'warden' && u.team === 1 && u.pos.distanceTo(me.pos) < 70) { boss = u; break; }
+    this.vis('boss', !!boss && !co && !cnt && !raid); if (boss) { $('bossHp').style.width = (boss.hp / boss.maxHp * 100).toFixed(1) + '%'; $('bossSh').style.width = (boss.shield / boss.maxShield * 100).toFixed(1) + '%'; }
     // jump cards
     if (tab) this.set('cards', g.tabList.length ? g.tabList.map((e, i) => `<div class="card${i === g.tabSel ? ' on' : ''}${e.alert ? ' alert' : ''}"><div class="frame"><img src="${this.portraits[e.unit.kind] || ''}" alt=""></div><div class="n d">${e.label}</div><div class="t">${e.task}</div><div class="bar"><i style="width:${(e.hp * 100).toFixed(0)}%;background:${e.hp < .35 ? 'var(--red)' : 'var(--grn)'}"></i></div><span class="k">${i + 1}</span></div>`).join('') : '<div class="none">Nobody else to jump into yet. Train someone first.</div>', true);
     // effects
-    this.hurtA = Math.max(0, this.hurtA - dt * 1.2); $('hurt').style.opacity = (this.hurtA + (me.hp / me.maxHp < .3 ? .25 + Math.sin(now * 6) * .1 : 0)).toFixed(2);
+    this.dirA = Math.max(0, this.dirA - dt * 1.1); $('hurtDir').style.opacity = this.dirA.toFixed(2); this.hurtA = Math.max(0, this.hurtA - dt * 1.2); $('hurt').style.opacity = (this.hurtA + (me.hp / me.maxHp < .3 ? .25 + Math.sin(now * 6) * .1 : 0)).toFixed(2);
     if (this.hitT > 0) { this.hitT -= dt; $('hitm').style.opacity = this.hitT > 0 ? '1' : '0'; }
 
     // world-anchored bars
@@ -107,7 +112,7 @@ export class Hud {
       if (!b.alive) continue; const d = b.pos.distanceTo(me.pos);
       if (!b.built) { bar(b.pos, BLD[b.kind].h + 1.2, b.progress, 'hb big p'); if (d < 60) lab(b.pos, BLD[b.kind].h + 1.6, `<div class="mark" style="color:var(--cyan)">${BLD[b.kind].name} ${Math.floor(b.progress * 100)}%</div>`); }
       else if (b.hp < b.maxHp && (d < 90 || tab)) bar(b.pos, b.h + 1.2, b.hp / b.maxHp, b.team ? 'hb big e' : 'hb big');
-      if (b.kind === 'choir' && d > 45 && !tab) lab(b.pos, b.h + 2, `<div class="mark out">${b === near ? 'Choir Stones · ' + Math.round(d) + 'm' : ''}</div>`);
+      if (b.kind === 'choir' && d > 45 && !tab && !building) lab(b.pos, b.h + 2, `<div class="mark out">${b === near ? 'Choir Stones · ' + Math.round(d) + 'm' : ''}</div>`);
       if (b.kind === 'headframe' && b.team === 0 && g.time - b.lastHit < 6 && d > 30) lab(b.pos, b.h + 3, `<div class="mark out" style="color:var(--red)">Headframe under attack</div>`);
     }
     if (building) { const k = BUILDABLE[g.buildSel]; lab(g.placePos, BLD[k].h + 1.4, `<div class="tag${g.placeOK ? '' : ' bad'}"><span class="d" style="font-size:30px;color:${g.placeOK ? 'var(--cyan)' : 'var(--red)'}">${BLD[k].name}</span> <span class="d" style="font-size:24px;color:var(--ore);margin-left:14px">${BLD[k].cost} ore</span><div class="c" style="font-size:14px">${g.placeOK ? 'Click place · R rotate · Right-click cancel' : g.ore < BLD[k].cost ? 'Not enough ore' : 'Can\'t build there'}</div></div>`); }
@@ -134,8 +139,8 @@ export class Hud {
     for (const s of g.spires) { c.fillStyle = '#2a1a18'; c.beginPath(); c.arc(X(s.x), Z(s.z), Math.max(1.5, s.r * k), 0, 7); c.fill(); }
     for (const o of g.ores) { if (o.amount <= 0) continue; c.fillStyle = '#b8f58c'; c.fillRect(X(o.pos.x) - 2.5, Z(o.pos.z) - 2.5, 5, 5); }
     c.lineWidth = 1.5; c.strokeStyle = '#0e0d14';
-    for (const b of g.buildings) { if (!b.alive) continue; const w = Math.max(5, b.hx * 2 * k), h = Math.max(5, b.hz * 2 * k); c.fillStyle = b.team ? '#35e0c8' : b.built ? '#ffc21a' : '#7ef0ff'; c.fillRect(X(b.pos.x) - w / 2, Z(b.pos.z) - h / 2, w, h); c.strokeRect(X(b.pos.x) - w / 2, Z(b.pos.z) - h / 2, w, h); }
-    for (const u of g.units) { if (!u.alive || u === g.me) continue; c.fillStyle = u.team ? '#ff4f9a' : u.kind === 'rigger' ? '#8be04e' : '#f4ead2'; c.beginPath(); c.arc(X(u.pos.x), Z(u.pos.z), u.team ? 2.6 : 2.2, 0, 7); c.fill(); }
+    for (const b of g.buildings) { if (!b.alive) continue; const w = Math.max(5, b.hx * 2 * k), h = Math.max(5, b.hz * 2 * k); c.fillStyle = b.kind === 'reedgate' ? '#c58bff' : b.team ? '#35e0c8' : b.built ? '#ffc21a' : '#7ef0ff'; c.fillRect(X(b.pos.x) - w / 2, Z(b.pos.z) - h / 2, w, h); c.strokeRect(X(b.pos.x) - w / 2, Z(b.pos.z) - h / 2, w, h); }
+    for (const u of g.units) { if (!u.alive || u === g.me) continue; c.fillStyle = u.team ? '#ff4f9a' : u.kind === 'rigger' ? '#8be04e' : '#f4ead2'; c.beginPath(); c.arc(X(u.pos.x), Z(u.pos.z), u.kind === 'warden' ? 5 : u.team ? 2.6 : 2.2, 0, 7); c.fill(); }
     if (this.pingT > 0) { c.strokeStyle = '#ffc21a'; c.lineWidth = 2; c.beginPath(); c.arc(X(this.pingPos.x), Z(this.pingPos.z), 5, 0, 7); c.stroke(); }
     const me = g.me; if (me) { c.save(); c.translate(X(me.pos.x), Z(me.pos.z)); c.rotate(-g.yaw); c.fillStyle = '#fff'; c.strokeStyle = '#0e0d14'; c.lineWidth = 1.5; c.beginPath(); c.moveTo(0, 8); c.lineTo(5, -5); c.lineTo(0, -2); c.lineTo(-5, -5); c.closePath(); c.fill(); c.stroke(); c.restore(); }
   }

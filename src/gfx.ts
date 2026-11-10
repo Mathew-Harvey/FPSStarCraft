@@ -162,8 +162,11 @@ function makeMaterials() {
     indigo: T(TX.indigo), indigoL: T(TX.indigo, { color: '#c9c2ff' }), indigoD: T(TX.indigoD), smoke: T(TX.smoke, { hatch: .5 }), dust: T(TX.smoke, { hatch: .3, color: '#f0b98a' }),
     visor: T(null, { color: '#ffe27a', emis: 1 }), cyan: T(null, { color: '#8ff2ff', emis: 1 }), teal: T(null, { color: '#35e0c8', emis: .9 }), mag: T(null, { color: '#ff4f9a', emis: .9 }), red: T(null, { color: '#ff4b3a', emis: 1 }),
     planet: T(TX.planet, { fog: 0, hatch: .4 }), ring: T(null, { color: '#ffe9c4', emis: .8, fog: 0, side: THREE.DoubleSide }),
+    orange: T(TX.yellowP, { color: '#ff9a5c' }), helmetB: T(TX.helmet, { color: '#ffb08a' }), gold: T(TX.yellowP, { color: '#ffe2a0', emis: .35 }), crys: T(TX.ore, { color: '#8ff7ff', emis: .5 }),
+    scorch: T(null, { color: '#2a1a1c', hatch: 0, flat: 1 }), bolt: T(null, { color: '#9dfcff', emis: 1 }), fire: T(null, { color: '#ffb23a', emis: 1 }), spark: T(null, { color: '#fff1a0', emis: 1 }),
     sign: T(TX.sign), violet: T(null, { color: '#b58cff', emis: .9 }), flash: T(null, { color: '#fff6c0', emis: 1, side: THREE.DoubleSide }),
   });
+  M.scorch.polygonOffset = true; M.scorch.polygonOffsetFactor = -3; M.scorch.polygonOffsetUnits = -3;
   M.road.polygonOffset = true; M.road.polygonOffsetFactor = -2; M.road.polygonOffsetUnits = -2;
 }
 export const holoOK = new THREE.MeshBasicMaterial({ color: 0x35d6ff, transparent: true, opacity: .3, depthWrite: false, side: THREE.DoubleSide });
@@ -219,13 +222,11 @@ export function makeSky() {
 }
 
 // ---------------------------------------------------------------- pipeline
-const POST_FS = `precision highp float; varying vec2 vUv; uniform sampler2D tC,tD,tN; uniform vec2 uRes; uniform float uNear,uFar,uOrtho,uPx,uSat,uStatic,uTime; ${NOISE}
+const POST_FS = `precision highp float; varying vec2 vUv; uniform sampler2D tC,tD,tN; uniform vec2 uRes; uniform float uNear,uFar,uOrtho,uPx,uSat,uStatic,uTime,uFlash; ${NOISE}
 float lin(vec2 uv){ float d=texture2D(tD,uv).x; if(uOrtho>.5) return uNear+d*(uFar-uNear); float z=d*2.-1.; return 2.*uNear*uFar/(uFar+uNear-z*(uFar-uNear)); }
 vec3 nrm(vec2 uv){ return texture2D(tN,uv).xyz*2.-1.; }
-void main(){
-  vec2 sp=vUv*uRes/uPx;
-  vec2 wobv=(vec2(vnoise(sp/9.),vnoise(sp/9.+31.))-.5)*2.2*uPx/uRes;
-  vec2 u=vUv+wobv; float d0=lin(u);
+float edgeAt(vec2 u, vec2 sp){
+  float d0=lin(u);
   float th=uOrtho>.5?1.5:mix(2.6,1.15,clamp(d0/45.,0.,1.));
   th*=(.8+.5*vnoise(sp/60.))*uPx;
   vec2 px=th/uRes;
@@ -235,12 +236,19 @@ void main(){
   if(uOrtho>.5){ de=smoothstep(.5,1.,(abs(dA-dB)+abs(dC-dD))); }
   else { float dmin=min(min(dA,dB),min(dC,dD)); float dd=(abs(dA-dB)+abs(dC-dD))/max(dmin,.01); de=smoothstep(.05,.09,dd*clamp(abs(n0.z),.08,1.)); }
   float nd=length(nA-nB)+length(nC-nD); float ne=smoothstep(.7,1.05,nd)*(1.-smoothstep(140.,320.,d0));
-  float edge=max(de,ne);
+  return max(de,ne);
+}
+void main(){
+  vec2 sp=vUv*uRes/uPx;
+  vec2 wobv=(vec2(vnoise(sp/9.),vnoise(sp/9.+31.))-.5)*2.2*uPx/uRes;
+  vec2 u=vUv+wobv; vec2 h=.3/uRes;
+  float edge=(edgeAt(u+h,sp)+edgeAt(u-h,sp)+edgeAt(u+h*vec2(1.,-1.),sp)+edgeAt(u+h*vec2(-1.,1.),sp))*.25;
   vec3 col=texture2D(tC,vUv).rgb;
   col=mix(col,vec3(.055,.05,.08),edge*.97);
   col=mix(vec3(dot(col,vec3(.3,.59,.11))),col,1.18*uSat);
   col*=.95+.08*vnoise(sp*.5);
   float v=smoothstep(1.3,.5,length((vUv-.5)*vec2(1.25,1.))); col*=mix(.7,1.,v);
+  col=mix(col,vec3(1.,.97,.86),uFlash);
   if(uStatic>0.){ float s=hash(floor(sp/3.)+uTime*60.); float bar=step(.92,fract(vUv.y*6.+uTime*3.)); col=mix(col,vec3(s)*.9+bar*.1,uStatic); }
   gl_FragColor=vec4(col,1.);
 }`;
@@ -253,7 +261,7 @@ export class Pipeline {
   private depthMat = new THREE.MeshBasicMaterial({ colorWrite: false, side: THREE.DoubleSide });
   private postMat: THREE.ShaderMaterial; private postScene = new THREE.Scene(); private postCam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
   private sun = new THREE.OrthographicCamera(-50, 50, 50, -50, 1, 500);
-  sat = 1; static = 0; time = 0;
+  sat = 1; static = 0; time = 0; flash = 0;
 
   constructor(canvas: HTMLCanvasElement) {
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: false, preserveDrawingBuffer: true, powerPreference: 'high-performance' });
@@ -267,7 +275,7 @@ export class Pipeline {
     SHARED.uShadow.value = this.rtS.depthTexture; SHARED.uShadowTex.value = 1 / S;
     this.rtC = new THREE.WebGLRenderTarget(4, 4); this.rtN = new THREE.WebGLRenderTarget(4, 4);
     this.postMat = new THREE.ShaderMaterial({
-      uniforms: { tC: { value: null }, tD: { value: null }, tN: { value: null }, uRes: { value: new THREE.Vector2(1, 1) }, uNear: { value: .06 }, uFar: { value: 4000 }, uOrtho: { value: 0 }, uPx: SHARED.uPx, uSat: { value: 1 }, uStatic: { value: 0 }, uTime: { value: 0 } },
+      uniforms: { tC: { value: null }, tD: { value: null }, tN: { value: null }, uRes: { value: new THREE.Vector2(1, 1) }, uNear: { value: .06 }, uFar: { value: 4000 }, uOrtho: { value: 0 }, uPx: SHARED.uPx, uSat: { value: 1 }, uFlash: { value: 0 }, uStatic: { value: 0 }, uTime: { value: 0 } },
       vertexShader: `varying vec2 vUv; void main(){ vUv=uv; gl_Position=vec4(position.xy,0.,1.); }`, fragmentShader: POST_FS, depthTest: false, depthWrite: false,
     });
     this.postScene.add(new THREE.Mesh(new THREE.PlaneGeometry(2, 2), this.postMat));
@@ -299,7 +307,7 @@ export class Pipeline {
     cam.layers.set(0); cam.layers.enable(L_VM); scene.overrideMaterial = this.normalMat;
     r.setRenderTarget(this.rtN); r.setClearColor(0x8080ff, 1); r.clear(); r.render(scene, cam); scene.overrideMaterial = null;
 
-    const u = this.postMat.uniforms; u.uOrtho.value = (cam as any).isOrthographicCamera ? 1 : 0; u.uNear.value = cam.near; u.uFar.value = cam.far; u.uSat.value = this.sat; u.uStatic.value = this.static; u.uTime.value = this.time;
+    const u = this.postMat.uniforms; u.uOrtho.value = (cam as any).isOrthographicCamera ? 1 : 0; u.uNear.value = cam.near; u.uFar.value = cam.far; u.uSat.value = this.sat; u.uFlash.value = this.flash; u.uStatic.value = this.static; u.uTime.value = this.time;
     r.setRenderTarget(null); r.render(this.postScene, this.postCam);
   }
 }

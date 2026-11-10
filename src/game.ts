@@ -1,52 +1,23 @@
-// The simulation and the player: economy, units, buildings, combat, enemy raids,
-// squad plans, and jumping between bodies.
+// The simulation and the player: entities, combat, effects, the first-person bodies,
+// and jumping between them. Strategy (economy AI, raids, squad plans) lives in director.ts.
 import * as THREE from 'three';
 import { Pipeline, V3, M, G, R, mk, setLayer, L_FX, L_SELF, holoOK, holoBad, ringMat, tracerMat, makeSky } from './gfx';
-const beamMat = new THREE.MeshBasicMaterial({ color: 0x6dfff0, depthWrite: false });
 import * as MD from './models';
-import { sfx, drillSound } from './audio';
+import { sfx, drillSound, setMood } from './audio';
 import type { Hud } from './hud';
+import { Kind, BKind, UNIT, BLD, BUILDABLE, UPGRADES, Unit, Building, OreNode, Difficulty, DIFFS, OUTPOST, GATE, isUnit, isSoldier } from './data';
+import { Director } from './director';
 
-export type Kind = 'rigger' | 'linesman' | 'cantor';
-export type BKind = 'headframe' | 'bunkhouse' | 'depot' | 'watchpost' | 'choir';
-
-export const UNIT = {
-  rigger: { name: 'Rigger', hp: 45, shield: 0, speed: 4.6, eye: 1.5, headY: 1.52, bodyY: .9, cost: 50, time: 8, quip: '"I dig holes. You point at where."', ack: 'Drill\'s warm, boss.' },
-  linesman: { name: 'Linesman', hp: 60, shield: 0, speed: 4.8, eye: 1.58, headY: 1.56, bodyY: .9, cost: 60, time: 11, quip: '"Paid by the bullet. Tips welcome."', ack: 'Boss is in my head again.' },
-  cantor: { name: 'Cantor', hp: 80, shield: 40, speed: 5.4, eye: 2.2, headY: 2.42, bodyY: 1.3, cost: 0, time: 0, quip: '', ack: '' },
-};
-export const BLD = {
-  headframe: { name: 'Headframe', hp: 2000, hx: 6.6, hz: 4.6, h: 5, cost: 0, time: 0 },
-  bunkhouse: { name: 'Bunkhouse', hp: 500, hx: 3.9, hz: 3.0, h: 2.8, cost: 150, time: 14 },
-  depot: { name: 'Depot', hp: 350, hx: 2.8, hz: 2.6, h: 4.6, cost: 100, time: 9 },
-  watchpost: { name: 'Watchpost', hp: 400, hx: 1.6, hz: 1.6, h: 8, cost: 125, time: 11 },
-  choir: { name: 'Choir Stone', hp: 1600, hx: 1.5, hz: 1.5, h: 11, cost: 0, time: 0 },
-};
-export const BUILDABLE: BKind[] = ['bunkhouse', 'depot', 'watchpost'];
-
-export interface Order { type: 'guard' | 'amove' | 'follow' | 'raid'; x: number; z: number }
-export interface Unit {
-  id: number; kind: Kind; team: number; pos: THREE.Vector3; yaw: number; hp: number; maxHp: number; shield: number; maxShield: number;
-  obj: THREE.Group; rig: MD.Rig; ring: THREE.Mesh; alive: boolean; speed: number; moving: boolean; phase: number; cd: number; think: number;
-  target: Unit | Building | null; order: Order; lastHit: number; state: string; timer: number; carrying: number; node: OreNode | null; site: Building | null;
-  dashCd: number; dashT: number; swing: number; slot: number;
-}
-export interface Building {
-  id: number; kind: BKind; team: number; pos: THREE.Vector3; hx: number; hz: number; h: number; hp: number; maxHp: number; obj: THREE.Group; holo: THREE.Group | null;
-  built: boolean; progress: number; queue: { kind: Kind; t: number }[]; alive: boolean; cd: number; builder: Unit | null; lastHit: number; rot: boolean;
-}
-export interface OreNode { pos: THREE.Vector3; amount: number; obj: THREE.Group }
-export interface Callout { who: string; text: string; t: number; dur: number }
-
-const HQ_POS = V3(0, 0, 0), OUTPOST = V3(122, 0, 13), RALLY = V3(25, 0, 11);
-const DEPOT_SLOTS = [[-13, 9], [-13, -9], [-19, 0], [-4, -13], [-22, 12]];
-const TMP = V3(), TMP2 = V3();
+const TMP = V3(), TMP2 = V3(), UP = V3(0, 1, 0);
+const beamMat = new THREE.MeshBasicMaterial({ color: 0x6dfff0, depthWrite: false });
+const bubbleMat = new THREE.MeshBasicMaterial({ color: 0x6dfff0, transparent: true, opacity: .4, depthWrite: false, blending: THREE.AdditiveBlending });
+const warnMat = new THREE.MeshBasicMaterial({ color: 0xff4f9a, transparent: true, opacity: .9, depthWrite: false, side: THREE.DoubleSide });
 let nextId = 1;
-const HINTS: (number | string)[][] = [
-  [1.5, 'Quartermaster', 'Welcome to Dustbowl 7. Hold click on the green ore to drill. I\'ll handle the paperwork.'],
-  [14, 'Quartermaster', 'Press 2 if you want to place buildings yourself. Press G to make me stop.'],
-  [75, 'Lookout', 'Veyl outpost is down the east road. Three Choir Stones. They will come for us first.'],
-];
+type Hit = { unit?: Unit; b?: Building; ore?: OreNode; dist: number; head?: boolean };
+interface Proj { obj: THREE.Object3D; pos: THREE.Vector3; vel: THREE.Vector3; team: number; dmg: number; nade: boolean; life: number; from: Unit | null }
+interface Corpse { obj: THREE.Object3D; t: number; veyl: boolean; ax: number; az: number; s: number }
+interface Weapon { name: string; mag: number; cd: number; reload: number }
+const GUNS: Record<string, Weapon> = { linesman: { name: 'Rifle', mag: 24, cd: .12, reload: 1.5 }, breacher: { name: 'Scattergun', mag: 6, cd: .78, reload: 2.1 } };
 
 export class Game {
   scene = new THREE.Scene();
@@ -55,71 +26,88 @@ export class Game {
   units: Unit[] = []; buildings: Building[] = []; ores: OreNode[] = []; spires: { x: number; z: number; r: number }[] = [];
   anim: ((t: number) => void)[] = [];
   ore = 100; time = 0; phase: 'menu' | 'play' | 'paused' | 'card' | 'over' = 'menu'; won = false;
+  up = { dmg: false, armor: false };
+  dir!: Director;
+  // the player
   me: Unit | null = null; lastBody: Unit | null = null; yaw = 0; pitch = 0; jumpCd = 0; seenKinds = new Set<string>(); cardT = 0; staticT = 0;
   tool = 1; buildSel = 0; buildRot = false; placeOK = false; placePos = V3(); ghost: Record<string, THREE.Group> = {}; ghostBad: Record<string, THREE.Group> = {};
-  ammo = 24; reloadT = 0; fireCd = 0; recoil = 0; mineT = 0; bob = 0; prompt = '';
-  auto = true; qmT = 0; raidT = 165; raidN = 0; reinT = 60;
-  plan: { phase: 'ask' | 'count' | 'go'; t: number; target: Building | null } | null = null; nextPlan = 60; callout: Callout | null = null;
+  ammo = 24; reloadT = 0; fireCd = 0; recoil = 0; ads = 0; brace = false; nadeCd = 0; bashCd = 0; bashT = 0; mineT = 0; bob = 0; prompt = ''; swayX = 0; swayY = 0; sens = 1;
   tab = false; tabSel = 0; tabList: { label: string; task: string; unit: Unit; hp: number; alert: boolean }[] = [];
-  keys = new Set<string>(); pressed = new Set<string>(); mdx = 0; mdy = 0; lmb = false; wheel = 0;
-  vmDrill: THREE.Group; vmRifle: THREE.Group; tracers: { m: THREE.Mesh; t: number }[] = []; puffs: { m: THREE.Mesh; t: number; life: number; v: THREE.Vector3; s: number }[] = [];
-  stats = { kills: 0, lost: 0, mined: 0 };
-  shake = 0; noRender = false; alertT = 0; hintI = 0; raidLive = false; firstLine = false;
+  keys = new Set<string>(); pressed = new Set<string>(); mdx = 0; mdy = 0; lmb = false; rmb = false; wheel = 0;
+  obj = { drilled: 0, jumped: false, answered: false, built: false };
+  stats = { kills: 0, lost: 0, mined: 0, built: 0 };
+  // effects
+  vm: Record<string, THREE.Group> = {};
+  tracers: { m: THREE.Mesh; t: number }[] = []; puffs: { m: THREE.Mesh; t: number; life: number; v: THREE.Vector3; s: number }[] = [];
+  bits: { m: THREE.Mesh; t: number; v: THREE.Vector3; spin: number }[] = []; scorch: { m: THREE.Mesh; t: number; s: number }[] = [];
+  bubbles: { m: THREE.Mesh; t: number; u: Unit | null }[] = []; warns: { m: THREE.Mesh; t: number; life: number; r: number }[] = [];
+  projs: Proj[] = []; corpses: Corpse[] = []; boltProto = MD.bolt(); nadeProto = MD.grenade();
+  shake = 0; noRender = false; alertT = 0; mood = 0;
 
-  constructor(public pipe: Pipeline, public hud: Hud) {
-    const s = this.scene; s.add(makeSky()); MD.buildWorld(s, this.spires); s.add(this.cam);
-    this.vmDrill = MD.vmDrill(this.anim); this.vmRifle = MD.vmRifle(); this.cam.add(this.vmDrill, this.vmRifle);
+  constructor(public pipe: Pipeline, public hud: Hud, public diff: Difficulty = DIFFS[1]) {
+    const s = this.scene; s.add(makeSky()); MD.buildWorld(s, this.spires, this.anim); s.add(this.cam);
+    this.vm = { drill: MD.vmDrill(), rifle: MD.vmRifle(), scatter: MD.vmScatter(), shield: MD.vmShield() };
+    for (const k in this.vm) { this.vm[k].visible = false; this.cam.add(this.vm[k]); }
     for (const k of BUILDABLE) { const src = this.model(k); this.ghost[k] = MD.hologram(src, holoOK); this.ghostBad[k] = MD.hologram(src, holoBad); this.ghost[k].visible = this.ghostBad[k].visible = false; s.add(this.ghost[k], this.ghostBad[k]); }
-    for (let i = 0; i < 28; i++) { const m = mk(G.cyl8, tracerMat, 0, 0, 0, s); m.layers.set(L_FX); m.visible = false; this.tracers.push({ m, t: 0 }); }
-    for (let i = 0; i < 60; i++) { const m = mk(G.sph, M.dust, 0, 0, 0, s); m.visible = false; this.puffs.push({ m, t: 0, life: 1, v: V3(), s: 1 }); }
-    // base
+    const pool = (n: number, geo: THREE.BufferGeometry, mat: THREE.Material, fx: boolean) => { const out: THREE.Mesh[] = []; for (let i = 0; i < n; i++) { const m = mk(geo, mat, 0, 0, 0, s); if (fx) m.layers.set(L_FX); m.visible = false; out.push(m); } return out; };
+    this.tracers = pool(36, G.cyl8, tracerMat, true).map(m => ({ m, t: 0 }));
+    this.puffs = pool(80, G.sph, M.dust, false).map(m => ({ m, t: 0, life: 1, v: V3(), s: 1 }));
+    this.bits = pool(90, G.box, M.rust, false).map(m => ({ m, t: 0, v: V3(), spin: 0 }));
+    this.scorch = pool(18, G.disc, M.scorch, false).map(m => { m.rotation.x = -Math.PI / 2; return { m, t: 0, s: 1 }; });
+    this.bubbles = pool(10, G.sph, bubbleMat, true).map(m => ({ m, t: 0, u: null }));
+    this.warns = pool(6, G.ringG, warnMat, true).map(m => { m.rotation.x = -Math.PI / 2; return { m, t: 0, life: 1, r: 1 }; });
+    // the Ironhold base
     this.addBuilding('headframe', 0, 0, 0, true);
-    for (const [x, z, n, sc] of [[17, -15, 9, 1.2], [21, -10, 7, 1.0], [23, -18, 8, 1.3], [15, -21, 6, .9], [-18, -24, 8, 1.1], [-24, -19, 7, 1.0]]) { const obj = MD.oreCluster(n, sc); obj.position.set(x, 0, z); s.add(obj); this.ores.push({ pos: V3(x, 0, z), amount: 900, obj }); }
-    mk(G.torusF, M.rock, [26, .15, 2], [3, 3, 4], [Math.PI / 2, 0, 0], s); mk(G.disc, M.violet, [26, .22, 2], [2.6, 2.6, 1], [-Math.PI / 2, 0, 0], s);
+    const field = (list: number[][], amount: number) => { for (const [x, z, n, sc] of list) { const obj = MD.oreCluster(n, sc); obj.position.set(x, 0, z); s.add(obj); this.ores.push({ pos: V3(x, 0, z), amount, max: amount, obj }); } };
+    field([[17, -15, 9, 1.2], [21, -10, 7, 1.0], [23, -18, 8, 1.3], [15, -21, 6, .9], [-18, -24, 8, 1.1], [-24, -19, 7, 1.0]], 900);
+    field([[60, -28, 10, 1.5], [65, -24, 8, 1.3], [58, -33, 9, 1.4]], 1600);
     for (const [x, z] of [[6, 7], [10, -6], [13, -10], [-8, -8], [9, 2], [-6, 8]]) this.spawn('rigger', 0, x, z);
-    // enemy outpost
-    for (const [x, z] of [[118, 5], [127, 13], [120, 22]]) this.addBuilding('choir', 1, x, z, true);
-    for (let i = 0; i < 6; i++) this.spawn('cantor', 1, OUTPOST.x - 6 + R(-4, 4), OUTPOST.z + R(-8, 8));
-    this.me = this.units[0]; this.possess(this.me, true);
-    this.yaw = Math.PI * .75;
+    // the Veyl outpost
+    for (const [x, z] of [[118, 4], [127, 14], [118, 24]]) this.addBuilding('choir', 1, x, z, true);
+    this.addBuilding('reedgate', 1, GATE.x, GATE.z, true, true);
+    this.dir = new Director(this);
+    this.me = this.units[0]; this.possess(this.me, true); this.yaw = Math.PI * .75;
   }
 
-  model(k: BKind) { return k === 'headframe' ? MD.headframe(this.anim) : k === 'bunkhouse' ? MD.bunkhouse() : k === 'depot' ? MD.depot() : k === 'watchpost' ? MD.watchpost() : MD.choir(this.anim); }
+  model(k: BKind): THREE.Group { return k === 'headframe' ? MD.headframe(this.anim) : k === 'bunkhouse' ? MD.bunkhouse() : k === 'depot' ? MD.depot() : k === 'watchpost' ? MD.watchpost() : k === 'machineshop' ? MD.machineshop(this.anim) : k === 'reedgate' ? MD.reedgate(this.anim) : MD.choir(this.anim); }
 
   // ------------------------------------------------------------ entities
   spawn(kind: Kind, team: number, x: number, z: number): Unit {
-    const md = kind === 'rigger' ? MD.rigger() : kind === 'linesman' ? MD.trooper() : MD.cantor(); const st = UNIT[kind];
-    const ring = mk(G.ringG, ringMat, [0, .08, 0], [2.4, 2.4, 1], [-Math.PI / 2, 0, 0], md.obj); ring.layers.set(L_FX); ring.visible = false;
-    const u: Unit = { id: nextId++, kind, team, pos: V3(x, 0, z), yaw: R(0, 6), hp: st.hp, maxHp: st.hp, shield: st.shield, maxShield: st.shield, obj: md.obj, rig: md.rig, ring, alive: true, speed: st.speed, moving: false, phase: R(0, 6), cd: R(0, 1), think: R(0, .3), target: null, order: { type: 'guard', x, z }, lastHit: -99, state: 'idle', timer: 0, carrying: 0, node: null, site: null, dashCd: R(2, 5), dashT: 0, swing: 0, slot: 0 };
-    md.obj.position.copy(u.pos); this.scene.add(md.obj); this.units.push(u);
-    if (kind === 'linesman') { u.slot = this.own('linesman').length; if (this.plan?.phase === 'go' && this.plan.target) u.order = { type: 'amove', x: this.plan.target.pos.x, z: this.plan.target.pos.z }; else if (this.following()) u.order = { type: 'follow', x: 0, z: 0 }; else u.order = { type: 'guard', x: RALLY.x + ((u.slot % 4) - 1.5) * 2.2, z: RALLY.z + Math.floor(u.slot / 4) * 2.2 }; }
+    const md = MD.unit(kind), st = UNIT[kind], hp = st.hp * (team === 0 && this.up.armor ? 1.25 : 1);
+    const rs = st.rad * 3.6, ring = mk(G.ringG, ringMat, [0, .08, 0], [rs, rs, 1], [-Math.PI / 2, 0, 0], md.obj); ring.layers.set(L_FX); ring.visible = false;
+    const u: Unit = { id: nextId++, kind, team, pos: V3(x, 0, z), yaw: R(0, 6), hp, maxHp: hp, shield: st.shield, maxShield: st.shield, obj: md.obj, rig: md.rig, ring, alive: true, speed: st.speed, moving: false, phase: R(0, 6), cd: R(0, 1), think: R(0, .3), target: null, order: { type: 'guard', x, z }, lastHit: -99, state: 'idle', timer: 0, carrying: 0, node: null, site: null, dashCd: R(2, 5), dashT: 0, swing: 0, slot: 0, flashT: 0, pop: 0, wind: 0, windX: 0, windZ: 0, kx: 0, kz: 0, pitch: 0, brace: false };
+    md.obj.position.copy(u.pos); md.obj.rotation.y = u.yaw; this.scene.add(md.obj); this.units.push(u);
+    if (isSoldier(u) && this.dir) this.dir.enlist(u);
     return u;
   }
   addBuilding(kind: BKind, team: number, x: number, z: number, built: boolean, rot = false): Building {
-    const st = BLD[kind]; const obj = this.model(kind); obj.position.set(x, 0, z); if (rot) obj.rotation.y = Math.PI / 2; this.scene.add(obj);
-    const b: Building = { id: nextId++, kind, team, pos: V3(x, 0, z), hx: rot ? st.hz : st.hx, hz: rot ? st.hx : st.hz, h: st.h, hp: built ? st.hp : st.hp * .1, maxHp: st.hp, obj, holo: null, built, progress: built ? 1 : 0, queue: [], alive: true, cd: 0, builder: null, lastHit: -99, rot };
+    const st = BLD[kind], obj = this.model(kind); obj.position.set(x, 0, z); if (rot) obj.rotation.y = Math.PI / 2; this.scene.add(obj);
+    const b: Building = { id: nextId++, kind, team, pos: V3(x, 0, z), hx: rot ? st.hz : st.hx, hz: rot ? st.hx : st.hz, h: st.h, hp: built ? st.hp : st.hp * .1, maxHp: st.hp, obj, holo: null, built, progress: built ? 1 : 0, queue: [], alive: true, cd: R(0, 1), builder: null, lastHit: -99, rot, smokeT: 0 };
     if (!built) { b.holo = MD.hologram(obj, holoOK); b.holo.position.copy(obj.position); b.holo.rotation.copy(obj.rotation); this.scene.add(b.holo); obj.scale.y = .06; }
     this.buildings.push(b); return b;
   }
   own(kind?: Kind) { return this.units.filter(u => u.alive && u.team === 0 && (!kind || u.kind === kind)); }
+  soldiers() { return this.units.filter(u => u.alive && u.team === 0 && isSoldier(u)); }
+  foes() { return this.units.filter(u => u.alive && u.team === 1); }
   ownB(kind?: BKind, builtOnly = false) { return this.buildings.filter(b => b.alive && b.team === 0 && (!kind || b.kind === kind) && (!builtOnly || b.built)); }
   stones() { return this.buildings.filter(b => b.alive && b.kind === 'choir'); }
+  gate() { return this.buildings.find(b => b.alive && b.kind === 'reedgate') || null; }
   supplyCap() { return 12 + 8 * this.ownB('depot', true).length; }
-  supplyUsed() { return this.own().length + this.ownB().reduce((n, b) => n + b.queue.length, 0); }
-  following() { return this.own('linesman').some(u => u.order.type === 'follow'); }
+  supplyUsed() { let n = 0; for (const u of this.units) if (u.alive && u.team === 0) n += UNIT[u.kind].supply; for (const b of this.buildings) if (b.alive && b.team === 0) for (const q of b.queue) n += UNIT[q.kind].supply; return n; }
+  gunMul() { return this.up.dmg ? 1.25 : 1; }
 
   // ------------------------------------------------------------ helpers
   distToBox(b: Building, x: number, z: number) { const dx = Math.max(Math.abs(x - b.pos.x) - b.hx, 0), dz = Math.max(Math.abs(z - b.pos.z) - b.hz, 0); return Math.hypot(dx, dz); }
   collide(u: Unit, gx: number, gz: number) {
-    const r = .5, p = u.pos;
+    const r = UNIT[u.kind].rad * .75, p = u.pos, ai = u !== this.me;
     for (const b of this.buildings) {
       if (!b.alive) continue; const ex = b.hx + r, ez = b.hz + r, dx = p.x - b.pos.x, dz = p.z - b.pos.z;
       if (Math.abs(dx) < ex && Math.abs(dz) < ez) {
         const px = ex - Math.abs(dx), pz = ez - Math.abs(dz);
-        if (px < pz) { p.x += Math.sign(dx || 1) * px; if (u !== this.me) p.z += Math.sign(gz - p.z || 1) * .06; } else { p.z += Math.sign(dz || 1) * pz; if (u !== this.me) p.x += Math.sign(gx - p.x || 1) * .06; }
+        if (px < pz) { p.x += Math.sign(dx || 1) * px; if (ai) p.z += Math.sign(gz - p.z || 1) * .07; } else { p.z += Math.sign(dz || 1) * pz; if (ai) p.x += Math.sign(gx - p.x || 1) * .07; }
       }
     }
-    for (const s of this.spires) { const dx = p.x - s.x, dz = p.z - s.z, d = Math.hypot(dx, dz), m = s.r + r; if (d < m && d > .001) { p.x += dx / d * (m - d); p.z += dz / d * (m - d); } }
+    for (const s of this.spires) { const dx = p.x - s.x, dz = p.z - s.z, m = s.r + r; if (Math.abs(dx) > m || Math.abs(dz) > m) continue; const d = Math.hypot(dx, dz); if (d < m && d > .001) { p.x += dx / d * (m - d); p.z += dz / d * (m - d); if (ai) { const tx = -dz / d, tz = dx / d, sg = Math.sign(tx * (gx - p.x) + tz * (gz - p.z)) || 1; p.x += tx * sg * .08; p.z += tz * sg * .08; } } }
     for (const o of this.ores) { if (o.amount <= 0) continue; const dx = p.x - o.pos.x, dz = p.z - o.pos.z, d = Math.hypot(dx, dz), m = 1.7; if (d < m && d > .001) { p.x += dx / d * (m - d); p.z += dz / d * (m - d); } }
     const cx = p.x - 60, cz = p.z - 10, cd = Math.hypot(cx, cz); if (cd > 200) { p.x = 60 + cx / cd * 200; p.z = 10 + cz / cd * 200; }
   }
@@ -127,59 +115,88 @@ export class Game {
     const dx = x - u.pos.x, dz = z - u.pos.z, d = Math.hypot(dx, dz); if (d < stop) return true;
     const st = Math.min(d, u.speed * mul * dt); u.pos.x += dx / d * st; u.pos.z += dz / d * st; u.yaw = Math.atan2(dx, dz); u.moving = true; this.collide(u, x, z); return false;
   }
+  /** Follows the unit's order, walking any waypoints first. Returns true on arrival. */
+  advance(u: Unit, dt: number, stop: number, mul = 1) {
+    const o = u.order; if (o.path && o.path.length) { if (this.moveTo(u, o.path[0][0], o.path[0][1], dt, 6, mul)) o.path.shift(); return false; }
+    return this.moveTo(u, o.x, o.z, dt, stop, mul);
+  }
   vol(p: THREE.Vector3) { const d = this.me ? p.distanceTo(this.me.pos) : 50; return Math.max(0, 1 - d / 90) ** 2; }
-  tracer(a: THREE.Vector3, b: THREE.Vector3, mat: THREE.Material = tracerMat, w = .07) {
-    const tr = this.tracers.find(t => t.t <= 0); if (!tr) return; const d = TMP.copy(b).sub(a), len = d.length(); if (len < .1) return;
-    tr.m.material = mat; tr.m.scale.set(w, len, w); tr.m.position.copy(a).addScaledVector(d, .5); tr.m.quaternion.setFromUnitVectors(V3(0, 1, 0), d.normalize()); tr.m.visible = true; tr.t = mat === tracerMat ? .07 : .16;
-  }
-  puff(p: THREE.Vector3, n: number, size: number, mat = M.dust, up = 1.2) {
-    for (let i = 0; i < n; i++) { const f = this.puffs.find(x => x.t <= 0); if (!f) return; f.m.material = mat; f.m.position.copy(p); f.v.set(R(-1, 1), R(.3, 1) * up, R(-1, 1)); f.s = size * R(.6, 1.2); f.life = f.t = R(.35, .7); f.m.visible = true; }
-  }
   feed(who: string, msg: string, cls = '') { this.hud.feed(who, msg, cls); }
 
-  damage(t: Unit | Building, amt: number, from: Unit | Building | null, crit = false) {
-    if (!t.alive) return; t.lastHit = this.time;
-    const isUnit = (t as Unit).rig !== undefined; const u = t as Unit;
-    if (isUnit && u.shield > 0) { const a = Math.min(u.shield, amt); u.shield -= a; amt -= a; }
-    t.hp -= amt;
-    const head = TMP2.copy(t.pos); head.y = isUnit ? UNIT[u.kind].headY + .4 : (t as Building).h * .7;
-    if (from === this.me && this.me) this.hud.damage(head, (crit ? 'CRIT ' : '') + Math.round(amt + (isUnit ? 0 : 0)), crit ? 'crit' : '');
-    if (t === this.me) { this.shake = Math.min(1, this.shake + .5); this.hud.hurt(); }
-    if (isUnit && from && (from as Unit).rig && u !== this.me && !u.target && u.kind !== 'rigger') u.target = from;
-    if (!isUnit && (t as Building).kind === 'choir' && from && (from as Unit).rig) for (const c of this.units) if (c.alive && c.team === 1 && !c.target && c.order.type === 'guard' && c.pos.distanceTo(t.pos) < 45) c.target = from;
-    if (!isUnit && t.team === 0 && from && this.time > this.alertT) { this.alertT = this.time + 20; this.feed('Lookout', `They're chewing on the ${BLD[(t as Building).kind].name}! Get back here.`, 'al'); sfx.alarm(); }
-    if (t.hp <= 0) isUnit ? this.killUnit(u, from) : this.killBuilding(t as Building);
+  // ------------------------------------------------------------ effects
+  tracer(a: THREE.Vector3, b: THREE.Vector3, mat: THREE.Material = tracerMat, w = .07) {
+    const tr = this.tracers.find(t => t.t <= 0); if (!tr) return; const d = TMP.copy(b).sub(a), len = d.length(); if (len < .1) return;
+    tr.m.material = mat; tr.m.scale.set(w, len, w); tr.m.position.copy(a).addScaledVector(d, .5); tr.m.quaternion.setFromUnitVectors(UP, d.normalize()); tr.m.visible = true; tr.t = mat === tracerMat ? .06 : .16;
   }
+  puff(p: THREE.Vector3, n: number, size: number, mat: THREE.Material = M.dust, up = 1.2, spread = 1) {
+    for (let i = 0; i < n; i++) { const f = this.puffs.find(x => x.t <= 0); if (!f) return; f.m.material = mat; f.m.position.copy(p); f.v.set(R(-1, 1) * spread, R(.3, 1) * up, R(-1, 1) * spread); f.s = size * R(.6, 1.2); f.life = f.t = R(.35, .7); f.m.visible = true; f.m.scale.setScalar(.01); }
+  }
+  /** Chunky debris that arcs, bounces once and shrinks away. */
+  debris(p: THREE.Vector3, n: number, size: number, mat: THREE.Material, power = 6) {
+    for (let i = 0; i < n; i++) { const f = this.bits.find(x => x.t <= 0); if (!f) return; f.m.material = mat; f.m.position.copy(p); f.v.set(R(-1, 1) * power, R(.5, 1.3) * power, R(-1, 1) * power); const s = size * R(.5, 1.3); f.m.scale.set(s, s * R(.4, 1), s * R(.6, 1.2)); f.m.rotation.set(R(0, 6), R(0, 6), 0); f.spin = R(-12, 12); f.t = R(.9, 1.6); f.m.visible = true; }
+  }
+  scorchAt(p: THREE.Vector3, size: number) { let s = this.scorch.find(x => x.t <= 0); if (!s) s = this.scorch.reduce((a, b) => a.t < b.t ? a : b); s.m.position.set(p.x, .04 + Math.random() * .01, p.z); s.s = size; s.m.scale.set(size, size, 1); s.m.rotation.z = R(0, 6); s.m.visible = true; s.t = 40; }
+  bubble(u: Unit) { const b = this.bubbles.find(x => x.t <= 0); if (!b) return; b.u = u; b.t = .18; b.m.visible = true; const s = UNIT[u.kind].rad * 3.4; b.m.scale.set(s, UNIT[u.kind].headY * 1.15, s); }
+  warn(x: number, z: number, r: number, life: number) { const w = this.warns.find(x => x.t <= 0); if (!w) return; w.m.position.set(x, .12, z); w.r = r; w.t = w.life = life; w.m.visible = true; }
+  explode(p: THREE.Vector3, team: number, dmg: number, radius: number, from: Unit | null, veyl = false) {
+    for (const u of this.units) { if (!u.alive || u.team === team) continue; const d = Math.hypot(u.pos.x - p.x, u.pos.z - p.z); if (d > radius + UNIT[u.kind].rad) continue; const k = 1 - .6 * Math.min(1, d / radius); this.damage(u, dmg * k, from); if (d > .1) { u.kx += (u.pos.x - p.x) / d * 9 * k; u.kz += (u.pos.z - p.z) / d * 9 * k; } }
+    for (const b of this.buildings) { if (!b.alive || b.team === team) continue; if (this.distToBox(b, p.x, p.z) < radius * .7) this.damage(b, dmg * 1.4, from); }
+    const g = V3(p.x, .6, p.z); this.puff(g, 7, radius * .5, veyl ? M.teal : M.fire, 2.2, 1.6); this.puff(g, 5, radius * .55, veyl ? M.indigoL : M.smoke, 1.4, 2.2); this.debris(g, 8, .3, veyl ? M.crys : M.rock, 7); this.scorchAt(p, radius * 1.5);
+    const v = this.vol(p); this.shake = Math.max(this.shake, v * 1.1); if (!veyl) this.pipe.flash = Math.max(this.pipe.flash, v * .5); sfx.boom(v);
+    this.hud.damage(V3(p.x, 2.2, p.z), veyl ? 'WHUMM!' : 'BOOM!', veyl ? 'kobad' : 'ko');
+  }
+
+  damage(t: Unit | Building, amt: number, from: Unit | Building | null, crit = false) {
+    if (!t.alive || amt <= 0) return; t.lastHit = this.time;
+    const u = isUnit(t) ? t : null, me = this.me;
+    if (u && u.kind === 'breacher' && from) { const dx = from.pos.x - u.pos.x, dz = from.pos.z - u.pos.z, d = Math.hypot(dx, dz) || 1; if ((dx * Math.sin(u.yaw) + dz * Math.cos(u.yaw)) / d > .25) { if (u !== me) amt *= .55; else if (this.brace) { amt *= .25; sfx.clang(); } } }
+    const dealt = amt, shielded = !!u && u.shield > 0;
+    if (u) { u.pop = 1; if (u.shield > 0) { const a = Math.min(u.shield, amt); u.shield -= a; amt -= a; this.bubble(u); } }
+    t.hp -= amt;
+    const head = V3(t.pos.x, u ? UNIT[u.kind].headY + .4 : (t as Building).h * .7, t.pos.z);
+    if (from === me && me && !this.quiet) this.hud.damage(head, (crit ? 'CRIT ' : '') + Math.max(1, Math.round(dealt)), crit ? 'crit' : shielded ? 'shield' : '');
+    if (t === me && me) { this.shake = Math.min(1, this.shake + .45); let ang = 0; if (from) { const a = Math.atan2(from.pos.x - me.pos.x, from.pos.z - me.pos.z) - this.yaw; ang = Math.atan2(Math.sin(a), Math.cos(a)); } this.hud.hurt(from ? ang : null); sfx.hurt(); }
+    if (u && from && isUnit(from) && u !== me && !u.target && u.kind !== 'rigger') u.target = from;
+    if (!u && from && isUnit(from) && t.team === 1) for (const c of this.units) if (c.alive && c.team === 1 && !c.target && c.order.type === 'guard' && c.pos.distanceTo(t.pos) < 50) c.target = from;
+    if (!u && t.team === 0 && from && this.time > this.alertT) { this.alertT = this.time + 20; this.feed('Lookout', `They're chewing on the ${BLD[(t as Building).kind].name}! Get back here.`, 'al'); sfx.alarm(); }
+    if (t.hp <= 0) u ? this.killUnit(u, from) : this.killBuilding(t as Building);
+  }
+  quiet = false;
   killUnit(u: Unit, from: Unit | Building | null) {
-    u.alive = false; this.scene.remove(u.obj); TMP2.copy(u.pos).setY(1); this.puff(TMP2, 7, 1.0, u.team ? M.teal : M.smoke); sfx.ko(this.vol(u.pos));
-    this.hud.damage(TMP2.setY(2.2), 'KO!', u.team ? 'ko' : 'kobad');
-    if (u.team === 1) { this.stats.kills++; } else { this.stats.lost++; if (u !== this.me && u.kind === 'linesman' && Math.random() < .5) this.feed('Alpha', 'Man down! That\'s coming out of somebody\'s pay.', 'al'); }
+    u.alive = false; const veyl = u.team === 1, v = this.vol(u.pos), st = UNIT[u.kind], c = V3(u.pos.x, st.bodyY, u.pos.z);
+    this.puff(c, veyl ? 6 : 4, st.rad * 1.4, veyl ? M.teal : M.dust); this.debris(c, veyl ? 7 : 3, .22, veyl ? M.crys : M.steelD, 5); sfx.ko(v, veyl);
+    this.hud.damage(V3(u.pos.x, st.headY + .4, u.pos.z), u.kind === 'warden' ? 'KRAKA-THOOM!' : 'KO!', veyl ? 'ko' : 'kobad');
+    u.ring.visible = false; if (u.rig.flash) u.rig.flash.visible = false; this.bodyLayer(u, false);
+    let ax = R(-1, 1), az = R(-1, 1); if (from) { ax = u.pos.x - from.pos.x; az = u.pos.z - from.pos.z; } const al = Math.hypot(ax, az) || 1;
+    this.corpses.push({ obj: u.obj, t: 0, veyl, ax: ax / al, az: az / al, s: u.obj.scale.x });
+    if (veyl) { this.stats.kills++; if (u.kind === 'warden') { this.shake = Math.max(this.shake, v); this.feed('Alpha', 'Warden down! Did everybody see that? I did that.', ''); } else if (from && isUnit(from) && from.team === 0 && from !== this.me && Math.random() < .12) this.dir.bark(from, 'kill'); }
+    else { this.stats.lost++; if (u !== this.me && isSoldier(u) && Math.random() < .35) this.dir.bark(u, 'down'); }
     if (u.site) u.site.builder = null;
-    if (u === this.me) { this.staticT = 2.2; this.feed('Signal', 'Body lost. Finding you a new one.', 'al'); sfx.deny(); }
+    if (u === this.me) { this.staticT = 1.9; this.feed('Signal', 'Body lost. Finding you a new one.', 'al'); sfx.deny(); drillSound(false, false); }
   }
   killBuilding(b: Building) {
-    b.alive = false; this.scene.remove(b.obj); if (b.holo) this.scene.remove(b.holo);
-    for (let i = 0; i < 4; i++) { TMP2.copy(b.pos).add(TMP.set(R(-b.hx, b.hx), R(1, b.h), R(-b.hz, b.hz))); this.puff(TMP2, 5, 2.4, b.team ? M.teal : M.smoke, 2); }
-    this.hud.damage(TMP2.copy(b.pos).setY(b.h * .6), b.team ? 'KRA-KOOM!' : 'CRUNCH!', b.team ? 'ko' : 'kobad'); sfx.ko(1); this.shake = Math.max(this.shake, this.vol(b.pos)); if (b.builder) { b.builder.site = null; b.builder.state = 'idle'; }
-    if (b.kind === 'choir') {
-      const left = this.stones().length; this.feed('Alpha', left ? `Choir Stone down! ${left} to go.` : 'That\'s the last one. Drinks are on the boss.', '');
-      if (!left) this.end(true); else if (this.plan?.phase === 'go') { this.plan.target = this.nearestStone(b.pos); for (const u of this.own('linesman')) if (u.order.type === 'amove' && this.plan.target) u.order = { type: 'amove', x: this.plan.target.pos.x, z: this.plan.target.pos.z }; }
-    } else if (b.kind === 'headframe') this.end(false);
-    else if (b.team === 0) this.feed('Quartermaster', `We lost the ${BLD[b.kind].name}. I liked that one.`, 'al');
+    b.alive = false; this.scene.remove(b.obj); if (b.holo) this.scene.remove(b.holo); const veyl = b.team === 1, v = this.vol(b.pos);
+    for (let i = 0; i < 5; i++) { const p = V3(b.pos.x + R(-b.hx, b.hx), R(1, b.h), b.pos.z + R(-b.hz, b.hz)); this.puff(p, 4, 2.6, veyl ? M.teal : i % 2 ? M.fire : M.smoke, 2, 1.5); this.debris(p, 6, .7, veyl ? (i % 2 ? M.indigo : M.crys) : (i % 2 ? M.rust : M.steel), 9); }
+    this.scorchAt(b.pos, Math.max(b.hx, b.hz) * 2.6); this.pipe.flash = Math.max(this.pipe.flash, v * .6);
+    this.hud.damage(V3(b.pos.x, b.h * .6, b.pos.z), veyl ? 'KRA-KOOM!' : 'CRUNCH!', veyl ? 'ko' : 'kobad'); sfx.boom(Math.max(.3, v)); this.shake = Math.max(this.shake, v);
+    if (b.builder) { b.builder.site = null; b.builder.state = 'idle'; }
+    this.dir.buildingLost(b);
+    if (b.kind === 'choir' && !this.stones().length) this.end(true); else if (b.kind === 'headframe') this.end(false);
   }
-  end(won: boolean) { if (this.phase === 'over') return; this.phase = 'over'; this.won = won; won ? sfx.win() : sfx.lose(); drillSound(false, false); this.hud.showEnd(this); if (document.pointerLockElement) document.exitPointerLock(); }
-  nearestStone(p: THREE.Vector3) { let best: Building | null = null, bd = 1e9; for (const b of this.stones()) { const d = b.pos.distanceTo(p); if (d < bd) { bd = d; best = b; } } return best; }
+  end(won: boolean) { if (this.phase === 'over') return; this.phase = 'over'; this.won = won; won ? sfx.win() : sfx.lose(); drillSound(false, false); setMood(0); this.hud.showEnd(this); if (document.pointerLockElement) document.exitPointerLock(); }
+  nearestStone(p: { x: number; z: number }) { let best: Building | null = null, bd = 1e9; for (const b of this.stones()) { const d = Math.hypot(b.pos.x - p.x, b.pos.z - p.z); if (d < bd) { bd = d; best = b; } } return best; }
 
   // ------------------------------------------------------------ ray casting
   /** Finds the first thing the ray hits. `team` filters which side's units and buildings count (-1 for any). */
-  ray(o: THREE.Vector3, d: THREE.Vector3, max: number, team: number, skip: Unit | null) {
-    let best = max, hit: { unit?: Unit; b?: Building; ore?: OreNode; dist: number; head?: boolean } | null = null;
+  ray(o: THREE.Vector3, d: THREE.Vector3, max: number, team: number, skip: Unit | null): Hit | null {
+    let best = max, hit: Hit | null = null;
     const sphere = (cx: number, cy: number, cz: number, r: number) => { const ox = o.x - cx, oy = o.y - cy, oz = o.z - cz; const b = ox * d.x + oy * d.y + oz * d.z, c = ox * ox + oy * oy + oz * oz - r * r, disc = b * b - c; if (disc < 0) return -1; const t = -b - Math.sqrt(disc); return t > 0 ? t : -1; };
     for (const u of this.units) {
-      if (!u.alive || u === skip || (team >= 0 && u.team !== team)) continue; const st = UNIT[u.kind];
-      let t = sphere(u.pos.x, st.headY, u.pos.z, .46); if (t > 0 && t < best) { best = t; hit = { unit: u, dist: t, head: true }; }
-      t = sphere(u.pos.x, st.bodyY, u.pos.z, .66); if (t > 0 && t < best) { best = t; hit = { unit: u, dist: t }; }
-      t = sphere(u.pos.x, .35, u.pos.z, .45); if (t > 0 && t < best) { best = t; hit = { unit: u, dist: t }; }
+      if (!u.alive || u === skip || (team >= 0 && u.team !== team)) continue; const st = UNIT[u.kind], k = st.rad / .66;
+      const ox = u.pos.x - o.x, oz = u.pos.z - o.z, along = ox * d.x + oz * d.z; if (along < -3 || along > best + 3) continue;
+      let t = sphere(u.pos.x, st.headY, u.pos.z, .46 * k); if (t > 0 && t < best) { best = t; hit = { unit: u, dist: t, head: true }; }
+      t = sphere(u.pos.x, st.bodyY, u.pos.z, st.rad); if (t > 0 && t < best) { best = t; hit = { unit: u, dist: t }; }
+      t = sphere(u.pos.x, st.bodyY * .35, u.pos.z, st.rad * .7); if (t > 0 && t < best) { best = t; hit = { unit: u, dist: t }; }
     }
     for (const b of this.buildings) {
       if (!b.alive || (team >= 0 && b.team !== team)) continue;
@@ -194,102 +211,129 @@ export class Game {
   groundPoint(out: THREE.Vector3, max: number) { const d = this.lookDir(TMP), o = this.cam.position; if (d.y > -.02) return false; const t = -o.y / d.y; if (t > max) return false; out.copy(o).addScaledVector(d, t); out.y = 0; return true; }
 
   // ------------------------------------------------------------ possession
+  bodyLayer(u: Unit, self: boolean) { setLayer(u.obj, self ? L_SELF : 0); u.ring.layers.set(L_FX); if (u.rig.flash) setLayer(u.rig.flash, L_FX); }
   possess(u: Unit, force = false) {
     if (!u.alive || (u === this.me && !force)) return; if (!force && this.jumpCd > 0) { sfx.deny(); return; }
-    const old = this.me; if (old && old.alive && old !== u) { setLayer(old.obj, 0); old.ring.layers.set(L_FX); if (old.kind === 'rigger') { old.state = 'idle'; old.site = null; } this.lastBody = old; }
-    this.me = u; setLayer(u.obj, L_SELF); u.ring.layers.set(L_FX); this.yaw = u.yaw; this.pitch = 0; this.jumpCd = force ? 0 : 3; this.tool = 1; this.reloadT = 0; this.ammo = 24; u.target = null;
-    if (u.site) { u.site.builder = null; u.site = null; } u.state = 'idle'; u.carrying = 0; if (u.obj.userData.pack) u.obj.userData.pack.visible = false;
-    this.vmDrill.visible = u.kind === 'rigger'; this.vmRifle.visible = u.kind === 'linesman'; drillSound(false, false);
-    if (!force) { sfx.jump(); this.feed(UNIT[u.kind].name, UNIT[u.kind].ack, 'in'); }
-    if (!this.seenKinds.has(u.kind) && !force) { this.seenKinds.add(u.kind); this.phase = 'card'; this.cardT = 1.1; this.hud.titleCard(UNIT[u.kind].name, UNIT[u.kind].quip); sfx.card(); } else this.seenKinds.add(u.kind);
+    const old = this.me; if (old && old.alive && old !== u) { this.bodyLayer(old, false); if (old.kind === 'rigger') { old.state = 'idle'; old.site = null; } old.target = null; this.lastBody = old; if (isSoldier(old)) this.dir.enlist(old); }
+    this.me = u; this.bodyLayer(u, true); this.yaw = u.yaw; this.pitch = 0; this.jumpCd = force ? 0 : 3; this.tool = 1; this.reloadT = 0; this.ads = 0; this.brace = false; this.recoil = 0; u.target = null; u.wind = 0;
+    this.ammo = GUNS[u.kind] ? GUNS[u.kind].mag : 0;
+    if (u.site) { u.site.builder = null; u.site = null; } u.state = 'idle'; u.carrying = 0; if (u.rig.pack) u.rig.pack.visible = false; if (u.rig.flash) u.rig.flash.visible = false;
+    drillSound(false, false);
+    if (!force) { sfx.jump(); this.feed(UNIT[u.kind].name, UNIT[u.kind].ack[Math.floor(Math.random() * UNIT[u.kind].ack.length)], 'in'); this.obj.jumped = true; this.pipe.flash = .35; }
+    if (!this.seenKinds.has(u.kind) && !force) { this.seenKinds.add(u.kind); this.phase = 'card'; this.cardT = 1.15; this.hud.titleCard(u.kind, UNIT[u.kind].name, UNIT[u.kind].quip); sfx.card(); } else this.seenKinds.add(u.kind);
   }
   refreshTab() {
-    const me = this.me!, list: Game['tabList'] = [];
+    const me = this.me!, list: Game['tabList'] = [], t = this.dir.squadTask();
     const near = (k: Kind) => this.own(k).filter(u => u !== me).sort((a, b) => a.pos.distanceTo(me.pos) - b.pos.distanceTo(me.pos))[0];
     const hot = this.own().filter(u => u !== me && this.time - u.lastHit < 4).sort((a, b) => b.lastHit - a.lastHit)[0];
     if (hot) list.push({ label: UNIT[hot.kind].name + ' under attack', task: 'Jump in and save them', unit: hot, hp: hot.hp / hot.maxHp, alert: true });
-    const l = near('linesman'); if (l) { const o = l.order.type; list.push({ label: `Alpha · Linesman ×${this.own('linesman').length}`, task: o === 'amove' ? 'Pushing the east yard' : o === 'follow' ? 'Following you' : 'Holding the rally point', unit: l, hp: l.hp / l.maxHp, alert: false }); }
+    const l = near('linesman'); if (l) list.push({ label: `Linesman ×${this.own('linesman').length}`, task: t, unit: l, hp: l.hp / l.maxHp, alert: false });
+    const b = near('breacher'); if (b) list.push({ label: `Breacher ×${this.own('breacher').length}`, task: t, unit: b, hp: b.hp / b.maxHp, alert: false });
     const r = near('rigger'); if (r) list.push({ label: `Rigger ×${this.own('rigger').length}`, task: r.state === 'build' || r.state === 'toSite' ? 'Building' : 'Mining ore', unit: r, hp: r.hp / r.maxHp, alert: false });
     if (this.lastBody && this.lastBody.alive && this.lastBody !== me && !list.some(e => e.unit === this.lastBody)) list.push({ label: 'Last body · ' + UNIT[this.lastBody.kind].name, task: 'Where you just were', unit: this.lastBody, hp: this.lastBody.hp / this.lastBody.maxHp, alert: false });
-    this.tabList = list; if (this.tabSel >= list.length) this.tabSel = 0;
+    this.tabList = list.slice(0, 5); if (this.tabSel >= this.tabList.length) this.tabSel = 0;
   }
 
   // ------------------------------------------------------------ frame
   update(dtReal: number) {
     const P = this.pressed; dtReal = Math.min(dtReal, .1);
     this.pipe.time += dtReal;
-    if (this.phase === 'card') { this.cardT -= dtReal; if (this.cardT <= 0) { this.phase = 'play'; this.hud.titleCard('', ''); } }
+    if (this.phase === 'card') { this.cardT -= dtReal; if (this.cardT <= 0) { this.phase = 'play'; this.hud.titleCard('', '', ''); } }
     if (this.phase === 'play') {
-      // jump overlay
-      const tabNow = this.keys.has('Tab') && !!this.me?.alive;
+      const tabNow = this.keys.has('Tab') && !!this.me?.alive && this.staticT <= 0;
       if (tabNow && !this.tab) { this.tabSel = 0; this.refreshTab(); sfx.blip(); }
       if (!tabNow && this.tab) { const e = this.tabList[this.tabSel]; if (e && e.unit.alive) this.possess(e.unit); }
       this.tab = tabNow;
       if (this.tab) { for (let i = 0; i < this.tabList.length; i++) if (P.has('Digit' + (i + 1))) { this.tabSel = i; sfx.blip(); } if (this.wheel) { this.tabSel = (this.tabSel + (this.wheel > 0 ? 1 : this.tabList.length - 1)) % Math.max(1, this.tabList.length); sfx.blip(); } }
-      const dt = dtReal * (this.tab ? .3 : 1);
+      const dt = dtReal * (this.tab ? .25 : 1);
       this.time += dt; this.jumpCd = Math.max(0, this.jumpCd - dtReal);
       if (this.staticT > 0) { this.staticT -= dtReal; if (this.staticT <= 0) this.respawn(); }
       else if (this.me?.alive && !this.tab) this.updatePlayer(dt, P);
-      this.updateUnits(dt); this.updateBuildings(dt); this.updateDirector(dt);
-    }
-    // effects
+      this.updateUnits(dt); this.updateBuildings(dt); this.updateProjs(dt); this.dir.update(dt);
+      this.updateFx(dt);
+    } else this.updateFx(this.phase === 'menu' ? dtReal : 0);
     const t = this.pipe.time; for (const f of this.anim) f(t);
-    for (const tr of this.tracers) if (tr.t > 0) { tr.t -= dtReal; if (tr.t <= 0) tr.m.visible = false; }
-    for (const f of this.puffs) if (f.t > 0) { f.t -= dtReal; const k = 1 - f.t / f.life; f.m.position.addScaledVector(f.v, dtReal * 2.2); const s = f.s * (.4 + k) * (1 - k * k); f.m.scale.set(s, s, s); if (f.t <= 0) f.m.visible = false; }
-    this.shake = Math.max(0, this.shake - dtReal * 2.5);
+    this.shake = Math.max(0, this.shake - dtReal * 2.5); this.pipe.flash = Math.max(0, this.pipe.flash - dtReal * 2.6);
     this.units = this.units.filter(u => u.alive); this.buildings = this.buildings.filter(b => b.alive);
     if (!this.noRender) this.render(dtReal);
     P.clear(); this.mdx = this.mdy = 0; this.wheel = 0;
   }
-
-  respawn() {
-    const me = this.me!; let best: Unit | null = null, bd = 1e9; for (const u of this.own()) { const d = u.pos.distanceTo(me.pos); if (d < bd) { bd = d; best = u; } }
-    if (!best && this.ownB('headframe').length) { best = this.spawn('rigger', 0, 2, 7); this.feed('Quartermaster', 'Found you a fresh Rigger. Try to keep this one.', ''); }
-    if (best) { this.jumpCd = 0; this.possess(best, true); sfx.jump(); } else this.end(false);
+  updateFx(dt: number) {
+    if (dt <= 0) return;
+    for (const tr of this.tracers) if (tr.t > 0) { tr.t -= dt; if (tr.t <= 0) tr.m.visible = false; }
+    for (const f of this.puffs) if (f.t > 0) { f.t -= dt; const k = 1 - f.t / f.life; f.m.position.addScaledVector(f.v, dt * 2.2); const s = f.s * (.4 + k) * (1 - k * k); f.m.scale.set(s, s, s); if (f.t <= 0) f.m.visible = false; }
+    for (const f of this.bits) if (f.t > 0) { f.t -= dt; f.v.y -= 22 * dt; f.m.position.addScaledVector(f.v, dt); f.m.rotation.x += f.spin * dt; f.m.rotation.z += f.spin * .7 * dt; if (f.m.position.y < .08) { f.m.position.y = .08; f.v.y *= -.35; f.v.x *= .5; f.v.z *= .5; f.spin *= .4; } if (f.t < .3) f.m.scale.multiplyScalar(Math.max(0, 1 - dt * 6)); if (f.t <= 0) f.m.visible = false; }
+    for (const s of this.scorch) if (s.t > 0) { s.t -= dt; if (s.t < 4) { const k = Math.max(.001, s.t / 4) * s.s; s.m.scale.set(k, k, 1); } if (s.t <= 0) s.m.visible = false; }
+    for (const b of this.bubbles) if (b.t > 0) { b.t -= dt; if (b.u) b.m.position.set(b.u.pos.x, UNIT[b.u.kind].bodyY, b.u.pos.z); if (b.t <= 0) b.m.visible = false; }
+    for (const w of this.warns) if (w.t > 0) { w.t -= dt; const k = 1 - w.t / w.life, s = w.r * 2 * (.3 + .7 * k); w.m.scale.set(s, s, 1); if (w.t <= 0) w.m.visible = false; }
+    for (let i = this.corpses.length - 1; i >= 0; i--) {
+      const c = this.corpses[i]; c.t += dt; const o = c.obj;
+      if (c.veyl) { const k = Math.min(1, c.t / .7); o.position.y += dt * 1.6; o.rotation.y += dt * 9; o.scale.setScalar(c.s * Math.max(.001, 1 - k * k)); if (k >= 1) { this.scene.remove(o); this.corpses.splice(i, 1); } }
+      else {
+        const k = Math.min(1, c.t / .45), fall = k * k * 1.5, yaw = o.rotation.y, fx = c.ax * Math.cos(yaw) - c.az * Math.sin(yaw), fz = c.ax * Math.sin(yaw) + c.az * Math.cos(yaw);
+        o.rotation.x = fall * fz; o.rotation.z = -fall * fx; o.position.x += c.ax * dt * 3 * (1 - k); o.position.z += c.az * dt * 3 * (1 - k); o.position.y = Math.sin(k * Math.PI) * .25 + (k >= 1 ? .22 : 0);
+        if (c.t > 2.6) { o.position.y -= (c.t - 2.6) * 1.2; o.scale.setScalar(c.s * Math.max(.001, 1 - (c.t - 2.6) / .8)); } if (c.t > 3.4) { this.scene.remove(o); this.corpses.splice(i, 1); }
+      }
+    }
   }
 
+  respawn() {
+    const me = this.me!; let best: Unit | null = null, bd = 1e9; for (const u of this.own()) { const d = u.pos.distanceTo(me.pos) + (isSoldier(u) ? 0 : 25); if (d < bd) { bd = d; best = u; } }
+    if (!best && this.ownB('headframe').length) { best = this.spawn('rigger', 0, 2, 7); this.feed('Quartermaster', 'Found you a fresh Rigger. Try to keep this one.', ''); }
+    if (best) { this.jumpCd = 0; this.possess(best, true); sfx.jump(); this.pipe.flash = .4; } else this.end(false);
+  }
+
+  // ------------------------------------------------------------ the player
   updatePlayer(dt: number, P: Set<string>) {
-    const me = this.me!, K = this.keys;
-    this.yaw -= this.mdx * .0023; this.pitch = Math.max(-1.45, Math.min(1.45, this.pitch - this.mdy * .0023));
+    const me = this.me!, K = this.keys, gun = GUNS[me.kind];
+    const aiming = !!gun && this.rmb && this.reloadT <= 0; this.brace = me.kind === 'breacher' && aiming;
+    this.ads += ((aiming ? 1 : 0) - this.ads) * Math.min(1, dt * 14);
+    const sens = .0023 * this.sens * (1 - this.ads * (me.kind === 'linesman' ? .45 : .2));
+    this.yaw -= this.mdx * sens; this.pitch = Math.max(-1.45, Math.min(1.45, this.pitch - this.mdy * sens));
+    this.swayX += (-this.mdx * .0006 - this.swayX) * Math.min(1, dt * 10); this.swayY += (this.mdy * .0006 - this.swayY) * Math.min(1, dt * 10);
     let fx = 0, fz = 0; if (K.has('KeyW')) fz += 1; if (K.has('KeyS')) fz -= 1; if (K.has('KeyD')) fx += 1; if (K.has('KeyA')) fx -= 1;
-    const sprint = K.has('ShiftLeft') && fz > 0; me.moving = false;
-    if (fx || fz) { const l = Math.hypot(fx, fz), sp = me.speed * (sprint ? 1.5 : 1) * dt / l, s = Math.sin(this.yaw), c = Math.cos(this.yaw); me.pos.x += (s * fz - c * fx) * sp; me.pos.z += (c * fz + s * fx) * sp; me.moving = true; this.bob += dt * (sprint ? 13 : 9.5); this.collide(me, me.pos.x, me.pos.z); }
-    me.yaw = this.yaw;
-    this.fireCd -= dt; this.recoil = Math.max(0, this.recoil - dt * 6);
-    const eye = TMP2.set(me.pos.x, UNIT[me.kind].eye, me.pos.z), dir = this.lookDir(V3());
+    const sprint = K.has('ShiftLeft') && fz > 0 && !aiming; me.moving = false;
+    if (fx || fz) { const l = Math.hypot(fx, fz), sp = me.speed * (sprint ? 1.5 : aiming ? .55 : 1) * dt / l, s = Math.sin(this.yaw), c = Math.cos(this.yaw); me.pos.x += (s * fz - c * fx) * sp; me.pos.z += (c * fz + s * fx) * sp; me.moving = true; this.bob += dt * (sprint ? 13 : 9.5); this.collide(me, me.pos.x, me.pos.z); }
+    me.yaw = this.yaw; me.pitch = this.pitch;
+    this.fireCd -= dt; this.recoil = Math.max(0, this.recoil - dt * 6); this.nadeCd = Math.max(0, this.nadeCd - dt); this.bashCd = Math.max(0, this.bashCd - dt); this.bashT = Math.max(0, this.bashT - dt);
+    const eye = V3(me.pos.x, UNIT[me.kind].eye, me.pos.z), dir = this.lookDir(V3());
     this.prompt = '';
-    // jump shortcuts
     if (P.has('KeyQ') && this.lastBody?.alive) { this.possess(this.lastBody); return; }
     const look = this.ray(eye, dir, 70, -1, me);
     if (look?.unit && look.unit.team === 0) { this.prompt = `<b>F</b> Jump into ${UNIT[look.unit.kind].name}`; if (P.has('KeyF')) { this.possess(look.unit); return; } }
-    // squad commands
-    if (P.has('KeyV')) { const ls = this.own('linesman').filter(u => u !== me); if (ls.length) { const rel = this.following(); ls.forEach((u, i) => { u.slot = i; u.order = rel ? { type: 'guard', x: RALLY.x + ((i % 4) - 1.5) * 2.2, z: RALLY.z + Math.floor(i / 4) * 2.2 } : { type: 'follow', x: 0, z: 0 }; }); this.feed('Alpha', rel ? 'Back to the rally point. Finally, a sit-down.' : 'On you, boss. Try not to get us killed.', ''); if (this.plan?.phase !== 'go') { this.plan = null; this.callout = null; this.nextPlan = this.time + 60; } else if (!rel) this.plan = null; sfx.callout(); } else sfx.deny(); }
-    if (P.has('Mouse1')) { const g = V3(); if (this.groundPoint(g, 160) || (look && g.copy(eye).addScaledVector(dir, look.dist).setY(0))) { const ls = this.own('linesman').filter(u => u !== me); if (ls.length) { for (const u of ls) u.order = { type: 'amove', x: g.x + R(-2, 2), z: g.z + R(-2, 2) }; this.feed('Alpha', 'Moving. Shooting anything purple on the way.', ''); this.hud.ping(g); sfx.callout(); } } }
-    if (P.has('KeyG')) { this.auto = !this.auto; this.feed('Quartermaster', this.auto ? 'Back on the books. I\'ll handle the building.' : 'Fine. You do the paperwork.', ''); sfx.blip(); }
-    // interact with production buildings
-    if (look?.b && look.b.team === 0 && look.b.built && look.dist < 9 && (look.b.kind === 'headframe' || look.b.kind === 'bunkhouse')) {
-      const k: Kind = look.b.kind === 'headframe' ? 'rigger' : 'linesman'; this.prompt = `<b>E</b> Train ${UNIT[k].name} · ${UNIT[k].cost} ore` + (look.b.queue.length ? ` · ${look.b.queue.length} queued` : '');
-      if (P.has('KeyE')) this.train(look.b, k, true);
-    }
-    if (me.kind === 'rigger') this.updateRigger(dt, P, eye, dir, look); else this.updateGun(dt, P, eye, dir);
+    this.dir.playerOrders(P, eye, dir, look ? look.dist : -1);
+    // production buildings
+    const lb = look?.b && look.b.team === 0 && look.b.built && look.dist < 10 ? look.b : null;
+    if (lb && lb.kind === 'headframe') { this.prompt = `<b>E</b> Train Rigger · 50 ore` + (lb.queue.length ? ` · ${lb.queue.length} queued` : ''); if (P.has('KeyE')) this.train(lb, 'rigger', true); }
+    else if (lb && lb.kind === 'bunkhouse') { const shop = this.ownB('machineshop', true).length > 0; this.prompt = `<b>E</b> Linesman · 60 ore &nbsp; <b>T</b> Breacher · ${shop ? '110 ore' : 'needs a Machine Shop'}` + (lb.queue.length ? ` · ${lb.queue.length} queued` : ''); if (P.has('KeyE')) this.train(lb, 'linesman', true); if (P.has('KeyT')) { if (shop) this.train(lb, 'breacher', true); else sfx.deny(); } }
+    else if (lb && lb.kind === 'machineshop') { const open = UPGRADES.filter(u => !this.up[u.key]); this.prompt = open.length ? open.map((u, i) => `<b>${'ET'[i]}</b> ${u.name} · ${u.cost} ore`).join(' &nbsp; ') : 'Every upgrade bought'; open.forEach((u, i) => { if (P.has(i ? 'KeyT' : 'KeyE')) this.buyUpgrade(u.key, true); }); }
+    if (me.kind === 'rigger') this.updateRigger(dt, P, eye, dir, look); else this.updateGun(dt, P, eye, dir, gun);
   }
   train(b: Building, k: Kind, manual = false) {
-    if (this.ore < UNIT[k].cost) { if (manual) { sfx.deny(); this.feed('Quartermaster', 'Can\'t. We\'re broke. Go hit a rock.', 'al'); } return false; }
-    if (this.supplyUsed() >= this.supplyCap()) { if (manual) { sfx.deny(); this.feed('Quartermaster', 'No beds. Build a Depot first.', 'al'); } return false; }
+    const st = UNIT[k];
+    if (this.ore < st.cost) { if (manual) { sfx.deny(); this.feed('Quartermaster', 'Can\'t. We\'re broke. Go hit a rock.', 'al'); } return false; }
+    if (this.supplyUsed() + st.supply > this.supplyCap()) { if (manual) { sfx.deny(); this.feed('Quartermaster', 'No beds. Build a Depot first.', 'al'); } return false; }
     if (b.queue.length >= 5) { if (manual) sfx.deny(); return false; }
-    this.ore -= UNIT[k].cost; b.queue.push({ kind: k, t: UNIT[k].time }); if (manual) sfx.blip(); return true;
+    this.ore -= st.cost; b.queue.push({ kind: k, t: st.time }); if (manual) sfx.blip(); return true;
+  }
+  buyUpgrade(key: 'dmg' | 'armor', manual = false) {
+    const u = UPGRADES.find(x => x.key === key)!; if (this.up[key]) return false;
+    if (this.ore < u.cost) { if (manual) { sfx.deny(); this.feed('Quartermaster', `${u.name} is ${u.cost} ore. Keep digging.`, 'al'); } return false; }
+    this.ore -= u.cost; this.up[key] = true; sfx.built();
+    if (key === 'armor') for (const x of this.own()) { x.maxHp *= 1.25; x.hp *= 1.25; }
+    this.feed('Quartermaster', key === 'dmg' ? 'Hollow Points issued. Try to hit something with them.' : 'Plating bolted on. Everyone walk heavier.', ''); return true;
   }
   canPlace(k: BKind, x: number, z: number, rot: boolean) {
     const st = BLD[k], hx = rot ? st.hz : st.hx, hz = rot ? st.hx : st.hz;
-    if (Math.hypot(x, z) > 75) return false;
+    if (Math.hypot(x, z) > 80) return false;
     for (const b of this.buildings) if (b.alive && Math.abs(x - b.pos.x) < hx + b.hx + 1.6 && Math.abs(z - b.pos.z) < hz + b.hz + 1.6) return false;
     for (const o of this.ores) if (o.amount > 0 && Math.abs(x - o.pos.x) < hx + 2.4 && Math.abs(z - o.pos.z) < hz + 2.4) return false;
     for (const s of this.spires) if (Math.abs(x - s.x) < hx + s.r && Math.abs(z - s.z) < hz + s.r) return false;
     return true;
   }
-  place(k: BKind, x: number, z: number, rot: boolean) { this.ore -= BLD[k].cost; const b = this.addBuilding(k, 0, x, z, false, rot); sfx.place(); return b; }
+  place(k: BKind, x: number, z: number, rot: boolean) { this.ore -= BLD[k].cost; const b = this.addBuilding(k, 0, x, z, false, rot); sfx.place(); this.puff(TMP.set(x, .3, z), 5, 1.2, M.dust, .5, 2); return b; }
 
-  updateRigger(dt: number, P: Set<string>, eye: THREE.Vector3, dir: THREE.Vector3, look: ReturnType<Game['ray']>) {
+  updateRigger(dt: number, P: Set<string>, eye: THREE.Vector3, dir: THREE.Vector3, look: Hit | null) {
     const me = this.me!;
     if (P.has('Digit1')) { this.tool = 1; sfx.blip(); }
     if (P.has('Digit2')) { if (this.tool === 2) this.buildSel = (this.buildSel + 1) % BUILDABLE.length; this.tool = 2; sfx.blip(); }
@@ -299,204 +343,264 @@ export class Game {
     let biting = false; const drilling = this.tool === 1 && this.lmb;
     if (this.tool === 2) {
       const k = BUILDABLE[this.buildSel], g = this.placePos;
-      if (!this.groundPoint(g, 26)) { this.lookDir(TMP); g.set(me.pos.x + Math.sin(this.yaw) * 12, 0, me.pos.z + Math.cos(this.yaw) * 12); }
+      if (!this.groundPoint(g, 26)) g.set(me.pos.x + Math.sin(this.yaw) * 12, 0, me.pos.z + Math.cos(this.yaw) * 12);
       g.x = Math.round(g.x); g.z = Math.round(g.z);
       this.placeOK = this.canPlace(k, g.x, g.z, this.buildRot) && this.ore >= BLD[k].cost && Math.hypot(g.x - me.pos.x, g.z - me.pos.z) > Math.max(BLD[k].hx, BLD[k].hz) + 1;
-      if (P.has('Mouse0')) { if (this.placeOK) { this.place(k, g.x, g.z, this.buildRot); this.tool = 1; this.feed('Quartermaster', `${BLD[k].name} staked out. Hold the drill on it to speed things up.`, ''); } else { sfx.deny(); if (this.ore < BLD[k].cost) this.feed('Quartermaster', `A ${BLD[k].name} is ${BLD[k].cost} ore. We have ${Math.floor(this.ore)}.`, 'al'); } }
+      if (P.has('Mouse0')) { if (this.placeOK) { this.place(k, g.x, g.z, this.buildRot); this.tool = 1; this.obj.built = true; this.feed('Quartermaster', `${BLD[k].name} staked out. Hold the drill on it to speed things up.`, ''); } else { sfx.deny(); if (this.ore < BLD[k].cost) this.feed('Quartermaster', `A ${BLD[k].name} is ${BLD[k].cost} ore. We have ${Math.floor(this.ore)}.`, 'al'); } }
     } else if (drilling) {
       this.mineT -= dt;
       if (look && look.dist < 4.2) {
-        if (look.ore) { biting = true; if (this.mineT <= 0) { this.mineT = .5; const n = Math.min(2, look.ore.amount); look.ore.amount -= n; this.ore += n; this.stats.mined += n; sfx.ore(); this.puff(TMP.copy(eye).addScaledVector(dir, look.dist - .2), 3, .16, M.ore, 1.4); this.hud.damage(TMP.copy(eye).addScaledVector(dir, look.dist - .3), '+' + n, 'ore'); this.oreCheck(look.ore); } }
-        else if (look.b && look.b.team === 0 && !look.b.built) { biting = true; look.b.progress += dt / BLD[look.b.kind].time * 1.6; if (this.mineT <= 0) { this.mineT = .2; this.puff(TMP.copy(eye).addScaledVector(dir, look.dist), 1, .35, M.flash, .8); } }
-        else if (look.b && look.b.team === 0 && look.b.built && look.b.hp < look.b.maxHp) { biting = true; look.b.hp = Math.min(look.b.maxHp, look.b.hp + 30 * dt); if (this.mineT <= 0) { this.mineT = .2; this.puff(TMP.copy(eye).addScaledVector(dir, look.dist), 1, .35, M.flash, .8); } }
-        else if ((look.unit && look.unit.team === 1 && look.dist < 2.8) || (look.b && look.b.team === 1 && look.dist < 2.8)) { biting = true; if (this.mineT <= 0) { this.mineT = .3; this.damage((look.unit || look.b)!, 9, me); sfx.hit(); } }
+        const at = V3().copy(eye).addScaledVector(dir, look.dist - .15);
+        if (look.ore) { biting = true; if (this.mineT <= 0) { this.mineT = .42; const n = Math.min(3, look.ore.amount); look.ore.amount -= n; this.ore += n; this.stats.mined += n; this.obj.drilled += n; sfx.ore(); this.debris(at, 3, .12, M.ore, 3); this.hud.damage(at, '+' + n, 'ore'); this.oreCheck(look.ore); this.shake = Math.max(this.shake, .12); } }
+        else if (look.b && look.b.team === 0 && !look.b.built) { biting = true; look.b.progress += dt / BLD[look.b.kind].time * 1.6; if (this.mineT <= 0) { this.mineT = .16; this.debris(at, 2, .06, M.spark, 4); } }
+        else if (look.b && look.b.team === 0 && look.b.built && look.b.hp < look.b.maxHp) { biting = true; look.b.hp = Math.min(look.b.maxHp, look.b.hp + 40 * dt); if (this.mineT <= 0) { this.mineT = .16; this.debris(at, 2, .06, M.spark, 4); } }
+        else if ((look.unit && look.unit.team === 1 && look.dist < 3) || (look.b && look.b.team === 1 && look.dist < 3)) { biting = true; if (this.mineT <= 0) { this.mineT = .25; this.damage((look.unit || look.b)!, 10, me); sfx.hit(); this.debris(at, 2, .08, M.spark, 4); } }
       }
-      const bit = this.vmDrill.userData.bit; bit.rotation.z += dt * (biting ? 30 : 22);
+      this.vm.drill.userData.bit.rotation.z += dt * (biting ? 34 : 24); if (biting) this.shake = Math.max(this.shake, .06);
     }
     if (!this.prompt && this.tool === 1 && look && look.dist < 4.2) { if (look.ore) this.prompt = '<b>Hold click</b> Drill ore'; else if (look.b && look.b.team === 0 && !look.b.built) this.prompt = '<b>Hold click</b> Weld it up faster'; else if (look.b && look.b.team === 0 && look.b.hp < look.b.maxHp) this.prompt = '<b>Hold click</b> Patch it up'; }
     drillSound(drilling, biting);
   }
-  oreCheck(n: OreNode) { if (n.amount <= 0) { n.obj.traverse((m: any) => { if (m.isMesh && m.material === M.ore) m.material = M.oreDead; }); n.obj.scale.setScalar(.6); } }
+  oreCheck(n: OreNode) { if (n.amount <= 0) { n.obj.traverse((m: any) => { if (m.isMesh && m.material === M.ore) m.material = M.oreDead; }); n.obj.scale.setScalar(.6); } else n.obj.scale.setScalar(.75 + .25 * n.amount / n.max); }
 
-  updateGun(dt: number, P: Set<string>, eye: THREE.Vector3, dir: THREE.Vector3) {
-    const me = this.me!; const flash = this.vmRifle.userData.flash; flash.visible = false;
-    if (this.reloadT > 0) { this.reloadT -= dt; if (this.reloadT <= 0) this.ammo = 24; return; }
-    if ((P.has('KeyR') && this.ammo < 24) || (this.ammo <= 0 && this.lmb)) { this.reloadT = 1.4; sfx.reload(); return; }
-    if (this.lmb && this.fireCd <= 0 && this.ammo > 0) {
-      this.fireCd = .12; this.ammo--; this.recoil = Math.min(1, this.recoil + .35); this.pitch = Math.min(1.45, this.pitch + .006); this.shake = Math.min(1, this.shake + .12); sfx.shot(); flash.visible = true; flash.rotation.z = R(0, 3);
-      const d = TMP.copy(dir); d.x += R(-.008, .008); d.y += R(-.008, .008); d.z += R(-.008, .008); d.normalize();
-      let hit = this.ray(eye, d, 140, -1, me); if (hit && ((hit.unit && hit.unit.team === 0) || (hit.b && hit.b.team === 0 && hit.dist < 3))) hit = this.ray(eye, d, 140, 1, me); const dist = hit ? hit.dist : 140; const end = V3().copy(eye).addScaledVector(d, dist);
-      const muzzle = V3(); this.vmRifle.userData.flash.getWorldPosition(muzzle); this.tracer(muzzle, end);
-      if (hit?.unit && hit.unit.team === 1) { this.damage(hit.unit, hit.head ? 15 : 7, me, !!hit.head); sfx.hit(); this.hud.hitmark(!!hit.head); this.puff(end, 2, .4, M.teal, .6); }
-      else if (hit?.b && hit.b.team === 1) { this.damage(hit.b, 7, me); this.hud.hitmark(false); this.puff(end, 2, .5, M.teal, .6); }
-      else if (hit || d.y < 0) { if (!hit && d.y < 0) { const t = -eye.y / d.y; if (t < 140) end.copy(eye).addScaledVector(d, t); } this.puff(end, 2, .4, M.dust, .6); }
+  updateGun(dt: number, P: Set<string>, eye: THREE.Vector3, dir: THREE.Vector3, gun: Weapon) {
+    const me = this.me!, heavy = me.kind === 'breacher', vm = heavy ? this.vm.scatter : this.vm.rifle, flash = vm.userData.flash; flash.visible = false;
+    // grenade (Linesman) and shield bash (Breacher)
+    if (!heavy && P.has('KeyC')) { if (this.nadeCd <= 0) { this.nadeCd = 9; const v = V3().copy(dir).multiplyScalar(19); v.y += 4.5; this.shoot(V3().copy(eye).addScaledVector(dir, .7), v, 0, 75, true, me); sfx.throw(); } else sfx.deny(); }
+    if (heavy && this.brace && P.has('Mouse0') && this.bashCd <= 0) {
+      this.bashCd = .9; this.bashT = .25; sfx.clang(); this.shake = Math.max(this.shake, .4); let any = false;
+      for (const u of this.units) { if (!u.alive || u.team !== 1) continue; const dx = u.pos.x - me.pos.x, dz = u.pos.z - me.pos.z, d = Math.hypot(dx, dz); if (d > 3.4 + UNIT[u.kind].rad || (dx * dir.x + dz * dir.z) / (d || 1) < .5) continue; this.damage(u, 24, me); const k = u.kind === 'warden' ? 2 : 12; u.kx += dx / (d || 1) * k; u.kz += dz / (d || 1) * k; any = true; }
+      if (any) { this.hud.hitmark(false); sfx.hit(); this.hud.damage(V3().copy(eye).addScaledVector(dir, 2), 'WHAM!', 'ko'); }
+    }
+    if (this.reloadT > 0) { this.reloadT -= dt; if (this.reloadT <= 0) this.ammo = gun.mag; return; }
+    if ((P.has('KeyR') && this.ammo < gun.mag) || (this.ammo <= 0 && this.lmb)) { this.reloadT = gun.reload; sfx.reload(); return; }
+    if (this.lmb && this.fireCd <= 0 && this.ammo > 0 && !this.brace) {
+      this.fireCd = gun.cd; this.ammo--; flash.visible = true; flash.rotation.z = R(0, 3); const mul = this.gunMul();
+      const muzzle = V3(); flash.getWorldPosition(muzzle);
+      if (heavy) {
+        this.recoil = 1; this.pitch = Math.min(1.45, this.pitch + .03); this.shake = Math.min(1, this.shake + .35); sfx.blast(); let hits = 0, total = 0, last: Unit | Building | null = null, crit = false;
+        this.quiet = true;
+        for (let i = 0; i < 9; i++) {
+          const d = V3().copy(dir); d.x += R(-.075, .075); d.y += R(-.05, .05); d.z += R(-.075, .075); d.normalize();
+          let hit = this.ray(eye, d, 34, -1, me); if (hit && ((hit.unit && hit.unit.team === 0) || (hit.b && hit.b.team === 0 && hit.dist < 3))) hit = this.ray(eye, d, 34, 1, me);
+          const dist = hit ? hit.dist : 34, end = V3().copy(eye).addScaledVector(d, dist); if (i % 2 === 0) this.tracer(muzzle, end);
+          const fall = dist < 10 ? 1 : Math.max(.3, 1 - (dist - 10) / 24), tgt = hit && (hit.unit && hit.unit.team === 1 ? hit.unit : hit.b && hit.b.team === 1 ? hit.b : null);
+          if (tgt) { const dm = (hit!.head ? 9 : 6) * fall * mul; total += dm; hits++; last = tgt; crit = crit || !!hit!.head; this.damage(tgt, dm, me); if (i % 3 === 0) this.puff(end, 1, .4, M.teal, .6); } else this.impact(eye, d, hit, end);
+        }
+        this.quiet = false;
+        if (last) { this.hud.hitmark(crit); sfx.hit(); this.hud.damage(V3(last.pos.x, (isUnit(last) ? UNIT[last.kind].headY : last.h * .6) + .4, last.pos.z), String(Math.round(total)), hits >= 7 ? 'crit' : ''); }
+      } else {
+        this.recoil = Math.min(1, this.recoil + .35); this.pitch = Math.min(1.45, this.pitch + .006 * (1 - this.ads * .5)); this.shake = Math.min(1, this.shake + .1); sfx.shot();
+        const sp = .011 * (1 - this.ads * .75) * (me.moving ? 1.6 : 1), d = V3().copy(dir); d.x += R(-sp, sp); d.y += R(-sp, sp); d.z += R(-sp, sp); d.normalize();
+        let hit = this.ray(eye, d, 150, -1, me); if (hit && ((hit.unit && hit.unit.team === 0) || (hit.b && hit.b.team === 0 && hit.dist < 3))) hit = this.ray(eye, d, 150, 1, me);
+        const dist = hit ? hit.dist : 150, end = V3().copy(eye).addScaledVector(d, dist); this.tracer(muzzle, end);
+        if (hit?.unit && hit.unit.team === 1) { const sh = hit.unit.shield > 0; this.damage(hit.unit, (hit.head ? 15 : 7) * mul, me, !!hit.head); sfx.hit(); this.hud.hitmark(!!hit.head); this.puff(end, 2, .35, sh ? M.cyan : M.teal, .6); this.debris(end, 1, .07, M.crys, 3); }
+        else if (hit?.b && hit.b.team === 1) { this.damage(hit.b, 7 * mul, me); this.hud.hitmark(false); this.puff(end, 1, .5, M.teal, .6); this.debris(end, 2, .1, M.indigo, 4); }
+        else this.impact(eye, d, hit, end);
+        const f = this.bits.find(x => x.t <= 0); if (f) { f.m.material = M.spark; f.m.position.copy(muzzle).addScaledVector(dir, -.5); f.v.set(-Math.cos(this.yaw) * 2.5 + R(-.5, .5), 2.5, Math.sin(this.yaw) * 2.5 + R(-.5, .5)); f.m.scale.set(.03, .03, .07); f.spin = 20; f.t = .8; f.m.visible = true; }
+      }
+    }
+  }
+  impact(eye: THREE.Vector3, d: THREE.Vector3, hit: Hit | null, end: THREE.Vector3) { if (!hit && d.y < 0) { const t = -eye.y / d.y; if (t < 150) end.copy(eye).addScaledVector(d, t); else return; } else if (!hit) return; this.puff(end, 1, .35, M.dust, .6); this.debris(end, 1, .07, M.rock, 3); }
+  shoot(pos: THREE.Vector3, vel: THREE.Vector3, team: number, dmg: number, nade: boolean, from: Unit | null) {
+    const obj = (nade ? this.nadeProto : this.boltProto).clone(true); obj.position.copy(pos); this.scene.add(obj);
+    this.projs.push({ obj, pos: pos.clone(), vel: vel.clone(), team, dmg, nade, life: nade ? 4 : 2.2, from });
+  }
+  updateProjs(dt: number) {
+    for (let i = this.projs.length - 1; i >= 0; i--) {
+      const p = this.projs[i]; p.life -= dt; if (p.nade) p.vel.y -= 20 * dt; p.pos.addScaledVector(p.vel, dt); p.obj.position.copy(p.pos);
+      if (p.nade) { p.obj.rotation.x += dt * 9; p.obj.rotation.z += dt * 5; } else { p.obj.lookAt(TMP.copy(p.pos).add(p.vel)); p.obj.rotateZ(this.time * 12); }
+      let hit = p.life <= 0 || p.pos.y <= .12, tgt: Unit | Building | null = null;
+      if (!hit) for (const u of this.units) { if (!u.alive || u.team === p.team) continue; const st = UNIT[u.kind]; if (Math.abs(u.pos.x - p.pos.x) > 3) continue; if (Math.hypot(u.pos.x - p.pos.x, u.pos.z - p.pos.z) < st.rad + .3 && p.pos.y < st.headY + .5) { hit = true; tgt = u; break; } }
+      if (!hit) for (const b of this.buildings) { if (!b.alive || (b.team === p.team && !p.nade)) continue; if (Math.abs(p.pos.x - b.pos.x) < b.hx && Math.abs(p.pos.z - b.pos.z) < b.hz && p.pos.y < b.h) { hit = true; if (b.team !== p.team) tgt = b; break; } }
+      if (!hit) for (const s of this.spires) if (Math.abs(p.pos.x - s.x) < s.r && Math.abs(p.pos.z - s.z) < s.r && p.pos.y < 8) { hit = true; break; }
+      if (!hit) continue;
+      if (p.nade) this.explode(p.pos, p.team, p.dmg, 5.5, p.from);
+      else { if (tgt) this.damage(tgt, p.dmg, p.from); this.puff(p.pos, 3, .5, M.cyan, .8); this.debris(p.pos, 2, .1, M.crys, 4); sfx.zap(this.vol(p.pos) * .6); }
+      this.scene.remove(p.obj); this.projs.splice(i, 1);
     }
   }
 
-  // ------------------------------------------------------------ AI
+  // ------------------------------------------------------------ unit AI
   updateUnits(dt: number) {
-    const us = this.units;
+    const us = this.units, me = this.me, t = this.time;
     for (const u of us) {
-      if (!u.alive) continue; if (u !== this.me) u.moving = false; u.cd -= dt; u.think -= dt; u.swing = Math.max(0, u.swing - dt * 4);
-      if (u.maxShield && this.time - u.lastHit > 5) u.shield = Math.min(u.maxShield, u.shield + 14 * dt);
-      if (u !== this.me || this.staticT > 0) { if (u.kind === 'rigger') this.aiRigger(u, dt); else if (u.kind === 'linesman') this.aiLinesman(u, dt); else this.aiCantor(u, dt); }
+      if (!u.alive) continue; if (u !== me) u.moving = false; u.cd -= dt; u.think -= dt; u.swing = Math.max(0, u.swing - dt * 4); u.flashT -= dt; u.pop = Math.max(0, u.pop - dt * 7);
+      if (u.maxShield && t - u.lastHit > 5) u.shield = Math.min(u.maxShield, u.shield + 14 * dt);
+      if (u.kx || u.kz) { u.pos.x += u.kx * dt; u.pos.z += u.kz * dt; const k = Math.max(0, 1 - dt * 7); u.kx *= k; u.kz *= k; if (Math.abs(u.kx) + Math.abs(u.kz) < .05) u.kx = u.kz = 0; this.collide(u, u.pos.x, u.pos.z); }
+      if (u.team === 0 && u.hp < u.maxHp && t - u.lastHit > 5) for (const b of this.buildings) if (b.team === 0 && b.built && (b.kind === 'depot' || b.kind === 'headframe') && Math.abs(b.pos.x - u.pos.x) < 16 && Math.abs(b.pos.z - u.pos.z) < 16) { u.hp = Math.min(u.maxHp, u.hp + 5 * dt); break; }
+      if (u !== me || this.staticT > 0) { if (u.kind === 'rigger') this.aiRigger(u, dt); else if (u.team === 0) this.aiSoldier(u, dt); else if (u.kind === 'cantor') this.aiCantor(u, dt); else if (u.kind === 'lancer') this.aiLancer(u, dt); else this.aiWarden(u, dt); }
     }
-    // separation
-    for (let i = 0; i < us.length; i++) for (let j = i + 1; j < us.length; j++) { const a = us[i], b = us[j]; if (!a.alive || !b.alive) continue; const dx = b.pos.x - a.pos.x, dz = b.pos.z - a.pos.z, d2 = dx * dx + dz * dz; const mine = a === this.me || b === this.me, lim = mine ? 1.7 : 1.05; if (d2 < lim * lim && d2 > 1e-5) { const d = Math.sqrt(d2), p = (lim - d) * .5; const wa = a === this.me ? 0 : mine ? 2 : 1, wb = b === this.me ? 0 : mine ? 2 : 1; a.pos.x -= dx / d * p * wa; a.pos.z -= dz / d * p * wa; b.pos.x += dx / d * p * wb; b.pos.z += dz / d * p * wb; } }
+    // keep bodies apart
+    for (let i = 0; i < us.length; i++) { const a = us[i]; if (!a.alive) continue; const ra = UNIT[a.kind].rad; for (let j = i + 1; j < us.length; j++) { const b = us[j]; if (!b.alive) continue; const dx = b.pos.x - a.pos.x; if (dx > 4 || dx < -4) continue; const dz = b.pos.z - a.pos.z, mine = a === me || b === me, lim = (ra + UNIT[b.kind].rad) * (mine ? 1.25 : .8), d2 = dx * dx + dz * dz; if (d2 < lim * lim && d2 > 1e-5) { const d = Math.sqrt(d2), p = (lim - d) * .5; const wa = a === me ? 0 : b.kind === 'warden' ? 2 : mine ? 2 : 1, wb = b === me ? 0 : a.kind === 'warden' ? 2 : mine ? 2 : 1; a.pos.x -= dx / d * p * wa; a.pos.z -= dz / d * p * wa; b.pos.x += dx / d * p * wb; b.pos.z += dz / d * p * wb; } } }
+    // pose
     for (const u of us) {
-      if (!u.alive) continue; u.obj.position.x = u.pos.x; u.obj.position.z = u.pos.z;
-      let dy = u.yaw - u.obj.rotation.y; dy = Math.atan2(Math.sin(dy), Math.cos(dy)); u.obj.rotation.y += dy * Math.min(1, dt * 12);
-      const r = u.rig; if (u.moving) u.phase += dt * 11; const amp = u.moving ? .75 : 0;
-      if (r.legL && r.legR) { const s = Math.sin(u.phase) * amp; r.legL.rotation.x += (s - r.legL.rotation.x) * Math.min(1, dt * 14); r.legR.rotation.x += (-s - r.legR.rotation.x) * Math.min(1, dt * 14); u.obj.position.y = u.moving ? Math.abs(Math.cos(u.phase)) * .06 : 0; r.body.rotation.x = u.moving ? .08 : 0; }
-      else { u.obj.position.y = .12 + Math.sin(this.time * 2.4 + u.id) * .07; r.body.rotation.x = u.moving ? .16 : 0; if (r.arm) r.arm.rotation.x = -u.swing * 1.6; }
-      if (u.kind === 'linesman' && r.arm) r.arm.position.z = .44 - Math.max(0, u.swing) * .12;
+      if (!u.alive) continue; const r = u.rig, o = u.obj; o.position.x = u.pos.x; o.position.z = u.pos.z;
+      let dy = u.yaw - o.rotation.y; dy = Math.atan2(Math.sin(dy), Math.cos(dy)); o.rotation.y += dy * Math.min(1, dt * 12);
+      if (u.moving) u.phase += dt * (u.kind === 'breacher' ? 9 : 11); const amp = u.moving ? .75 : 0, ease = Math.min(1, dt * 14), base = u.kind === 'breacher' ? 1.14 : 1, sc = base * (1 + u.pop * .1);
+      o.scale.set(sc, base * (1 - u.pop * .06), sc);
+      if (r.legL && r.legR) {
+        const s = Math.sin(u.phase) * amp; r.legL.rotation.x += (s - r.legL.rotation.x) * ease; r.legR.rotation.x += (-s - r.legR.rotation.x) * ease; o.position.y = u.moving ? Math.abs(Math.cos(u.phase)) * .07 : 0;
+        const working = u.state === 'mining' || u.state === 'build' || u.state === 'repair';
+        r.body.rotation.x += ((u.moving ? .1 : working ? .16 : 0) - u.pop * .12 - r.body.rotation.x) * ease; r.body.rotation.z = u.moving ? Math.sin(u.phase) * .04 : 0;
+        if (r.head) r.head.rotation.y += ((u.moving || u.target || working ? 0 : Math.sin(t * .7 + u.id) * .5) - r.head.rotation.y) * Math.min(1, dt * 4);
+        if (u.kind === 'rigger') { if (r.armL) r.armL.rotation.x += (-s * .8 - r.armL.rotation.x) * ease; if (r.armR) r.armR.rotation.x = working ? -.5 + Math.sin(t * 34 + u.id) * .05 : s * .3; }
+        else { if (r.arms) { r.arms.rotation.x += (-u.pitch * .8 + (u.moving && !u.target ? .25 : 0) - u.swing * .1 - r.arms.rotation.x) * ease; r.arms.position.z = .05 - u.swing * .1; } if (r.armL) r.armL.rotation.x = u.moving ? Math.sin(u.phase) * .12 : 0; if (r.flash) { r.flash.visible = u.flashT > 0; if (u.flashT > 0) r.flash.rotation.z = t * 40; } }
+      } else {
+        const big = u.kind === 'warden'; o.position.y = (big ? .3 : .12) + Math.sin(t * (big ? 1.4 : 2.4) + u.id) * (big ? .12 : .07);
+        r.body.rotation.x += ((u.moving ? (u.dashT > 0 ? .5 : .16) : 0) - u.pop * .1 - r.body.rotation.x) * ease; if (r.halo) r.halo.rotation.z += dt * (u.wind > 0 ? 9 : 1.6);
+        if (u.kind === 'cantor' && r.armR) r.armR.rotation.x = -u.swing * 1.7;
+        if (u.kind === 'lancer') { if (r.arms) r.arms.rotation.x = -u.pitch; if (r.flash) { r.flash.visible = u.wind > 0; const k = u.wind > 0 ? 1.4 - u.wind : 0; r.flash.scale.setScalar(Math.max(.01, k)); r.flash.rotation.z = t * 9; } }
+        if (big && r.armL && r.armR) { const k = u.wind > 0 ? Math.min(1, (1 - u.wind / .9) * 1.4) : 0; const a = u.wind > 0 ? -2.4 * k : u.swing * .9; r.armL.rotation.x += (a - r.armL.rotation.x) * Math.min(1, dt * 18); r.armR.rotation.x = r.armL.rotation.x; }
+      }
     }
   }
   aiRigger(u: Unit, dt: number) {
     const hq = this.ownB('headframe')[0];
-    if (u.site && (!u.site.alive || u.site.built)) { u.site = null; u.state = 'idle'; }
+    if (u.site && (!u.site.alive || (u.site.built && u.site.hp >= u.site.maxHp))) { u.site.builder = null; u.site = null; u.state = 'idle'; }
     if (u.site) {
-      const b = u.site; if (this.distToBox(b, u.pos.x, u.pos.z) > 1.6) { this.moveTo(u, b.pos.x, b.pos.z, dt); u.state = 'toSite'; } else { u.state = 'build'; u.yaw = Math.atan2(b.pos.x - u.pos.x, b.pos.z - u.pos.z); b.progress += dt / BLD[b.kind].time; if (u.think <= 0) { u.think = .25; this.puff(TMP.set(u.pos.x + Math.sin(u.yaw) * .9, 1, u.pos.z + Math.cos(u.yaw) * .9), 1, .3, M.flash, .8); } }
+      const b = u.site; if (this.distToBox(b, u.pos.x, u.pos.z) > 1.6) { this.moveTo(u, b.pos.x, b.pos.z, dt); u.state = 'toSite'; }
+      else { u.state = b.built ? 'repair' : 'build'; u.yaw = Math.atan2(b.pos.x - u.pos.x, b.pos.z - u.pos.z); if (b.built) b.hp = Math.min(b.maxHp, b.hp + 16 * dt); else b.progress += dt / BLD[b.kind].time; if (u.think <= 0) { u.think = .2; this.debris(TMP.set(u.pos.x + Math.sin(u.yaw) * .9, 1, u.pos.z + Math.cos(u.yaw) * .9), 1, .06, M.spark, 3); } }
       return;
     }
-    if (u.state === 'idle' || (u.node && u.node.amount <= 0 && u.state !== 'toHQ')) { let best: OreNode | null = null, bd = 1e9; for (const n of this.ores) { if (n.amount <= 0) continue; const d = n.pos.distanceTo(u.pos) + (this.units.filter(o => o.node === n).length) * 6; if (d < bd) { bd = d; best = n; } } u.node = best; u.state = best ? 'toOre' : 'wait'; }
+    if (u.state === 'idle' || (u.node && u.node.amount <= 0 && u.state !== 'toHQ')) { let best: OreNode | null = null, bd = 1e9; for (const n of this.ores) { if (n.amount <= 0) continue; const d = n.pos.distanceTo(u.pos) + (this.units.filter(o => o.node === n).length) * 6 + (hq ? n.pos.distanceTo(hq.pos) * .6 : 0); if (d < bd) { bd = d; best = n; } } u.node = best; u.state = best ? 'toOre' : 'wait'; }
     if (u.state === 'toOre' && u.node) { if (this.moveTo(u, u.node.pos.x, u.node.pos.z, dt, 2.5)) { u.state = 'mining'; u.timer = 3; } }
-    else if (u.state === 'mining' && u.node) { u.yaw = Math.atan2(u.node.pos.x - u.pos.x, u.node.pos.z - u.pos.z); u.timer -= dt; u.rig.body.rotation.x = Math.sin(this.time * 18) * .04; if (u.timer <= 0) { const n = Math.min(7, u.node.amount); u.node.amount -= n; u.carrying = n; this.oreCheck(u.node); u.obj.userData.pack.visible = true; u.state = 'toHQ'; } }
-    else if (u.state === 'toHQ') { if (!hq) { u.state = 'wait'; return; } if (this.distToBox(hq, u.pos.x, u.pos.z) < 1.7) { this.ore += u.carrying; this.stats.mined += u.carrying; u.carrying = 0; u.obj.userData.pack.visible = false; u.state = 'idle'; } else this.moveTo(u, hq.pos.x + 1.6, hq.pos.z + hq.hz + .8, dt, .3); }
+    else if (u.state === 'mining' && u.node) { u.yaw = Math.atan2(u.node.pos.x - u.pos.x, u.node.pos.z - u.pos.z); u.timer -= dt; if (u.think <= 0) { u.think = .5; if (this.vol(u.pos) > .3) this.debris(TMP.set(u.pos.x + Math.sin(u.yaw) * 1.1, 1, u.pos.z + Math.cos(u.yaw) * 1.1), 1, .1, M.ore, 3); } if (u.timer <= 0) { const n = Math.min(7, u.node.amount); u.node.amount -= n; u.carrying = n; this.oreCheck(u.node); if (u.rig.pack) u.rig.pack.visible = true; u.state = 'toHQ'; } }
+    else if (u.state === 'toHQ') { if (!hq) { u.state = 'wait'; return; } if (this.distToBox(hq, u.pos.x, u.pos.z) < 1.7) { this.ore += u.carrying; this.stats.mined += u.carrying; u.carrying = 0; if (u.rig.pack) u.rig.pack.visible = false; u.state = 'idle'; } else this.moveTo(u, hq.pos.x + 1.6, hq.pos.z + hq.hz + .8, dt, .3); }
   }
   acquire(u: Unit, range: number, bRange: number) {
     let best: Unit | Building | null = null, bd = range;
-    for (const o of this.units) { if (!o.alive || o.team === u.team) continue; const d = o.pos.distanceTo(u.pos); if (d < bd) { bd = d; best = o; } }
-    if (!best) { bd = bRange; for (const b of this.buildings) { if (!b.alive || b.team === u.team) continue; const d = this.distToBox(b, u.pos.x, u.pos.z); if (d < bd) { bd = d; best = b; } } }
+    for (const o of this.units) { if (!o.alive || o.team === u.team) continue; const dx = o.pos.x - u.pos.x, dz = o.pos.z - u.pos.z; if (dx > bd || dx < -bd || dz > bd || dz < -bd) continue; const d = Math.hypot(dx, dz); if (d < bd) { bd = d; best = o; } }
+    if (!best && bRange > 0) { bd = bRange; for (const b of this.buildings) { if (!b.alive || b.team === u.team) continue; const d = this.distToBox(b, u.pos.x, u.pos.z); if (d < bd) { bd = d; best = b; } } }
     return best;
   }
-  aiLinesman(u: Unit, dt: number) {
-    if (u.think <= 0) { u.think = .3; u.target = this.acquire(u, 30, u.order.type === 'guard' ? 0 : 26); }
+  aimAt(u: Unit, t: Unit | Building, fromY: number) { const ty = isUnit(t) ? UNIT[t.kind].bodyY : Math.min(t.h * .5, 3), d = Math.hypot(t.pos.x - u.pos.x, t.pos.z - u.pos.z); u.yaw = Math.atan2(t.pos.x - u.pos.x, t.pos.z - u.pos.z); u.pitch += (Math.atan2(ty - fromY, d) - u.pitch) * .3; return ty; }
+  aiSoldier(u: Unit, dt: number) {
+    const heavy = u.kind === 'breacher', range = heavy ? 10 : 19;
+    if (u.think <= 0) { u.think = .3; u.target = this.acquire(u, 30, u.order.type === 'guard' ? 0 : 28); }
     const t = u.target;
     if (t && t.alive) {
-      const isB = !(t as Unit).rig, d = isB ? this.distToBox(t as Building, u.pos.x, u.pos.z) : t.pos.distanceTo(u.pos);
-      u.yaw = Math.atan2(t.pos.x - u.pos.x, t.pos.z - u.pos.z);
-      if (d > 19) this.moveTo(u, t.pos.x, t.pos.z, dt);
+      const isB = !isUnit(t), d = isB ? this.distToBox(t as Building, u.pos.x, u.pos.z) : t.pos.distanceTo(u.pos), ty = this.aimAt(u, t, 1.1);
+      if (d > range) this.moveTo(u, t.pos.x, t.pos.z, dt, 1, heavy ? 1.15 : 1);
       else if (u.cd <= 0) {
-        u.cd = .38 + R(0, .08); u.swing = 1; const hit = isB || Math.random() < .7;
-        const a = V3(u.pos.x + Math.sin(u.yaw) * .9, 1.0, u.pos.z + Math.cos(u.yaw) * .9), b = V3(t.pos.x, isB ? Math.min((t as Building).h * .5, 3) : 1.2, t.pos.z); if (!hit) b.add(TMP.set(R(-1.5, 1.5), R(-.5, 1.5), R(-1.5, 1.5)));
-        this.tracer(a, b); sfx.shot(this.vol(u.pos) * .5); if (hit) this.damage(t, isB ? 5 : 8, u);
+        const mul = this.gunMul(), a = V3(u.pos.x + Math.sin(u.yaw) * 1.1, 1.0, u.pos.z + Math.cos(u.yaw) * 1.1); u.swing = 1; u.flashT = .07;
+        if (heavy) { u.cd = 1.05 + R(0, .2); let dm = 0; for (let i = 0; i < 5; i++) { const hit = isB || Math.random() < .7; if (hit) dm += isB ? 4 : 6; if (i % 2 === 0) this.tracer(a, V3(t.pos.x + R(-1, 1), ty + R(-.6, .6), t.pos.z + R(-1, 1))); } sfx.blast(this.vol(u.pos) * .5); this.damage(t, dm * mul, u); }
+        else { u.cd = .38 + R(0, .08); const hit = isB || Math.random() < .7, b = V3(t.pos.x, ty, t.pos.z); if (!hit) b.add(TMP.set(R(-1.5, 1.5), R(-.5, 1.5), R(-1.5, 1.5))); this.tracer(a, b); sfx.shot(this.vol(u.pos) * .5); if (hit) this.damage(t, (isB ? 5 : 8) * mul, u); }
       }
       return;
     }
-    u.target = null; const o = u.order, me = this.me;
-    if (o.type === 'follow' && me?.alive) { const a = u.slot * 2.4, r = 2.6 + (u.slot % 3) * .9, tx = me.pos.x + Math.cos(a) * r, tz = me.pos.z + Math.sin(a) * r; if (Math.hypot(tx - u.pos.x, tz - u.pos.z) > 1.6) this.moveTo(u, tx, tz, dt, .5, 1.25); }
-    else if (o.type !== 'follow') this.moveTo(u, o.x, o.z, dt, o.type === 'amove' ? 5 : .6);
+    u.target = null; u.pitch *= .9; const o = u.order, me = this.me;
+    if (o.type === 'follow' && me?.alive) { const a = u.slot * 2.4, r = 2.8 + (u.slot % 3) * 1.0, tx = me.pos.x + Math.cos(a) * r, tz = me.pos.z + Math.sin(a) * r; if (Math.hypot(tx - u.pos.x, tz - u.pos.z) > 1.6) this.moveTo(u, tx, tz, dt, .5, 1.3); }
+    else if (o.type !== 'follow') this.advance(u, dt, o.type === 'amove' ? 5 : .7);
   }
   aiCantor(u: Unit, dt: number) {
     u.dashCd -= dt; u.dashT -= dt;
-    if (u.think <= 0) { u.think = .3; const raid = u.order.type === 'raid'; const cur = u.target; if (!cur || !cur.alive || !(cur as Unit).rig) u.target = this.acquire(u, raid ? 22 : 28, raid ? 12 : 0); }
+    if (u.think <= 0) { u.think = .3; const raid = u.order.type === 'raid', cur = u.target; if (!cur || !cur.alive || !isUnit(cur)) u.target = this.acquire(u, raid ? 22 : 28, raid && !(u.order.path && u.order.path.length) ? 14 : 0); }
     const t = u.target;
     if (t && t.alive) {
-      const isB = !(t as Unit).rig, d = isB ? this.distToBox(t as Building, u.pos.x, u.pos.z) : t.pos.distanceTo(u.pos);
+      const isB = !isUnit(t), d = isB ? this.distToBox(t as Building, u.pos.x, u.pos.z) : t.pos.distanceTo(u.pos);
       if (!isB && d > 45) { u.target = null; return; }
-      if (d > (isB ? 1.3 : 1.9)) { if (d > 6 && d < 13 && u.dashCd <= 0) { u.dashT = .4; u.dashCd = 5; this.puff(TMP.copy(u.pos).setY(.5), 3, .7, M.teal, .4); } this.moveTo(u, t.pos.x, t.pos.z, dt, .5, u.dashT > 0 ? 2.6 : 1); }
-      else { u.yaw = Math.atan2(t.pos.x - u.pos.x, t.pos.z - u.pos.z); if (u.cd <= 0) { u.cd = .95; u.swing = 1; sfx.slash(this.vol(u.pos)); this.damage(t, isB ? 10 : 13, u); } }
+      if (d > (isB ? 1.3 : 1.7 + UNIT[(t as Unit).kind].rad * .5)) { if (d > 6 && d < 13 && u.dashCd <= 0) { u.dashT = .4; u.dashCd = 5; this.puff(TMP.copy(u.pos).setY(.5), 3, .7, M.teal, .4); sfx.dash(this.vol(u.pos)); } this.moveTo(u, t.pos.x, t.pos.z, dt, .5, u.dashT > 0 ? 2.6 : 1); }
+      else { u.yaw = Math.atan2(t.pos.x - u.pos.x, t.pos.z - u.pos.z); if (u.cd <= 0) { u.cd = .95; u.swing = 1; sfx.slash(this.vol(u.pos)); this.damage(t, (isB ? 10 : 13) * this.diff.enemy, u); } }
       return;
     }
-    const o = u.order; this.moveTo(u, o.x, o.z, dt, o.type === 'raid' ? 3 : 1.5, o.type === 'raid' ? 1 : .6);
+    this.advance(u, dt, u.order.type === 'raid' ? 3 : 1.5, u.order.type === 'raid' ? 1 : .6);
+  }
+  aiLancer(u: Unit, dt: number) {
+    if (u.wind > 0) {
+      u.wind -= dt; const t = u.target; if (t && t.alive) this.aimAt(u, t, 1.5);
+      if (u.wind <= 0) { u.cd = 2.3 + R(0, .5); if (t && t.alive) { const from = V3(u.pos.x + Math.sin(u.yaw) * 2, 1.5, u.pos.z + Math.cos(u.yaw) * 2), ty = isUnit(t) ? UNIT[t.kind].bodyY : Math.min(t.h * .5, 3), v = V3(t.pos.x - from.x, ty - from.y, t.pos.z - from.z).normalize().multiplyScalar(30); this.shoot(from, v, 1, 14 * this.diff.enemy, false, u); sfx.zap(this.vol(u.pos)); u.swing = 1; } }
+      return;
+    }
+    if (u.think <= 0) { u.think = .35; const raid = u.order.type === 'raid'; u.target = this.acquire(u, 34, raid && !(u.order.path && u.order.path.length) ? 24 : 0); }
+    const t = u.target;
+    if (t && t.alive) {
+      const isB = !isUnit(t), d = isB ? this.distToBox(t as Building, u.pos.x, u.pos.z) : t.pos.distanceTo(u.pos); this.aimAt(u, t, 1.5);
+      if (d > 25) this.moveTo(u, t.pos.x, t.pos.z, dt);
+      else if (!isB && d < 9) { const ax = u.pos.x - t.pos.x, az = u.pos.z - t.pos.z, l = Math.hypot(ax, az) || 1; this.moveTo(u, u.pos.x + ax / l * 4, u.pos.z + az / l * 4, dt, .2, .9); u.yaw = Math.atan2(-ax, -az); if (u.cd <= 0) u.wind = .55; }
+      else if (u.cd <= 0) u.wind = .7;
+      return;
+    }
+    u.pitch *= .9; this.advance(u, dt, u.order.type === 'raid' ? 6 : 1.5, u.order.type === 'raid' ? 1 : .6);
+  }
+  aiWarden(u: Unit, dt: number) {
+    if (u.wind > 0) { u.wind -= dt; if (u.wind <= 0) { u.cd = 2.2; u.swing = 1; this.explode(V3(u.windX, 0, u.windZ), 1, 34 * this.diff.enemy, 4.6, u, true); } return; }
+    if (u.think <= 0) { u.think = .4; const raid = u.order.type === 'raid', cur = u.target; if (!cur || !cur.alive || !isUnit(cur) || cur.pos.distanceTo(u.pos) > 30) u.target = this.acquire(u, raid ? 20 : 26, raid && !(u.order.path && u.order.path.length) ? 18 : 0); }
+    const t = u.target;
+    if (t && t.alive) {
+      const isB = !isUnit(t), d = isB ? this.distToBox(t as Building, u.pos.x, u.pos.z) : t.pos.distanceTo(u.pos);
+      if (!isB && d > 50) { u.target = null; return; }
+      if (d > (isB ? 2.6 : 3.6)) this.moveTo(u, t.pos.x, t.pos.z, dt, 1);
+      else { u.yaw = Math.atan2(t.pos.x - u.pos.x, t.pos.z - u.pos.z); if (u.cd <= 0) { u.wind = .9; const f = Math.min(d, 3.2); u.windX = u.pos.x + Math.sin(u.yaw) * f; u.windZ = u.pos.z + Math.cos(u.yaw) * f; this.warn(u.windX, u.windZ, 4.6, .9); sfx.charge(this.vol(u.pos)); } }
+      return;
+    }
+    this.advance(u, dt, u.order.type === 'raid' ? 4 : 2, u.order.type === 'raid' ? 1 : .6);
   }
   updateBuildings(dt: number) {
     for (const b of this.buildings) {
       if (!b.alive) continue;
       if (!b.built) {
         b.progress = Math.min(1, b.progress); b.hp = Math.max(b.hp, b.maxHp * (.1 + .9 * b.progress)); b.obj.scale.y = Math.max(.06, b.progress);
-        if (b.progress >= 1) { b.built = true; b.hp = b.maxHp; b.obj.scale.y = 1; if (b.holo) { this.scene.remove(b.holo); b.holo = null; } if (b.builder) { b.builder.site = null; b.builder.state = 'idle'; b.builder = null; } sfx.built(); this.puff(TMP.copy(b.pos).setY(1.5), 8, 1.6, M.dust, .8); this.feed('Quartermaster', b.kind === 'bunkhouse' ? 'Bunkhouse is up. Time to hire some attitude.' : b.kind === 'depot' ? 'Depot done. Eight more beds.' : `${BLD[b.kind].name} is up.`, ''); }
-        else if (b.team === 0 && (!b.builder || !b.builder.alive || b.builder === this.me)) { let best: Unit | null = null, bd = 1e9; for (const u of this.own('rigger')) { if (u === this.me || u.site) continue; const d = u.pos.distanceTo(b.pos) + (u.carrying ? 15 : 0); if (d < bd) { bd = d; best = u; } } if (best) { best.site = b; b.builder = best; } }
+        if (b.progress >= 1) { b.built = true; b.hp = b.maxHp; b.obj.scale.y = 1; if (b.holo) { this.scene.remove(b.holo); b.holo = null; } if (b.builder) { b.builder.site = null; b.builder.state = 'idle'; b.builder = null; } sfx.built(); this.stats.built++; this.puff(TMP.copy(b.pos).setY(1.5), 8, 1.8, M.dust, .8, 2.5); this.dir.buildingDone(b); }
+        else if (b.team === 0 && (!b.builder || !b.builder.alive || b.builder === this.me)) this.assignRigger(b);
         continue;
       }
-      if (b.queue.length) { const q = b.queue[0]; q.t -= dt; if (q.t <= 0) { b.queue.shift(); const u = this.spawn(q.kind, 0, b.pos.x + (b.kind === 'bunkhouse' && !b.rot ? b.hx + 1.2 : R(-1, 3)), b.pos.z + (b.kind === 'bunkhouse' && !b.rot ? 0 : b.hz + 1.2)); this.puff(TMP.copy(u.pos).setY(1), 4, .8, M.dust); if (q.kind === 'linesman' && this.vol(b.pos) > .2) sfx.blip(); } }
-      if (b.kind === 'choir') {
-        b.cd -= dt; if (b.cd <= 0) { b.cd = 1.15; let tgt: Unit | null = null, bd = 21; for (const o of this.units) { if (!o.alive || o.team === b.team) continue; const d = o.pos.distanceTo(b.pos); if (d < bd) { bd = d; tgt = o; } }
-          if (tgt) { this.tracer(V3(b.pos.x, 8.5, b.pos.z), V3(tgt.pos.x, 1.1, tgt.pos.z), beamMat, .16); sfx.slash(this.vol(b.pos) * .7); this.damage(tgt, 6, b); this.puff(TMP.copy(tgt.pos).setY(1), 2, .5, M.teal, .5); } }
-      }
+      if (b.team === 0 && b.hp < b.maxHp * .7 && this.time - b.lastHit > 6 && (!b.builder || !b.builder.alive || b.builder === this.me)) this.assignRigger(b);
+      if (b.hp < b.maxHp * .5 && b.kind !== 'choir' && b.kind !== 'reedgate') { b.smokeT -= dt; if (b.smokeT <= 0) { const bad = b.hp < b.maxHp * .25; b.smokeT = bad ? .18 : .4; const fire = bad && Math.random() < .5; this.puff(TMP.set(b.pos.x + R(-b.hx, b.hx) * .6, b.h * R(.6, 1), b.pos.z + R(-b.hz, b.hz) * .6), 1, fire ? 1.1 : 1.5, fire ? M.fire : M.smoke, 2.4, .5); } }
+      if (b.queue.length) { const q = b.queue[0]; q.t -= dt; if (q.t <= 0) { b.queue.shift(); const side = b.kind === 'bunkhouse' && !b.rot; const u = this.spawn(q.kind, 0, b.pos.x + (side ? b.hx + 1.2 : R(-1, 3)), b.pos.z + (side ? R(-.5, .5) : b.hz + 1.2)); this.puff(TMP.copy(u.pos).setY(1), 4, .8, M.dust); if (this.vol(b.pos) > .2) sfx.blip(); this.dir.trained(u); } }
       if (b.kind === 'watchpost') {
-        b.cd -= dt; let tgt: Unit | null = null, bd = 32; for (const o of this.units) { if (!o.alive || o.team === b.team) continue; const d = o.pos.distanceTo(b.pos); if (d < bd) { bd = d; tgt = o; } }
-        if (tgt) { const gun = b.obj.userData.gun; gun.rotation.y = Math.atan2(tgt.pos.x - b.pos.x, tgt.pos.z - b.pos.z) - b.obj.rotation.y; if (b.cd <= 0) { b.cd = .5; const a = V3(b.pos.x, 6, b.pos.z), e = V3(tgt.pos.x, 1.3, tgt.pos.z); this.tracer(a, e); sfx.turret(this.vol(b.pos) * .6); this.damage(tgt, 9, b); } }
+        b.cd -= dt; let tgt: Unit | null = null, bd = 34; for (const o of this.units) { if (!o.alive || o.team === b.team) continue; const d = o.pos.distanceTo(b.pos); if (d < bd) { bd = d; tgt = o; } }
+        if (tgt) { const gun = b.obj.userData.gun; gun.rotation.y = Math.atan2(tgt.pos.x - b.pos.x, tgt.pos.z - b.pos.z) - b.obj.rotation.y; if (b.cd <= 0) { b.cd = .45; const a = V3(b.pos.x, 6, b.pos.z), e = V3(tgt.pos.x, UNIT[tgt.kind].bodyY, tgt.pos.z); this.tracer(a, e, tracerMat, .1); sfx.turret(this.vol(b.pos) * .6); this.damage(tgt, 10 * this.gunMul(), b); } }
+      } else if (b.kind === 'choir') {
+        b.cd -= dt; if (b.cd <= 0) { b.cd = 1.15; let tgt: Unit | null = null, bd = 21; for (const o of this.units) { if (!o.alive || o.team === b.team) continue; const d = o.pos.distanceTo(b.pos); if (d < bd) { bd = d; tgt = o; } }
+          if (tgt) { this.tracer(V3(b.pos.x, 9.6, b.pos.z), V3(tgt.pos.x, 1.1, tgt.pos.z), beamMat, .16); sfx.zap(this.vol(b.pos) * .8); this.damage(tgt, 8 * this.diff.enemy, b); this.puff(TMP.copy(tgt.pos).setY(1), 2, .5, M.teal, .5); } }
       }
     }
   }
-
-  // ------------------------------------------------------------ quartermaster, raids, squad plans
-  updateDirector(dt: number) {
-    const now = this.time;
-    while (this.hintI < HINTS.length && now >= (HINTS[this.hintI][0] as number)) { const h = HINTS[this.hintI++]; this.feed(h[1] as string, h[2] as string, 'in'); }
-    if (!this.firstLine && this.own('linesman').length) { this.firstLine = true; this.feed('Quartermaster', 'First Linesman on the payroll. Look at him and press F to jump in, or hold Tab.', 'in'); sfx.callout(); }
-    if (this.raidLive && !this.units.some(u => u.alive && u.team === 1 && u.order.type === 'raid')) { this.raidLive = false; this.feed('Alpha', 'Yard\'s clear. Somebody sweep up the purple.', ''); }
-    this.qmT -= dt;
-    if (this.qmT <= 0 && this.auto) {
-      this.qmT = 1; const hq = this.ownB('headframe', true)[0], bunk = this.ownB('bunkhouse'), bunkUp = bunk.filter(b => b.built), sites = this.ownB().filter(b => !b.built);
-      const free = this.supplyCap() - this.supplyUsed();
-      const wantDepot = bunk.length > 0 && free <= 2 && !sites.some(b => b.kind === 'depot') && this.ownB('depot').length < 5;
-      if (!bunk.length && this.ore >= 150 && this.canPlace('bunkhouse', 15, 8, false)) { this.place('bunkhouse', 15, 8, false); this.feed('Quartermaster', 'Staking out a Bunkhouse. Then we get rich.', ''); }
-      else if (wantDepot && this.ore >= 100) { const s = DEPOT_SLOTS.find(([x, z]) => this.canPlace('depot', x, z, false)); if (s) { this.place('depot', s[0], s[1], false); this.feed('Quartermaster', 'Running out of beds. Stacking another Depot.', ''); } }
-      else if (bunkUp.length && this.own('linesman').length >= 5 && !this.ownB('watchpost').length && this.ore >= 200 && this.canPlace('watchpost', 31, 20, false)) { this.place('watchpost', 31, 20, false); this.feed('Quartermaster', 'Putting a Watchpost on the east road. For my nerves.', ''); }
-      else if (bunkUp.length === 1 && bunk.length === 1 && this.time > 240 && this.ore >= 260 && this.canPlace('bunkhouse', 4, 17, false)) { this.place('bunkhouse', 4, 17, false); this.feed('Quartermaster', 'Second Bunkhouse. Twice the complaints.', ''); }
-      if (hq && !hq.queue.length && this.own('rigger').length < 7 && free > 0 && this.ore >= 50 && (bunk.length || this.own('rigger').length < 6)) this.train(hq, 'rigger');
-      for (const b of bunkUp) if (b.queue.length < 2 && this.ore >= (sites.length || wantDepot ? 160 : 60)) this.train(b, 'linesman');
-    }
-    // enemy raids and reinforcements
-    const stones = this.stones();
-    if (stones.length) {
-      this.raidT -= dt; if (this.raidT <= 0) { const n = Math.min(2 + Math.floor(this.raidN * .7), 9); this.raidN++; this.raidT = 90; this.raidLive = true; for (let i = 0; i < n; i++) { const c = this.spawn('cantor', 1, OUTPOST.x - 10 + R(-3, 3), OUTPOST.z + R(-6, 6)); c.order = { type: 'raid', x: R(-3, 6), z: R(4, 9) }; } this.feed('Lookout', `${n} Cantors coming down the east road. They look annoyed.`, 'al'); sfx.alarm(); }
-      this.reinT -= dt; if (this.reinT <= 0) { this.reinT = 25; const guards = this.units.filter(u => u.alive && u.team === 1 && u.order.type === 'guard').length; if (guards < 4 + stones.length) { const c = this.spawn('cantor', 1, OUTPOST.x + R(-3, 3), OUTPOST.z + R(-3, 3)); c.order = { type: 'guard', x: OUTPOST.x - 6 + R(-4, 4), z: OUTPOST.z + R(-8, 8) }; } }
-    }
-    // squad plan
-    const ls = this.own('linesman'), idle = ls.filter(u => u.order.type === 'guard' && u !== this.me);
-    if (this.callout) { this.callout.t -= dt; }
-    if (!this.plan && idle.length >= 6 && now > this.nextPlan && stones.length) {
-      this.plan = { phase: 'ask', t: 9, target: this.nearestStone(RALLY) }; this.callout = { who: 'Alpha Lead', text: `${idle.length} of us are standing around. We hit their east yard in twenty. <b>You in, or what?</b>`, t: 9, dur: 9 }; sfx.callout();
-    }
-    if (this.plan) {
-      const p = this.plan, P = this.pressed; p.t -= dt;
-      if (p.phase === 'ask') {
-        if (P.has('KeyX')) { this.plan = null; this.callout = null; this.nextPlan = now + 30; this.feed('Alpha', 'Holding. Wake us when you\'re ready.', ''); sfx.blip(); }
-        else if (P.has('KeyZ') || p.t <= 0) { p.phase = 'count'; p.t = P.has('KeyZ') ? 5 : 12; this.callout = null; this.feed('Alpha', P.has('KeyZ') ? 'That\'s the spirit. Moving out.' : 'No answer. Taking that as a yes.', ''); sfx.blip(); }
-      } else if (p.phase === 'count') {
-        if (p.t <= 0) { p.phase = 'go'; p.target = this.nearestStone(RALLY); if (p.target) for (const u of ls) if (u !== this.me && u.order.type === 'guard') u.order = { type: 'amove', x: p.target.pos.x, z: p.target.pos.z }; this.feed('Alpha', 'Pushing the east yard. Shoot the glowy bits.', ''); sfx.callout(); }
-      } else if (p.phase === 'go') {
-        const pushing = ls.filter(u => u.order.type === 'amove');
-        if (!pushing.length || (pushing.length < 2 && ls.length < 3)) { this.plan = null; this.nextPlan = now + 45; for (const u of ls) if (u.order.type === 'amove') u.order = { type: 'guard', x: RALLY.x + ((u.slot % 4) - 1.5) * 2.2, z: RALLY.z + Math.floor(u.slot / 4) * 2.2 }; this.feed('Alpha', 'Push is spent. Pulling back to regroup.', 'al'); }
-      }
-    }
-  }
-  playbookPhase() { return !this.ownB('bunkhouse', true).length ? 0 : this.plan?.phase === 'go' ? 2 : 1; }
+  assignRigger(b: Building) { let best: Unit | null = null, bd = 1e9; for (const u of this.units) { if (!u.alive || u.team !== 0 || u.kind !== 'rigger' || u === this.me || u.site) continue; const d = u.pos.distanceTo(b.pos) + (u.carrying ? 15 : 0); if (d < bd) { bd = d; best = u; } } if (best && (bd < 90 || !b.built)) { best.site = b; b.builder = best; } }
 
   // ------------------------------------------------------------ render
   render(dt: number) {
-    const me = this.me, cam = this.cam, pipe = this.pipe;
+    const me = this.me, cam = this.cam, pipe = this.pipe, vm = this.vm;
     cam.aspect = pipe.w / pipe.h;
-    const build = this.phase !== 'menu' && this.tool === 2 && me?.kind === 'rigger' && me.alive && !this.tab;
+    const build = this.phase !== 'menu' && this.tool === 2 && me?.kind === 'rigger' && me.alive && !this.tab && this.staticT <= 0;
     for (const k of BUILDABLE) { const on = build && BUILDABLE[this.buildSel] === k; this.ghost[k].visible = on && this.placeOK; this.ghostBad[k].visible = on && !this.placeOK; if (on) { const g = this.placeOK ? this.ghost[k] : this.ghostBad[k]; g.position.copy(this.placePos); g.rotation.y = this.buildRot ? Math.PI / 2 : 0; } }
-    holoOK.opacity = .3 + Math.sin(pipe.time * 3) * .07;
+    holoOK.opacity = .3 + Math.sin(pipe.time * 3) * .07; warnMat.opacity = .6 + Math.sin(pipe.time * 30) * .3;
     for (const u of this.units) u.ring.visible = this.tab && u.team === 0;
     pipe.static = this.staticT > 0 ? .85 : 0; pipe.sat = this.tab ? .8 : 1;
+    for (const k in vm) vm[k].visible = false;
     if (this.phase === 'menu') {
-      const a = pipe.time * .08; cam.fov = 50; cam.position.set(Math.sin(a) * 34 + 4, 9, Math.cos(a) * 34); cam.lookAt(2, 5, 0); this.vmDrill.visible = this.vmRifle.visible = false; if (me) setLayer(me.obj, 0);
+      const a = pipe.time * .07; cam.fov = 46; cam.position.set(Math.sin(a) * 36 + 4, 8 + Math.sin(a * 2) * 2, Math.cos(a) * 36); cam.lookAt(2, 5.5, 0); if (me) this.bodyLayer(me, false);
       cam.updateProjectionMatrix(); cam.updateMatrixWorld(); pipe.draw(this.scene, cam, V3(0, 0, 0), 120); return;
     }
-    if (me) { if (me.obj.children[0].layers.mask !== (1 << L_SELF)) { setLayer(me.obj, L_SELF); me.ring.layers.set(L_FX); } }
     if (this.tab && me) {
       const iso = this.iso, h = 30, w = h * pipe.w / pipe.h; iso.left = -w; iso.right = w; iso.top = h; iso.bottom = -h; iso.updateProjectionMatrix();
       const shift = w * .28; iso.position.set(me.pos.x + shift, 150, me.pos.z + 120); iso.lookAt(me.pos.x + shift, 0, me.pos.z); iso.updateMatrixWorld();
-      this.vmDrill.visible = this.vmRifle.visible = false; setLayer(me.obj, 0); me.ring.layers.set(L_FX);
-      pipe.draw(this.scene, iso, me.pos, 150);
-      this.hud.update(this, iso); setLayer(me.obj, L_SELF); me.ring.layers.set(L_FX); this.vmDrill.visible = me.kind === 'rigger'; this.vmRifle.visible = me.kind === 'linesman'; return;
+      this.bodyLayer(me, false); pipe.draw(this.scene, iso, me.pos, 150); this.hud.update(this, iso); this.bodyLayer(me, true); return;
     }
     if (me) {
-      const sprint = this.keys.has('ShiftLeft') && me.moving; cam.fov += ((sprint ? 74 : 68) - cam.fov) * Math.min(1, dt * 8);
-      const bobY = me.moving ? Math.sin(this.bob) * .035 : 0, sh = this.shake * .03;
-      cam.position.set(me.pos.x + R(-sh, sh), UNIT[me.kind].eye + bobY + R(-sh, sh), me.pos.z); cam.rotation.set(this.pitch + this.recoil * .012, this.yaw + Math.PI, 0, 'YXZ');
-      this.vmDrill.visible = me.kind === 'rigger' && this.staticT <= 0; this.vmRifle.visible = me.kind === 'linesman' && this.staticT <= 0;
-      const vm = me.kind === 'rigger' ? this.vmDrill : this.vmRifle; vm.position.y = (me.kind === 'rigger' ? -.25 : -.24) + (me.moving ? Math.sin(this.bob * 2) * .006 : 0) - (this.reloadT > 0 ? Math.sin(Math.min(1, this.reloadT / 1.4) * Math.PI) * .16 : 0); vm.position.z = (me.kind === 'rigger' ? -.56 : -.5) + this.recoil * .05; vm.position.x = (me.kind === 'rigger' ? .3 : .27) + (me.moving ? Math.cos(this.bob) * .008 : 0);
+      if (me.alive) this.bodyLayer(me, true);
+      const sprint = this.keys.has('ShiftLeft') && me.moving && this.ads < .3, fovT = (sprint ? 75 : 68) - this.ads * (me.kind === 'linesman' ? 24 : 6); cam.fov += (fovT - cam.fov) * Math.min(1, dt * 10);
+      const bobY = me.moving ? Math.sin(this.bob) * .035 * (1 - this.ads * .7) : 0, sh = this.shake * .03;
+      cam.position.set(me.pos.x + R(-sh, sh), UNIT[me.kind].eye + bobY + R(-sh, sh), me.pos.z + R(-sh, sh)); cam.rotation.set(this.pitch + this.recoil * .012, this.yaw + Math.PI, Math.sin(this.bob * .5) * (me.moving ? .004 : 0) - this.swayX * .6, 'YXZ');
+      if (me.alive && this.staticT <= 0) {
+        const pose = (g: THREE.Group, k: number, kick: number, dip: number) => {
+          const a = g.userData.rest, b = g.userData.ads || a, mv = me.moving ? 1 - k * .8 : 0; g.visible = true;
+          g.position.set(a[0] + (b[0] - a[0]) * k + Math.cos(this.bob) * .008 * mv + this.swayX, a[1] + (b[1] - a[1]) * k + Math.sin(this.bob * 2) * .006 * mv - dip + this.swayY, a[2] + (b[2] - a[2]) * k + kick);
+          g.rotation.set(a[3] + (b[3] - a[3]) * k + kick * 1.6 - dip * 2.4 + this.swayY * 2, a[4] + (b[4] - a[4]) * k - this.swayX * 2, a[5] + (b[5] - a[5]) * k + dip * 1.2);
+        };
+        const gun = GUNS[me.kind], rl = this.reloadT > 0 && gun ? Math.sin(Math.min(1, this.reloadT / gun.reload) * Math.PI) : 0;
+        if (me.kind === 'rigger') pose(vm.drill, 0, this.lmb && this.tool === 1 ? -.03 + R(-.004, .004) : 0, this.tool === 2 ? .12 : 0);
+        else if (me.kind === 'linesman') { pose(vm.rifle, this.ads, this.recoil * .05, rl * .14); vm.rifle.userData.mag.position.y = -.17 - (rl > .5 ? (rl - .5) * .5 : 0); }
+        else { const pump = this.fireCd > 0 ? Math.sin(Math.min(1, (gun.cd - this.fireCd) / (gun.cd * .8)) * Math.PI) : 0; pose(vm.scatter, 0, this.recoil * .12, rl * .12 + this.ads * .16); vm.scatter.userData.mag.position.z = -.42 + pump * .12 + (rl > 0 ? Math.abs(Math.sin(this.reloadT * 9)) * .1 : 0); pose(vm.shield, this.ads, -this.bashT * 1.2, 0); }
+      }
     }
     cam.updateProjectionMatrix(); cam.updateMatrixWorld();
     pipe.draw(this.scene, cam, me ? me.pos : V3(), 110);
     this.hud.update(this, cam);
+    // music follows how hot things are around the player
+    if (me) { let hot = this.time - me.lastHit < 6 ? 1 : 0; if (!hot) for (const u of this.units) if (u.team === 1 && u.alive && Math.abs(u.pos.x - me.pos.x) < 45 && Math.abs(u.pos.z - me.pos.z) < 45) { hot = 1; break; } this.mood += (hot - this.mood) * Math.min(1, dt * (hot ? 2 : .4)); setMood(this.phase === 'play' ? .25 + this.mood * .75 : .15); }
   }
+  weapon() { const me = this.me; return me && GUNS[me.kind] ? GUNS[me.kind] : null; }
 }
+export { UNIT, BLD, BUILDABLE, OUTPOST };

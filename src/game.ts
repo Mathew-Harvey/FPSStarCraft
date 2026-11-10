@@ -149,6 +149,7 @@ export class Game {
   }
 
   damage(t: Unit | Building, amt: number, from: Unit | Building | null, crit = false) {
+    if (t === this.me && this.safeT > 0) return;
     if (!t.alive || amt <= 0) return; t.lastHit = this.time;
     const u = isUnit(t) ? t : null, me = this.me;
     if (u && u.kind === 'breacher' && from) { const dx = from.pos.x - u.pos.x, dz = from.pos.z - u.pos.z, d = Math.hypot(dx, dz) || 1; if ((dx * Math.sin(u.yaw) + dz * Math.cos(u.yaw)) / d > .25) { if (u !== me) amt *= .55; else if (this.brace) { amt *= .25; sfx.clang(); } } }
@@ -251,7 +252,7 @@ export class Game {
       this.hitStop = Math.max(0, this.hitStop - dtReal); this.introT = Math.max(0, this.introT - dtReal);
       if (this.endT > 0) { this.endT -= dtReal; this.shake = Math.max(this.shake, .5 * this.endT / 2.4); if (this.endT <= 0) { this.end(this.endWon); P.clear(); return; } }
       const dt = dtReal * (this.endT > 0 ? .22 : this.tab ? .25 : this.hitStop > 0 ? .12 : 1);
-      this.time += dt; this.jumpCd = Math.max(0, this.jumpCd - dtReal);
+      this.time += dt; this.safeT = Math.max(0, this.safeT - dt); this.jumpCd = Math.max(0, this.jumpCd - dtReal);
       if (this.staticT > 0) { this.staticT -= dtReal; if (this.staticT <= 0) this.respawn(); }
       else if (this.me?.alive && !this.tab) this.updatePlayer(dt, P);
       this.updateUnits(dt); this.updateBuildings(dt); this.updateProjs(dt); this.dir.update(dt);
@@ -283,9 +284,10 @@ export class Game {
     }
   }
 
+  safeT = 0;
   respawn() {
     const me = this.me!; let best: Unit | null = null, bd = 1e9; for (const u of this.own()) { const d = u.pos.distanceTo(me.pos) + (isSoldier(u) ? 0 : 25); if (d < bd) { bd = d; best = u; } }
-    if (!best && this.ownB('headframe').length) { best = this.spawn('rigger', 0, 2, 7); this.feed('Quartermaster', 'Found you a fresh Rigger. Try to keep this one.', ''); }
+    if (!best && this.ownB('headframe').length) { best = this.spawn('rigger', 0, 2, 7); this.safeT = 4; this.feed('Quartermaster', 'Found you a fresh Rigger. Try to keep this one.', ''); }
     if (best) { this.jumpCd = 0; this.possess(best, true); sfx.jump(); this.pipe.flash = .4; } else if (this.endT <= 0) this.end(false);
   }
 

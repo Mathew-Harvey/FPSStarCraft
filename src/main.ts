@@ -39,10 +39,10 @@ function portraits() {
 
 portraits();
 pipe.w = 0; resize();
-let diffI = 1, sens = 1, vol = .5, mus = true, curX = .5, moved = false;
-try { const o = JSON.parse(localStorage.getItem('ore-else') || '{}'); if (o.d >= 0 && o.d < 3) diffI = o.d; if (o.s > 0) sens = o.s; if (o.v >= 0) vol = o.v; if (o.m === false) mus = false; } catch (e) { /* storage is optional */ }
-const save = () => { try { localStorage.setItem('ore-else', JSON.stringify({ d: diffI, s: sens, v: vol, m: mus })); } catch (e) { /* storage is optional */ } };
-let game = new Game(pipe, hud, DIFFS[diffI]); game.sens = sens;
+let diffI = 1, mapI = 0, sens = 1, vol = .5, mus = true, curX = .5, moved = false;
+try { const o = JSON.parse(localStorage.getItem('ore-else') || '{}'); if (o.d >= 0 && o.d < 3) diffI = o.d; if (o.map >= 0 && o.map < 3) mapI = o.map; if (o.s > 0) sens = o.s; if (o.v >= 0) vol = o.v; if (o.m === false) mus = false; } catch (e) { /* storage is optional */ }
+const save = () => { try { localStorage.setItem('ore-else', JSON.stringify({ d: diffI, map: mapI, s: sens, v: vol, m: mus })); } catch (e) { /* storage is optional */ } };
+let game = new Game(pipe, hud, DIFFS[diffI], mapI); game.sens = sens;
 window.addEventListener('resize', resize);
 
 // ---------------------------------------------------------------- input
@@ -65,8 +65,8 @@ function lock() { try { const p: any = (canvas as any).requestPointerLock(); if 
 document.addEventListener('pointerlockerror', () => { freeMouse = true; });
 document.addEventListener('pointerlockchange', () => { if (!locked() && live() && !freeMouse) pause(); });
 
-function fresh() { hud.reset(); game = new Game(pipe, hud, DIFFS[diffI]); game.sens = sens; (window as any).__ore.game = game; }
-function start() { initAudio(); setVolume(vol); setMusic(mus); if (game.diff !== DIFFS[diffI]) fresh(); $('menu').hidden = true; $('pause').hidden = true; $('end').hidden = true; hud.show(true); game.phase = 'play'; game.introT = 1.8; lock(); }
+function fresh() { hud.reset(); game = new Game(pipe, hud, DIFFS[diffI], mapI); game.sens = sens; (window as any).__ore.game = game; }
+function start() { initAudio(); setVolume(vol); setMusic(mus); if (game.diff !== DIFFS[diffI] || game.mapI !== mapI) fresh(); $('menu').hidden = true; $('pause').hidden = true; $('end').hidden = true; hud.show(true); game.phase = 'play'; game.introT = 1.8; lock(); }
 function pause() { if (game.phase !== 'play' && game.phase !== 'card') return; game.phase = 'paused'; game.keys.clear(); game.lmb = game.rmb = false; $('pause').hidden = false; }
 function resume() { if (game.phase !== 'paused') return; initAudio(); $('pause').hidden = true; game.phase = 'play'; lock(); }
 $('start').addEventListener('click', start);
@@ -75,6 +75,10 @@ $('again').addEventListener('click', () => { fresh(); start(); });
 const diffBtns = Array.from($('diff').querySelectorAll('button')) as HTMLButtonElement[];
 const showDiff = () => diffBtns.forEach((b, i) => { b.classList.toggle('on', i === diffI); b.setAttribute('aria-pressed', String(i === diffI)); });
 diffBtns.forEach((b, i) => b.addEventListener('click', () => { diffI = i; showDiff(); save(); })); showDiff();
+const mapBtns = Array.from($('maps').querySelectorAll('button')) as HTMLButtonElement[];
+const showMap = () => mapBtns.forEach((b, i) => { b.classList.toggle('on', i === mapI); b.setAttribute('aria-pressed', String(i === mapI)); });
+const pickMap = (i: number) => { mapI = i; showMap(); save(); if (game.mapI !== mapI) fresh(); };
+mapBtns.forEach((b, i) => b.addEventListener('click', () => pickMap(i))); showMap();
 const sensEl = $('sens') as HTMLInputElement, volEl = $('vol') as HTMLInputElement; sensEl.value = String(sens); volEl.value = String(vol);
 sensEl.addEventListener('input', () => { sens = +sensEl.value; game.sens = sens; save(); });
 volEl.addEventListener('input', () => { vol = +volEl.value; setVolume(vol); save(); });
@@ -95,5 +99,5 @@ function frame(now: number) {
   if (fast > 900 && quality < 1) { quality = Math.min(1, quality / .85); fast = 0; resize(); }
   requestAnimationFrame(frame);
 }
-(window as any).__ore = { atlasUsed: MD.atlasUsed, game, start, pipe, hud, setFree: (v: boolean) => { freeMouse = v; } };
+(window as any).__ore = { atlasUsed: MD.atlasUsed, game, start, pipe, hud, setFree: (v: boolean) => { freeMouse = v; }, pickMap };
 requestAnimationFrame(frame);

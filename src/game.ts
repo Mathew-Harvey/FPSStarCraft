@@ -5,10 +5,10 @@ import { Pipeline, V3, M, G, R, mk, setLayer, L_FX, L_SELF, holoOK, holoBad, rin
 import * as MD from './models';
 import { sfx, drillSound, setMood, babble } from './audio';
 import type { Hud } from './hud';
-import { Kind, BKind, UNIT, BLD, BUILDABLE, UPGRADES, UpKey, Unit, Building, Prop, OreNode, Difficulty, DIFFS, OUTPOST, GATE, isUnit, isSoldier } from './data';
+import { Kind, BKind, UNIT, BLD, BUILDABLE, UPGRADES, UpKey, Unit, Building, Prop, OreNode, Difficulty, DIFFS, OUTPOST, GATE, MAP, MAPS, ROAD, setMap, veylPt, isUnit, isSoldier } from './data';
 import { Director } from './director';
 
-const TMP = V3(), TMP2 = V3(), UP = V3(0, 1, 0);
+const TMP = V3(), TMP2 = V3(), UP = V3(0, 1, 0), QT = new THREE.Quaternion();
 const beamMat = new THREE.MeshBasicMaterial({ color: 0x6dfff0, depthWrite: false });
 const bubbleMat = new THREE.MeshBasicMaterial({ color: 0x6dfff0, transparent: true, opacity: .4, depthWrite: false, blending: THREE.AdditiveBlending });
 const warnMat = new THREE.MeshBasicMaterial({ color: 0xff4f9a, transparent: true, opacity: .9, depthWrite: false, side: THREE.DoubleSide });
@@ -31,6 +31,8 @@ export class Game {
   iso = new THREE.OrthographicCamera(-40, 40, 22, -22, 1, 700);
   units: Unit[] = []; buildings: Building[] = []; ores: OreNode[] = []; spires: Prop[] = []; props: Prop[] = [];
   chunks: { m: THREE.Mesh; t: number; v: THREE.Vector3; w: THREE.Vector3; s: number; rest: boolean }[] = []; thudT = 0;
+  wrecks: { b: Building; t: number; dur: number; tall: boolean; dx: number; dz: number; yaw: number; puffT: number }[] = [];
+  craters: { m: THREE.Group; t: number }[] = [];
   anim: ((t: number) => void)[] = [];
   ore = 100; time = 0; phase: 'menu' | 'play' | 'paused' | 'card' | 'over' = 'menu'; won = false;
   up: Record<UpKey, boolean> = { dmg: false, armor: false, dmg2: false, armor2: false };
@@ -52,7 +54,8 @@ export class Game {
   shake = 0; noRender = false; alertT = 0; mood = 0;
   introT = 0; menuPos = V3(); menuQuat = new THREE.Quaternion(); hitStop = 0; streak = 0; streakT = 0; kick = 0; stepPhase = 0; dustT = 0; hopT = 0; hopCd = 0; hopX = 0; hopZ = 0; endT = 0; endWon = false;
 
-  constructor(public pipe: Pipeline, public hud: Hud, public diff: Difficulty = DIFFS[1]) {
+  constructor(public pipe: Pipeline, public hud: Hud, public diff: Difficulty = DIFFS[1], public mapI = 0) {
+    setMap(mapI); (M.ground as any).uniforms.uColor.value.setRGB(MAP.ground[0], MAP.ground[1], MAP.ground[2]); (M.mesa as any).uniforms.uColor.value.setRGB(MAP.mesa[0], MAP.mesa[1], MAP.mesa[2]); (M.rock as any).uniforms.uColor.value.setRGB(MAP.rock[0], MAP.rock[1], MAP.rock[2]); 
     const s = this.scene; s.add(makeSky()); MD.buildWorld(s, this.props, this.anim); this.spires = this.props.filter(p => p.solid); s.add(this.cam);
     this.vm = { drill: MD.vmDrill(), rifle: MD.vmRifle(), scatter: MD.vmScatter(), shield: MD.vmShield(), cannon: MD.vmCannon(), long: MD.vmLong(), pistol: MD.vmPistol() };
     for (const k in this.vm) { this.vm[k].visible = false; this.cam.add(this.vm[k]); }
@@ -61,7 +64,7 @@ export class Game {
     this.tracers = pool(36, G.cyl8, tracerMat, true).map(m => ({ m, t: 0 }));
     this.puffs = pool(80, G.sph, M.dust, false).map(m => ({ m, t: 0, life: 1, v: V3(), s: 1 }));
     this.bits = pool(90, G.box, M.rust, false).map(m => ({ m, t: 0, v: V3(), spin: 0 }));
-    this.chunks = pool(150, G.dod, M.rock, false).map(m => ({ m, t: 0, v: V3(), w: V3(), s: 1, rest: false }));
+    this.chunks = pool(240, G.dod, M.rock, false).map(m => ({ m, t: 0, v: V3(), w: V3(), s: 1, rest: false }));
     this.scorch = pool(18, G.disc, M.scorch, false).map(m => { m.rotation.x = -Math.PI / 2; return { m, t: 0, s: 1 }; });
     this.bubbles = pool(10, G.sph, bubbleMat, true).map(m => ({ m, t: 0, u: null }));
     this.warns = pool(6, G.ringG, warnMat, true).map(m => { m.rotation.x = -Math.PI / 2; return { m, t: 0, life: 1, r: 1 }; });
@@ -69,17 +72,21 @@ export class Game {
     this.addBuilding('headframe', 0, 0, 0, true);
     const field = (list: number[][], amount: number) => { for (const [x, z, n, sc] of list) { const obj = MD.oreCluster(n, sc); obj.position.set(x, 0, z); s.add(obj); this.ores.push({ pos: V3(x, 0, z), amount, max: amount, obj }); } };
     field([[17, -15, 9, 1.2], [21, -10, 7, 1.0], [23, -18, 8, 1.3], [15, -21, 6, .9], [-18, -24, 8, 1.1], [-24, -19, 7, 1.0]], 900);
-    field([[60, -28, 10, 1.5], [65, -24, 8, 1.3], [58, -33, 9, 1.4]], 1600);
+    { const [ex, ez] = MAP.exp; field([[ex - 1, ez, 10, 1.5], [ex + 4, ez + 4, 8, 1.3], [ex - 3, ez - 5, 9, 1.4]], 1600); }
     for (const [x, z] of [[6, 7], [10, -6], [13, -10], [-8, -8], [9, 2], [-6, 8]]) this.spawn('rigger', 0, x, z);
     // the Veyl outpost
-    for (const [x, z] of [[118, 4], [127, 14], [118, 24]]) this.addBuilding('choir', 1, x, z, true);
-    this.addBuilding('reedgate', 1, GATE.x, GATE.z, true, true);
+    const V = (k: BKind, lx: number, lz: number, rot = false) => { const [x, z] = veylPt(lx, lz); return this.addBuilding(k, 1, x, z, true, rot); };
+    for (const [x, z] of [[-6, -9], [3, 1], [-6, 11]]) V('choir', x, z);
+    V('reedgate', 14, -1, Math.abs(ROAD.dx) >= Math.abs(ROAD.dz));
+    for (const [x, z] of [[7, -9.5], [7, 10.5]]) V('broodpit', x, z);
+    for (const [x, z] of [[-12, -11.5], [-12, 13]]) V('thornspire', x, z);
+    V('wardpylon', -10.5, 1);
     this.dir = new Director(this);
-    this.me = this.units[0]; this.possess(this.me, true); this.yaw = Math.PI * .75;
+    this.me = this.units[0]; this.possess(this.me, true); this.yaw = Math.atan2(ROAD.dx - .4, ROAD.dz - .4);
   }
 
   model(k: BKind): THREE.Group { return MD.atlasify(this.rawModel(k)); }
-  rawModel(k: BKind): THREE.Group { return k === 'headframe' ? MD.headframe(this.anim) : k === 'bunkhouse' ? MD.bunkhouse() : k === 'depot' ? MD.depot() : k === 'watchpost' ? MD.watchpost() : k === 'machineshop' ? MD.machineshop(this.anim) : k === 'foundry' ? MD.foundry(this.anim) : k === 'reedgate' ? MD.reedgate(this.anim) : MD.choir(this.anim); }
+  rawModel(k: BKind): THREE.Group { return k === 'headframe' ? MD.headframe(this.anim) : k === 'bunkhouse' ? MD.bunkhouse() : k === 'depot' ? MD.depot() : k === 'watchpost' ? MD.watchpost() : k === 'machineshop' ? MD.machineshop(this.anim) : k === 'foundry' ? MD.foundry(this.anim) : k === 'reedgate' ? MD.reedgate(this.anim) : k === 'broodpit' ? MD.broodpit(this.anim) : k === 'thornspire' ? MD.thornspire(this.anim) : k === 'wardpylon' ? MD.wardpylon(this.anim) : MD.choir(this.anim); }
 
   // ------------------------------------------------------------ entities
   spawn(kind: Kind, team: number, x: number, z: number): Unit {
@@ -92,7 +99,7 @@ export class Game {
   }
   addBuilding(kind: BKind, team: number, x: number, z: number, built: boolean, rot = false): Building {
     const st = BLD[kind], obj = this.model(kind); obj.position.set(x, 0, z); if (rot) obj.rotation.y = Math.PI / 2; this.scene.add(obj);
-    const b: Building = { id: nextId++, kind, team, pos: V3(x, 0, z), hx: rot ? st.hz : st.hx, hz: rot ? st.hx : st.hz, h: st.h, hp: built ? st.hp : st.hp * .1, maxHp: st.hp, obj, holo: null, built, progress: built ? 1 : 0, queue: [], alive: true, cd: R(0, 1), builder: null, lastHit: -99, rot, smokeT: 0 };
+    const b: Building = { id: nextId++, kind, team, pos: V3(x, 0, z), hx: rot ? st.hz : st.hx, hz: rot ? st.hx : st.hz, h: st.h, hp: built ? st.hp : st.hp * .1, maxHp: st.hp, obj, holo: null, built, progress: built ? 1 : 0, queue: [], alive: true, cd: R(0, 1), builder: null, lastHit: -99, rot, smokeT: 0, stage: 0 };
     if (!built) { b.holo = MD.hologram(obj, holoOK); b.holo.position.copy(obj.position); b.holo.rotation.copy(obj.rotation); this.scene.add(b.holo); obj.scale.y = .06; }
     this.buildings.push(b); return b;
   }
@@ -101,6 +108,10 @@ export class Game {
   foes() { return this.units.filter(u => u.alive && u.team === 1); }
   ownB(kind?: BKind, builtOnly = false) { return this.buildings.filter(b => b.alive && b.team === 0 && (!kind || b.kind === kind) && (!builtOnly || b.built)); }
   stones() { return this.buildings.filter(b => b.alive && b.kind === 'choir'); }
+  pits() { return this.buildings.filter(b => b.alive && b.kind === 'broodpit'); }
+  /** The Ward Pylon covering this spot, if one still stands. */
+  ward(p: { x: number; z: number }) { for (const b of this.buildings) if (b.alive && b.kind === 'wardpylon' && Math.hypot(b.pos.x - p.x, b.pos.z - p.z) < 34) return b; return null; }
+  wardFx = 0;
   gate() { return this.buildings.find(b => b.alive && b.kind === 'reedgate') || null; }
   supplyCap() { return 12 + 8 * this.ownB('depot', true).length; }
   supplyUsed() { let n = 0; for (const u of this.units) if (u.alive && u.team === 0) n += UNIT[u.kind].supply; for (const b of this.buildings) if (b.alive && b.team === 0) for (const q of b.queue) n += UNIT[q.kind].supply; return n; }
@@ -154,7 +165,7 @@ export class Game {
     for (const u of this.units) { if (!u.alive || u.team === team) continue; const d = Math.hypot(u.pos.x - p.x, u.pos.z - p.z); if (d > radius + UNIT[u.kind].rad) continue; const k = 1 - .6 * Math.min(1, d / radius); this.damage(u, dmg * k, from); if (d > .1) { u.kx += (u.pos.x - p.x) / d * 9 * k; u.kz += (u.pos.z - p.z) / d * 9 * k; } }
     for (const b of this.buildings) { if (!b.alive || b.team === team) continue; if (this.distToBox(b, p.x, p.z) < radius * .7) this.damage(b, dmg * 1.4, from); }
     this.blastProps(p, radius, dmg, from); this.shove(p, radius * 1.6, 9);
-    const g = V3(p.x, .6, p.z); this.puff(g, 7, radius * .5, veyl ? M.teal : M.fire, 2.2, 1.6); this.puff(g, 5, radius * .55, veyl ? M.indigoL : M.smoke, 1.4, 2.2); this.debris(g, 8, .3, veyl ? M.crys : M.rock, 7); this.scorchAt(p, radius * 1.5);
+    const g = V3(p.x, .6, p.z); this.puff(g, 7, radius * .5, veyl ? M.teal : M.fire, 2.2, 1.6); this.puff(g, 5, radius * .55, veyl ? M.indigoL : M.smoke, 1.4, 2.2); this.debris(g, 8, .3, veyl ? M.crys : M.rock, 7); this.scorchAt(p, radius * 1.5); if (radius >= 3.5) this.crater(p, radius * .55);
     const v = this.vol(p); this.shake = Math.max(this.shake, v * 1.1); if (!veyl) this.pipe.flash = Math.max(this.pipe.flash, v * .5); sfx.boom(v);
     this.hud.damage(V3(p.x, 2.2, p.z), veyl ? 'WHUMM!' : 'BOOM!', veyl ? 'kobad' : 'ko');
   }
@@ -164,7 +175,9 @@ export class Game {
     if (!t.alive || amt <= 0) return; t.lastHit = this.time;
     const u = isUnit(t) ? t : null, me = this.me;
     if (u && u.kind === 'breacher' && from) { const dx = from.pos.x - u.pos.x, dz = from.pos.z - u.pos.z, d = Math.hypot(dx, dz) || 1; if ((dx * Math.sin(u.yaw) + dz * Math.cos(u.yaw)) / d > .25) { if (u !== me) amt *= .55; else if (this.brace) { amt *= .25; sfx.clang(); } } }
-    const dealt = amt, shielded = !!u && u.shield > 0;
+    let warded = false;
+    if (!u && t.team === 1 && (t as Building).kind !== 'wardpylon') { const w = this.ward(t.pos); if (w) { amt *= .7; warded = true; if (this.time > this.wardFx) { this.wardFx = this.time + .35; this.tracer(V3(w.pos.x, 4.6, w.pos.z), V3(t.pos.x, (t as Building).h * .6, t.pos.z), beamMat, .22); this.puff(TMP.set(t.pos.x, (t as Building).h * .6, t.pos.z), 3, .7, M.cyan, .5); } } }
+    const dealt = amt, shielded = (!!u && u.shield > 0) || warded;
     if (u) { u.pop = 1; if (u.shield > 0) { const a = Math.min(u.shield, amt); u.shield -= a; amt -= a; this.bubble(u); } }
     t.hp -= amt;
     const head = V3(t.pos.x, u ? UNIT[u.kind].headY + .4 : (t as Building).h * .7, t.pos.z);
@@ -173,6 +186,7 @@ export class Game {
     if (u && from && isUnit(from) && u !== me && !u.target && u.kind !== 'rigger') u.target = from;
     if (!u && from && isUnit(from) && t.team === 1) for (const c of this.units) if (c.alive && c.team === 1 && !c.target && c.order.type === 'guard' && c.pos.distanceTo(t.pos) < 50) c.target = from;
     if (!u && t.team === 0 && from && this.time > this.alertT) { this.alertT = this.time + 20; this.feed('Lookout', `They're chewing on the ${BLD[(t as Building).kind].name}! Get back here.`, 'al'); sfx.alarm(); }
+    if (!u && t.hp > 0) { const b = t as Building, st = b.hp < b.maxHp * .33 ? 2 : b.hp < b.maxHp * .66 ? 1 : 0; if (b.built && st > b.stage) this.crack(b, st); }
     if (t.hp <= 0) u ? this.killUnit(u, from) : this.killBuilding(t as Building);
   }
   quiet = false;
@@ -190,13 +204,27 @@ export class Game {
     if (u.site) u.site.builder = null;
     if (u === this.me) { this.staticT = 1.9; this.feed('Signal', 'Body lost. Finding you a new one.', 'al'); sfx.deny(); drillSound(false, false); }
   }
+  bldMat(b: Building, i: number) { return b.team === 1 ? (i % 3 ? M.indigo : i % 2 ? M.crys : M.indigoL) : (i % 3 === 0 ? M.rust : i % 3 === 1 ? M.steel : M.steelD); }
+  /** A building passes a damage state: it sheds pieces, sags and leans a little more. */
+  crack(b: Building, st: number) {
+    b.stage = st; const veyl = b.team === 1; b.obj.rotation.z = (b.id % 2 ? 1 : -1) * st * .035; b.obj.rotation.x = (b.id % 3 - 1) * st * .025; b.obj.position.y = -st * .12;
+    for (let i = 0; i < 5 + st * 2; i++) { const p = V3(b.pos.x + R(-b.hx, b.hx), R(b.h * .4, b.h), b.pos.z + R(-b.hz, b.hz)); this.chunk(p, R(.35, .8), this.bldMat(b, i), 5, b.pos, !veyl); if (i < 3) this.puff(p, 3, 1.4, veyl ? M.teal : M.smoke, 1.4, 1); }
+    if (this.vol(b.pos) > .2) { this.hud.damage(V3(b.pos.x, b.h * .8, b.pos.z), st === 2 ? 'CRRRACK!' : 'CRACK!', veyl ? 'ko' : 'kobad'); sfx.step(true); }
+  }
+  crater(p: { x: number; z: number }, r: number) {
+    let c = this.craters.find(x => x.t <= 0);
+    if (!c) { if (this.craters.length < 16) { const m = new THREE.Group(); mk(G.disc, M.scorch, [0, .05, 0], [1, 1, 1], [-Math.PI / 2, 0, 0], m); for (let i = 0; i < 9; i++) { const a = i / 9 * 6.283 + R(-.2, .2); mk(G.dod, i % 3 ? M.rock : M.mesa, [Math.cos(a), .08, Math.sin(a)], [R(.3, .5), R(.14, .3), R(.24, .4)], [R(0, 3), R(0, 3), 0], m); } setLayer(m, L_FX); this.scene.add(m); c = { m, t: 0 }; this.craters.push(c); } else c = this.craters.reduce((a, b) => a.t < b.t ? a : b); }
+    c.m.position.set(p.x, R(0, .02), p.z); c.m.rotation.y = R(0, 6); c.m.scale.set(r, Math.min(2.2, r * .55), r); c.m.visible = true; c.t = 150;
+  }
   killBuilding(b: Building) {
-    b.alive = false; this.scene.remove(b.obj); if (b.holo) this.scene.remove(b.holo); const veyl = b.team === 1, v = this.vol(b.pos);
-    for (let i = 0; i < 5; i++) { const p = V3(b.pos.x + R(-b.hx, b.hx), R(1, b.h), b.pos.z + R(-b.hz, b.hz)); this.puff(p, 4, 2.6, veyl ? M.teal : i % 2 ? M.fire : M.smoke, 2, 1.5); this.debris(p, 6, .7, veyl ? (i % 2 ? M.indigo : M.crys) : (i % 2 ? M.rust : M.steel), 9); }
-    for (let i = 0; i < 18; i++) this.chunk(V3(b.pos.x + R(-b.hx, b.hx), R(.6, b.h), b.pos.z + R(-b.hz, b.hz)), R(.5, 1.3), veyl ? (i % 3 ? M.indigo : M.crys) : (i % 3 === 0 ? M.rust : i % 3 === 1 ? M.steel : M.steelD), 7, b.pos, !veyl);
+    b.alive = false; if (b.holo) this.scene.remove(b.holo); const veyl = b.team === 1, v = this.vol(b.pos);
+    const tall = b.h > Math.max(b.hx, b.hz) * 1.9, a = R(0, 6.283);
+    this.wrecks.push({ b, t: 0, dur: tall ? 1.5 : 1.7, tall, dx: Math.sin(a), dz: Math.cos(a), yaw: b.obj.rotation.y, puffT: 0 });
+    for (let i = 0; i < 4; i++) { const p = V3(b.pos.x + R(-b.hx, b.hx), R(1, b.h), b.pos.z + R(-b.hz, b.hz)); this.puff(p, 4, 2.6, veyl ? M.teal : i % 2 ? M.fire : M.smoke, 2, 1.5); this.debris(p, 6, .7, this.bldMat(b, i), 9); }
+    for (let i = 0; i < 8; i++) this.chunk(V3(b.pos.x + R(-b.hx, b.hx), R(.6, b.h), b.pos.z + R(-b.hz, b.hz)), R(.5, 1.1), this.bldMat(b, i), 7, b.pos, !veyl);
     this.shove(b.pos, Math.max(b.hx, b.hz) * 3, 8);
-    this.scorchAt(b.pos, Math.max(b.hx, b.hz) * 2.6); this.pipe.flash = Math.max(this.pipe.flash, v * .6);
-    this.hud.damage(V3(b.pos.x, b.h * .6, b.pos.z), veyl ? 'KRA-KOOM!' : 'CRUNCH!', veyl ? 'ko' : 'kobad'); sfx.boom(Math.max(.3, v)); this.shake = Math.max(this.shake, v);
+    this.pipe.flash = Math.max(this.pipe.flash, v * .6);
+    this.hud.damage(V3(b.pos.x, b.h * .6, b.pos.z), tall ? 'TIMBERRR!' : veyl ? 'KRA-KOOM!' : 'CRUNCH!', veyl ? 'ko' : 'kobad'); sfx.boom(Math.max(.3, v)); this.shake = Math.max(this.shake, v);
     if (b.builder) { b.builder.site = null; b.builder.state = 'idle'; }
     this.dir.buildingLost(b);
     if (b.kind === 'choir' && !this.stones().length) { this.endT = 2.4; this.endWon = true; this.pipe.flash = 1; } else if (b.kind === 'headframe') { this.endT = 2.4; this.endWon = false; this.pipe.flash = 1; }
@@ -277,7 +305,7 @@ export class Game {
       this.time += dt; this.safeT = Math.max(0, this.safeT - dt); this.jumpCd = Math.max(0, this.jumpCd - dtReal);
       if (this.staticT > 0) { this.staticT -= dtReal; if (this.staticT <= 0) this.respawn(); }
       else if (this.me?.alive && !this.tab) this.updatePlayer(dt, P);
-      this.updateUnits(dt); this.updateBuildings(dt); this.updateProjs(dt); this.updateChunks(dt); this.dir.update(dt);
+      this.updateUnits(dt); this.updateBuildings(dt); this.updateProjs(dt); this.updateChunks(dt); this.updateWrecks(dt); this.dir.update(dt);
       this.updateFx(dt);
     } else this.updateFx(this.phase === 'menu' ? dtReal : 0);
     const t = this.pipe.time; for (const f of this.anim) f(t);
@@ -487,6 +515,30 @@ export class Game {
     for (const l of p.link) this.killProp(l);
   }
   /** One piece of rubble: a rigid chunk that falls, bounces, tumbles and comes to rest. */
+  /** Dead buildings do not vanish: tall ones fall over and break where they land, wide ones cave in on themselves. */
+  updateWrecks(dt: number) {
+    for (const c of this.craters) if (c.t > 0) { c.t -= dt; if (c.t < 3) c.m.position.y -= dt * .25; if (c.t <= 0) c.m.visible = false; }
+    for (let i = this.wrecks.length - 1; i >= 0; i--) {
+      const w = this.wrecks[i], b = w.b, o = b.obj, veyl = b.team === 1; w.t += dt; const k = Math.min(1, w.t / w.dur); w.puffT -= dt;
+      if (w.tall) {
+        const ang = k * k * 1.5; o.quaternion.setFromAxisAngle(TMP.set(w.dz, 0, -w.dx), ang).multiply(QT.setFromAxisAngle(UP, w.yaw));
+        if (w.puffT <= 0) { w.puffT = .12; this.puff(TMP.set(b.pos.x + R(-1, 1), .4, b.pos.z + R(-1, 1)), 2, 1.2, M.dust, .8, 1.2); }
+        if (k >= 1) {
+          this.scene.remove(o); const n = Math.max(4, Math.round(b.h / 1.1));
+          for (let j = 0; j < n; j++) { const s = (j + .5) / n * b.h, p = V3(b.pos.x + w.dx * s + R(-.5, .5), R(.5, 1.4), b.pos.z + w.dz * s + R(-.5, .5)); for (let q = 0; q < 2; q++) this.chunk(p, R(.55, 1.2) * (1 - s / b.h * .4), this.bldMat(b, j + q), 4.5, V3(b.pos.x + w.dx * s - w.dz * R(-1, 1), 0, b.pos.z + w.dz * s + w.dx * R(-1, 1)), !veyl); this.puff(p, 3, 1.8, veyl ? M.indigoL : M.dust, 1, 1.4); if (j % 3 === 1) this.scorchAt(p, 2.6); }
+          for (const u of this.units) { if (!u.alive) continue; const rx = u.pos.x - b.pos.x, rz = u.pos.z - b.pos.z, along = rx * w.dx + rz * w.dz, side = Math.abs(rx * w.dz - rz * w.dx); if (along > 1 && along < b.h + 1 && side < 1.6 + UNIT[u.kind].rad) this.damage(u, 70, null); }
+          this.blastProps(V3(b.pos.x + w.dx * b.h * .5, 0, b.pos.z + w.dz * b.h * .5), b.h * .5, 60, null);
+          this.crater(b.pos, Math.max(b.hx, b.hz) * 1.5); this.shove(V3(b.pos.x + w.dx * b.h * .5, 0, b.pos.z + w.dz * b.h * .5), b.h * .8, 5);
+          const v = this.vol(b.pos); this.shake = Math.max(this.shake, v * .9); sfx.boom(v * .7); this.wrecks.splice(i, 1);
+        }
+      } else {
+        const e = 1 - (1 - k) * (1 - k); o.scale.y = 1 - e * .86; o.rotation.z = (b.id % 2 ? 1 : -1) * (b.stage * .035 + e * .09); o.position.y = -b.stage * .12 - e * .3;
+        if (w.puffT <= 0 && k < 1) { w.puffT = .09; const p = V3(b.pos.x + R(-b.hx, b.hx), b.h * (1 - e) * R(.3, 1) + .4, b.pos.z + R(-b.hz, b.hz)); this.puff(p, 3, 2.2, veyl ? M.indigoL : Math.random() < .3 ? M.fire : M.smoke, 1.2, 1.6); this.chunk(p, R(.5, 1.3), this.bldMat(b, Math.floor(w.t * 40)), 6, b.pos, !veyl); }
+        if (k >= 1 && w.dur < 50) { w.dur = 60; w.t = 1e-3; this.crater(b.pos, Math.max(b.hx, b.hz) * 1.35); this.scorchAt(b.pos, Math.max(b.hx, b.hz) * 2.6); this.shove(b.pos, Math.max(b.hx, b.hz) * 2.5, 5); }
+        else if (w.dur >= 50) { o.scale.y = .14; if (w.t > 55) o.position.y -= dt * .4; if (w.t >= 60) { this.scene.remove(o); this.wrecks.splice(i, 1); } }
+      }
+    }
+  }
   chunk(p: THREE.Vector3, size: number, mat: THREE.Material, power: number, from: THREE.Vector3, boxy = false) {
     let c = this.chunks.find(x => x.t <= 0); if (!c) { c = this.chunks.reduce((a, b) => a.t < b.t ? a : b); }
     c.m.geometry = boxy ? G.box : G.dod; c.m.material = mat; c.m.position.copy(p); c.s = size; c.m.scale.set(size * R(.8, 1.3), size * R(.6, 1), size * R(.8, 1.3)); c.m.rotation.set(R(0, 6), R(0, 6), R(0, 6));
@@ -500,10 +552,11 @@ export class Game {
     const me = this.me; this.thudT -= dt;
     for (const c of this.chunks) {
       if (c.t <= 0) continue; c.t -= dt; const q = c.m.position;
-      if (c.t <= 0) { c.m.visible = false; continue; } if (c.t < 1.5) { q.y -= dt * c.s * .5; continue; }
+      if (c.t <= 0) { c.m.visible = false; continue; } if (c.t < 1.5 && c.t + dt >= 1.5) for (const o of this.chunks) if (o !== c && o.rest && o.t > 1.5 && o.m.position.y > q.y + .1 && Math.abs(o.m.position.x - q.x) < 1.6 && Math.abs(o.m.position.z - q.z) < 1.6) { o.rest = false; o.v.set(0, 0, 0); } if (c.t < 1.5) { q.y -= dt * c.s * .5; continue; }
       if (c.rest) { if (me && me.alive && c.s < 1 && Math.abs(q.x - me.pos.x) < .8 && Math.abs(q.z - me.pos.z) < .8 && me.moving) { const dx = q.x - me.pos.x, dz = q.z - me.pos.z, d = Math.hypot(dx, dz) || 1; c.rest = false; c.v.set(dx / d * 3.5, 2.2, dz / d * 3.5); c.w.set(R(-6, 6), 0, R(-6, 6)); } continue; }
       c.v.y -= 26 * dt; q.addScaledVector(c.v, dt); c.m.rotation.x += c.w.x * dt; c.m.rotation.y += c.w.y * dt; c.m.rotation.z += c.w.z * dt;
-      const floor = c.s * .36;
+      let floor = c.s * .36;
+      for (const o of this.chunks) { if (o === c || o.t <= 1.5 || !o.rest) continue; const op = o.m.position, dx = q.x - op.x, dz = q.z - op.z, m = (c.s + o.s) * .4; if (dx > m || dx < -m || dz > m || dz < -m) continue; const d2 = dx * dx + dz * dz; if (d2 > m * m) continue; const top = op.y + (o.s + c.s) * .3; if (q.y > op.y && top > floor) { floor = top; if (d2 > m * m * .3 && c.v.y <= 0) { const d = Math.sqrt(d2); c.v.x += dx / d * 14 * dt; c.v.z += dz / d * 14 * dt; } } }
       if (q.y < floor) {
         q.y = floor;
         if (c.v.y < -2.4) { const hard = -c.v.y; c.v.y *= -.36; c.v.x *= .7; c.v.z *= .7; c.w.multiplyScalar(.55); if (c.s > .55 && hard > 6) { this.puff(TMP.set(q.x, .2, q.z), 1, c.s * .7, M.dust, .5, .8); if (this.thudT <= 0 && this.vol(q) > .25) { this.thudT = .12; sfx.step(true); this.shake = Math.max(this.shake, this.vol(q) * .25 * c.s); } } }
@@ -712,11 +765,14 @@ export class Game {
         continue;
       }
       if (b.team === 0 && b.hp < b.maxHp * .7 && this.time - b.lastHit > 6 && (!b.builder || !b.builder.alive || b.builder === this.me)) this.assignRigger(b);
-      if (b.hp < b.maxHp * .5 && b.kind !== 'choir' && b.kind !== 'reedgate') { b.smokeT -= dt; if (b.smokeT <= 0) { const bad = b.hp < b.maxHp * .25; b.smokeT = bad ? .18 : .4; const fire = bad && Math.random() < .5; this.puff(TMP.set(b.pos.x + R(-b.hx, b.hx) * .6, b.h * R(.6, 1), b.pos.z + R(-b.hz, b.hz) * .6), 1, fire ? 1.1 : 1.5, fire ? M.fire : M.smoke, 2.4, .5); } }
+      if (b.hp < b.maxHp * .5 && b.team === 0) { b.smokeT -= dt; if (b.smokeT <= 0) { const bad = b.hp < b.maxHp * .25; b.smokeT = bad ? .18 : .4; const fire = bad && Math.random() < .5; this.puff(TMP.set(b.pos.x + R(-b.hx, b.hx) * .6, b.h * R(.6, 1), b.pos.z + R(-b.hz, b.hz) * .6), 1, fire ? 1.1 : 1.5, fire ? M.fire : M.smoke, 2.4, .5); } }
       if (b.queue.length) { const q = b.queue[0]; q.t -= dt; if (q.t <= 0) { b.queue.shift(); const side = b.kind === 'bunkhouse' && !b.rot; const u = this.spawn(q.kind, 0, b.pos.x + (side ? b.hx + 1.2 : R(-1, 3)), b.pos.z + (side ? R(-.5, .5) : b.hz + 1.2)); this.puff(TMP.copy(u.pos).setY(1), 4, .8, M.dust); if (this.vol(b.pos) > .2) sfx.blip(); this.dir.trained(u); } }
       if (b.kind === 'watchpost') {
         b.cd -= dt; let tgt: Unit | null = null, bd = 34; for (const o of this.units) { if (!o.alive || o.team === b.team) continue; const d = o.pos.distanceTo(b.pos); if (d < bd) { bd = d; tgt = o; } }
         if (tgt) { const gun = b.obj.userData.gun; gun.rotation.y = Math.atan2(tgt.pos.x - b.pos.x, tgt.pos.z - b.pos.z) - b.obj.rotation.y; if (b.cd <= 0) { b.cd = .45; const a = V3(b.pos.x, 6, b.pos.z), e = V3(tgt.pos.x, UNIT[tgt.kind].bodyY, tgt.pos.z); this.tracer(a, e, tracerMat, .1); sfx.turret(this.vol(b.pos) * .6); this.damage(tgt, 10 * this.gunMul(), b); } }
+      } else if (b.kind === 'thornspire') {
+        b.cd -= dt; if (b.cd <= 0) { b.cd = 1.3; let tgt: Unit | null = null, bd = 22; for (const o of this.units) { if (!o.alive || o.team === b.team) continue; const d = o.pos.distanceTo(b.pos); if (d < bd) { bd = d; tgt = o; } }
+          if (tgt) { this.tracer(V3(b.pos.x, 6.9, b.pos.z), V3(tgt.pos.x, UNIT[tgt.kind].bodyY, tgt.pos.z), beamMat, .2); sfx.zap(this.vol(b.pos) * .7); this.damage(tgt, 7 * this.diff.enemy, b); this.puff(TMP.copy(tgt.pos).setY(1), 2, .5, M.mag, .5); } else b.cd = .3; }
       } else if (b.kind === 'choir') {
         b.cd -= dt; if (b.cd <= 0) { b.cd = 1.15; let tgt: Unit | null = null, bd = 21; for (const o of this.units) { if (!o.alive || o.team === b.team) continue; const d = o.pos.distanceTo(b.pos); if (d < bd) { bd = d; tgt = o; } }
           if (tgt) { this.tracer(V3(b.pos.x, 9.6, b.pos.z), V3(tgt.pos.x, 1.1, tgt.pos.z), beamMat, .16); sfx.zap(this.vol(b.pos) * .8); this.damage(tgt, 8 * this.diff.enemy, b); this.puff(TMP.copy(tgt.pos).setY(1), 2, .5, M.teal, .5); } }
@@ -728,7 +784,7 @@ export class Game {
   // ------------------------------------------------------------ render
   render(dt: number) {
     const me = this.me, cam = this.cam, pipe = this.pipe, vm = this.vm;
-    cam.aspect = pipe.w / pipe.h; pipe.setDusk(Math.min(1, Math.max(0, (this.time - 120) / 780)));
+    cam.aspect = pipe.w / pipe.h; pipe.setDusk(Math.min(1, MAP.dusk + Math.max(0, (this.time - 120) / 780)));
     const build = this.phase !== 'menu' && this.tool === 2 && me?.kind === 'rigger' && me.alive && !this.tab && this.staticT <= 0;
     for (const k of BUILDABLE) { const on = build && BUILDABLE[this.buildSel] === k; this.ghost[k].visible = on && this.placeOK; this.ghostBad[k].visible = on && !this.placeOK; if (on) { const g = this.placeOK ? this.ghost[k] : this.ghostBad[k]; g.position.copy(this.placePos); g.rotation.y = this.buildRot ? Math.PI / 2 : 0; } }
     holoOK.opacity = .3 + Math.sin(pipe.time * 3) * .07; warnMat.opacity = .6 + Math.sin(pipe.time * 30) * .3;

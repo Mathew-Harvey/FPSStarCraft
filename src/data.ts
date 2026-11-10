@@ -3,7 +3,7 @@ import type * as THREE from 'three';
 import type { Rig } from './models';
 
 export type Kind = 'rigger' | 'linesman' | 'breacher' | 'gantry' | 'longshot' | 'patch' | 'cantor' | 'lancer' | 'warden';
-export type BKind = 'headframe' | 'bunkhouse' | 'depot' | 'watchpost' | 'machineshop' | 'foundry' | 'choir' | 'reedgate';
+export type BKind = 'headframe' | 'bunkhouse' | 'depot' | 'watchpost' | 'machineshop' | 'foundry' | 'choir' | 'reedgate' | 'broodpit' | 'thornspire' | 'wardpylon';
 
 export interface UnitDef { name: string; team: number; hp: number; shield: number; speed: number; eye: number; headY: number; bodyY: number; rad: number; cost: number; time: number; supply: number; quip: string; ack: string[] }
 export const UNIT: Record<Kind, UnitDef> = {
@@ -25,8 +25,11 @@ export const BLD: Record<BKind, BldDef> = {
   watchpost: { name: 'Watchpost', hp: 550, hx: 1.6, hz: 1.6, h: 8, cost: 125, time: 11, blurb: 'Gun tower' },
   machineshop: { name: 'Machine Shop', hp: 1900, hx: 4.6, hz: 3.6, h: 4, cost: 150, time: 16, blurb: 'Breachers, Patches, upgrades', needs: 'bunkhouse' },
   foundry: { name: 'Foundry', hp: 2000, hx: 4.4, hz: 3.8, h: 6, cost: 200, time: 20, blurb: 'Longshots, Gantry walkers, top upgrades', needs: 'machineshop' },
-  choir: { name: 'Choir Stone', hp: 2400, hx: 1.5, hz: 1.5, h: 11, cost: 0, time: 0, blurb: '' },
+  choir: { name: 'Choir Stone', hp: 2000, hx: 1.5, hz: 1.5, h: 11, cost: 0, time: 0, blurb: '' },
   reedgate: { name: 'Reed Gate', hp: 1600, hx: 3.6, hz: 1.4, h: 8, cost: 0, time: 0, blurb: '' },
+  broodpit: { name: 'Brood Pit', hp: 1500, hx: 3.2, hz: 3.2, h: 4.2, cost: 0, time: 0, blurb: '' },
+  thornspire: { name: 'Thorn Spire', hp: 380, hx: 1.2, hz: 1.2, h: 7.6, cost: 0, time: 0, blurb: '' },
+  wardpylon: { name: 'Ward Pylon', hp: 520, hx: 1.5, hz: 1.5, h: 7, cost: 0, time: 0, blurb: '' },
 };
 export const BUILDABLE: BKind[] = ['bunkhouse', 'depot', 'watchpost', 'machineshop', 'foundry'];
 export type UpKey = 'dmg' | 'armor' | 'dmg2' | 'armor2';
@@ -47,7 +50,7 @@ export interface Unit {
 }
 export interface Building {
   id: number; kind: BKind; team: number; pos: THREE.Vector3; hx: number; hz: number; h: number; hp: number; maxHp: number; obj: THREE.Group; holo: THREE.Group | null;
-  built: boolean; progress: number; queue: { kind: Kind; t: number }[]; alive: boolean; cd: number; builder: Unit | null; lastHit: number; rot: boolean; smokeT: number;
+  built: boolean; progress: number; queue: { kind: Kind; t: number }[]; alive: boolean; cd: number; builder: Unit | null; lastHit: number; rot: boolean; smokeT: number; stage: number;
 }
 /** A piece of map scenery that can be shot, blown up or drilled apart. */
 export interface Prop {
@@ -64,10 +67,41 @@ export const DIFFS: Difficulty[] = [
   { name: 'Double shift', enemy: 1.3, raid: .85, blurb: 'Bigger raids, sooner' },
 ];
 
+/** One battlefield. The Ironhold yard always sits at the origin; everything else hangs off these numbers. */
+export interface MapDef {
+  name: string; blurb: string; out: [number, number]; flank: number[][]; road: string; flankName: string; exp: [number, number]; arch: number; wreck: [number, number] | null;
+  rocks: number; spireEvery: number; buttes: number; crystals: number; ground: number[]; mesa: number[]; rock: number[]; dusk: number;
+}
+export const MAPS: MapDef[] = [
+  { name: 'Needle\'s Eye', blurb: 'One road east, one ridge north', out: [124, 13], flank: [[118, -40], [62, -50], [20, -30]], road: 'east road', flankName: 'north ridge', exp: [61, -28], arch: 68, wreck: [46, 30],
+    rocks: 260, spireEvery: 8, buttes: 9, crystals: 22, ground: [1, 1, 1], mesa: [1, 1, 1], rock: [1, 1, 1], dusk: 0 },
+  { name: 'Switchback', blurb: 'Tight canyon, long way round', out: [92, -98], flank: [[118, -62], [112, 4], [44, 22]], road: 'canyon road', flankName: 'south bend', exp: [-52, -44], arch: 0, wreck: [64, -22],
+    rocks: 420, spireEvery: 4, buttes: 14, crystals: 14, ground: [1, .85, .72], mesa: [1, .79, .65], rock: [.91, .78, .7], dusk: .55 },
+  { name: 'Glass Flats', blurb: 'Wide open, nowhere to hide', out: [-136, 62], flank: [[-96, 104], [-30, 92], [4, 40]], road: 'west causeway', flankName: 'salt shelf', exp: [-58, -30], arch: 76, wreck: null,
+    rocks: 110, spireEvery: 14, buttes: 4, crystals: 60, ground: [.78, 1.2, 1.85], mesa: [.8, .92, 1.6], rock: [.8, 1, 1.5], dusk: .1 },
+];
+export let MAP = MAPS[0];
 export const OUTPOST = { x: 124, z: 13 };
 export const GATE = { x: 138, z: 12 };
 export const RALLY = { x: 25, z: 11 };
 export const RALLY_N = { x: 14, z: -27 };
-export const NORTH_PATH = [[118, -40], [62, -50], [20, -30]];
+export const NORTH_PATH: number[][] = [[118, -40], [62, -50], [20, -30]];
+/** Where the road leaves the yard, its heading, and its length to the outpost. */
+export const ROAD = { x: 0, z: 14, dx: 1, dz: 0, len: 124 };
+/** A point given as distance along the road and offset to its right-hand side. */
+export const roadPt = (s: number, off = 0): [number, number] => [ROAD.x + ROAD.dx * s - ROAD.dz * off, ROAD.z + ROAD.dz * s + ROAD.dx * off];
+/** A point in the outpost's own frame: +x is deeper in, away from the yard. */
+export const veylPt = (lx: number, lz: number): [number, number] => [OUTPOST.x + ROAD.dx * lx - ROAD.dz * lz, OUTPOST.z + ROAD.dz * lx + ROAD.dx * lz];
+export function setMap(i: number) {
+  MAP = MAPS[i] || MAPS[0]; const [ox, oz] = MAP.out;
+  const ol = Math.hypot(ox, oz), px = -oz / ol, pz = ox / ol;
+  if (MAP === MAPS[0]) { ROAD.x = 0; ROAD.z = 14; } else { ROAD.x = px * 12; ROAD.z = pz * 12; }
+  const ax = MAP === MAPS[0] ? ox : ox + px, az = MAP === MAPS[0] ? 14 : oz + pz, dx = ax - ROAD.x, dz = az - ROAD.z, l = Math.hypot(dx, dz);
+  ROAD.dx = dx / l; ROAD.dz = dz / l; ROAD.len = l; OUTPOST.x = ox; OUTPOST.z = oz;
+  const g = veylPt(14, -1); GATE.x = g[0]; GATE.z = g[1];
+  const r = roadPt(25, -3); RALLY.x = r[0]; RALLY.z = r[1];
+  NORTH_PATH.length = 0; for (const p of MAP.flank) NORTH_PATH.push([p[0], p[1]]);
+  const e = MAP.flank[MAP.flank.length - 1], el = Math.hypot(e[0], e[1]) || 1; RALLY_N.x = e[0] - e[0] / el * 7; RALLY_N.z = e[1] - e[1] / el * 7;
+}
 export const isUnit = (t: any): t is Unit => !!t && t.rig !== undefined;
 export const isSoldier = (u: Unit) => u.kind === 'linesman' || u.kind === 'breacher' || u.kind === 'gantry' || u.kind === 'longshot' || u.kind === 'patch';

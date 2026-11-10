@@ -1,22 +1,22 @@
 // The strategy layer: the Quartermaster who runs your economy, the Veyl raid planner,
 // and the squad's playbooks, callouts and chatter.
 import * as THREE from 'three';
-import { V3, R } from './gfx';
+import { V3, R, M } from './gfx';
 import { sfx } from './audio';
 import type { Game } from './game';
-import { Kind, UNIT, BLD, Unit, Building, Callout, OUTPOST, GATE, RALLY, RALLY_N, NORTH_PATH, isSoldier } from './data';
+import { Kind, UNIT, BLD, Unit, Building, Callout, OUTPOST, GATE, RALLY, RALLY_N, NORTH_PATH, MAP, veylPt, roadPt, isSoldier } from './data';
 
 const DEPOT_SLOTS = [[-13, 9], [-13, -9], [-19, 0], [-22, 12], [-26, -6], [-20, 22]];
 const POST_SLOTS = [[31, 20], [9, -31], [33, 5], [-8, 26]];
 const HINTS: [number, string, string][] = [
   [1.5, 'Quartermaster', 'Welcome to Dustbowl 7. Hold click on the green ore to drill. I\'ll handle the paperwork.'],
   [16, 'Quartermaster', 'Press 2 if you want to place buildings yourself. Press G to make me stop.'],
-  [70, 'Lookout', 'Veyl outpost is down the east road. Three Choir Stones. They will come for us first.'],
-  [125, 'Quartermaster', 'There\'s a fat ore seam out by the wreck, north-east. Worth the walk.'],
+  [70, 'Lookout', 'Veyl outpost is at the end of the road. Three Choir Stones. They will come for us first.'],
+  [125, 'Quartermaster', 'There\'s a fat ore seam marked green on your map. Worth the walk.'],
 ];
 const BOOKS = [
   { name: 'Yard Push', steps: ['Open', 'Muster', 'Push'], go: 'Pushing the east yard. Shoot the glowy bits.', label: 'Alpha pushes the east yard' },
-  { name: 'Back Door', steps: ['Open', 'Muster', 'Flank'], go: 'Going round the north ridge. Nobody sneeze.', label: 'Alpha flanks by the north ridge' },
+  { name: 'Back Door', steps: ['Open', 'Muster', 'Flank'], go: 'Going the long way round. Nobody sneeze.', label: 'Alpha flanks the long way round' },
   { name: 'Last Shift', steps: ['Open', 'Muster', 'All in'], go: 'Everybody goes. Both roads. Leave nothing standing.', label: 'Everyone hits the last Stone' },
 ];
 const CHATTER = [
@@ -39,15 +39,15 @@ export class Director {
   constructor(public g: Game) {
     this.raidIn = 170 * g.diff.raid;
     const guard = (k: Kind, x: number, z: number) => { const u = g.spawn(k, 1, x, z); u.order = { type: 'guard', x, z }; };
-    for (const [x, z] of [[110, 8], [112, 20], [120, 13], [106, 14]]) guard('cantor', x, z);
-    for (const [x, z] of [[124, 6], [124, 22]]) guard('lancer', x, z);
+    for (const [x, z] of [[-14, -5], [-12, 7], [-4, 0], [-18, 1]]) guard('cantor', ...veylPt(x, z));
+    for (const [x, z] of [[0, -7], [0, 9]]) guard('lancer', ...veylPt(x, z));
   }
 
   // ------------------------------------------------------------ squad bookkeeping
   rallyAt(i: number, north = false) { const r = north ? RALLY_N : RALLY; return { x: r.x + ((i % 4) - 1.5) * 2.4, z: r.z + Math.floor(i / 4) * 2.4 }; }
   following() { return this.g.soldiers().some(u => u.order.type === 'follow'); }
   pathFor(book: number, i: number): number[][] | undefined { return book === 1 || (book === 2 && i % 2) ? [...NORTH_PATH].reverse().map(p => [p[0], p[1]]) : undefined; }
-  targetFor(book: number): Building | null { const s = this.g.stones(); if (!s.length) return null; return book === 1 ? s.reduce((a, b) => a.pos.z < b.pos.z ? a : b) : this.g.nearestStone(RALLY); }
+  targetFor(book: number): Building | null { const s = this.g.stones(); if (!s.length) return null; const w = this.g.ward(s[0].pos); if (w) return w; return book === 1 ? s.reduce((a, b) => a.pos.z < b.pos.z ? a : b) : this.g.nearestStone(RALLY); }
   /** Gives a soldier a place in the squad that matches whatever the squad is doing right now. */
   enlist(u: Unit) {
     const g = this.g; u.slot = g.soldiers().filter(x => x !== u).length;
@@ -77,6 +77,9 @@ export class Director {
   buildingLost(b: Building) {
     const g = this.g;
     if (b.kind === 'reedgate') { this.say('Lookout', 'Reed Gate is down! Their reinforcements just got a lot slower.', 'in'); sfx.callout(); return; }
+    if (b.kind === 'broodpit') { const n = g.pits().length; this.say('Lookout', n ? 'Brood Pit caved in! Their raids just got thinner.' : 'Both Brood Pits are gone. Whatever raids are left will be scraps.', 'in'); sfx.callout(); return; }
+    if (b.kind === 'thornspire') { this.say('Alpha', 'Thorn Spire down. That one owed me a helmet.', ''); return; }
+    if (b.kind === 'wardpylon') { this.say('Lookout', 'Ward Pylon is down! The Stones are soft now. Hit them!', 'in'); sfx.callout(); if (this.plan?.phase === 'go') { this.plan.target = g.nearestStone(b.pos); for (const u of g.soldiers()) if (u.order.type === 'amove' && this.plan.target) u.order = { type: 'amove', x: this.plan.target.pos.x, z: this.plan.target.pos.z }; } return; }
     if (b.kind === 'choir') {
       const left = g.stones().length; this.lastFailed = false;
       if (left && !this.flags.warden) { this.flags.warden = true; const w = g.spawn('warden', 1, OUTPOST.x + 6, OUTPOST.z); w.order = { type: 'guard', x: OUTPOST.x - 4, z: OUTPOST.z }; this.say('Lookout', 'Stone down, and something big just woke up in there. Warden! Stay out of the pink ring.', 'al'); sfx.alarm(); }
@@ -155,23 +158,23 @@ export class Director {
 
   enemy(dt: number) {
     const g = this.g, stones = g.stones(); if (!stones.length) return;
-    const gate = g.gate(), src = gate ? { x: GATE.x - 6, z: GATE.z } : { x: OUTPOST.x, z: OUTPOST.z };
+    const gate = g.gate(), pits = g.pits(), src = gate ? { x: GATE.x - 6, z: GATE.z } : { x: OUTPOST.x, z: OUTPOST.z };
     this.raidAge += dt; const close = (r: number) => g.units.some(u => u.alive && u.team === 1 && u.order.type === 'raid' && Math.hypot(u.pos.x, u.pos.z) < r); if (this.raidLive && !this.raidSeen && close(60)) this.raidSeen = true;
     if (this.raidLive && (this.raidSeen || this.raidAge > 75 ? !close(78) : !g.units.some(u => u.alive && u.team === 1 && u.order.type === 'raid'))) { this.raidLive = false; this.say('Alpha', 'Yard\'s clear. Somebody sweep up the purple.', ''); if (this.plan?.phase !== 'go') this.regroup(); }
     this.raidIn -= dt;
     if (this.raidIn < 15 && !this.warned) {
       this.warned = true; this.raidDir = this.raidN >= 2 && this.raidN % 2 === 0 ? 'north' : 'east';
-      this.say('Lookout', this.raidDir === 'north' ? 'Movement on the north ridge! They\'re coming round the back.' : 'Dust on the east road. Raid inbound.', 'al'); sfx.alarm();
+      this.say('Lookout', this.raidDir === 'north' ? `Movement on the ${MAP.flankName}! They're coming round the back.` : `Dust on the ${MAP.road}. Raid inbound.`, 'al'); sfx.alarm();
       if (this.plan?.phase !== 'go') this.regroup(this.raidDir === 'north');
     }
     if (this.raidIn <= 0) {
       const n = this.raidN++; this.raidIn = 92 * g.diff.raid; this.warned = false; this.raidLive = true; this.raidAge = 0; this.raidSeen = false;
-      let budget = Math.min(16, (2.5 + n * 1.2) * g.diff.enemy) * (gate ? 1 : .6); const north = this.raidDir === 'north'; let count = 0;
-      const send = (k: Kind) => { const u = g.spawn(k, 1, src.x - 8 + R(-4, 4), src.z + R(-7, 7)); u.order = { type: 'raid', x: R(-3, 6), z: north ? R(-9, -5) : R(4, 9), path: north ? NORTH_PATH.map(p => [p[0] + R(-3, 3), p[1] + R(-3, 3)]) : undefined }; count++; };
+      let budget = Math.min(16, (2.5 + n * 1.2) * g.diff.enemy) * (gate ? 1 : .6) * (pits.length ? .6 + .2 * pits.length : .35); const north = this.raidDir === 'north'; let count = 0;
+      const send = (k: Kind) => { const pit = pits.length ? pits[count % pits.length] : null; const u = pit ? g.spawn(k, 1, pit.pos.x - 5.5 + R(-1.5, 1.5), pit.pos.z + R(-4, 4)) : g.spawn(k, 1, src.x - 8 + R(-4, 4), src.z + R(-7, 7)); if (pit) g.puff(V3(u.pos.x, 1, u.pos.z), 5, 1, M.violet, .8); const tg = north ? [RALLY_N.x * .3 + R(-3, 3), RALLY_N.z * .3 + R(-2, 2)] : roadPt(R(-3, 6), R(-10, -5)); u.order = { type: 'raid', x: tg[0], z: tg[1], path: north ? NORTH_PATH.map(p => [p[0] + R(-3, 3), p[1] + R(-3, 3)]) : undefined }; count++; };
       if (n >= 4 && n % 3 === 1 && budget >= 6) { send('warden'); budget -= 5; }
       const lancers = n >= 1 ? Math.floor(budget * .3) : 0; for (let i = 0; i < lancers; i++) send('lancer');
       for (let i = 0; i < Math.max(1, Math.round(budget - lancers)); i++) send('cantor');
-      this.say('Lookout', `${count} Veyl ${north ? 'coming over the north ridge' : 'coming down the east road'}. They look annoyed.`, 'al');
+      this.say('Lookout', `${count} Veyl ${north ? 'coming over the ' + MAP.flankName : 'coming down the ' + MAP.road}. They look annoyed.`, 'al');
     }
     this.reinT -= dt;
     if (this.reinT <= 0) {
@@ -186,7 +189,7 @@ export class Director {
       const last = stones.length === 1, need = last ? 5 : 6;
       if (idle.length >= need) {
         const book = last ? 2 : this.lastFailed || this.pushes % 2 === 1 ? 1 : 0; this.plan = { phase: 'ask', t: 10, target: null, book, label: BOOKS[book].label };
-        const text = book === 2 ? `One Stone left and ${idle.length} of us itching. <b>Everybody goes, both roads. Yes?</b>` : book === 1 ? `Front door ${this.lastFailed ? 'went badly' : 'is getting old'}. ${idle.length} of us go round the <b>north ridge</b> and hit them from behind. <b>You in?</b>` : `${idle.length} of us are standing around. We hit their east yard in twenty. <b>You in, or what?</b>`;
+        const text = book === 2 ? `One Stone left and ${idle.length} of us itching. <b>Everybody goes, both roads. Yes?</b>` : book === 1 ? `Front door ${this.lastFailed ? 'went badly' : 'is getting old'}. ${idle.length} of us go round by the <b>${MAP.flankName}</b> and hit them from behind. <b>You in?</b>` : `${idle.length} of us are standing around. We hit their east yard in twenty. <b>You in, or what?</b>`;
         this.callout = { who: 'Alpha Lead', text, t: 10, dur: 10, keys: book === 2 ? [['Z', 'Do it'], ['X', 'Hold']] : [['Z', 'Do it'], ['C', book ? 'Front door' : 'Back door'], ['X', 'Hold']] }; sfx.callout();
       }
     }

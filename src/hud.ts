@@ -1,7 +1,8 @@
 // The heads-up display: plain HTML over the canvas, laid out in a 900-unit-tall space and scaled to fit.
 import * as THREE from 'three';
 import type { Game } from './game';
-import { UNIT, BLD, BUILDABLE, Unit, Building } from './data';
+import { UNIT, BLD, BUILDABLE, Unit, Building, MAP, MAPS, OUTPOST, ROAD, NORTH_PATH, roadPt } from './data';
+const capW = (t: string) => t.charAt(0).toUpperCase() + t.slice(1);
 
 const $ = (id: string) => document.getElementById(id)!;
 const V = new THREE.Vector3();
@@ -88,7 +89,7 @@ export class Hud {
     const co = D.callout; this.vis('callout', !!co && !tab);
     if (co) { this.set('callKeys', co.keys.map(k => `<span><b>${k[0]}</b>${k[1]}</span>`).join(''), true); this.set('callWho', co.who); this.set('callText', co.text, true); this.img('callImg', 'linesman'); $('callTm').style.width = Math.max(0, co.t / co.dur * 100) + '%'; }
     const cnt = D.plan?.phase === 'count'; this.vis('count', !!cnt); if (cnt) { this.set('countN', 'GO IN ' + Math.ceil(D.plan!.t)); this.set('countL', D.plan!.label); }
-    const raid = D.raidIn < 15 && g.stones().length > 0 && !co && !cnt; this.vis('raid', raid); if (raid) this.set('raid', `Raid in ${Math.max(0, Math.ceil(D.raidIn))} · ${D.raidDir === 'north' ? 'North ridge' : 'East road'}`);
+    const raid = D.raidIn < 15 && g.stones().length > 0 && !co && !cnt; this.vis('raid', raid); if (raid) this.set('raid', `Raid in ${Math.max(0, Math.ceil(D.raidIn))} · ${D.raidDir === 'north' ? capW(MAP.flankName) : capW(MAP.road)}`);
     const objs = D.objectives(), teach = !(objs[0].done && objs[1].done && objs[2].done) && g.time < 600; this.vis('objs', teach && !building); if (teach) this.set('objs', '<h6>First shift</h6>' + objs.map(o => `<div class="${o.done ? 'dn' : ''}">${o.text}</div>`).join(''), true);
     let boss: Unit | null = null; for (const u of g.units) if (u.alive && u.kind === 'warden' && u.team === 1 && u.pos.distanceTo(me.pos) < 70) { boss = u; break; }
     this.vis('boss', !!boss && !co && !cnt && !raid); if (boss) { $('bossHp').style.width = (boss.hp / boss.maxHp * 100).toFixed(1) + '%'; $('bossSh').style.width = (boss.shield / boss.maxShield * 100).toFixed(1) + '%'; }
@@ -114,6 +115,7 @@ export class Hud {
       if (!b.alive) continue; const d = b.pos.distanceTo(me.pos);
       if (!b.built) { bar(b.pos, BLD[b.kind].h + 1.2, b.progress, 'hb big p'); if (d < 60) lab(b.pos, BLD[b.kind].h + 1.6, `<div class="mark" style="color:var(--cyan)">${BLD[b.kind].name} ${Math.floor(b.progress * 100)}%</div>`); }
       else if (b.hp < b.maxHp && (d < 90 || tab)) bar(b.pos, b.h + 1.2, b.hp / b.maxHp, b.team ? 'hb big e' : 'hb big');
+      if (b.kind === 'wardpylon' && d < 110 && !tab && !building) lab(b.pos, b.h + 1.6, `<div class="mark out" style="color:var(--cyan)">Ward Pylon · shielding the base</div>`);
       if (b.kind === 'choir' && d > 45 && !tab && !building) lab(b.pos, b.h + 2, `<div class="mark out">${b === near ? 'Choir Stones · ' + Math.round(d) + 'm' : ''}</div>`);
       if (b.kind === 'headframe' && b.team === 0 && g.time - b.lastHit < 6 && d > 30) lab(b.pos, b.h + 3, `<div class="mark out" style="color:var(--red)">Headframe under attack</div>`);
     }
@@ -133,17 +135,17 @@ export class Hud {
   }
 
   private drawMini(g: Game) {
-    const c = this.mini, S = 260, x0 = -50, z0 = -56, span = 200, k = S / span, X = (x: number) => (x - x0) * k, Z = (z: number) => (z - z0) * k;
+    const c = this.mini, S = 260, span = Math.max(200, Math.abs(OUTPOST.x) + 76, (Math.abs(OUTPOST.z) + 70) / .69), x0 = OUTPOST.x / 2 - span / 2 + (MAP === MAPS[0] ? -12 : 0), z0 = OUTPOST.z / 2 - span * .345 + (MAP === MAPS[0] ? .5 : 0), k = S / span, X = (x: number) => (x - x0) * k, Z = (z: number) => (z - z0) * k;
     c.fillStyle = '#4a2f29'; c.fillRect(0, 0, S, 180);
-    c.strokeStyle = '#6b4a3a'; c.lineWidth = 7; c.beginPath(); c.moveTo(X(4), Z(14)); c.lineTo(X(130), Z(14)); c.stroke();
-    c.fillStyle = 'rgba(53,224,200,.16)'; c.beginPath(); c.arc(X(122), Z(13), 20 * k, 0, 7); c.fill();
+    c.strokeStyle = '#6b4a3a'; c.lineWidth = 7; c.beginPath(); { const a = roadPt(4), b = roadPt(ROAD.len + 6); c.moveTo(X(a[0]), Z(a[1])); c.lineTo(X(b[0]), Z(b[1])); c.stroke(); }
+    c.fillStyle = 'rgba(53,224,200,.16)'; c.beginPath(); c.arc(X(OUTPOST.x - 2 * ROAD.dx), Z(OUTPOST.z - 2 * ROAD.dz), 20 * k, 0, 7); c.fill();
     c.fillStyle = 'rgba(255,194,26,.13)'; c.beginPath(); c.arc(X(0), Z(0), 30 * k, 0, 7); c.fill();
     for (const s of g.spires) { c.fillStyle = '#2a1a18'; c.beginPath(); c.arc(X(s.x), Z(s.z), Math.max(1.5, s.r * k), 0, 7); c.fill(); }
     for (const o of g.ores) { if (o.amount <= 0) continue; c.fillStyle = '#b8f58c'; c.fillRect(X(o.pos.x) - 2.5, Z(o.pos.z) - 2.5, 5, 5); }
     c.lineWidth = 1.5; c.strokeStyle = '#0e0d14';
     for (const b of g.buildings) { if (!b.alive) continue; const w = Math.max(5, b.hx * 2 * k), h = Math.max(5, b.hz * 2 * k); c.fillStyle = b.kind === 'reedgate' ? '#c58bff' : b.team ? '#35e0c8' : b.built ? '#ffc21a' : '#7ef0ff'; c.fillRect(X(b.pos.x) - w / 2, Z(b.pos.z) - h / 2, w, h); c.strokeRect(X(b.pos.x) - w / 2, Z(b.pos.z) - h / 2, w, h); }
     for (const u of g.units) { if (!u.alive || u === g.me) continue; c.fillStyle = u.team ? '#ff4f9a' : u.kind === 'rigger' ? '#8be04e' : '#f4ead2'; c.beginPath(); c.arc(X(u.pos.x), Z(u.pos.z), u.kind === 'warden' ? 5 : u.team ? 2.6 : 2.2, 0, 7); c.fill(); }
-    const D = g.dir; if ((D.raidIn < 15 || D.raidLive) && g.stones().length && Math.floor(performance.now() / 300) % 2) { c.fillStyle = '#ff4b3a'; c.strokeStyle = '#0e0d14'; c.lineWidth = 2; c.beginPath(); if (D.raidDir === 'north') { c.moveTo(X(40), Z(-42)); c.lineTo(X(52), Z(-52)); c.lineTo(X(50), Z(-36)); } else { c.moveTo(X(60), Z(14)); c.lineTo(X(72), Z(7)); c.lineTo(X(72), Z(21)); } c.closePath(); c.fill(); c.stroke(); }
+    const D = g.dir; if ((D.raidIn < 15 || D.raidLive) && g.stones().length && Math.floor(performance.now() / 300) % 2) { c.fillStyle = '#ff4b3a'; c.strokeStyle = '#0e0d14'; c.lineWidth = 2; c.beginPath(); { const n = NORTH_PATH.length, p = D.raidDir === 'north' ? [(NORTH_PATH[n - 1][0] + NORTH_PATH[n - 2][0]) / 2, (NORTH_PATH[n - 1][1] + NORTH_PATH[n - 2][1]) / 2] : roadPt(62), a = Math.atan2(-p[1], -p[0]); c.moveTo(X(p[0]) + Math.cos(a) * 9, Z(p[1]) + Math.sin(a) * 9); c.lineTo(X(p[0]) + Math.cos(a + 2.4) * 8, Z(p[1]) + Math.sin(a + 2.4) * 8); c.lineTo(X(p[0]) + Math.cos(a - 2.4) * 8, Z(p[1]) + Math.sin(a - 2.4) * 8); } c.closePath(); c.fill(); c.stroke(); }
     if (this.pingT > 0) { c.strokeStyle = '#ffc21a'; c.lineWidth = 2; c.beginPath(); c.arc(X(this.pingPos.x), Z(this.pingPos.z), 5, 0, 7); c.stroke(); }
     const me = g.me; if (me) { c.save(); c.translate(X(me.pos.x), Z(me.pos.z)); c.rotate(-g.yaw); c.fillStyle = '#fff'; c.strokeStyle = '#0e0d14'; c.lineWidth = 1.5; c.beginPath(); c.moveTo(0, 8); c.lineTo(5, -5); c.lineTo(0, -2); c.lineTo(-5, -5); c.closePath(); c.fill(); c.stroke(); c.restore(); }
   }

@@ -86,3 +86,16 @@ TypeScript and three.js, bundled by esbuild into one HTML file. No art or sound 
 - [Look test](docs/design/mockups/index.html): the mockup scenes the renderer was developed against.
 
 Not in yet: playing as the Veyl, Flux as a second resource, more maps, and multiplayer.
+
+## The Veyl base
+
+The outpost is a working base, not a row of targets. Two **Brood Pits** hatch every raid, so caving one in thins the raids and losing both leaves scraps. **Thorn Spires** shoot anything that walks up the road. A **Ward Pylon** cuts damage to every Veyl building near it until you knock it down. Buildings crack and sag at two damage states, then tall ones topple over and crush whatever is under them while wide ones cave in. Rubble piles up and blasts leave craters.
+
+![A Choir Stone toppling](docs/screenshots/topple.jpg)
+
+## Maps
+
+Pick one on the menu. **Needle's Eye** is the original road east. **Switchback** is a tight canyon at sunset with a long flank. **Glass Flats** is open salt pan with almost no cover.
+
+![Switchback](docs/screenshots/switchback.jpg)
+![Glass Flats](docs/screenshots/glassflats.jpg)

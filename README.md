@@ -1,4 +1,4 @@
-# Claimjumpers (working title)
+# Ore Else (working title)
 
 A first-person RTS for the browser. You start as a single worker, build a base and an army, and can jump into any unit you own while AI teammates run recognisable RTS strategies and call out their plans. Comic-ink visuals, chunky cartoon units.
 

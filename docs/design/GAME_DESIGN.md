@@ -1,8 +1,8 @@
-# Claimjumpers — Game Design Document (Phase 1)
+# Ore Else — Game Design Document (Phase 1)
 
 *Working title. Status: design for review, no game code yet.*
 
-Claimjumpers is a first-person real-time strategy game. You start a match as a single worker with a drill. You mine, you build, your base starts producing an army, and at any moment you can jump into the body of any unit you own. Everything you are not controlling is run by AI teammates who follow recognisable RTS strategies and tell you out loud what they are about to do.
+Ore Else is a first-person real-time strategy game. You start a match as a single worker with a drill. You mine, you build, your base starts producing an army, and at any moment you can jump into the body of any unit you own. Everything you are not controlling is run by AI teammates who follow recognisable RTS strategies and tell you out loud what they are about to do.
 
 The mockups that go with this document are in [`mockups/index.html`](mockups/index.html) (open it in a browser). Screenshots are embedded below.
 
@@ -333,7 +333,6 @@ Platform: the browser, using TypeScript and three.js (WebGL). The mockups alread
 
 ## 13. Open questions for review
 
-1. **Name.** "Claimjumpers" is the current working title (mining claims, and jumping between bodies). Other candidates: Ore Else, Hard Hat Havoc.
-2. **Player power.** This design gives a possessed unit no stat bonus. Would you rather the player's unit be noticeably stronger?
-3. **Default autonomy.** Should the AI run the economy by default (current design), or should new players be asked to build by hand first?
-4. **Match length.** 12 to 20 minutes is the target. Shorter?
+1. **Player power.** This design gives a possessed unit no stat bonus. Would you rather the player's unit be noticeably stronger?
+2. **Default autonomy.** Should the AI run the economy by default (current design), or should new players be asked to build by hand first?
+3. **Match length.** 12 to 20 minutes is the target. Shorter?

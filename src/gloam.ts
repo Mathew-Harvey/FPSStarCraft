@@ -10,8 +10,8 @@ export const GLOAM = 2;
 /** Units. `pair` units hatch two to a Bud for the listed cost. Same fields as the other factions' UnitDef. */
 export const G_UNIT = {
   grazer: { name: 'Grazer', team: 2, hp: 40, shield: 0, speed: 5.0, eye: .85, headY: .62, bodyY: .5, rad: .6, cost: 45, time: 7, supply: 1, quip: '"Chew. Swallow. Carry. Chew."', ack: ['Mouth is full. Of ore.', 'Back to the seam.', 'The ground tastes good here.'] },
-  snapper: { name: 'Snapper', team: 2, hp: 35, shield: 0, speed: 6.6, eye: .78, headY: .64, bodyY: .5, rad: .5, cost: 25, time: 6, supply: .5, quip: '"Two of us. Always two."', ack: ['Teeth out.', 'Point. We bite.', 'Run, run, bite.'] },
-  quillback: { name: 'Quillback', team: 2, hp: 80, shield: 0, speed: 4.6, eye: 2.05, headY: 2.0, bodyY: 1.2, rad: .7, cost: 85, time: 10, supply: 1, quip: '"Every quill finds a home."', ack: ['Bristles up.', 'Spit and stick.', 'I see a soft spot.'] },
+  snapper: { name: 'Snapper', team: 2, hp: 50, shield: 0, speed: 6.6, eye: .78, headY: .64, bodyY: .5, rad: .5, cost: 25, time: 6, supply: .5, quip: '"Two of us. Always two."', ack: ['Teeth out.', 'Point. We bite.', 'Run, run, bite.'] },
+  quillback: { name: 'Quillback', team: 2, hp: 90, shield: 0, speed: 4.6, eye: 2.05, headY: 2.0, bodyY: 1.2, rad: .7, cost: 85, time: 10, supply: 1, quip: '"Every quill finds a home."', ack: ['Bristles up.', 'Spit and stick.', 'I see a soft spot.'] },
   blister: { name: 'Blister', team: 2, hp: 30, shield: 0, speed: 6.0, eye: .9, headY: .7, bodyY: .6, rad: .55, cost: 40, time: 6, supply: .5, quip: '"Squeeze me. Go on."', ack: ['Sloshing.', 'Hold me near the walls.', 'So full. So ready.'] },
   mulcher: { name: 'Mulcher', team: 2, hp: 520, shield: 0, speed: 4.0, eye: 2.9, headY: 2.6, bodyY: 1.7, rad: 1.6, cost: 240, time: 22, supply: 4, quip: '"Everything is soil eventually."', ack: ['The old one walks.', 'Tusks low.', 'Trample on your word.'] },
 };
@@ -33,8 +33,8 @@ export const G_PAIR: Partial<Record<GKind, boolean>> = { snapper: true };
 
 export type GUpKey = 'gfat' | 'gtongue' | 'gdmg' | 'garmor' | 'gquill' | 'glegs' | 'gsap' | 'gdmg2' | 'garmor2' | 'gcharge' | 'gdmg3' | 'garmor3' | 'gbloom' | 'ggut';
 export const G_UPGRADES = [
-  { key: 'gfat', name: 'Fat Buds', cost: 125, blurb: 'Mother Caps hold 4 Buds and grow them 30% faster', at: 'mothercap', say: 'Fat Buds. The Cap is heavy with them.' },
-  { key: 'gtongue', name: 'Long Tongues', cost: 100, blurb: 'Grazers chew 30% faster', at: 'mothercap', say: 'Long Tongues. The rock goes down easier.' },
+  { key: 'gfat', name: 'Fat Buds', cost: 125, blurb: 'Mother Caps hold 4 Buds and grow them 30% faster', at: 'warren', say: 'Fat Buds. The Cap is heavy with them.' },
+  { key: 'gtongue', name: 'Long Tongues', cost: 100, blurb: 'Grazers chew 30% faster', at: 'warren', say: 'Long Tongues. The rock goes down easier.' },
   { key: 'gdmg', name: 'Sharp Mandibles', cost: 150, blurb: '+25% damage', at: 'quillgarden', say: 'Sharp Mandibles. Everything bites deeper.' },
   { key: 'garmor', name: 'Thick Hide', cost: 150, blurb: '+25% health', at: 'quillgarden', say: 'Thick Hide grown over. Let them try.' },
   { key: 'gquill', name: 'Barbed Quills', cost: 125, blurb: 'Quillbacks reach further and hit 15% harder', at: 'quillgarden', say: 'Barbed Quills. They stick, and they stay.' },
@@ -51,12 +51,12 @@ export const G_UPGRADES = [
 
 /** Tuning the game reads. */
 export const G_TUNE = {
-  budEvery: 11, buds: 3, fatBuds: 4, fatK: 1.3,
+  budEvery: 7, buds: 3, fatBuds: 4, fatK: 1.3,
   /** Bloom radius by building, metres, and how fast it spreads (m/s). */
   bloomR: { mothercap: 20, sporesac: 8, warren: 10, stinger: 7, quillgarden: 10, blisterbed: 9, tuskhollow: 11, oldgrowth: 12 } as Record<GBKind, number>,
   bloomRate: .7, bloomSpeed: 1.25, bloomHeal: 2,
   pack: 15, packFat: 21,
-  bite: { snapper: 9, grazer: 5, mulcher: 30, blister: 70 },
+  bite: { snapper: 7, grazer: 5, mulcher: 30, blister: 70 },
   biteCd: { snapper: .42, grazer: .7, mulcher: 1.0 },
   quill: { dmg: 11, cd: .55, speed: 70, fan: 5, fanCd: 6 },
   blister: { r: 4.2, bld: 2 },

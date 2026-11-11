@@ -112,7 +112,7 @@ export class Game {
   uById = new Map<number, Unit>(); bById = new Map<number, Building>();
   evq: any[] | null = null; coop = 1; applying = false; names: Record<number, string> = {}; feedTo = 0; score: Record<number, number[]> = {}; myTeam = 0; teams: Record<number, number> = {}; vWind = 0; vX = 0; vZ = 0; pings: { x: number; z: number; t: number; pid: number }[] = [];
   spawn(kind: Kind, team: number, x: number, z: number, id = 0): Unit {
-    const md = MD.unit(kind), st = UNIT[kind], vb = team && this.eco && kind !== 'tender' ? this.vBoost.hp : 1, hp = st.hp * (team === 0 || this.eco ? this.armorMul(team) : 1) * vb, sh = st.shield * (team && this.eco ? this.armorMul(team) : 1) * vb;
+    const md = MD.unit(kind), st = UNIT[kind], hp = st.hp * (team === 0 || this.eco ? this.armorMul(team) : 1), sh = st.shield * (team && this.eco ? this.armorMul(team) : 1);
     const rs = st.rad * 3.6, ring = mk(G.ringG, ringMat, [0, .08, 0], [rs, rs, 1], [-Math.PI / 2, 0, 0], md.obj); ring.layers.set(L_FX); ring.visible = false;
     const u: Unit = { id: id || nextId++, kind, team, pilot: 0, nx: x, nz: z, pos: V3(x, 0, z), yaw: R(0, 6), hp, maxHp: hp, shield: sh, maxShield: sh, obj: md.obj, rig: md.rig, ring, alive: true, speed: st.speed, moving: false, phase: R(0, 6), cd: R(0, 1), think: R(0, .3), target: null, order: { type: 'guard', x, z }, lastHit: -99, state: 'idle', timer: 0, carrying: 0, node: null, site: null, dashCd: R(2, 5), dashT: 0, swing: 0, slot: 0, flashT: 0, pop: 0, wind: 0, windX: 0, windZ: 0, kx: 0, kz: 0, pitch: 0, brace: false };
     md.obj.position.copy(u.pos); md.obj.rotation.y = u.yaw; this.scene.add(md.obj); this.units.push(u);
@@ -121,7 +121,7 @@ export class Game {
   }
   addBuilding(kind: BKind, team: number, x: number, z: number, built: boolean, rot = false, id = 0): Building {
     const st = BLD[kind], obj = this.model(kind); obj.position.set(x, 0, z); if (rot) obj.rotation.y = Math.PI / 2; this.scene.add(obj);
-    const b: Building = { id: id || nextId++, kind, team, pos: V3(x, 0, z), hx: rot ? st.hz : st.hx, hz: rot ? st.hx : st.hz, h: st.h, hp: built ? st.hp : st.hp * .1, maxHp: st.hp, obj, holo: null, built, progress: built ? 1 : 0, queue: [], alive: true, cd: R(0, 1), builder: null, lastHit: -99, rot, smokeT: 0, stage: 0 };
+    const b: Building = { id: id || nextId++, kind, team, pos: V3(x, 0, z), hx: rot ? st.hz : st.hx, hz: rot ? st.hx : st.hz, h: st.h, hp: built ? st.hp : st.hp * .1, maxHp: st.hp, obj, holo: null, built, progress: built ? 1 : 0, pdone: built ? 1 : 0, queue: [], alive: true, cd: R(0, 1), builder: null, lastHit: -99, rot, smokeT: 0, stage: 0 };
     if (!built) { b.holo = MD.hologram(obj, holoOK); b.holo.position.copy(obj.position); b.holo.rotation.copy(obj.rotation); this.scene.add(b.holo); obj.scale.y = .06; }
     this.buildings.push(b); return b;
   }
@@ -149,9 +149,12 @@ export class Game {
   }
   supplyUsed(team = 0) { let n = 0; for (const u of this.units) if (u.alive && u.team === team) n += UNIT[u.kind].supply; for (const b of this.buildings) if (b.alive && b.team === team) for (const q of b.queue) n += UNIT[q.kind].supply; return n; }
   /** A side the bots run hits as hard as the shift says. A side somebody plays hits at full weight. */
+  /** On Double shift a bot side playing against a person gets more out of each load of ore, the way the bot Chorus in an Ironhold skirmish sends bigger raids.
+   *  Night is the even fight: the person's hero body against the bots' tougher AI-driven Veyl. */
+  oreK(team: number) { return this.eco && !this.human[team] && this.human[foeOf(team)] ? 1 + Math.max(0, this.diff.enemy - 1) : 1; }
   foeK(team: number) { return this.human[team] ? 1 : this.diff.enemy; }
   gunMul(team = 0) { const u = this.up; return team ? (u.vedge ? 1.25 : 1) * (u.vedge2 ? 1.2 : 1) : (u.dmg ? 1.25 : 1) * (u.dmg2 ? 1.2 : 1) * (u.dmg3 ? 1.15 : 1) * (this.eco ? this.foeK(0) : 1); }
-  /** With a full economy the Veyl pay for every body, so each one is worth more than a free raider: tougher and harder hitting. */
+  /** With a full economy the Veyl pay for every body, so each one the AI drives is worth more than a free raider: it takes less from each hit and hits harder. */
   vBoost = { hp: 1.65, dmg: 1.45 };
   armorMul(team = 0) { const u = this.up; return team ? (u.vglass ? 1.25 : 1) * (u.vglass2 ? 1.2 : 1) : (u.armor ? 1.25 : 1) * (u.armor2 ? 1.2 : 1) * (u.armor3 ? 1.15 : 1); }
   /** What a Veyl body's hit is worth: the shift on a bot side, and the songs the Chorus has learned. */
@@ -239,6 +242,8 @@ export class Game {
     let warded = false;
     if (!u && t.team === 1 && (t as Building).kind !== 'wardpylon') { const w = this.ward(t.pos); if (w) { amt *= .7; warded = true; if (this.time > this.wardFx) { this.wardFx = this.time + .35; this.tracer(V3(w.pos.x, 4.6, w.pos.z), V3(t.pos.x, (t as Building).h * .6, t.pos.z), beamMat, .22); this.puff(TMP.set(t.pos.x, (t as Building).h * .6, t.pos.z), 3, .7, M.cyan, .5); } } }
     const dealt = amt, shielded = (!!u && u.shield > 0) || warded;
+    // A paid-for Veyl body the AI drives shrugs off part of each hit (see vBoost). A body a player drives takes hits at face value, the same as an Ironhold one.
+    if (u && u.team === 1 && this.eco && !u.pilot && u.kind !== 'tender') amt /= this.vBoost.hp;
     if (u) { u.pop = 1; if (u.shield > 0) { const a = Math.min(u.shield, amt); u.shield -= a; amt -= a; this.bubble(u); } }
     // A hit from a body somebody is driving lands with weight: the target is shoved back and loses a beat.
     if (u && u.kind !== 'warden' && u.kind !== 'gantry' && !u.pilot && from && isUnit(from) && from.team !== u.team && (from === me || from.pilot) && dealt >= 5) { const sx = u.pos.x - from.pos.x, sz = u.pos.z - from.pos.z, sd = Math.hypot(sx, sz) || 1, k = from.kind === 'rigger' ? 14 : Math.min(10, dealt * .16); u.kx += sx / sd * k; u.kz += sz / sd * k; u.cd = Math.max(u.cd, Math.min(.5, dealt * .012)); }
@@ -249,7 +254,10 @@ export class Game {
     if (t === me && me) { this.shake = Math.min(1, this.shake + .45); let ang = 0; if (from) { const a = Math.atan2(from.pos.x - me.pos.x, from.pos.z - me.pos.z) - this.yaw; ang = Math.atan2(Math.sin(a), Math.cos(a)); } this.hud.hurt(from ? ang : null); sfx.hurt(); }
     if (u && from && isUnit(from) && u !== me && !u.target && !isWorker(u.kind)) u.target = from;
     if (!u && from && isUnit(from) && t.team === 1 && !this.eco) this.dir.alarm(from);
-    if (!u && from && isUnit(from)) for (const c of this.units) if (c.alive && c.team === t.team && c.team !== 0 && !c.target && c.order.type === 'guard' && c.pos.distanceTo(t.pos) < 50) c.target = from;
+    if (!u && from && isUnit(from)) for (const c of this.units) if (c.alive && c.team === t.team && (c.team !== 0 || this.eco) && !c.target && c.order.type === 'guard' && isFighter(c) && c.pos.distanceTo(t.pos) < 50) c.target = from;
+    // With two economies, a worker under attack calls its side's guards over: a lone raider in the seams should not be free money.
+    if (u && this.eco && isWorker(u.kind) && !u.pilot && from && isUnit(from) && from.team !== u.team && u.state !== 'flee') { const dx = u.pos.x - from.pos.x, dz = u.pos.z - from.pos.z, l = Math.hypot(dx, dz) || 1; if (u.site) { u.site.builder = null; u.site = null; } u.windX = u.pos.x + dx / l * 22; u.windZ = u.pos.z + dz / l * 22; u.state = 'flee'; u.timer = 4; }
+    if (u && this.eco && isWorker(u.kind) && from && isUnit(from) && from.team !== u.team) for (const c of this.units) if (c.alive && c.team === u.team && !c.pilot && !c.target && c.order.type === 'guard' && isFighter(c) && c.pos.distanceTo(u.pos) < 45) c.target = from;
     if (!u && t.team === 0 && from && this.time > this.alertT) { this.alertT = this.time + 20; this.feed('Lookout', `They're chewing on the ${BLD[(t as Building).kind].name}! Get back here.`, 'al'); sfx.alarm(); }
     if (!u && t.team === 1 && this.eco && from && this.time > this.vAlertT) { this.vAlertT = this.time + 20; this.feed('Watcher', `The ${BLD[(t as Building).kind].name} is cracking. Come and sing it whole.`, 'al'); }
     if (!u && t.hp > 0) { const b = t as Building, st = b.hp < b.maxHp * .33 ? 2 : b.hp < b.maxHp * .66 ? 1 : 0; if (b.built && st > b.stage) this.crack(b, st); }
@@ -307,7 +315,7 @@ export class Game {
     if (b.builder) { b.builder.site = null; b.builder.state = 'idle'; }
     if (this.net) return;
     this.dir.buildingLost(b);
-    if (b.kind === 'choir' && !this.stones().length && !this.mission) { this.endT = 2.4; this.endWon = true; this.pipe.flash = 1; } else if (b.kind === 'headframe' && !this.ownB('headframe', true).length) { this.endT = 2.4; this.endWon = false; this.pipe.flash = 1; }
+    if (b.kind === 'choir' && !(this.eco ? this.ownB('choir', true, 1) : this.stones()).length && !this.mission) { this.endT = 2.4; this.endWon = true; this.pipe.flash = 1; } else if (b.kind === 'headframe' && !this.ownB('headframe', true).length) { this.endT = 2.4; this.endWon = false; this.pipe.flash = 1; }
   }
   end(won: boolean) { if (this.phase === 'over') return; this.phase = 'over'; this.won = won; won ? sfx.win() : sfx.lose(); drillSound(false, false); setMood(0); this.hud.showEnd(this); if (document.pointerLockElement) document.exitPointerLock(); }
   nearestStone(p: { x: number; z: number }) { let best: Building | null = null, bd = 1e9; for (const b of this.stones()) { const d = Math.hypot(b.pos.x - p.x, b.pos.z - p.z); if (d < bd) { bd = d; best = b; } } return best; }
@@ -429,7 +437,7 @@ export class Game {
   /** Puts a driven Rigger's pack on the books. Online the server does this and the replica only empties its own pack. */
   bank(u: Unit) {
     const n = u.carrying; u.carrying = 0; if (u.rig.pack) u.rig.pack.visible = false; if (n <= 0) return;
-    if (!this.net) { this.purse[u.team] += n; if (u.team) this.stats.minedV += n; else this.stats.mined += n; if (u.pilot && this.score[u.pilot]) this.score[u.pilot][1] += n; }
+    if (!this.net) { this.purse[u.team] += n * this.oreK(u.team); if (u.team) this.stats.minedV += n; else this.stats.mined += n; if (u.pilot && this.score[u.pilot]) this.score[u.pilot][1] += n; }
     if (u === this.me) { sfx.bank(); this.hud.damage(V3(u.pos.x, 2.2, u.pos.z), `+${n} banked`, 'ore'); }
   }
   /** What this side has found of the map. */
@@ -882,14 +890,14 @@ export class Game {
       else { u.state = b.built ? 'repair' : 'build'; u.yaw = Math.atan2(b.pos.x - u.pos.x, b.pos.z - u.pos.z); if (b.built) b.hp = Math.min(b.maxHp, b.hp + 16 * dt); else b.progress += dt / BLD[b.kind].time; if (u.think <= 0) { u.think = .2; this.debris(TMP.set(u.pos.x + Math.sin(u.yaw) * .9, 1, u.pos.z + Math.cos(u.yaw) * .9), 1, .06, side ? M.crys : M.spark, 3); } }
       return;
     }
-    // A Tender is no fighter: one with enemy fighters close by runs the other way for a few seconds, pack and all.
-    if (side && u.state !== 'flee' && u.think <= 0) { const th = this.units.find(e => e.alive && e.team !== side && isFighter(e) && Math.hypot(e.pos.x - u.pos.x, e.pos.z - u.pos.z) < 11); if (th) { const dx = u.pos.x - th.pos.x, dz = u.pos.z - th.pos.z, l = Math.hypot(dx, dz) || 1; u.windX = u.pos.x + dx / l * 18; u.windZ = u.pos.z + dz / l * 18; u.state = 'flee'; u.timer = 3; } }
+    // A Tender is no fighter, and with two economies neither is a Rigger: one with enemy fighters close by runs the other way for a few seconds, pack and all.
+    if ((side || this.eco) && u.state !== 'flee' && u.think <= 0) { const th = this.units.find(e => e.alive && e.team !== side && isFighter(e) && Math.hypot(e.pos.x - u.pos.x, e.pos.z - u.pos.z) < 11); if (th) { const dx = u.pos.x - th.pos.x, dz = u.pos.z - th.pos.z, l = Math.hypot(dx, dz) || 1; u.windX = u.pos.x + dx / l * 18; u.windZ = u.pos.z + dz / l * 18; u.state = 'flee'; u.timer = 3; } }
     if (u.state === 'flee') { u.timer -= dt; this.moveTo(u, u.windX, u.windZ, dt, 1); if (u.timer <= 0) u.state = u.carrying > 0 ? 'toHQ' : 'idle'; return; }
     // A seam right under the enemy's guns is not worth the walk.
     if (u.state === 'idle' || (u.node && u.node.amount <= 0 && u.state !== 'toHQ')) { let best: OreNode | null = null, bd = 1e9; for (const n of this.ores) { if (n.amount <= 0 || this.buildings.some(b => b.alive && b.team !== side && Math.hypot(b.pos.x - n.pos.x, b.pos.z - n.pos.z) < 30)) continue; const d = n.pos.distanceTo(u.pos) + (this.units.filter(o => o.node === n).length) * 6 + (hq ? (() => { const h = this.nearHQ(n.pos.x, n.pos.z, side)!; return Math.hypot(n.pos.x - h.pos.x, n.pos.z - h.pos.z) * .6; })() : 0); if (d < bd) { bd = d; best = n; } } u.node = best; u.state = best ? 'toOre' : 'wait'; }
     if (u.state === 'toOre' && u.node) { if (this.moveTo(u, u.node.pos.x, u.node.pos.z, dt, 2.5)) { u.state = 'mining'; u.timer = 3; } }
     else if (u.state === 'mining' && u.node) { u.yaw = Math.atan2(u.node.pos.x - u.pos.x, u.node.pos.z - u.pos.z); u.timer -= dt * (quick ? 1.3 : 1); if (u.think <= 0) { u.think = .5; if (this.vol(u.pos) > .3) this.debris(TMP.set(u.pos.x + Math.sin(u.yaw) * 1.1, 1, u.pos.z + Math.cos(u.yaw) * 1.1), 1, .1, M.ore, 3); } if (u.timer <= 0) { const n = Math.min(!side && this.up.buckets ? 10 : 7, u.node.amount); u.node.amount -= n; u.carrying = n; this.oreCheck(u.node); if (u.rig.pack) u.rig.pack.visible = true; u.state = 'toHQ'; } }
-    else if (u.state === 'toHQ') { if (!hq) { u.state = 'wait'; return; } if (this.distToBox(hq, u.pos.x, u.pos.z) < 1.7) { this.purse[side] += u.carrying; if (side) this.stats.minedV += u.carrying; else this.stats.mined += u.carrying; u.carrying = 0; if (u.rig.pack) u.rig.pack.visible = false; u.state = 'idle'; } else this.moveTo(u, hq.pos.x + 1.6, hq.pos.z + hq.hz + .8, dt, .3); }
+    else if (u.state === 'toHQ') { if (!hq) { u.state = 'wait'; return; } if (this.distToBox(hq, u.pos.x, u.pos.z) < 1.7) { this.purse[side] += u.carrying * this.oreK(side); if (side) this.stats.minedV += u.carrying; else this.stats.mined += u.carrying; u.carrying = 0; if (u.rig.pack) u.rig.pack.visible = false; u.state = 'idle'; } else this.moveTo(u, hq.pos.x + 1.6, hq.pos.z + hq.hz + .8, dt, .3); }
   }
   acquire(u: Unit, range: number, bRange: number) {
     let best: Unit | Building | null = null, bd = range;
@@ -1027,8 +1035,9 @@ export class Game {
     for (const b of this.buildings) {
       if (!b.alive) continue;
       if (!b.built) {
-        b.progress = Math.min(1, b.progress); b.hp = Math.max(b.hp, b.maxHp * (.1 + .9 * b.progress)); b.obj.scale.y = Math.max(.06, b.progress);
-        if (b.progress >= 1) { b.built = true; b.hp = b.maxHp; b.obj.scale.y = 1; if (b.holo) { this.scene.remove(b.holo); b.holo = null; } if (b.builder) { b.builder.site = null; b.builder.state = 'idle'; b.builder = null; } sfx.built(); this.stats.built++; this.puff(TMP.copy(b.pos).setY(1.5), 8, 1.8, M.dust, .8, 2.5); this.dir.buildingDone(b); }
+        // A site gains health as it goes up but keeps the damage it takes, so shooting a half-built site down works.
+        b.progress = Math.min(1, b.progress); if (b.progress > b.pdone) { if (!this.net) b.hp = Math.min(b.maxHp, b.hp + b.maxHp * .9 * (b.progress - b.pdone)); b.pdone = b.progress; } b.obj.scale.y = Math.max(.06, b.progress);
+        if (b.progress >= 1) { b.built = true; if (!this.net) b.hp = Math.min(b.maxHp, Math.max(1, b.hp)); b.obj.scale.y = 1; if (b.holo) { this.scene.remove(b.holo); b.holo = null; } if (b.builder) { b.builder.site = null; b.builder.state = 'idle'; b.builder = null; } sfx.built(); this.stats.built++; this.puff(TMP.copy(b.pos).setY(1.5), 8, 1.8, M.dust, .8, 2.5); this.dir.buildingDone(b); }
         else if ((b.team === 0 || this.eco) && this.needsBuilder(b)) this.assignRigger(b);
         continue;
       }

@@ -237,7 +237,7 @@ export class Director implements Side {
     const free = g.supplyCap(T) - g.supplyUsed(T), army = g.army(T).length, spires = own('thornspire').length, ward = own('wardpylon'), wardUp = up('wardpylon').length > 0, gate = own('reedgate'), gateUp = up('reedgate')[0];
     const stones = own('choir'), home = up('choir')[0] || stones[0]; if (!home) return;
     const wantWell = pits.length > 0 && free <= 3 && !sites.some(b => b.kind === 'hushwell') && own('hushwell').length < 6;
-    const wantSpires = army >= 3 ? 1 + (g.time > 420 ? 1 : 0) + (g.time > 840 ? 1 : 0) : 0;
+    const wantSpires = army >= 3 || g.human[0] ? 1 + (g.time > 420 ? 1 : 0) + (g.time > 840 ? 1 : 0) : 0;
     const put = (k: BKind, slots: number[][], line: string) => { if (cash() < BLD[k].cost) return false; for (const [lx, lz] of slots) { const [x, z] = veylPt(lx, lz), at = this.freeSpot(k, Math.round(x), Math.round(z), T); if (at) { g.place(k, at[0], at[1], false, T); this.say('Conductor', line, ''); return true; } } return false; };
     const spare = (keys: string[]) => { for (const k of keys) { const u = UPGRADES.find(x => x.key === k)!; if (!g.up[u.key] && g.ownB(u.at, true, T).length && (!u.needs || g.up[u.needs]) && cash() >= u.cost + 120) return g.buyUpgrade(u.key); } return false; };
     const homeLeft = g.ores.filter(n => Math.hypot(n.pos.x - VHOME.x, n.pos.z - VHOME.z) < 40).reduce((a, n) => [a[0] + n.amount, a[1] + n.max], [0, 0]);
@@ -288,7 +288,7 @@ export class Director implements Side {
     const wantDepot = bunk.length > 0 && free <= 3 && !sites.some(b => b.kind === 'depot') && g.ownB('depot').length < 6;
     // The planned spot can be taken: the player may have built there, or a fallen tower left rubble. Then the nearest free ground will do.
     const put = (k: BKind, x: number, z: number, line: string) => { if (g.ore < BLD[k].cost || (g.mission && !g.mission.allow.includes(k))) return false; const at = this.freeSpot(k, x, z); if (!at) return false; g.place(k, at[0], at[1], false); this.say('Quartermaster', line, ''); return true; };
-    const wantPosts = army >= 3 ? 1 + (this.raidN >= 2 ? 1 : 0) + (this.raidN >= 4 ? 1 : 0) : 0;
+    const wantPosts = army >= 3 || (g.eco && g.human[1]) ? 1 + (this.raidN >= 2 ? 1 : 0) + (this.raidN >= 4 ? 1 : 0) : 0;
     // One goal at a time, in priority order. While a goal is unpaid, training holds back a reserve so the goal gets bought.
     let saving = true, hold = 95;
     const hfs = g.ownB('headframe'), exp = this.expansion(hfs);

@@ -15,7 +15,7 @@ const F_MOVE = 1, F_TGT = 2, F_WORK = 4, F_CARRY = 8, F_FIRE = 16, F_BRACE = 128
 // ---------------------------------------------------------------- server: world to snapshot
 export function buildSnap(g: Game) {
   const D = g.dir;
-  const u = g.units.filter(x => x.alive).map(x => [x.id, KINDS.indexOf(x.kind), x.team, r1(x.pos.x), r1(x.pos.z), Math.round(x.yaw * 100), Math.ceil(x.hp), Math.round(x.maxHp), Math.round(x.shield),
+  const u = g.units.filter(x => x.alive).map(x => [x.id, KINDS.indexOf(x.kind), x.team, r1(x.pos.x), r1(x.pos.z), Math.round(x.yaw * 100), Math.ceil(x.hp), Math.ceil(x.maxHp), Math.floor(x.shield),
     (x.moving ? F_MOVE : 0) | (x.target ? F_TGT : 0) | (x.state === 'mining' || x.state === 'build' || x.state === 'repair' ? F_WORK : 0) | (x.carrying ? F_CARRY : 0) | (x.swing > .6 || x.flashT > 0 ? F_FIRE : 0) | (ORD.indexOf(x.order.type) << 5) | (x.brace ? F_BRACE : 0),
     x.pilot, Math.round(x.pitch * 100), Math.round(x.wind * 10)]);
   const b = g.buildings.filter(x => x.alive).map(x => [x.id, BKINDS.indexOf(x.kind), x.team, x.pos.x, x.pos.z, x.rot ? 1 : 0, Math.ceil(x.hp), x.built ? 1 : 0, Math.round(x.progress * 100), x.queue.length, x.queue[0] ? KINDS.indexOf(x.queue[0].kind) : 0, x.queue[0] ? r1(x.queue[0].t) : 0]);
@@ -119,8 +119,8 @@ export function applySnap(g: Game, s: any) {
   for (const r of s.u) {
     let u = g.uById.get(r[0]); if (u && !u.alive) continue;
     if (!u) { u = g.spawn(KINDS[r[1]], r[2], r[3], r[4], r[0]); g.uById.set(u.id, u); }
-    seen.add(u.id); u.nx = r[3]; u.nz = r[4]; u.maxHp = r[7];
-    if (r[8] < u.shield - 1) g.bubble(u); u.hp = r[6]; u.shield = r[8]; (u as any).nf = r[9]; u.wind = r[12] / 10;
+    seen.add(u.id); u.nx = r[3]; u.nz = r[4]; u.maxHp = r[7]; if (u.team && g.eco) u.maxShield = UNIT[u.kind].shield * g.armorMul(1);   // Veyl glass upgrades thicken shields too
+    if (r[8] < u.shield - 1) g.bubble(u); u.hp = r[6]; u.shield = u.maxShield ? Math.min(r[8], u.maxShield) : r[8]; (u as any).nf = r[9]; u.wind = r[12] / 10;
     if (u !== g.me) { u.yaw = r[5] / 100; u.pitch = r[11] / 100; u.pilot = r[10]; } else if (r[10] === net.id || s.time > g.possT + 1.5) u.pilot = r[10];
   }
   for (const u of g.units) if (u.alive && !seen.has(u.id)) { u.alive = false; g.scene.remove(u.obj); if (u === g.me) g.staticT = .2; }

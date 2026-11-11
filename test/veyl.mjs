@@ -45,12 +45,40 @@ try {
   check(up && await until(() => __ore.split().host.up.vhum, null, 20000), 'the player can research Choir Stone hum');
   // Ironhold bots dig and build on their own
   check(await until(() => { const h = __ore.split().host; return h.stats.mined > 60 && h.units.some(u => u.alive && u.team === 0 && u.kind === 'rigger' && u.state !== 'idle'); }, null, 90000), 'the Ironhold bots run their own economy');
+  // fixes from the Veyl sweep, one check each
+  const sw = await p.evaluate(() => { const h = __ore.split().host, g = __ore.game, out = {};
+    // a bot side facing a person gets more out of each load on Night, and nothing extra when nobody is playing either side
+    out.oreK = [h.oreK(0), h.oreK(1)];
+    // a paid Veyl body the AI drives takes less from a hit than one a player drives
+    const a = h.spawn('cantor', 1, 0, 40), b = h.spawn('cantor', 1, 4, 40), shot = h.spawn('linesman', 0, 2, 50); b.pilot = 9; a.shield = b.shield = 0; const ha = a.hp, hb = b.hp; h.damage(a, 20, shot); h.damage(b, 20, shot); out.ai = ha - a.hp; out.piloted = hb - b.hp; b.pilot = 0;
+    // a raider hitting an Ironhold Rigger draws the guards over
+    const r = h.own('rigger').find(u => !u.pilot), guard = h.spawn('linesman', 0, r.pos.x + 6, r.pos.z); guard.order = { type: 'guard', x: guard.pos.x, z: guard.pos.z }; guard.target = null; h.damage(r, 1, a); out.guard = guard.target === a;
+    for (const u of [a, shot, guard]) { u.hp = 0; u.alive = false; } h.damage(b, 1e6, null);
+    // a half-built site can be shot down: damage sticks instead of being topped back up every frame
+    const site = h.addBuilding('hushwell', 1, 30, 60, false); site.progress = .5; h.updateBuildings(1 / 30); const full = site.hp; for (let i = 0; i < 40; i++) { h.damage(site, site.maxHp * .05, null); h.updateBuildings(1 / 30); } out.site = [Math.round(full), site.alive];
+    return out; });
+  check(sw.oreK[0] === 1 && sw.oreK[1] === 1, `Night gives neither side extra ore (${sw.oreK.map(x => x.toFixed(2)).join(', ')})`);
+  check(sw.ai < sw.piloted * .7, `an AI-driven Veyl body takes less from a hit than a player-driven one (${sw.ai.toFixed(1)} vs ${sw.piloted.toFixed(1)})`);
+  check(sw.guard, 'a raider hitting an Ironhold Rigger draws the guards over');
+  check(sw.site[1] === false, `a half-built site can be shot down (it had ${sw.site[0]} health)`);
+  // after Thicker Glass, the Veyl player's screen shows shields within their maximum
+  await p.evaluate(() => { const h = __ore.split().host; h.purse[1] += 400; if (!h.ownB('wardpylon', true, 1).length) h.addBuilding('wardpylon', 1, h.stones()[0].pos.x - 14, h.stones()[0].pos.z + 20, true); h.buyUpgrade('vglass'); h.spawn('cantor', 1, 0, 44); });
+  check(await until(() => { const g = __ore.game; return g.up.vglass && g.units.some(u => u.alive && u.team === 1 && u.kind === 'cantor' && u.shield > 50); }, null, 20000) && await p.evaluate(() => __ore.game.units.every(u => !u.alive || u.shield <= u.maxShield + .01)), "after Thicker Glass the player's screen keeps Veyl shields within their maximum");
+  // an unfinished Choir Stone does not keep the Chorus alive once the last finished one falls
+  const lose = await p.evaluate(() => { const h = __ore.split().host, st = h.stones()[0]; const site = h.addBuilding('choir', 1, st.pos.x - 30, st.pos.z - 30, false); for (const b of h.buildings) if (b.kind === 'choir' && b.built && b.alive) h.damage(b, 1e7, null); return { site: site.alive, endT: h.endT, won: h.endWon }; });
+  check(lose.site && lose.endT > 0 && lose.won === true, 'an unfinished Choir Stone does not keep the Chorus alive once the last finished one falls');
   // the end screen reads from the Veyl point of view
-  await p.evaluate(() => { const h = __ore.split().host; for (const b of h.buildings) if (b.team === 0 && b.kind === 'headframe' && b.alive) h.damage(b, 1e6, null); });
-  check(await until(() => __ore.game.phase === 'over', null, 30000), 'breaking every Headframe ends the match');
+  check(await until(() => __ore.game.phase === 'over', null, 30000), 'losing every Choir Stone ends the match');
   await p.waitForTimeout(600);
   const end = await p.evaluate(() => [__ore.game.won, document.getElementById('endTitle').textContent]);
   console.log(JSON.stringify(end));
-  check(end[0] === true && /Veyl take/.test(end[1]), 'the Veyl player is told they won');
+  check(end[0] === false && /falls silent/.test(end[1]), 'the Veyl player is told they lost');
+  // and a fresh run won by breaking every Headframe says so
+  await p.evaluate(() => __ore.startVeyl()); await until(() => __ore.game.me && __ore.split() && __ore.split().host.time > 1);
+  await p.evaluate(() => { const h = __ore.split().host; for (const b of h.buildings) if (b.team === 0 && b.kind === 'headframe' && b.alive) h.damage(b, 1e6, null); });
+  check(await until(() => __ore.game.phase === 'over', null, 30000), 'breaking every Headframe ends the match');
+  await p.waitForTimeout(600);
+  const win = await p.evaluate(() => [__ore.game.won, document.getElementById('endTitle').textContent]);
+  check(win[0] === true && /Veyl take/.test(win[1]), 'the Veyl player is told they won');
 } finally { await b.close(); }
 if (fail.length) { console.log(`\n${fail.length} failed`); process.exit(1); } else console.log('\nall passed');

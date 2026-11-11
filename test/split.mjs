@@ -56,8 +56,9 @@ try {
   check(await until(() => { const a = __ore.game, c = __ore.game2(); return a.me && c && c.me && c.myTeam === 1 && c.me.team === 1 && a.me.team === 0; }), 'versus: player one is Ironhold and player two drives a Veyl body');
   check(await p.evaluate(() => { const h = __ore.split().host, c = __ore.game2(); return h.units.some(u => u.id === c.me.id && u.pilot === 2 && u.team === 1) && h.teams[2] === 1 && h.coop === 1; }), 'versus: the match has player two on the Veyl side');
   await p.evaluate(() => { __ore.split().host.time = Math.max(__ore.split().host.time, 125); const c = __ore.game2(); c.pressed.add('Digit2'); });
-  await p.waitForTimeout(300); await p.evaluate(() => { const c = __ore.game2(); if (c.phase === 'card') c.phase = 'play'; c.pressed.add('KeyG'); });
-  check(await until(() => { const d = __ore.split().host.dir; return __ore.game2().verse === 1 && (d.raidIn <= 6 || d.raidLive); }), 'versus: player two picks the Lances verse and calls the raid');
+  // the half only learns the match clock from the next snapshot, so wait for it to pass the raid floor before calling
+  await until(() => __ore.game2().time >= 121);
+  check(await until(() => { const d = __ore.split().host.dir, c = __ore.game2(); if (c.phase === 'card') c.phase = 'play'; if (c.verse !== 1) c.pressed.add('Digit2'); else if (c.raidCall <= 0) c.pressed.add('KeyG'); return c.verse === 1 && (d.raidIn <= 6 || d.raidLive); }), 'versus: player two picks the Lances verse and calls the raid');
   const ore0 = await p.evaluate(() => { const c = __ore.game2(), h = __ore.split().host; for (let i = 0; i < 5; i++) c.net.cmd('pl', 'depot', 14, 20, 0); return [Math.floor(h.ore), h.buildings.length]; }); await p.waitForTimeout(800);
   check(await p.evaluate(([o, n]) => { const h = __ore.split().host; return h.buildings.length === n && Math.abs(h.ore - o) < 40; }, ore0), 'versus: the Veyl player cannot build for Ironhold');
   if (SHOTS) { await p.waitForTimeout(3000); await p.screenshot({ path: SHOTS + '/split-versus.png' }); }

@@ -26,6 +26,8 @@ jobs:
       - run: npm ci
       - run: npm run build
       - run: npm install --no-save playwright@1.48.2
-      - run: npx playwright install --with-deps chromium
+      # The runner image already has Chromium's libraries; --with-deps only adds fonts. When the Ubuntu mirrors
+      # are unreachable, fall back to the browser alone instead of failing before any test runs.
+      - run: npx playwright install --with-deps chromium || npx playwright install chromium
       - name: Server, co-op, versus, split screen and bug sweep checks
         run: npm test

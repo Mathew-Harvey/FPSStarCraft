@@ -103,6 +103,7 @@ export class Hud {
     let bi = 0, li = 0;
     const bar = (p: THREE.Vector3, y: number, frac: number, cls: string) => { if (bi >= this.bars.length) return; V.set(p.x, y, p.z); const q = V.clone(); if (!this.project(q, cam)) return; const b = this.bars[bi]; if (b.className !== cls) b.className = cls; b.hidden = false; b.style.transform = `translate(${V.x.toFixed(1)}px,${V.y.toFixed(1)}px)`; this.barFill[bi].style.width = Math.max(0, Math.min(1, frac)) * 100 + '%'; bi++; };
     const lab = (p: THREE.Vector3, y: number, html: string) => { if (li >= this.labs.length) return; const q = new THREE.Vector3(p.x, y, p.z); if (!this.project(q, cam)) return; const l = this.labs[li]; l.hidden = false; l.style.transform = `translate(${Math.max(150, Math.min(this.W - 150, V.x)).toFixed(1)}px,${Math.max(130, V.y).toFixed(1)}px)`; const k = 'l' + li; if (this.cache.get(k) !== html) { this.cache.set(k, html); l.firstElementChild!.innerHTML = html; } li++; };
+    for (const p of g.pings) lab(V.set(p.x, 0, p.z).clone(), 2.2, `<div class="mark ping out">${g.names[p.pid] || 'Ping'} · ${Math.round(Math.hypot(p.x - me.pos.x, p.z - me.pos.z))}m</div>`);
     for (const u of g.units as Unit[]) {
       if (!u.alive || u === me && !tab) continue; const d = u.pos.distanceTo(me.pos);
       if (u.pilot && u !== me && g.names[u.pilot] && d < 120) lab(u.pos, UNIT[u.kind].headY + 1.25, `<div class="mark out" style="color:var(--yel)">${g.names[u.pilot]}</div>`);
@@ -133,9 +134,14 @@ export class Hud {
       const pop = k < .15 ? .6 + k / .15 * .6 : 1.2 - Math.min(1, (k - .15) * 2) * .2; f.el.style.opacity = k > .7 ? ((1 - k) / .3).toFixed(2) : '1'; f.el.style.transform = `translate(${V.x.toFixed(1)}px,${V.y.toFixed(1)}px) translate(-50%,-50%) scale(${pop.toFixed(2)}) rotate(-6deg)`;
     }
     // minimap
-    this.miniT -= dt; if (this.miniT <= 0) { this.miniT = .12; this.drawMini(g); }
+    this.miniT -= dt; if (this.miniT <= 0) { this.miniT = .12; this.drawMini(g); this.crew(g); }
   }
 
+  private crew(g: Game) {
+    const el = $('crew'); if (!g.net) { if (!el.hidden) el.hidden = true; return; }
+    const html = Object.keys(g.names).map(k => { const id = +k, u = (g.units as Unit[]).find(x => x.alive && x.pilot === id), s = g.score[id] || [0, 0, 0]; return `<div class="${id === g.net!.id ? 'me' : ''}"><b>${g.names[id]}</b><span>${u ? UNIT[u.kind].name : 'Down'}</span><em>${s[0]} kills · ${s[1]} ore</em></div>`; }).join('');
+    if (this.cache.get('crew') !== html) { this.cache.set('crew', html); el.innerHTML = html; } el.hidden = false;
+  }
   private drawMini(g: Game) {
     const c = this.mini, S = 260, span = Math.max(200, Math.abs(OUTPOST.x) + 76, (Math.abs(OUTPOST.z) + 70) / .69), x0 = OUTPOST.x / 2 - span / 2 + (MAP === MAPS[0] ? -12 : 0), z0 = OUTPOST.z / 2 - span * .345 + (MAP === MAPS[0] ? .5 : 0), k = S / span, X = (x: number) => (x - x0) * k, Z = (z: number) => (z - z0) * k;
     c.fillStyle = '#4a2f29'; c.fillRect(0, 0, S, 180);
@@ -147,6 +153,8 @@ export class Hud {
     c.lineWidth = 1.5; c.strokeStyle = '#0e0d14';
     for (const b of g.buildings) { if (!b.alive) continue; const w = Math.max(5, b.hx * 2 * k), h = Math.max(5, b.hz * 2 * k); c.fillStyle = b.kind === 'reedgate' ? '#c58bff' : b.team ? '#35e0c8' : b.built ? '#ffc21a' : '#7ef0ff'; c.fillRect(X(b.pos.x) - w / 2, Z(b.pos.z) - h / 2, w, h); c.strokeRect(X(b.pos.x) - w / 2, Z(b.pos.z) - h / 2, w, h); }
     for (const u of g.units) { if (!u.alive || u === g.me) continue; c.fillStyle = u.team ? '#ff4f9a' : u.kind === 'rigger' ? '#8be04e' : '#f4ead2'; c.beginPath(); c.arc(X(u.pos.x), Z(u.pos.z), u.kind === 'warden' ? 5 : u.team ? 2.6 : 2.2, 0, 7); c.fill(); }
+    for (const p of g.pings) { c.strokeStyle = '#ffc21a'; c.lineWidth = 2.5; c.beginPath(); c.arc(X(p.x), Z(p.z), 4 + (8 - p.t) % 1 * 7, 0, 7); c.stroke(); }
+    for (const u of g.units) if (u.alive && u.pilot && u !== g.me) { c.fillStyle = '#ffc21a'; c.strokeStyle = '#0e0d14'; c.lineWidth = 1.5; c.beginPath(); c.arc(X(u.pos.x), Z(u.pos.z), 3.6, 0, 7); c.fill(); c.stroke(); }
     const D = g.dir; if ((D.raidIn < 15 || D.raidLive) && g.stones().length && Math.floor(performance.now() / 300) % 2) { c.fillStyle = '#ff4b3a'; c.strokeStyle = '#0e0d14'; c.lineWidth = 2; c.beginPath(); { const n = NORTH_PATH.length, p = D.raidDir === 'north' ? [(NORTH_PATH[n - 1][0] + NORTH_PATH[n - 2][0]) / 2, (NORTH_PATH[n - 1][1] + NORTH_PATH[n - 2][1]) / 2] : roadPt(62), a = Math.atan2(-p[1], -p[0]); c.moveTo(X(p[0]) + Math.cos(a) * 9, Z(p[1]) + Math.sin(a) * 9); c.lineTo(X(p[0]) + Math.cos(a + 2.4) * 8, Z(p[1]) + Math.sin(a + 2.4) * 8); c.lineTo(X(p[0]) + Math.cos(a - 2.4) * 8, Z(p[1]) + Math.sin(a - 2.4) * 8); } c.closePath(); c.fill(); c.stroke(); }
     if (this.pingT > 0) { c.strokeStyle = '#ffc21a'; c.lineWidth = 2; c.beginPath(); c.arc(X(this.pingPos.x), Z(this.pingPos.z), 5, 0, 7); c.stroke(); }
     const me = g.me; if (me) { c.save(); c.translate(X(me.pos.x), Z(me.pos.z)); c.rotate(-g.yaw); c.fillStyle = '#fff'; c.strokeStyle = '#0e0d14'; c.lineWidth = 1.5; c.beginPath(); c.moveTo(0, 8); c.lineTo(5, -5); c.lineTo(0, -2); c.lineTo(-5, -5); c.closePath(); c.fill(); c.stroke(); c.restore(); }

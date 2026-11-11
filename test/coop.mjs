@@ -45,9 +45,21 @@ try {
   check(a.time > 20 && Math.abs(a.time - c.time) < 1, `match clock advanced together (${a.time.toFixed(0)}s)`);
   check(a.units === c.units && a.bld === c.bld && a.propsAlive === c.propsAlive, `still the same world after twenty seconds (${a.units} units, ${a.bld} buildings, ${a.propsAlive} props standing)`);
   if (SHOTS) { for (const [p, n] of [[A, 'ada'], [B, 'bo']]) { await p.evaluate(() => { const g = __ore.game, o = g.units.find(u => u.pilot && u !== g.me); g.noRender = false; if (o) { g.yaw = Math.atan2(o.pos.x - g.me.pos.x, o.pos.z - g.me.pos.z); g.pitch = 0; } }); await sleep(2500); await p.screenshot({ path: `${SHOTS}/coop-${n}.jpg`, type: 'jpeg', quality: 88 }); await p.evaluate(() => { __ore.game.noRender = true; }); } }
+  // pings, chat and the scoreboard
+  await B.evaluate(() => { const g = __ore.game; g.net.cmd('pg', 40, 5); g.net.cmd('ch', 'on my way <b>'); });
+  await sleep(1000);
+  check(await A.evaluate(() => __ore.game.pings.some(p => p.x === 40 && p.z === 5)), "Ada sees Bo's ping");
+  check(await A.evaluate(() => /Bo<\/b>on my way b/.test(document.getElementById('feed').innerHTML.replace(/\s+</g, '<'))) , 'Ada reads what Bo typed, with markup stripped');
+  check(await A.evaluate(() => { const g = __ore.game; return Object.keys(g.score).length === 2 && g.score[g.net.id][1] >= 60 && g.score[g.net.id][2] === 1; }), 'the scoreboard credits Ada with her ore and her Bunkhouse');
   // Bo leaves: Ada keeps playing and the body goes back to the AI
   await B.close(); await sleep(1500); a = await state(A);
   check(a.pilots.length === 1, 'when Bo leaves, his body goes back to the crew and the match carries on');
+  // Bo comes back mid-match with the same code and gets a body and the same world
+  const B2 = await open('Bo'); await B2.fill('#mCode', code); await B2.click('#mJoinBtn');
+  await B2.waitForFunction(() => __ore.game.net && __ore.game.me && __ore.game.units.length > 6); await B2.evaluate(() => { __ore.game.noRender = true; }); await sleep(1500);
+  a = await state(A); c = await state(B2);
+  check(c.me && a.pilots.length === 2 && a.pilots.includes(c.me), 'Bo rejoins the running match with the code and gets a body');
+  check(a.units === c.units && a.bld === c.bld && a.propsAlive === c.propsAlive, `the rejoined world matches (${c.units} units, ${c.bld} buildings, ${c.propsAlive} props standing)`);
   await b.close();
 } catch (e) { console.log('ERROR', e); fail.push('exception'); }
 srv.kill(); if (srvLog.includes('crashed') || srvLog.includes('bad command')) { console.log(srvLog); fail.push('server errors'); }

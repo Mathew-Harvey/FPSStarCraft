@@ -95,7 +95,7 @@ export class Game {
   // ------------------------------------------------------------ entities
   /** Multiplayer server: things clients need to see or hear, queued until the next snapshot. */
   uById = new Map<number, Unit>(); bById = new Map<number, Building>();
-  evq: any[] | null = null; coop = 1; applying = false; names: Record<number, string> = {}; feedTo = 0;
+  evq: any[] | null = null; coop = 1; applying = false; names: Record<number, string> = {}; feedTo = 0; score: Record<number, number[]> = {}; pings: { x: number; z: number; t: number; pid: number }[] = [];
   spawn(kind: Kind, team: number, x: number, z: number, id = 0): Unit {
     const md = MD.unit(kind), st = UNIT[kind], hp = st.hp * (team === 0 ? this.armorMul() : 1);
     const rs = st.rad * 3.6, ring = mk(G.ringG, ringMat, [0, .08, 0], [rs, rs, 1], [-Math.PI / 2, 0, 0], md.obj); ring.layers.set(L_FX); ring.visible = false;
@@ -211,7 +211,7 @@ export class Game {
   }
   quiet = false;
   killUnit(u: Unit, from: Unit | Building | null) {
-    if (this.evq) this.evq.push(['ku', u.id, from ? from.id : 0]);
+    if (this.evq) { this.evq.push(['ku', u.id, from ? from.id : 0]); const kp = from && (from as Unit).pilot; if (kp && u.team === 1 && this.score[kp]) this.score[kp][0]++; }
     if (u.kind === 'gantry' && u.alive && !this.net) { u.alive = false; this.explode(V3(u.pos.x, 0, u.pos.z), 0, 40, 6, null); u.alive = true; }
     u.alive = false; const veyl = u.team === 1, v = this.vol(u.pos), st = UNIT[u.kind], c = V3(u.pos.x, st.bodyY, u.pos.z);
     this.puff(c, veyl ? 6 : 4, st.rad * 1.4, veyl ? M.teal : M.dust); this.debris(c, veyl ? 7 : 3, .22, veyl ? M.crys : M.steelD, 5); sfx.ko(v, veyl);
@@ -391,6 +391,7 @@ export class Game {
     this.fireCd -= dt; this.recoil = Math.max(0, this.recoil - dt * 6); this.nadeCd = Math.max(0, this.nadeCd - dt); this.bashCd = Math.max(0, this.bashCd - dt); this.bashT = Math.max(0, this.bashT - dt);
     const eye = V3(me.pos.x, UNIT[me.kind].eye, me.pos.z), dir = this.lookDir(V3());
     this.prompt = '';
+    if (this.net && P.has('KeyT')) { const pp = V3(); if (!this.groundPoint(pp, 400)) pp.set(me.pos.x + dir.x * 40, 0, me.pos.z + dir.z * 40); this.net.cmd('pg', Math.round(pp.x), Math.round(pp.z)); }
     if (P.has('KeyQ') && this.lastBody?.alive) { this.possess(this.lastBody); return; }
     const look = this.ray(eye, dir, 70, -1, me);
     if (look?.unit && look.unit.team === 0 && look.unit.pilot) this.prompt = `${this.names[look.unit.pilot] || 'A crewmate'} is driving this one`; else if (look?.unit && look.unit.team === 0) { this.prompt = `<b>F</b> Jump into ${UNIT[look.unit.kind].name}`; if (P.has('KeyF')) { this.possess(look.unit); return; } }

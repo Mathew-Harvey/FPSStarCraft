@@ -22,7 +22,7 @@ export function buildSnap(g: Game) {
   return {
     t: 's', time: r1(g.time), ore: Math.floor(g.ore), up: UPS.reduce((a, k, i) => a | (g.up[k] ? 1 << i : 0), 0), o: g.ores.map(n => Math.round(n.amount)), u, b,
     d: [r1(D.raidIn), D.raidDir === 'north' ? 1 : 0, D.raidLive ? 1 : 0, D.auto ? 1 : 0, D.plan ? [D.plan.phase, r1(D.plan.t), D.plan.label, D.plan.book] : 0, D.callout ? [D.callout.who, D.callout.text, r1(D.callout.t), D.callout.dur, D.callout.keys] : 0, [D.playbook.name, D.playbook.steps, D.playbook.idx]],
-    st: [Math.floor(st.mined), st.built, st.kills, st.lost], e,
+    st: [Math.floor(st.mined), st.built, st.kills, st.lost], e, sc: Object.keys(g.score).map(k => [+k, g.score[+k][0], Math.floor(g.score[+k][1]), g.score[+k][2]]),
   };
 }
 
@@ -42,12 +42,14 @@ export function serverCmd(g: Game, pid: number, unit: Unit | null, c: any[]) {
   else if (k === 'up') { const u = UPGRADES.find(x => x.key === c[1]); if (u && g.ownB(u.at, true).length) { g.feedTo = pid; g.buyUpgrade(u.key, true); g.feedTo = 0; } }
   else if (k === 'pl') {
     const kind = c[1] as BKind, x = Math.round(num(2)), z = Math.round(num(3)), rot = !!c[4]; if (!BUILDABLE.includes(kind as any)) return;
-    if (g.unlocked(kind) && g.canPlace(kind, x, z, rot) && g.ore >= BLD[kind].cost) { g.place(kind, x, z, rot); g.feedTo = pid; g.feed('Quartermaster', `${BLD[kind].name} staked out. Hold the drill on it to speed things up.`, ''); g.feedTo = 0; }
+    if (g.unlocked(kind) && g.canPlace(kind, x, z, rot) && g.ore >= BLD[kind].cost) { g.place(kind, x, z, rot); if (g.score[pid]) g.score[pid][2]++; g.feedTo = pid; g.feed('Quartermaster', `${BLD[kind].name} staked out. Hold the drill on it to speed things up.`, ''); g.feedTo = 0; }
     else { g.feedTo = pid; g.feed('Quartermaster', `Could not stake out that ${BLD[kind].name}. Somebody beat you to the spot or the ore.`, 'al'); g.feedTo = 0; }
   }
-  else if (k === 'mn') { const n = g.ores[num(1)]; if (!n || !unit || unit.kind !== 'rigger') return; const a = Math.max(0, Math.min(3, num(2), n.amount)); n.amount -= a; g.ore += a; g.stats.mined += a; }
+  else if (k === 'mn') { const n = g.ores[num(1)]; if (!n || !unit || unit.kind !== 'rigger') return; const a = Math.max(0, Math.min(3, num(2), n.amount)); n.amount -= a; g.ore += a; g.stats.mined += a; if (g.score[pid]) g.score[pid][1] += a; }
   else if (k === 'wd') { const b = g.buildings.find(x => x.id === num(1)); if (b && b.alive && b.team === 0 && !b.built) b.progress += Math.min(.6, Math.max(0, num(2))) / BLD[b.kind].time * 1.6; }
   else if (k === 'fx') { const b = g.buildings.find(x => x.id === num(1)); if (b && b.alive && b.team === 0 && b.built) b.hp = Math.min(b.maxHp, b.hp + 40 * Math.min(.6, Math.max(0, num(2)))); }
+  else if (k === 'pg') { const x = Math.max(-400, Math.min(400, num(1))), z = Math.max(-400, Math.min(400, num(2))); g.evq!.push(['pg', pid, x, z]); }
+  else if (k === 'ch') { const t = String(c[1] || '').replace(/[<>&]/g, '').trim().slice(0, 120); if (t) g.evq!.push(['fd', g.names[pid] || 'Crew', t, 'ch']); }
   else if (k === 'pt') { if (unit && unit.kind === 'patch') g.patchUp(unit); }
   else if (k === 'or') { const o = String(c[1]); if ('GVMXZC'.includes(o) && o.length === 1) g.dir.order(o, num(2), num(3), unit); }
 }
@@ -62,7 +64,10 @@ export function serverMove(g: Game, unit: Unit, m: any[]) {
 // ---------------------------------------------------------------- client: snapshot to world
 function event(g: Game, e: any[]) {
   const net = g.net!, k = e[0];
-  if (k === 'fd') { if (!e[4] || e[4] === net.id) { g.hud.feed(e[1], e[2], e[3]); babble(e[1], String(e[2]).length); } }
+  if (k === 'fd') { if (!e[4] || e[4] === net.id) { g.hud.feed(e[1], e[2], e[3]); if (e[3] === 'ch') sfx.blip(); else babble(e[1], String(e[2]).length); } }
+  else if (k === 'pg') { g.pings.push({ pid: e[1], x: e[2], z: e[3], t: 8 }); if (g.pings.length > 8) g.pings.shift(); sfx.callout(); }
+  else if (k === 'nm') { g.names = e[1]; }
+  else if (k === 'ph') { for (const r of e[1]) { const p = g.props[r[0]]; if (p && p.alive && p.hp > r[1]) g.damageProp(p, p.hp - r[1], null); } }
   else if (k === 'tr') { if (e[9] !== net.id) g.tracer(V3(e[1], e[2], e[3]), V3(e[4], e[5], e[6]), e[7] ? beamMat : tracerMat, e[8]); }
   else if (k === 'ex') g.explode(V3(e[1], e[2], e[3]), -2, 0, e[4], null, !!e[5]);
   else if (k === 'pj') { if (e[10] !== net.id) g.shoot(V3(e[1], e[2], e[3]), V3(e[4], e[5], e[6]), e[7], 0, !!e[8], null, e[9]); }
@@ -77,6 +82,7 @@ export function applySnap(g: Game, s: any) {
   for (const e of s.e) event(g, e);
   g.time = s.time; g.ore = s.ore; UPS.forEach((k, i) => { g.up[k] = !!(s.up & (1 << i)); });
   g.ores.forEach((n, i) => { const a = s.o[i]; if (a !== undefined && a !== n.amount) { n.amount = a; g.oreCheck(n); } });
+  if (s.sc) { g.score = {}; for (const r of s.sc) g.score[r[0]] = [r[1], r[2], r[3]]; }
   g.stats.mined = s.st[0]; g.stats.built = s.st[1]; g.stats.kills = s.st[2]; g.stats.lost = s.st[3];
   const seen = new Set<number>();
   for (const r of s.u) {
@@ -133,6 +139,7 @@ export function netTick(g: Game, dt: number) {
   if (me && me.alive) for (const o of g.units) { if (o === me || !o.alive) continue; const dx = me.pos.x - o.pos.x, dz = me.pos.z - o.pos.z, lim = (UNIT[me.kind].rad + UNIT[o.kind].rad) * (o.team === me.team ? 1.1 : 1.25), d2 = dx * dx + dz * dz; if (d2 < lim * lim && d2 > 1e-5) { const d = Math.sqrt(d2); me.pos.x += dx / d * (lim - d); me.pos.z += dz / d * (lim - d); } }
   // damaged friendly buildings smoke, as they do offline
   for (const b of g.buildings) if (b.alive && b.built && b.team === 0 && b.hp < b.maxHp * .5) { b.smokeT -= dt; if (b.smokeT <= 0) { const bad = b.hp < b.maxHp * .25; b.smokeT = bad ? .18 : .4; g.puff(V3(b.pos.x + R(-b.hx, b.hx) * .6, b.h * R(.6, 1), b.pos.z + R(-b.hz, b.hz) * .6), 1, 1.5, bad && Math.random() < .5 ? M.fire : M.smoke, 2.4, .5); } }
+  for (let i = g.pings.length - 1; i >= 0; i--) if ((g.pings[i].t -= dt) <= 0) g.pings.splice(i, 1);
   const D = g.dir; D.raidIn -= dt; if (D.callout) D.callout.t -= dt; if (D.plan) D.plan.t -= dt;
   net.sendT -= dt;
   if (net.sendT <= 0) {

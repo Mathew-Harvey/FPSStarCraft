@@ -123,6 +123,8 @@ Co-op for up to four players. Everyone shares one Ironhold base and fights the V
 
 Finish campaign job two to unlock the Multiplayer tab. One player creates a lobby and reads out the five-letter code, the others join with it, the crew readies up and the host clocks everyone in.
 
+In a match, press T to ping the spot you are looking at and Enter to type to the crew. A panel on the right shows who is driving what, with kills and ore mined. If someone drops, or turns up late, they join the running match with the same code.
+
 Multiplayer needs the game server, because the server runs the match and every player's browser is a window onto it. The server also serves the game page, so there is only one thing to host.
 
 ```

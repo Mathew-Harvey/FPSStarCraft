@@ -54,7 +54,13 @@ window.addEventListener('resize', resize);
 // ---------------------------------------------------------------- input
 const locked = () => document.pointerLockElement === canvas;
 const live = () => game.phase === 'play' || game.phase === 'card';
+let lastCode = '';
+const chat = $('chat') as HTMLInputElement;
+const chatClose = () => { chat.hidden = true; chat.value = ''; chat.blur(); };
+chat.addEventListener('keydown', e => { e.stopPropagation(); if (e.key === 'Enter') { const t = chat.value.trim(); if (t && game.net) game.net.cmd('ch', t); chatClose(); } else if (e.key === 'Escape') { e.preventDefault(); chatClose(); } });
+chat.addEventListener('keyup', e => e.stopPropagation()); chat.addEventListener('blur', () => { chat.hidden = true; });
 addEventListener('keydown', e => {
+  if (game.net && game.phase === 'play' && e.code === 'Enter') { e.preventDefault(); game.keys.clear(); chat.hidden = false; chat.focus(); return; }
   if (live()) { if (!e.ctrlKey && !e.metaKey && e.code !== 'Escape' && !/^F\d/.test(e.code)) e.preventDefault(); if (!e.repeat) game.pressed.add(e.code); game.keys.add(e.code); }
   if (e.code === 'Escape' && freeMouse) { if (game.phase === 'play') pause(); else if (game.phase === 'paused') resume(); }
 });
@@ -120,10 +126,10 @@ async function mpConnect(then: (n: Net) => void) {
   if (!srv) { mErr('This copy of the game is not on a game server, so there is nobody to connect to. Open the game from its server address, or paste a server address above.'); return; }
   if (net && net.open) { then(net); return; }
   mErr('Connecting...'); const n = new Net();
-  n.onLobby = l => { showLobby(l); if (l.code) mErr(''); }; n.onError = m => mErr(m);
-  n.onClose = () => { net = null; if (game.net) { game.net = null; toMenu(); } showMode(); mErr('Lost the connection to the server.'); };
+  n.onLobby = l => { showLobby(l); if (l.code) { mErr(''); lastCode = l.code; } }; n.onError = m => mErr(m);
+  n.onClose = () => { net = null; if (game.net) { game.net = null; toMenu(); } showMode(); if (lastCode) { mCode.value = lastCode; mErr('Lost the connection. Press Join to get back into lobby ' + lastCode + '.'); } else mErr('Lost the connection to the server.'); };
   n.onBegin = m => {
-    mode = 'multi'; hud.reset(); game = new Game(pipe, hud, DIFFS[m.diff], m.map, null, n); game.sens = sens; game.names = m.names; ended = false; (window as any).__ore.game = game;
+    mode = 'multi'; hud.reset(); game = new Game(pipe, hud, DIFFS[m.diff], m.map, null, n); game.sens = sens; game.names = m.names; if (m.ph) { game.applying = true; for (const r of m.ph) { const q = game.props[r[0]]; if (q && q.alive && q.hp > r[1]) game.damageProp(q, q.hp - r[1], null); } game.applying = false; } ended = false; (window as any).__ore.game = game;
     initAudio(); setVolume(vol); setMusic(mus); $('menu').hidden = true; $('pause').hidden = true; $('end').hidden = true; hud.show(true); game.phase = 'play'; game.introT = 1.8; lock();
   };
   try { await n.connect(srv); net = n; mErr(''); then(n); } catch (e) { mErr(String((e as Error).message || e) + ' Check the server address.'); }

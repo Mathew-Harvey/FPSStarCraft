@@ -7,7 +7,7 @@ export class Net {
   /** Snapshots and other in-match messages wait here until the game loop is ready for them. */
   inbox: any[] = []; out: any[][] = []; sendT = 0; lastSnap = 0;
   onLobby: (l: Lobby) => void = () => { /* set by the menu */ };
-  onBegin: (m: { map: number; diff: number; unit: number; names: Record<number, string> }) => void = () => { /* set by the menu */ };
+  onBegin: (m: { map: number; diff: number; unit: number; names: Record<number, string>; ph?: number[][] }) => void = () => { /* set by the menu */ };
   onError: (msg: string) => void = () => { /* set by the menu */ };
   onClose: () => void = () => { /* set by the menu */ };
 

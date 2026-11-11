@@ -52,8 +52,8 @@ export class Hud {
   ping(p: THREE.Vector3) { this.pingPos.copy(p); this.pingT = 3; }
   titleCard(kind: string, name: string, quip: string) { const e = $('tcard'); if (!name) { e.hidden = true; return; } $('tcName').textContent = name; $('tcQuip').textContent = quip; const src = this.portraits[kind]; if (src) ($('tcImg') as HTMLImageElement).src = src; e.hidden = false; }
   showEnd(g: Game) {
-    $('endTitle').textContent = g.won ? 'Paid in full' : 'Shift over'; $('endTitle').className = 'logo sm' + (g.won ? '' : ' bad');
-    $('endLine').textContent = g.won ? 'Every Choir Stone is gravel. The Charter thanks you with a smaller invoice.' : 'The Headframe is scrap. The Charter will be billing your next of kin.';
+    $('endTitle').textContent = g.won ? (g.mission ? 'Job done' : 'Paid in full') : 'Shift over'; $('endTitle').className = 'logo sm' + (g.won ? '' : ' bad');
+    $('endLine').textContent = g.won && g.mission ? g.mission.outro : g.won ? 'Every Choir Stone is gravel. The Charter thanks you with a smaller invoice.' : 'The Headframe is scrap. The Charter will be billing your next of kin.';
     const m = Math.floor(g.time / 60), s = Math.floor(g.time % 60);
     $('endStats').innerHTML = [[`${m}:${String(s).padStart(2, '0')}`, 'Shift length'], [Math.floor(g.stats.mined), 'Ore dug'], [g.stats.built, 'Buildings up'], [g.stats.kills, 'Veyl dropped'], [g.stats.lost, 'Crew lost']].map(([a, b]) => `<div><b>${a}</b><span>${b}</span></div>`).join('');
     $('end').hidden = false; this.show(false);
@@ -71,7 +71,7 @@ export class Hud {
     const used = g.supplyUsed(), cap = g.supplyCap(); this.set('sup', `${used}/${cap}`); this.cls('resSup', used >= cap ? 'low' : '');
     const m = Math.floor(g.time / 60), s = Math.floor(g.time % 60); this.set('clock', `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`);
     const D = g.dir, pb = D.playbook, ph = pb.idx; this.set('play', `<b>${pb.name}</b>` + pb.steps.map((n, i) => `<span class="${i === ph ? 'on' : i < ph ? 'dn' : ''}">${n}</span>`).join(''), true);
-    const st = g.stones().length, sq = g.soldiers().length; this.set('goal', `Smash the Choir Stones · <em>${st} left</em>` + (sq ? ` · Squad ${sq}` : ''), true);
+    const st = g.stones().length, sq = g.soldiers().length; if (g.mission) { const next = g.mission.objectives.find(o => !o.done(g)); this.set('goal', (next ? next.text(g) : 'Job done') + (sq ? ` · Squad ${sq}` : ''), true); } else this.set('goal', `Smash the Choir Stones · <em>${st} left</em>` + (sq ? ` · Squad ${sq}` : ''), true);
     this.set('qm', `<span class="k" style="font-size:13px">G</span> Quartermaster <b>${D.auto ? 'Auto' : 'Off'}</b>`, true); this.cls('qm', 'qm c out' + (D.auto ? '' : ' off'));
     // who
     this.set('whoName', UNIT[me.kind].name); this.img('whoImg', me.kind); this.set('whoHp', String(Math.max(0, Math.ceil(me.hp))));
@@ -90,7 +90,7 @@ export class Hud {
     if (co) { this.set('callKeys', co.keys.map(k => `<span><b>${k[0]}</b>${k[1]}</span>`).join(''), true); this.set('callWho', co.who); this.set('callText', co.text, true); this.img('callImg', 'linesman'); $('callTm').style.width = Math.max(0, co.t / co.dur * 100) + '%'; }
     const cnt = D.plan?.phase === 'count'; this.vis('count', !!cnt); if (cnt) { this.set('countN', 'GO IN ' + Math.ceil(D.plan!.t)); this.set('countL', D.plan!.label); }
     const raid = D.raidIn < 15 && g.stones().length > 0 && !co && !cnt; this.vis('raid', raid); if (raid) this.set('raid', `Raid in ${Math.max(0, Math.ceil(D.raidIn))} · ${D.raidDir === 'north' ? capW(MAP.flankName) : capW(MAP.road)}`);
-    const objs = D.objectives(), teach = !(objs[0].done && objs[1].done && objs[2].done) && g.time < 600; this.vis('objs', teach && !building); if (teach) this.set('objs', '<h6>First shift</h6>' + objs.map(o => `<div class="${o.done ? 'dn' : ''}">${o.text}</div>`).join(''), true);
+    const objs = D.objectives(), teach = g.mission ? true : !(objs[0].done && objs[1].done && objs[2].done) && g.time < 600; this.vis('objs', teach && !building); if (teach) this.set('objs', `<h6>${g.mission ? g.mission.tag + ' · ' + g.mission.name : 'First shift'}</h6>` + objs.map(o => `<div class="${o.done ? 'dn' : ''}">${o.text}</div>`).join(''), true);
     let boss: Unit | null = null; for (const u of g.units) if (u.alive && u.kind === 'warden' && u.team === 1 && u.pos.distanceTo(me.pos) < 70) { boss = u; break; }
     this.vis('boss', !!boss && !co && !cnt && !raid); if (boss) { $('bossHp').style.width = (boss.hp / boss.maxHp * 100).toFixed(1) + '%'; $('bossSh').style.width = (boss.shield / boss.maxShield * 100).toFixed(1) + '%'; }
     // jump cards

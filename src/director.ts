@@ -4,7 +4,7 @@ import * as THREE from 'three';
 import { V3, R, M } from './gfx';
 import { sfx } from './audio';
 import type { Game } from './game';
-import { Kind, UNIT, BLD, Unit, Building, Callout, OUTPOST, GATE, RALLY, RALLY_N, NORTH_PATH, MAP, veylPt, roadPt, isSoldier } from './data';
+import { Kind, UNIT, BLD, Unit, Building, Callout, OUTPOST, GATE, RALLY, RALLY_N, NORTH_PATH, MAP, ROAD, veylPt, roadPt, isSoldier } from './data';
 
 const DEPOT_SLOTS = [[-13, 9], [-13, -9], [-19, 0], [-22, 12], [-26, -6], [-20, 22]];
 const POST_SLOTS = [[31, 20], [9, -31], [33, 5], [-8, 26]];
@@ -47,7 +47,7 @@ export class Director {
   rallyAt(i: number, north = false) { const r = north ? RALLY_N : RALLY; return { x: r.x + ((i % 4) - 1.5) * 2.4, z: r.z + Math.floor(i / 4) * 2.4 }; }
   following() { return this.g.soldiers().some(u => u.order.type === 'follow'); }
   pathFor(book: number, i: number): number[][] | undefined { return book === 1 || (book === 2 && i % 2) ? [...NORTH_PATH].reverse().map(p => [p[0], p[1]]) : undefined; }
-  targetFor(book: number): Building | null { const s = this.g.stones(); if (!s.length) return null; const w = this.g.ward(s[0].pos); if (w) return w; return book === 1 ? s.reduce((a, b) => a.pos.z < b.pos.z ? a : b) : this.g.nearestStone(RALLY); }
+  targetFor(book: number): Building | null { const s = this.g.stones(), want = this.g.mission?.target?.(this.g) || null; if (!s.length || want) return want || this.g.buildings.find(b => b.alive && b.team === 1) || null; const w = this.g.ward(s[0].pos); if (w) return w; return book === 1 ? s.reduce((a, b) => a.pos.z < b.pos.z ? a : b) : this.g.nearestStone(RALLY); }
   /** Gives a soldier a place in the squad that matches whatever the squad is doing right now. */
   enlist(u: Unit) {
     const g = this.g; u.slot = g.soldiers().filter(x => x !== u).length;
@@ -115,7 +115,7 @@ export class Director {
   // ------------------------------------------------------------ every frame
   update(dt: number) {
     const g = this.g, now = g.time;
-    while (this.hintI < HINTS.length && now >= HINTS[this.hintI][0]) { const h = HINTS[this.hintI++]; this.say(h[1], h[2], 'in'); }
+    if (!g.mission) while (this.hintI < HINTS.length && now >= HINTS[this.hintI][0]) { const h = HINTS[this.hintI++]; this.say(h[1], h[2], 'in'); }
     if (this.callout) this.callout.t -= dt;
     this.quartermaster(dt); this.enemy(dt); this.squad(dt);
     // idle chatter
@@ -128,7 +128,7 @@ export class Director {
     const hq = g.ownB('headframe', true)[0], bunk = g.ownB('bunkhouse'), bunkUp = bunk.filter(b => b.built), sites = g.ownB().filter(b => !b.built), shop = g.ownB('machineshop'), shopUp = shop.some(b => b.built);
     const free = g.supplyCap() - g.supplyUsed(), army = g.soldiers().length, posts = g.ownB('watchpost').length, building = sites.length > 0;
     const wantDepot = bunk.length > 0 && free <= 3 && !sites.some(b => b.kind === 'depot') && g.ownB('depot').length < 6;
-    const put = (k: 'bunkhouse' | 'depot' | 'watchpost' | 'machineshop' | 'foundry', x: number, z: number, line: string) => { if (g.ore < BLD[k].cost || !g.canPlace(k, x, z, false)) return false; g.place(k, x, z, false); this.say('Quartermaster', line, ''); return true; };
+    const put = (k: 'bunkhouse' | 'depot' | 'watchpost' | 'machineshop' | 'foundry', x: number, z: number, line: string) => { if (g.ore < BLD[k].cost || (g.mission && !g.mission.allow.includes(k)) || !g.canPlace(k, x, z, false)) return false; g.place(k, x, z, false); this.say('Quartermaster', line, ''); return true; };
     const wantPosts = army >= 3 ? 1 + (this.raidN >= 2 ? 1 : 0) + (this.raidN >= 4 ? 1 : 0) : 0;
     // One goal at a time, in priority order. While a goal is unpaid, training holds back a reserve so the goal gets bought.
     let saving = true, hold = 95; const fdy = g.ownB('foundry'), fdyB = fdy.find(b => b.built);
@@ -161,6 +161,7 @@ export class Director {
     const gate = g.gate(), pits = g.pits(), src = gate ? { x: GATE.x - 6, z: GATE.z } : { x: OUTPOST.x, z: OUTPOST.z };
     this.raidAge += dt; const close = (r: number) => g.units.some(u => u.alive && u.team === 1 && u.order.type === 'raid' && Math.hypot(u.pos.x, u.pos.z) < r); if (this.raidLive && !this.raidSeen && close(60)) this.raidSeen = true;
     if (this.raidLive && (this.raidSeen || this.raidAge > 75 ? !close(78) : !g.units.some(u => u.alive && u.team === 1 && u.order.type === 'raid'))) { this.raidLive = false; this.say('Alpha', 'Yard\'s clear. Somebody sweep up the purple.', ''); if (this.plan?.phase !== 'go') this.regroup(); }
+    if (g.mission && !g.mission.raids) this.raidIn = 999;
     this.raidIn -= dt;
     if (this.raidIn < 15 && !this.warned) {
       this.warned = true; this.raidDir = this.raidN >= 2 && this.raidN % 2 === 0 ? 'north' : 'east';
@@ -170,7 +171,7 @@ export class Director {
     if (this.raidIn <= 0) {
       const n = this.raidN++; this.raidIn = 92 * g.diff.raid; this.warned = false; this.raidLive = true; this.raidAge = 0; this.raidSeen = false;
       let budget = Math.min(16, (2.5 + n * 1.2) * g.diff.enemy) * (gate ? 1 : .6) * (pits.length ? .6 + .2 * pits.length : .35); const north = this.raidDir === 'north'; let count = 0;
-      const send = (k: Kind) => { const pit = pits.length ? pits[count % pits.length] : null; const u = pit ? g.spawn(k, 1, pit.pos.x - 5.5 + R(-1.5, 1.5), pit.pos.z + R(-4, 4)) : g.spawn(k, 1, src.x - 8 + R(-4, 4), src.z + R(-7, 7)); if (pit) g.puff(V3(u.pos.x, 1, u.pos.z), 5, 1, M.violet, .8); const tg = north ? [RALLY_N.x * .3 + R(-3, 3), RALLY_N.z * .3 + R(-2, 2)] : roadPt(R(-3, 6), R(-10, -5)); u.order = { type: 'raid', x: tg[0], z: tg[1], path: north ? NORTH_PATH.map(p => [p[0] + R(-3, 3), p[1] + R(-3, 3)]) : undefined }; count++; };
+      const send = (k: Kind) => { const pit = pits.length ? pits[count % pits.length] : null; const u = pit ? g.spawn(k, 1, pit.pos.x - ROAD.dx * 5.5 + R(-2, 2), pit.pos.z - ROAD.dz * 5.5 + R(-2, 2)) : g.spawn(k, 1, src.x - 8 + R(-4, 4), src.z + R(-7, 7)); if (pit) g.puff(V3(u.pos.x, 1, u.pos.z), 5, 1, M.violet, .8); const tg = north ? [RALLY_N.x * .3 + R(-3, 3), RALLY_N.z * .3 + R(-2, 2)] : roadPt(R(-3, 6), R(-10, -5)); u.order = { type: 'raid', x: tg[0], z: tg[1], path: north ? NORTH_PATH.map(p => [p[0] + R(-3, 3), p[1] + R(-3, 3)]) : undefined }; count++; };
       if (n >= 4 && n % 3 === 1 && budget >= 6) { send('warden'); budget -= 5; }
       const lancers = n >= 1 ? Math.floor(budget * .3) : 0; for (let i = 0; i < lancers; i++) send('lancer');
       for (let i = 0; i < Math.max(1, Math.round(budget - lancers)); i++) send('cantor');
@@ -185,7 +186,7 @@ export class Director {
 
   squad(dt: number) {
     const g = this.g, now = g.time, all = g.soldiers(), idle = all.filter(u => u.order.type === 'guard' && u !== g.me), stones = g.stones();
-    if (!this.plan && now > this.nextPlan && stones.length && !this.raidLive && !this.warned) {
+    if (!this.plan && now > this.nextPlan && (stones.length || (g.mission && this.targetFor(0))) && !this.raidLive && !this.warned) {
       const last = stones.length === 1, need = last ? 5 : 6;
       if (idle.length >= need) {
         const book = last ? 2 : this.lastFailed || this.pushes % 2 === 1 ? 1 : 0; this.plan = { phase: 'ask', t: 10, target: null, book, label: BOOKS[book].label };
@@ -208,8 +209,15 @@ export class Director {
   }
 
   /** The short to-do list shown while the player is still learning the ropes. */
+  /** A scripted raid for campaign jobs: these units climb out of the Brood Pits and walk on the yard. */
+  wave(kinds: Kind[], north = false) {
+    const g = this.g, pits = g.pits();
+    kinds.forEach((k, i) => { const pit = pits.length ? pits[i % pits.length].pos : OUTPOST; const u = g.spawn(k, 1, pit.x - ROAD.dx * 6 + R(-3, 3), pit.z - ROAD.dz * 6 + R(-3, 3)); const tg = north ? [RALLY_N.x * .3 + R(-3, 3), RALLY_N.z * .3 + R(-2, 2)] : roadPt(R(-3, 6), R(-10, -5)); u.order = { type: 'raid', x: tg[0], z: tg[1], path: north ? NORTH_PATH.map(p => [p[0] + R(-3, 3), p[1] + R(-3, 3)]) : undefined }; });
+    this.raidLive = true; this.raidAge = 0; this.raidSeen = false; this.raidDir = north ? 'north' : 'east'; sfx.alarm(); if (this.plan?.phase !== 'go') this.regroup(north);
+  }
   objectives(): { text: string; done: boolean }[] {
     const g = this.g, o = g.obj, left = g.stones().length;
+    if (g.mission) return g.mission.objectives.map(x => ({ text: x.text(g), done: !!x.done(g) }));
     return [
       { text: 'Drill 30 ore', done: o.drilled >= 30 },
       { text: 'Jump into another body (Tab or F)', done: o.jumped },

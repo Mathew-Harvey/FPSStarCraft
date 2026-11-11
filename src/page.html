@@ -51,23 +51,45 @@
     <div class="box">
       <h1 class="logo">Ore Else</h1>
       <p class="tagline">Start as one worker with a drill. Build an army that argues with you. Jump into any body you own.</p>
-      <div class="row">
-        <button class="go" id="start">Clock in</button>
-        <div class="diff" id="diff" role="group" aria-label="Difficulty">
-          <button type="button" data-d="0">Day shift<small>Smaller raids</small></button>
-          <button type="button" data-d="1">Night shift<small>The intended fight</small></button>
-          <button type="button" data-d="2">Double shift<small>Bigger, sooner</small></button>
+      <div class="modes" id="modes" role="tablist" aria-label="Game mode">
+        <button type="button" role="tab" data-m="camp">Campaign<small>Five jobs. Learn the trade.</small></button>
+        <button type="button" role="tab" data-m="skirm">Skirmish<small>One full match against the Veyl</small></button>
+        <button type="button" role="tab" data-m="multi" id="multiBtn">Multiplayer<small id="multiNote">Locked. Finish the campaign.</small></button>
+      </div>
+      <div class="panel" id="pCamp">
+        <div class="jobs" id="jobs"></div>
+        <div class="brief">
+          <h3 id="bName"></h3>
+          <p class="teach" id="bTeach"></p>
+          <p id="bText"></p>
+          <div class="row"><button class="go" id="startJob">Clock in</button><button type="button" class="mini-btn" id="skipCamp">Done this before? Unlock everything</button></div>
         </div>
       </div>
-      <div class="row">
-        <div class="diff" id="maps" role="group" aria-label="Map">
-          <button type="button">Needle's Eye<small>One road east, one ridge north</small></button>
-          <button type="button">Switchback<small>Tight canyon at sunset</small></button>
-          <button type="button">Glass Flats<small>Wide open, nowhere to hide</small></button>
+      <div class="panel" id="pSkirm" hidden>
+        <div class="row">
+          <button class="go" id="start">Clock in</button>
+          <div class="diff" id="diff" role="group" aria-label="Difficulty">
+            <button type="button" data-d="0">Day shift<small>Smaller raids</small></button>
+            <button type="button" data-d="1">Night shift<small>The intended fight</small></button>
+            <button type="button" data-d="2">Double shift<small>Bigger, sooner</small></button>
+          </div>
+        </div>
+        <div class="row">
+          <div class="diff" id="maps" role="group" aria-label="Map">
+            <button type="button">Needle's Eye<small>One road east, one ridge north</small></button>
+            <button type="button">Switchback<small>Tight canyon at sunset</small></button>
+            <button type="button">Glass Flats<small>Wide open, nowhere to hide</small></button>
+          </div>
+        </div>
+      </div>
+      <div class="panel" id="pMulti" hidden>
+        <div class="brief">
+          <h3 id="mTitle">Joint operations</h3>
+          <p id="mText"></p>
         </div>
       </div>
       <div class="keys">
-        <h3>Smash the three Choir Stones at the end of the road before the Veyl flatten your Headframe</h3>
+        <h3>Controls</h3>
         <div><kbd>WASD</kbd>Move, Shift to sprint, Space to dash</div>
         <div><kbd>Click</kbd>Drill ore, weld, or shoot</div>
         <div><kbd>RMB</kbd>Aim the rifle, or raise the Breacher's shield</div>
@@ -107,7 +129,7 @@
       <h2 class="logo sm" id="endTitle">Shift over</h2>
       <p class="tagline" id="endLine"></p>
       <div class="stats" id="endStats"></div>
-      <button class="go" id="again">Another shift</button>
+      <div class="row"><button class="go" id="again">Another shift</button><button type="button" class="mini-btn" id="toMenu">Back to the menu</button></div>
     </div>
   </div>
 </div>

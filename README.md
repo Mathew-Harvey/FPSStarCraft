@@ -99,3 +99,17 @@ Pick one on the menu. **Needle's Eye** is the original road east. **Switchback**
 
 ![Switchback](docs/screenshots/switchback.jpg)
 ![Glass Flats](docs/screenshots/glassflats.jpg)
+
+## Campaign
+
+Five jobs teach the game one system at a time and finishing the last one unlocks multiplayer. Progress is saved in the browser, and returning players can skip straight to the unlock.
+
+| Job | Teaches | Goal |
+| --- | --- | --- |
+| 1. First Shift | Moving, drilling, jumping bodies | Bank 250 ore and see off a probe |
+| 2. Payroll | Building, training, holding a line | Raise four Linesmen and hold through three raids |
+| 3. Tools of the Trade | Machine Shop, upgrades, squad orders | Break the Reed Gate |
+| 4. Heavy Metal | Foundry, Gantry, wrecking the map | Drop the Needle's Eye and cave in a Brood Pit |
+| 5. Ore Else | Everything, on Switchback | Level the whole Veyl base |
+
+![Campaign menu](docs/screenshots/campaign.jpg)

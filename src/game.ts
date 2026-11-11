@@ -7,6 +7,7 @@ import { sfx, drillSound, setMood, babble } from './audio';
 import type { Hud } from './hud';
 import { Kind, BKind, UNIT, BLD, BUILDABLE, UPGRADES, UpKey, Unit, Building, Prop, OreNode, Difficulty, DIFFS, OUTPOST, GATE, MAP, MAPS, ROAD, setMap, veylPt, isUnit, isSoldier } from './data';
 import { Director } from './director';
+import type { Mission } from './campaign';
 
 const TMP = V3(), TMP2 = V3(), UP = V3(0, 1, 0), QT = new THREE.Quaternion();
 const beamMat = new THREE.MeshBasicMaterial({ color: 0x6dfff0, depthWrite: false });
@@ -54,7 +55,7 @@ export class Game {
   shake = 0; noRender = false; alertT = 0; mood = 0;
   introT = 0; menuPos = V3(); menuQuat = new THREE.Quaternion(); hitStop = 0; streak = 0; streakT = 0; kick = 0; stepPhase = 0; dustT = 0; hopT = 0; hopCd = 0; hopX = 0; hopZ = 0; endT = 0; endWon = false;
 
-  constructor(public pipe: Pipeline, public hud: Hud, public diff: Difficulty = DIFFS[1], public mapI = 0) {
+  constructor(public pipe: Pipeline, public hud: Hud, public diff: Difficulty = DIFFS[1], public mapI = 0, public mission: Mission | null = null) {
     setMap(mapI); (M.ground as any).uniforms.uColor.value.setRGB(MAP.ground[0], MAP.ground[1], MAP.ground[2]); (M.mesa as any).uniforms.uColor.value.setRGB(MAP.mesa[0], MAP.mesa[1], MAP.mesa[2]); (M.rock as any).uniforms.uColor.value.setRGB(MAP.rock[0], MAP.rock[1], MAP.rock[2]); 
     const s = this.scene; s.add(makeSky()); MD.buildWorld(s, this.props, this.anim); this.spires = this.props.filter(p => p.solid); s.add(this.cam);
     this.vm = { drill: MD.vmDrill(), rifle: MD.vmRifle(), scatter: MD.vmScatter(), shield: MD.vmShield(), cannon: MD.vmCannon(), long: MD.vmLong(), pistol: MD.vmPistol() };
@@ -81,7 +82,7 @@ export class Game {
     for (const [x, z] of [[7, -9.5], [7, 10.5]]) V('broodpit', x, z);
     for (const [x, z] of [[-12, -11.5], [-12, 13]]) V('thornspire', x, z);
     V('wardpylon', -10.5, 1);
-    this.dir = new Director(this);
+    this.dir = new Director(this); if (mission) { this.dir.auto = mission.auto; mission.setup?.(this); }
     this.me = this.units[0]; this.possess(this.me, true); this.yaw = Math.atan2(ROAD.dx - .4, ROAD.dz - .4);
   }
 
@@ -117,7 +118,8 @@ export class Game {
   supplyUsed() { let n = 0; for (const u of this.units) if (u.alive && u.team === 0) n += UNIT[u.kind].supply; for (const b of this.buildings) if (b.alive && b.team === 0) for (const q of b.queue) n += UNIT[q.kind].supply; return n; }
   gunMul() { return (this.up.dmg ? 1.25 : 1) * (this.up.dmg2 ? 1.2 : 1); }
   armorMul() { return (this.up.armor ? 1.25 : 1) * (this.up.armor2 ? 1.2 : 1); }
-  unlocked(k: BKind) { const n = BLD[k].needs; return !n || this.ownB(n, true).length > 0; }
+  ms: Record<string, number> = {};
+  unlocked(k: BKind) { if (this.mission && !this.mission.allow.includes(k)) return false; const n = BLD[k].needs; return !n || this.ownB(n, true).length > 0; }
 
   // ------------------------------------------------------------ helpers
   distToBox(b: Building, x: number, z: number) { const dx = Math.max(Math.abs(x - b.pos.x) - b.hx, 0), dz = Math.max(Math.abs(z - b.pos.z) - b.hz, 0); return Math.hypot(dx, dz); }
@@ -227,7 +229,7 @@ export class Game {
     this.hud.damage(V3(b.pos.x, b.h * .6, b.pos.z), tall ? 'TIMBERRR!' : veyl ? 'KRA-KOOM!' : 'CRUNCH!', veyl ? 'ko' : 'kobad'); sfx.boom(Math.max(.3, v)); this.shake = Math.max(this.shake, v);
     if (b.builder) { b.builder.site = null; b.builder.state = 'idle'; }
     this.dir.buildingLost(b);
-    if (b.kind === 'choir' && !this.stones().length) { this.endT = 2.4; this.endWon = true; this.pipe.flash = 1; } else if (b.kind === 'headframe') { this.endT = 2.4; this.endWon = false; this.pipe.flash = 1; }
+    if (b.kind === 'choir' && !this.stones().length && !this.mission) { this.endT = 2.4; this.endWon = true; this.pipe.flash = 1; } else if (b.kind === 'headframe') { this.endT = 2.4; this.endWon = false; this.pipe.flash = 1; }
   }
   end(won: boolean) { if (this.phase === 'over') return; this.phase = 'over'; this.won = won; won ? sfx.win() : sfx.lose(); drillSound(false, false); setMood(0); this.hud.showEnd(this); if (document.pointerLockElement) document.exitPointerLock(); }
   nearestStone(p: { x: number; z: number }) { let best: Building | null = null, bd = 1e9; for (const b of this.stones()) { const d = Math.hypot(b.pos.x - p.x, b.pos.z - p.z); if (d < bd) { bd = d; best = b; } } return best; }
@@ -305,6 +307,7 @@ export class Game {
       this.time += dt; this.safeT = Math.max(0, this.safeT - dt); this.jumpCd = Math.max(0, this.jumpCd - dtReal);
       if (this.staticT > 0) { this.staticT -= dtReal; if (this.staticT <= 0) this.respawn(); }
       else if (this.me?.alive && !this.tab) this.updatePlayer(dt, P);
+      if (this.mission && this.endT <= 0) { this.mission.tick?.(this, this.ms, dt); if (this.mission.objectives.every(o => o.done(this))) { this.endT = 2.4; this.endWon = true; this.pipe.flash = 1; } }
       this.updateUnits(dt); this.updateBuildings(dt); this.updateProjs(dt); this.updateChunks(dt); this.updateWrecks(dt); this.dir.update(dt);
       this.updateFx(dt);
     } else this.updateFx(this.phase === 'menu' ? dtReal : 0);
@@ -384,6 +387,7 @@ export class Game {
   }
   train(b: Building, k: Kind, manual = false) {
     const st = UNIT[k];
+    if (this.mission && k !== 'rigger' && !this.mission.units.includes(k)) { if (manual) { sfx.deny(); this.feed('Quartermaster', `No ${st.name}s on this job's paperwork. Later.`, 'al'); } return false; }
     if (this.ore < st.cost) { if (manual) { sfx.deny(); this.feed('Quartermaster', 'Can\'t. We\'re broke. Go hit a rock.', 'al'); } return false; }
     if (this.supplyUsed() + st.supply > this.supplyCap()) { if (manual) { sfx.deny(); this.feed('Quartermaster', 'No beds. Build a Depot first.', 'al'); } return false; }
     if (b.queue.length >= 5) { if (manual) sfx.deny(); return false; }

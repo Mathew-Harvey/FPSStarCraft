@@ -8,7 +8,9 @@ for (const m of [0, 1, 2]) for (const d of [0, 1, 2]) SCEN.push({ name: `sp-${m}
 // the bigger and smaller sizes (map numbers 10 to 12 are Small, 20 to 22 Large)
 for (const [m, d] of [[10, 1], [11, 2], [20, 1], [21, 0], [22, 1]]) SCEN.push({ name: `sp-${m}-${d}`, kind: 'sp', map: m, diff: d });
 for (let j = 0; j < 5; j++) SCEN.push({ name: `job-${j + 1}`, kind: 'job', job: j });
-SCEN.push({ name: 'split-coop', kind: 'split', vs: false }, { name: 'split-vs', kind: 'split', vs: true });
+SCEN.push({ name: 'split-coop', kind: 'split', vs: false }, { name: 'split-vs', kind: 'split', vs: true }, { name: 'split-veyl', kind: 'split', vs: 'veyl' });
+// playing the Veyl alone against the Ironhold bots
+for (const [m, d] of [[0, 0], [1, 1], [2, 2], [10, 1], [21, 1]]) SCEN.push({ name: `veyl-${m}-${d}`, kind: 'veyl', map: m, diff: d });
 (async () => {
   const b = await chromium.launch({ args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist', '--enable-webgl'] });
   let failed = 0;
@@ -21,6 +23,7 @@ SCEN.push({ name: 'split-coop', kind: 'split', vs: false }, { name: 'split-vs', 
       __ore.setFree(true);
       if (sc.kind === 'sp') { __ore.pickMap(sc.map % 10); __ore.pickSize(Math.floor(sc.map / 10)); document.querySelectorAll('#diff button')[sc.diff].click(); __ore.start(); }
       else if (sc.kind === 'job') { __ore.pickJob(sc.job); __ore.start(); }
+      else if (sc.kind === 'veyl') { __ore.pickMap(sc.map % 10); __ore.pickSize(Math.floor(sc.map / 10)); document.querySelectorAll('#diff button')[sc.diff].click(); __ore.startVeyl(); }
       else { document.querySelectorAll('#diff button')[1].click(); __ore.startSplit(sc.vs); }
       const KEYS = ['KeyW', 'KeyS', 'KeyA', 'KeyD', 'ShiftLeft', 'Space', 'KeyF', 'KeyQ', 'KeyE', 'KeyR', 'KeyC', 'Digit1', 'Digit2', 'Digit3', 'KeyG', 'KeyZ', 'KeyX', 'KeyV', 'KeyB', 'KeyT', 'KeyY', 'KeyU', 'Mouse0', 'Mouse1', 'Mouse2'];
       const bad = window.bad = {}, note = k => { bad[k] = (bad[k] || 0) + 1; };
@@ -41,7 +44,8 @@ SCEN.push({ name: 'split-coop', kind: 'split', vs: false }, { name: 'split-vs', 
         if (!g) return;
         for (const u of g.units) { if (!u.alive) continue; if (!isFinite(u.pos.x + u.pos.z + u.hp + u.yaw + u.pitch)) note(tag + 'nan ' + u.kind); if (Math.hypot(u.pos.x - MID[0], u.pos.z - MID[1]) > 212 * [1, .75, 1.4][Math.floor((__ore.split() ? __ore.split().host : __ore.game).mapI / 10)]) note(tag + 'oob ' + u.kind); if (u.hp > u.maxHp + .01) note(tag + 'hp>max ' + u.kind); if (u.shield > u.maxShield + .01 || u.shield < -.01) note(tag + 'shield ' + u.kind); }
         for (const x of g.buildings) { if (!x.alive) continue; if (!isFinite(x.hp)) note(tag + 'nan bld'); if (x.hp > x.maxHp + .01) note(tag + 'bld hp>max ' + x.kind); }
-        if (!isFinite(g.ore) || g.ore < -.01) note(tag + 'ore ' + g.ore);
+        for (const t of [0, 1]) { const c = g.purse[t]; if (!isFinite(c) || c < -.01) note(tag + 'purse' + t + ' ' + c); if (g.eco && g.supplyUsed(t) > g.supplyCap(t) + 6) note(tag + 'over supply ' + t); }
+        if (g.me && g.myTeam !== g.me.team && g.phase === 'play') note(tag + 'body on the wrong side');
         if (g.me && !g.units.includes(g.me) && g.staticT <= 0 && g.phase === 'play') note(tag + 'me missing');
         const ids = new Set(); for (const u of g.units) { if (ids.has(u.id)) note(tag + 'dup id'); ids.add(u.id); }
         if (!isFinite(g.cam.fov) || !isFinite(g.yaw + g.pitch)) note(tag + 'nan view');
@@ -50,22 +54,22 @@ SCEN.push({ name: 'split-coop', kind: 'split', vs: false }, { name: 'split-vs', 
         const sp = __ore.split && __ore.split(), g1 = __ore.game, g2 = __ore.game2 && __ore.game2();
         for (let k = 0; k < n; k++) {
           monkey(g1); monkey(g2);
-          if (sp) { sp.host.noRender = true; sp.frame(1 / 30); g1.update(1 / 30); g2.update(1 / 30); } else g1.update(1 / 30);
+          if (sp) { sp.host.noRender = true; sp.frame(1 / 30); g1.update(1 / 30); if (g2) g2.update(1 / 30); } else g1.update(1 / 30);
           if (k % 30 === 0) { check(g1, ''); check(g2, 'p2 '); if (sp) { check(sp.host, 'host ');
             // replicas should hold the same world as the match
-            const hu = sp.host.units.filter(u => u.alive).length; if (sp.host.time > 2) for (const g of [g1, g2]) if (Math.abs(g.units.length - hu) > 8) note('replica units ' + g.units.length + ' vs ' + hu);
-            if (Math.abs(g1.ore - Math.floor(sp.host.ore)) > 60) note('replica ore');
+            const hu = sp.host.units.filter(u => u.alive).length; if (sp.host.time > 2) for (const g of [g1, g2]) if (g && Math.abs(g.units.length - hu) > 8) note('replica units ' + g.units.length + ' vs ' + hu);
+            if (Math.abs(g1.purse[g1.myTeam] - Math.floor(sp.host.purse[g1.myTeam])) > 60) note('replica ore');
             for (const s of sp.seats) if (s.inbox.length > 40) note('seat inbox ' + s.inbox.length); } }
           if (g1.phase === 'over') break;
         }
         const h = sp ? sp.host : g1;
-        return { t: Math.round(h.time), phase: g1.phase, won: g1.won, units: h.units.length, stones: h.stones().length, hq: h.ownB('headframe').length, me: g1.me && g1.me.kind, me2: g2 && g2.me && g2.me.kind };
+        return { t: Math.round(h.time), phase: g1.phase, won: g1.won, units: h.units.length, stones: h.stones().length, vb: h.buildings.filter(x => x.alive && x.team === 1).length, vo: Math.floor(h.purse[1]), hq: h.ownB('headframe').length, me: g1.me && g1.me.kind, me2: g2 && g2.me && g2.me.kind };
       };
     }, sc);
     let r; const steps = Math.ceil(SECS * 30 / 900);
     for (let i = 0; i < steps; i++) { r = await p.evaluate(() => run(900)); if (r.phase === 'over') break; }
     const bad = await p.evaluate(() => window.bad); const n = Object.keys(bad).length + errs.length; if (n) failed++;
-    console.log(`${n ? 'FAIL' : 'ok  '} ${sc.name.padEnd(11)} ${r.t}s ${r.phase}${r.phase === 'over' ? (r.won ? ' won' : ' lost') : ''} units ${r.units} stones ${r.stones} hq ${r.hq} body ${r.me}${r.me2 ? '/' + r.me2 : ''} ${JSON.stringify(bad)}`);
+    console.log(`${n ? 'FAIL' : 'ok  '} ${sc.name.padEnd(11)} ${r.t}s ${r.phase}${r.phase === 'over' ? (r.won ? ' won' : ' lost') : ''} units ${r.units} stones ${r.stones} veylB ${r.vb} vore ${r.vo} hq ${r.hq} body ${r.me}${r.me2 ? '/' + r.me2 : ''} ${JSON.stringify(bad)}`);
     for (const e of [...new Set(errs)].slice(0, 6)) console.log('   ', e);
     await p.close();
   }

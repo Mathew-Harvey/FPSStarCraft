@@ -1,7 +1,7 @@
 // The heads-up display: plain HTML over the canvas, laid out in a 900-unit-tall space and scaled to fit.
 import * as THREE from 'three';
 import type { Game } from './game';
-import { UNIT, BLD, FACTION, SIDE, Unit, Building, MAP, MAPS, OUTPOST, ROAD, NORTH_PATH, roadPt, isWorker } from './data';
+import { UNIT, BLD, FACTION, SIDE, Kind, Unit, Building, MAP, MAPS, OUTPOST, ROAD, NORTH_PATH, roadPt, isWorker } from './data';
 const capW = (t: string) => t.charAt(0).toUpperCase() + t.slice(1);
 
 const V = new THREE.Vector3();
@@ -58,7 +58,7 @@ export class Hud {
   streak(text: string) { const e = this.$('streak'); e.textContent = text; e.hidden = false; e.style.animation = 'none'; void e.offsetWidth; e.style.animation = ''; clearTimeout(this.streakTimer); this.streakTimer = setTimeout(() => { e.hidden = true; }, 1300) as any; }
   private streakTimer = 0;
   ping(p: THREE.Vector3) { this.pingPos.copy(p); this.pingT = 3; }
-  titleCard(kind: string, name: string, quip: string) { const e = this.$('tcard'); if (!name) { e.hidden = true; return; } this.$('tcName').textContent = name; this.$('tcQuip').textContent = quip; const src = this.portraits[kind]; if (src) (this.$('tcImg') as HTMLImageElement).src = src; e.hidden = false; }
+  titleCard(kind: string, name: string, quip: string) { const e = this.$('tcard'); if (!name) { e.hidden = true; return; } this.$('tcName').textContent = name; this.$('tcQuip').textContent = quip; this.$('tcSide').textContent = UNIT[kind as Kind]?.team === 2 ? 'The Gloam · a mouth of the swarm' : UNIT[kind as Kind]?.team ? 'Veyl Chorus · a voice you borrow' : 'Ironhold Charter · now under your control'; const src = this.portraits[kind]; if (src) (this.$('tcImg') as HTMLImageElement).src = src; e.hidden = false; }
   showEnd(g: Game) {
     this.$('endTitle').textContent = g.won ? (g.mission ? 'Job done' : 'Paid in full') : 'Shift over'; this.$('endTitle').className = 'logo sm' + (g.won ? '' : ' bad');
     this.$('endLine').textContent = g.won && g.mission ? g.mission.outro : g.won ? (SIDE.out === 2 ? 'Every Mother Cap is mulch and the green carpet is drying out. The Charter thanks you with a smaller invoice.' : 'Every Choir Stone is gravel. The Charter thanks you with a smaller invoice.') : 'The Headframe is scrap. The Charter will be billing your next of kin.';

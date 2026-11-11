@@ -51,6 +51,26 @@ try {
   });
   check(muster.first && !muster.after && muster.bigger, 'after a failed push the squad waits for two more before it pitches again');
 
+  // 10. Maps: sizes, ore fields for new bases, a second Headframe, and the undiscovered map.
+  const maps = await p.evaluate(() => {
+    const out = {}; for (const [size, name] of [[1, 'small'], [0, 'medium'], [2, 'large']]) { __ore.pickMap(0); __ore.pickSize(size); __ore.start(); const g = __ore.game; out[name] = { fields: g.ores.length, out: Math.round(Math.hypot(g.stones()[0].pos.x, g.stones()[0].pos.z)) }; }
+    __ore.pickMap(0); __ore.pickSize(0); __ore.start(); const g = __ore.game; g.noRender = true; g.introT = 0; g.dir.auto = false; g.fog.update(g, 1, true);
+    const st = g.stones()[0], far = g.ores[g.ores.length - 1];
+    const fog = { yard: g.fog.sees(0, 0), outpost: g.fog.seen(st.pos.x, st.pos.z), field: g.fog.seen(far.pos.x, far.pos.z) };
+    // a second Headframe out on a field: Riggers bank there, and losing the first one is not the end
+    const [sx, sz] = [far.pos.x, far.pos.z], l = Math.hypot(sx, sz), at = g.dir.freeSpot('headframe', Math.round(sx - sx / l * 14), Math.round(sz - sz / l * 14)) || [0, 30], [hx, hz] = at; g.ore = 1000;
+    const can = g.unlocked('headframe') && g.canPlace('headframe', hx, hz, false); const h2 = g.place('headframe', hx, hz, false); h2.progress = 1; ff(1);
+    const r = g.spawn('rigger', 0, sx + 3, sz); r.state = 'toHQ'; r.carrying = 7; const ore0 = g.ore; ff(6); const banked = g.ore - ore0;
+    g.fog.update(g, 1, true); const seenNow = g.fog.seen(far.pos.x, far.pos.z);
+    const home = g.ownB('headframe').find(b => b !== h2); g.damage(home, 1e6, null); ff(4); const after = g.phase;
+    __ore.quit(); return { out, fog, can, banked, seenNow, after };
+  });
+  check(maps.out.small.fields < maps.out.medium.fields && maps.out.medium.fields < maps.out.large.fields && maps.out.small.out < maps.out.medium.out && maps.out.medium.out < maps.out.large.out, `small, medium and large maps grow in size and ore fields (${['small', 'medium', 'large'].map(k => maps.out[k].fields + ' seams, ' + maps.out[k].out + 'm').join(' / ')})`);
+  check(maps.fog.yard && !maps.fog.outpost && !maps.fog.field, 'the map starts undiscovered: the yard is in sight, the outpost and the far fields are not');
+  check(maps.can && maps.banked >= 7, `a second Headframe can go up on a far field and Riggers bank there (${maps.banked} ore)`);
+  check(maps.seenNow, 'a base on a far field lights up the map around it');
+  check(maps.after !== 'over', 'losing the first Headframe is not the end while another stands');
+
   // 2. Split screen co-op: a site placed next to a player's Rigger still gets built by the crew.
   await p.evaluate(() => { document.querySelectorAll('#diff button')[0].click(); __ore.startSplit(false); }); await p.waitForFunction(() => __ore.game.me && __ore.game2() && __ore.game2().me);
   const site = await p.evaluate(() => {

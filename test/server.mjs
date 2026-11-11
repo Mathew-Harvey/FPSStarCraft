@@ -28,6 +28,9 @@ try {
   for (const junk of ['nonsense', '{"t":"set","map":"x","diff":{}}', '{"t":"in","me":[1e309,"a"],"c":[["dm",1,"x"],["pl",null],["mn",-1,1e9],[]]}', '[]', 'null', '{"t":"start"}']) V.ws.send(junk);
   V.send({ t: 'set', map: 2 }); await sleep(300);
   check(A.last('lobby').map === 0, 'only the host can change the map');
+  A.send({ t: 'set', map: 21 }); await sleep(200); const big = A.last('lobby').map; A.send({ t: 'set', map: 99 }); await sleep(200);
+  check(big === 21 && A.last('lobby').map === 21, 'the host can pick a large map, and a map number that does not exist is refused');
+  A.send({ t: 'set', map: 0 }); await sleep(200);
   A.send({ t: 'start' }); await A.wait(m => m.t === 'err');
   check(!A.got.some(m => m.t === 'begin'), 'the shift does not start until the crew is ready');
   V.send({ t: 'ready', v: true }); await A.wait(m => m.t === 'lobby' && m.players.every(p => p.ready || p.id === m.host));

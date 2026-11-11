@@ -8,7 +8,7 @@ import { dirname, join } from 'node:path';
 import { WebSocketServer, WebSocket } from 'ws';
 import { Game } from '../src/game';
 import { initHeadless } from '../src/gfx';
-import { DIFFS, MAPS, setMap, Unit, isSoldier } from '../src/data';
+import { DIFFS, MAPS, setMap, validMap, Unit, isSoldier } from '../src/data';
 import { buildSnap, serverCmd, serverMove } from '../src/netgame';
 
 initHeadless();
@@ -53,7 +53,7 @@ function begin(l: Lobby) {
 function joinLive(l: Lobby, p: Player) {
   const g = l.game!; setMap(l.map); p.inbox = []; p.unit = null; l.players.push(p); p.lobby = l; p.ready = true;
   g.names[p.id] = p.name; g.teams[p.id] = p.team; if (!g.score[p.id]) g.score[p.id] = [0, 0, 0]; g.coop = Math.max(1, l.players.filter(x => !x.team).length);
-  const u = p.team ? veylBody(g) : g.own('rigger').find(x => !x.pilot) || g.soldiers().find(x => !x.pilot) || g.spawn('rigger', 0, 2 + Math.random() * 3, 7 + Math.random() * 2); if (u) pilot(g, p, u);
+  const u = p.team ? veylBody(g) : g.own('rigger').find(x => !x.pilot) || g.soldiers().find(x => !x.pilot) || g.spawn('rigger', 0, ...g.hqSpot()); if (u) pilot(g, p, u);
   const ph: number[][] = []; g.props.forEach((q, i) => { if (!q.alive) ph.push([i, 0]); else if (q.hp < l.hp0[i]) ph.push([i, Math.ceil(q.hp)]); });
   send(p, { t: 'begin', map: l.map, diff: l.diff, unit: u ? u.id : 0, names: g.names, ph, team: p.team, teams: g.teams });
   g.evq!.push(['nm', g.names, g.teams]); g.feed('Signal', `${p.name} clocked in late. Docked accordingly.`, 'in'); tell(l);
@@ -69,7 +69,7 @@ function step(l: Lobby) {
         try {
           if (c[0] === 'bd') { const u = g.units.find(x => x.id === c[1]); if (u && u.alive && u.team === p.team && (!u.pilot || u.pilot === p.id)) pilot(g, p, u); }
           else if (c[0] === 'rs' && p.team) { if (!p.unit && g.stones().length) { const u = veylBody(g); if (u) { pilot(g, p, u); send(p, { t: 'yo', unit: u.id }); } } }
-          else if (c[0] === 'rs') { if (!p.unit && g.ownB('headframe').length) { const u = g.spawn('rigger', 0, 2 + Math.random() * 3, 7 + Math.random() * 2); pilot(g, p, u); send(p, { t: 'yo', unit: u.id }); g.feedTo = p.id; g.feed('Quartermaster', 'Found you a fresh Rigger. Try to keep this one.', ''); g.feedTo = 0; } }
+          else if (c[0] === 'rs') { if (!p.unit && g.ownB('headframe').length) { const u = g.spawn('rigger', 0, ...g.hqSpot()); pilot(g, p, u); send(p, { t: 'yo', unit: u.id }); g.feedTo = p.id; g.feed('Quartermaster', 'Found you a fresh Rigger. Try to keep this one.', ''); g.feedTo = 0; } }
           else serverCmd(g, p.id, p.unit, c);
         } catch (e) { console.error('bad command', c[0], e); }
       }
@@ -111,7 +111,7 @@ wss.on('connection', ws => {
     else if (m.t === 'leave') { leave(p); send(p, { t: 'lobby', code: '', you: p.id, host: 0, map: 0, diff: 1, state: 'lobby', players: [] }); }
     else if (m.t === 'ready') { p.ready = !!m.v; tell(l); }
     else if (m.t === 'team' && !l.game) { const t = m.v ? 1 : 0; if (t && l.players.filter(x => x.team).length >= 2 && !p.team) send(p, { t: 'err', msg: 'Two voices is the most the Chorus will take.' }); else { p.team = t; tell(l); } }
-    else if (m.t === 'set' && l.host === p.id && !l.game) { if (m.map >= 0 && m.map < MAPS.length) l.map = m.map | 0; if (m.diff >= 0 && m.diff < DIFFS.length) l.diff = m.diff | 0; tell(l); }
+    else if (m.t === 'set' && l.host === p.id && !l.game) { if (validMap(m.map)) l.map = m.map; if (m.diff >= 0 && m.diff < DIFFS.length) l.diff = m.diff | 0; tell(l); }
     else if (m.t === 'start' && l.host === p.id && !l.game) { if (l.players.every(x => x.ready || x.id === l.host)) begin(l); else send(p, { t: 'err', msg: 'Not everyone is ready.' }); }
   });
   ws.on('close', () => leave(p)); ws.on('error', () => leave(p));

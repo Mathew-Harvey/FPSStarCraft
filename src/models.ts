@@ -423,8 +423,9 @@ export const ROAD_Z = 14;
 function segDist(x: number, z: number, ax: number, az: number, bx: number, bz: number) { const dx = bx - ax, dz = bz - az, t = Math.max(0, Math.min(1, ((x - ax) * dx + (z - az) * dz) / (dx * dx + dz * dz))); return Math.hypot(x - ax - dx * t, z - az - dz * t); }
 /** Places the player may need to walk or build, kept free of rocks. */
 export function isClear(x: number, z: number, pad = 0) {
-  const [ex, ez] = MAP.exp, end = roadPt(ROAD.len + 6);
-  if (Math.hypot(x, z) < 44 + pad || Math.hypot(x - OUTPOST.x - 2 * ROAD.dx, z - OUTPOST.z - 2 * ROAD.dz) < 36 + pad || segDist(x, z, ROAD.x, ROAD.z, end[0], end[1]) < 9 + pad || Math.hypot(x - ex, z - ez) < 16 + pad || segDist(x, z, ex, ez, 0, 0) < 6 + pad) return true;
+  const end = roadPt(ROAD.len + 6);
+  if (Math.hypot(x, z) < 44 + pad || Math.hypot(x - OUTPOST.x - 2 * ROAD.dx, z - OUTPOST.z - 2 * ROAD.dz) < 36 + pad || segDist(x, z, ROAD.x, ROAD.z, end[0], end[1]) < 9 + pad) return true;
+  for (const [ex, ez] of MAP.sites || [MAP.exp]) if (Math.hypot(x - ex, z - ez) < 22 + pad || segDist(x, z, ex, ez, 0, 0) < 6 + pad) return true;
   let px = OUTPOST.x, pz = OUTPOST.z; for (const [qx, qz] of NORTH_PATH) { if (segDist(x, z, px, pz, qx, qz) < 8 + pad) return true; px = qx; pz = qz; }
   return segDist(x, z, px, pz, 0, 0) < 8 + pad;
 }
@@ -452,15 +453,15 @@ export function buildWorld(scene: THREE.Scene, props: Prop[], anim: ((t: number)
   { const c = roadPt(ROAD.len / 2 + 8); mk(new THREE.PlaneGeometry(ROAD.len + 66, 6), M.road, [c[0], .02, c[1]], 0, [-Math.PI / 2, 0, -ang], w); }
   // far mesas: the skyline. A long walk away, but they are real: they block you, take damage and come down like everything else.
   for (let i = 0; i < 36; i++) {
-    const a = i / 36 * 6.283 + R(-.06, .06), d = R(250, 430), r = R(34, 80), h = R(24, 90), x = cx + Math.cos(a) * d, z = cz + Math.sin(a) * d, top = r * R(.55, .8), sides = 7 + (i % 3), ry = R(0, 3), cap = i % 3 === 0, kx = x + R(-10, 10), kz = z + R(-10, 10), cry = R(0, 3);
+    const a = i / 36 * 6.283 + R(-.06, .06), d = R(250, 430) * Math.max(1, (MAP.k || 1) * .95), r = R(34, 80), h = R(24, 90), x = cx + Math.cos(a) * d, z = cz + Math.sin(a) * d, top = r * R(.55, .8), sides = 7 + (i % 3), ry = R(0, 3), cap = i % 3 === 0, kx = x + R(-10, 10), kz = z + R(-10, 10), cry = R(0, 3);
     prop('mesa', 'Mesa', x, z, r * .9, cap ? h * 1.45 : h, 9000 + r * h * 3, { solid: true, stages: 3 }, g => { mk(crag(top, r, h, sides + 4, rnd), M.mesa, [x, h / 2 - 1, z], 0, [0, ry, 0], g); if (cap) mk(crag(r * .3, r * .42, h * .5, 9, rnd, 3), M.mesa, [kx, h + h * .22, kz], 0, [0, cry, 0], g); });
   }
   // nearer buttes inside the map: big, slow to bring down, but they do come down
-  for (let i = 0; i < MAP.buttes; i++) { const a = i / MAP.buttes * 6.283 + .4, d = R(150, 185) * (i % 2 && MAP.buttes > 10 ? .62 : 1), r = R(10, 20), h = R(14, 34), x = cx + Math.cos(a) * d, z = cz + Math.sin(a) * d * .8; if (isClear(x, z, r + 6)) continue;
+  for (let i = 0; i < MAP.buttes; i++) { const a = i / MAP.buttes * 6.283 + .4, d = R(150, 185) * (MAP.k || 1) * (i % 2 && MAP.buttes > 10 ? .62 : 1), r = R(10, 20), h = R(14, 34), x = cx + Math.cos(a) * d, z = cz + Math.sin(a) * d * .8; if (isClear(x, z, r + 6)) continue;
     prop('mesa', 'Butte', x, z, r * .95, h * 1.3, 2600 + r * h * 6, { solid: true, stages: 3 }, g => { mk(crag(r * .7, r, h, 11, rnd), M.mesa, [x, h / 2 - .5, z], 0, [0, R(0, 3), 0], g); mk(crag(r * .4, r * .55, h * .4, 9, rnd, 3), M.mesa, [x + R(-3, 3), h * 1.18, z + R(-3, 3)], 0, [0, R(0, 3), 0], g); }); }
   // rocks, spires and plants
   for (let i = 0; i < MAP.rocks; i++) {
-    const x = cx + R(-170, 170), z = cz + R(-140, 140);
+    const x = cx + R(-170, 170) * (MAP.k || 1), z = cz + R(-140, 140) * (MAP.k || 1);
     if (i % MAP.spireEvery === 0) { const h = R(8, 20), ww = h * .34; if (isClear(x, z, ww + 2)) continue;
       prop('rock', 'Rock spire', x, z, ww * .5, h + 1, 350 + h * 45, { solid: true, stages: 2 }, g => { mk(crag(ww * .36, ww * .5, h, 8, rnd, 6), M.rockB, [x, h / 2 - .5, z], 0, [R(-.08, .08), R(0, 3), R(-.08, .08)], g); mk(rocks(i), M.rockB, [x + 1, h + .6, z], [h * .3, h * .22, h * .3], [0, R(0, 3), 0], g); if (i % (MAP.spireEvery * 2) === 0) mk(crag(ww * .25, ww * .35, h * .5, 7, rnd, 4), M.rockB, [x + ww * .9, h * .22, z + ww * .5], 0, [R(-.2, .2), R(0, 3), R(-.2, .2)], g); }); }
     else if (i % 8 < 5) { if (isClear(x, z, -3) && i % 3) continue; const sc = R(.4, 2.0); prop('rock', 'Boulder', x, z, sc * .55, sc * .6, 40 + sc * 70, {}, g => { mk(rocks(i), M.rockB, [x, sc * .25, z], [sc * 1.15, sc * R(.6, 1.0), sc * R(.8, 1.3)], [0, R(0, 3), 0], g); }); }

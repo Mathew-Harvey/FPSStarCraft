@@ -10,7 +10,7 @@ const DEPOT_SLOTS = [[-13, 9], [-13, -9], [-19, 0], [-22, 12], [-26, -6], [-20, 
 const POST_SLOTS_0 = [[31, 20], [9, -31], [33, 5], [-8, 26]];
 /** Watchpost spots covering the road the raids walk down and the flank. Worked out from the map, so they face the Veyl on every map. */
 function postSlots(): number[][] {
-  if (MAP === MAPS[0]) return POST_SLOTS_0;
+  if (MAP.base === 0 && MAP.size === 0) return POST_SLOTS_0;
   const e = MAP.flank[MAP.flank.length - 1], el = Math.hypot(e[0], e[1]) || 1, r = (p: [number, number]) => [Math.round(p[0]), Math.round(p[1])];
   return [r(roadPt(31, 6)), [Math.round(e[0] / el * 30), Math.round(e[1] / el * 30)], r(roadPt(33, -9)), r(roadPt(-8, 12))];
 }
@@ -18,7 +18,7 @@ const HINTS: [number, string, string][] = [
   [1.5, 'Quartermaster', 'Welcome to Dustbowl 7. Hold click on the green ore to drill, then walk the pack back to the Headframe. I\'ll handle the paperwork.'],
   [16, 'Quartermaster', 'Press 2 if you want to place buildings yourself. Press G to make me stop.'],
   [70, 'Lookout', 'Veyl outpost is at the end of the road. Three Choir Stones. They will come for us first.'],
-  [125, 'Quartermaster', 'There\'s a fat ore seam marked green on your map. Worth the walk.'],
+  [125, 'Quartermaster', 'The map is dark until somebody walks it. There are more ore fields out there: find them, then stake a Headframe next to one (press 2) and it becomes a new base.'],
 ];
 const BOOKS = [
   { name: 'Yard Push', steps: ['Open', 'Muster', 'Push'], go: 'Pushing the east yard. Shoot the glowy bits.', label: 'Alpha pushes the east yard' },
@@ -139,8 +139,8 @@ export class Director {
   }
   /** The planned spot if it is free, otherwise the nearest free ground around it, still inside the yard. */
   freeSpot(k: BKind, x: number, z: number): [number, number] | null {
-    const g = this.g; if (g.canPlace(k, x, z, false)) return [x, z];
-    for (let r = 3; r <= 24; r += 3) for (let i = 0; i < 12; i++) { const a = i / 12 * Math.PI * 2 + r, px = Math.round(x + Math.cos(a) * r), pz = Math.round(z + Math.sin(a) * r); if (Math.hypot(px, pz) < 12 || Math.hypot(px, pz) > 60 || this.onOreRoute(k, px, pz)) continue; if (g.canPlace(k, px, pz, false)) return [px, pz]; }
+    const g = this.g, yard = Math.hypot(x, z) < 60; if (g.canPlace(k, x, z, false)) return [x, z];
+    for (let r = 3; r <= 24; r += 3) for (let i = 0; i < 12; i++) { const a = i / 12 * Math.PI * 2 + r, px = Math.round(x + Math.cos(a) * r), pz = Math.round(z + Math.sin(a) * r); if ((yard && (Math.hypot(px, pz) < 12 || Math.hypot(px, pz) > 60)) || this.onOreRoute(k, px, pz)) continue; if (g.canPlace(k, px, pz, false)) return [px, pz]; }
     return null;
   }
 
@@ -168,7 +168,10 @@ export class Director {
     const put = (k: BKind, x: number, z: number, line: string) => { if (g.ore < BLD[k].cost || (g.mission && !g.mission.allow.includes(k))) return false; const at = this.freeSpot(k, x, z); if (!at) return false; g.place(k, at[0], at[1], false); this.say('Quartermaster', line, ''); return true; };
     const wantPosts = army >= 3 ? 1 + (this.raidN >= 2 ? 1 : 0) + (this.raidN >= 4 ? 1 : 0) : 0;
     // One goal at a time, in priority order. While a goal is unpaid, training holds back a reserve so the goal gets bought.
-    let saving = true, hold = 95; const fdy = g.ownB('foundry'), fdyB = fdy.find(b => b.built), lab = g.ownB('assay'), labUp = lab.some(b => b.built), mast = g.ownB('mast'), mastUp = mast.some(b => b.built);
+    let saving = true, hold = 95;
+    const hfs = g.ownB('headframe'), exp = this.expansion(hfs);
+    const homeLeft = g.ores.filter(n => Math.hypot(n.pos.x, n.pos.z) < 40).reduce((a, n) => [a[0] + n.amount, a[1] + n.max], [0, 0]);
+    const wantHF = Math.min((MAP.sites || []).length + 1, 1 + (g.time > 480 || homeLeft[0] < homeLeft[1] * .5 ? 1 : 0) + (g.time > 960 ? 1 : 0) + (g.time > 1440 ? 1 : 0)); const fdy = g.ownB('foundry'), fdyB = fdy.find(b => b.built), lab = g.ownB('assay'), labUp = lab.some(b => b.built), mast = g.ownB('mast'), mastUp = mast.some(b => b.built);
     const spot = (k: BKind, slots: number[][], line: string) => { const sl = slots.find(([x, z]) => g.canPlace(k, x, z, false)) || slots[0]; return put(k, sl[0], sl[1], line); };
     // research the yard can afford without starving the big purchases: bought when there is ore to spare
     const spare = (keys: string[]) => { for (const k of keys) { const u = UPGRADES.find(x => x.key === k)!; if (!g.up[u.key] && g.ownB(u.at, true).length && (!u.needs || g.up[u.needs]) && g.ore >= u.cost + 120) return g.buyUpgrade(u.key); } return false; };
@@ -179,6 +182,9 @@ export class Director {
     else if (bunkUp.length && !shop.length && army >= 4) put('machineshop', 0, -15, 'Machine Shop going in out back. Bigger guns, thicker hats.');
     else if (bunkUp.length && posts < wantPosts) spot('watchpost', postSlots(), 'Another Watchpost. I sleep better with crossfire.');
     else if (shopUp && !g.up.dmg && army >= 5) g.buyUpgrade('dmg');
+    // Expanding: a new Headframe on the nearest free ore field once the home seams thin out or the shift runs long, and a Watchpost to mind it.
+    else if (bunkUp.length && army >= 6 && exp.site && hfs.length < wantHF) { hold = BLD.headframe.cost; const [sx, sz] = exp.site, l = Math.hypot(sx, sz) || 1; put('headframe', Math.round(sx - sx / l * 11), Math.round(sz - sz / l * 11), 'Staking a new Headframe out on the far seam. Somebody walk the Riggers over.'); }
+    else if (exp.bare) { const [bx, bz] = exp.bare, l = Math.hypot(bx, bz) || 1; spot('watchpost', [[Math.round(bx - bz / l * 9), Math.round(bz + bx / l * 9)], [Math.round(bx + bz / l * 9), Math.round(bz - bx / l * 9)]], 'Watchpost by the new Headframe. Out there it gets lonely.'); }
     else if (shopUp && g.up.dmg && !fdy.length && army >= 7) { hold = 150; spot('foundry', [[-14, -14], [-15, 6], [15, -17], [-4, -28]], 'Foundry going up. Walkers, and the good plating.'); }
     else if (fdyB && army >= 6 && free >= 4 && g.own('gantry').length + fdyB.queue.length < (g.time > 660 ? 2 : 1)) { hold = UNIT.gantry.cost; if (g.ore >= hold) g.train(fdyB, 'gantry'); }
     else if (fdyB && !lab.length && army >= 6 && (!g.mission || g.mission.allow.includes('assay'))) spot('assay', [[-15, 6], [15, -17], [-16, 18], [14, 22]], 'Assay Office going up. Longshots, and people who read.');
@@ -191,7 +197,12 @@ export class Director {
     else if (mastUp && !g.up.armor3 && army >= 11) { hold = 200; g.buyUpgrade('armor3'); }
     else if (spare(['drill', 'post', 'pay', 'stitch', 'glass', 'beds', 'servo', 'weld', 'buckets', 'frag'])) saving = true;
     else saving = false;
-    if (hq && !hq.queue.length && g.own('rigger').length < 8 && free > 0 && g.ore >= 50 && (bunk.length || g.own('rigger').length < 6)) g.train(hq, 'rigger');
+    // Riggers: eight for the home yard and six more for each new base, trained at whichever Headframe is shortest of hands.
+    const rigs = g.own('rigger'), hqs = g.ownB('headframe', true);
+    if (rigs.length < 8 + 6 * (hqs.length - 1) && free > 0 && g.ore >= 50 && (bunk.length || rigs.length < 6)) {
+      const crew = (h: Building) => rigs.filter(u => g.nearHQ((u.node || u).pos.x, (u.node || u).pos.z) === h).length + h.queue.length;
+      const h = hqs.filter(b => !b.queue.length && crew(b) < (b === hq ? 8 : 6)).sort((a, b) => crew(a) - crew(b))[0]; if (h) g.train(h, 'rigger');
+    }
     const heavy = g.own('breacher').length, light = g.own('linesman').length;
     const docs = g.own('patch').length, longs = g.own('longshot').length;
     for (const b of bunkUp) if (b.queue.length < 2) {
@@ -201,6 +212,13 @@ export class Director {
     }
   }
 
+  /** The next ore field worth a Headframe (nearest the yard, nobody's there yet, and not under the Veyl's nose), and a new base still without a Watchpost. */
+  expansion(hfs: Building[]): { site: number[] | null; bare: number[] | null } {
+    const g = this.g, near = (x: number, z: number, r: number, f: (b: Building) => boolean) => g.buildings.some(b => b.alive && f(b) && Math.hypot(b.pos.x - x, b.pos.z - z) < r);
+    const sites = MAP.sites || [], free = sites.filter(([x, z]) => !near(x, z, 30, b => b.team === 0 && b.kind === 'headframe') && !near(x, z, 50, b => b.team === 1) && g.ores.some(n => n.amount > 0 && Math.hypot(n.pos.x - x, n.pos.z - z) < 16)).sort((a, b) => Math.hypot(a[0], a[1]) - Math.hypot(b[0], b[1]));
+    const bare = hfs.find(h => h.built && Math.hypot(h.pos.x, h.pos.z) > 30 && !near(h.pos.x, h.pos.z, 24, b => b.team === 0 && b.kind === 'watchpost'));
+    return { site: free[0] || null, bare: bare ? [bare.pos.x, bare.pos.z] : null };
+  }
   waves: Wave[] = []; private remnant: Unit[] = []; private spireHome: number[][] | null = null; private growT = 110;
   /** Counts down while the Veyl base is under fire, and where the shooting is coming from. */
   alarmT = 0; alarmX = 0; alarmZ = 0; private alarmCd = 0; private alarmN = 0;
@@ -321,7 +339,7 @@ export class Director {
       { text: 'Jump between Veyl bodies (Tab or F)', done: o.jumped },
       { text: 'Call a raid and march with it (G)', done: g.raidCall > 0 || !!o.called },
       { text: `Keep a Choir Stone singing (${left} left)`, done: false },
-      { text: 'Break the Headframe', done: !g.ownB('headframe').length },
+      { text: g.ownB('headframe').length > 1 ? `Break every Headframe (${g.ownB('headframe').length} standing)` : 'Break the Headframe', done: !g.ownB('headframe').length },
     ];
     return [
       { text: 'Drill 30 ore', done: o.drilled >= 30 },

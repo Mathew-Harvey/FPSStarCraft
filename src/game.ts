@@ -5,6 +5,7 @@ import { Pipeline, ViewPipe, V3, M, G, R, mk, setLayer, L_FX, L_SELF, holoOK, ho
 import * as MD from './models';
 import { sfx, drillSound, setMood, babble } from './audio';
 import type { Hud } from './hud';
+import { Fog } from './fog';
 import { Kind, BKind, UNIT, BLD, BUILDABLE, UPGRADES, TRAINS, UNIT_NEEDS, UpKey, Unit, Building, Prop, OreNode, Difficulty, DIFFS, OUTPOST, GATE, MAP, MAPS, ROAD, setMap, veylPt, isUnit, isSoldier } from './data';
 import { Director } from './director';
 import type { Mission } from './campaign';
@@ -76,7 +77,8 @@ export class Game {
     if (!net) this.addBuilding('headframe', 0, 0, 0, true);
     const field = (list: number[][], amount: number) => { for (const [x, z, n, sc] of list) { const obj = MD.oreCluster(n, sc); obj.position.set(x, 0, z); s.add(obj); this.ores.push({ pos: V3(x, 0, z), amount, max: amount, obj }); } };
     field([[17, -15, 9, 1.2], [21, -10, 7, 1.0], [23, -18, 8, 1.3], [15, -21, 6, .9], [-18, -24, 8, 1.1], [-24, -19, 7, 1.0]], 900);
-    { const [ex, ez] = MAP.exp; field([[ex - 1, ez, 10, 1.5], [ex + 4, ez + 4, 8, 1.3], [ex - 3, ez - 5, 9, 1.4]], 1600); }
+    // the rich seam, then the other fields out on the map, each with room for a new Headframe on the side facing the yard
+    MAP.sites!.forEach(([ex, ez], i) => { if (!i) field([[ex - 1, ez, 10, 1.5], [ex + 4, ez + 4, 8, 1.3], [ex - 3, ez - 5, 9, 1.4]], 1600); else { const l = Math.hypot(ex, ez) || 1, ux = ex / l, uz = ez / l; field([[ex + ux * 3 - uz * 6, ez + uz * 3 + ux * 6, 8, 1.2], [ex + ux * 6, ez + uz * 6, 9, 1.3], [ex + ux * 3 + uz * 6, ez + uz * 3 - ux * 6, 7, 1.1], [ex + ux * 9 - uz * 2, ez + uz * 9 + ux * 2, 8, 1.2]].map(p => [Math.round(p[0]), Math.round(p[1]), p[2], p[3]]), 1000); } });
     if (!net) for (const [x, z] of [[6, 7], [10, -6], [13, -10], [-8, -8], [9, 2], [-6, 8]]) this.spawn('rigger', 0, x, z);
     // the Veyl outpost
     const V = (k: BKind, lx: number, lz: number, rot = false) => { if (net) return; const [x, z] = veylPt(lx, lz); this.addBuilding(k, 1, x, z, true, rot); };
@@ -85,6 +87,7 @@ export class Game {
     for (const [x, z] of [[7, -9.5], [7, 10.5]]) V('broodpit', x, z);
     for (const [x, z] of [[-12, -11.5], [-12, 13]]) V('thornspire', x, z);
     V('wardpylon', -10.5, 1);
+    this.fog = new Fog();
     this.dir = new Director(this); if (mission) { this.dir.auto = mission.auto; mission.setup?.(this); }
     if (!net) { this.me = this.units[0]; this.possess(this.me, true); } this.yaw = Math.atan2(ROAD.dx - .4, ROAD.dz - .4);
   }
@@ -117,6 +120,10 @@ export class Game {
   mine(kind?: Kind) { return this.units.filter(u => u.alive && u.team === this.myTeam && (!kind || u.kind === kind)); }
   soldiers() { return this.units.filter(u => u.alive && u.team === 0 && isSoldier(u)); }
   foes() { return this.units.filter(u => u.alive && u.team === 1); }
+  /** The nearest finished Headframe: where Riggers bank, and where new bodies turn up. */
+  nearHQ(x: number, z: number) { let best: Building | null = null, bd = 1e9; for (const b of this.buildings) if (b.alive && b.team === 0 && b.kind === 'headframe' && b.built) { const d = Math.hypot(b.pos.x - x, b.pos.z - z); if (d < bd) { bd = d; best = b; } } return best; }
+  /** Where a fresh Rigger turns up: in front of the first Headframe still standing. */
+  hqSpot(): [number, number] { const h = this.ownB('headframe', true)[0] || this.ownB('headframe')[0]; return h ? [h.pos.x + 2 + Math.random() * 3, h.pos.z + h.hz + 2.4 + Math.random() * 2] : [2, 7]; }
   ownB(kind?: BKind, builtOnly = false) { return this.buildings.filter(b => b.alive && b.team === 0 && (!kind || b.kind === kind) && (!builtOnly || b.built)); }
   stones() { return this.buildings.filter(b => b.alive && b.kind === 'choir'); }
   pits() { return this.buildings.filter(b => b.alive && b.kind === 'broodpit'); }
@@ -124,7 +131,7 @@ export class Game {
   ward(p: { x: number; z: number }) { for (const b of this.buildings) if (b.alive && b.kind === 'wardpylon' && Math.hypot(b.pos.x - p.x, b.pos.z - p.z) < 34) return b; return null; }
   wardFx = 0;
   gate() { return this.buildings.find(b => b.alive && b.kind === 'reedgate') || null; }
-  supplyCap() { const d = this.ownB('depot', true).length; return 12 + 8 * d + (this.up.beds ? 4 + 2 * d : 0); }
+  supplyCap() { const d = this.ownB('depot', true).length, h = Math.max(0, this.ownB('headframe', true).length - 1); return 12 + 8 * d + 8 * h + (this.up.beds ? 4 + 2 * d : 0); }
   supplyUsed() { let n = 0; for (const u of this.units) if (u.alive && u.team === 0) n += UNIT[u.kind].supply; for (const b of this.buildings) if (b.alive && b.team === 0) for (const q of b.queue) n += UNIT[q.kind].supply; return n; }
   gunMul() { return (this.up.dmg ? 1.25 : 1) * (this.up.dmg2 ? 1.2 : 1) * (this.up.dmg3 ? 1.15 : 1); }
   armorMul() { return (this.up.armor ? 1.25 : 1) * (this.up.armor2 ? 1.2 : 1) * (this.up.armor3 ? 1.15 : 1); }
@@ -152,7 +159,7 @@ export class Game {
     for (const s of this.spires) { const dx = p.x - s.x, dz = p.z - s.z, m = s.r + r; if (Math.abs(dx) > m || Math.abs(dz) > m) continue; const d = Math.hypot(dx, dz); if (d < m && d > .001) { p.x += dx / d * (m - d); p.z += dz / d * (m - d); if (ai) { const tx = -dz / d, tz = dx / d, sg = Math.sign(tx * (gx - p.x) + tz * (gz - p.z)) || 1; p.x += tx * sg * .08; p.z += tz * sg * .08; } } }
     for (const o of this.ores) { if (o.amount <= 0) continue; const dx = p.x - o.pos.x, dz = p.z - o.pos.z, d = Math.hypot(dx, dz), m = 1.7; if (d < m && d > .001) { p.x += dx / d * (m - d); p.z += dz / d * (m - d); } }
     // The edge of the world: a circle around the middle of the map, inside the ring of mesas. It moves with the map, so the far end of Glass Flats stays reachable.
-    const ox = MAP.out[0] / 2, oz = MAP.out[1] / 2, cx = p.x - ox, cz = p.z - oz, cd = Math.hypot(cx, cz); if (cd > 200) { p.x = ox + cx / cd * 200; p.z = oz + cz / cd * 200; }
+    const ox = MAP.out[0] / 2, oz = MAP.out[1] / 2, cx = p.x - ox, cz = p.z - oz, cd = Math.hypot(cx, cz), lim = 200 * (MAP.k || 1); if (cd > lim) { p.x = ox + cx / cd * lim; p.z = oz + cz / cd * lim; }
   }
   moveTo(u: Unit, x: number, z: number, dt: number, stop = .4, mul = 1) {
     const dx = x - u.pos.x, dz = z - u.pos.z, d = Math.hypot(dx, dz); if (d < stop) return true;
@@ -277,7 +284,7 @@ export class Game {
     if (b.builder) { b.builder.site = null; b.builder.state = 'idle'; }
     if (this.net) return;
     this.dir.buildingLost(b);
-    if (b.kind === 'choir' && !this.stones().length && !this.mission) { this.endT = 2.4; this.endWon = true; this.pipe.flash = 1; } else if (b.kind === 'headframe') { this.endT = 2.4; this.endWon = false; this.pipe.flash = 1; }
+    if (b.kind === 'choir' && !this.stones().length && !this.mission) { this.endT = 2.4; this.endWon = true; this.pipe.flash = 1; } else if (b.kind === 'headframe' && !this.ownB('headframe', true).length) { this.endT = 2.4; this.endWon = false; this.pipe.flash = 1; }
   }
   end(won: boolean) { if (this.phase === 'over') return; this.phase = 'over'; this.won = won; won ? sfx.win() : sfx.lose(); drillSound(false, false); setMood(0); this.hud.showEnd(this); if (document.pointerLockElement) document.exitPointerLock(); }
   nearestStone(p: { x: number; z: number }) { let best: Building | null = null, bd = 1e9; for (const b of this.stones()) { const d = Math.hypot(b.pos.x - p.x, b.pos.z - p.z); if (d < bd) { bd = d; best = b; } } return best; }
@@ -396,11 +403,13 @@ export class Game {
     if (!this.net) { this.ore += n; this.stats.mined += n; if (u.pilot && this.score[u.pilot]) this.score[u.pilot][1] += n; }
     if (u === this.me) { sfx.ore(); this.hud.damage(V3(u.pos.x, 2.2, u.pos.z), `+${n} banked`, 'ore'); }
   }
+  /** What this side has found of the map. */
+  fog!: Fog;
   safeT = 0;
   respawn() {
     const me = this.me!; let best: Unit | null = null, bd = 1e9; for (const u of this.mine()) { if (this.net && u.pilot && u.pilot !== this.net.id) continue; const d = u.pos.distanceTo(me.pos) + (isSoldier(u) || u.team ? 0 : 25); if (d < bd) { bd = d; best = u; } }
     if (!best && this.net) { if (this.myTeam ? this.stones().length : this.ownB('headframe').length) { this.net.cmd('rs'); this.staticT = 1.2; } return; }
-    if (!best && this.ownB('headframe').length) { best = this.spawn('rigger', 0, 2, 7); this.safeT = 4; this.feed('Quartermaster', 'Found you a fresh Rigger. Try to keep this one.', ''); }
+    if (!best && this.ownB('headframe').length) { best = this.spawn('rigger', 0, ...this.hqSpot()); this.safeT = 4; this.feed('Quartermaster', 'Found you a fresh Rigger. Try to keep this one.', ''); }
     if (best) { this.jumpCd = 0; this.possess(best, true); sfx.jump(); this.pipe.flash = .4; } else if (this.endT <= 0) this.end(false);
   }
 
@@ -422,7 +431,7 @@ export class Game {
     if (P.has('Space') && this.hopCd <= 0 && !this.brace) { const s = Math.sin(this.yaw), c = Math.cos(this.yaw), l = Math.hypot(fx, fz); let dx = s, dz = c; if (l) { dx = (s * fz - c * fx) / l; dz = (c * fz + s * fx) / l; } this.hopX = dx; this.hopZ = dz; this.hopT = .17; this.hopCd = 1.4; sfx.dash(.8); this.puff(TMP.set(me.pos.x, .15, me.pos.z), 3, .5, M.dust, .3, 1); }
     if (this.hopT > 0) { this.hopT -= dt; const v = (me.kind === 'gantry' ? 11 : me.kind === 'breacher' ? 15 : 19) * dt; me.pos.x += this.hopX * v; me.pos.z += this.hopZ * v; me.moving = true; this.collide(me, me.pos.x, me.pos.z); }
     me.yaw = this.yaw; me.pitch = this.pitch;
-    if (this.net && me.carrying > 0) { const hq = this.ownB('headframe', true)[0]; if (hq && this.distToBox(hq, me.pos.x, me.pos.z) < 2.6) this.bank(me); }
+    if (this.net && me.carrying > 0) { const hq = this.nearHQ(me.pos.x, me.pos.z); if (hq && this.distToBox(hq, me.pos.x, me.pos.z) < 2.6) this.bank(me); }
     this.bloom = Math.max(0, this.bloom - dt * (this.fireCd > -.12 ? .25 : 3.2)); this.salvoCd = Math.max(0, this.salvoCd - dt);
     this.fireCd -= dt; this.recoil = Math.max(0, this.recoil - dt * 6); this.nadeCd = Math.max(0, this.nadeCd - dt); this.bashCd = Math.max(0, this.bashCd - dt); this.bashT = Math.max(0, this.bashT - dt);
     const eye = V3(me.pos.x, UNIT[me.kind].eye, me.pos.z), dir = this.lookDir(V3());
@@ -526,7 +535,9 @@ export class Game {
   }
   canPlace(k: BKind, x: number, z: number, rot: boolean) {
     const st = BLD[k], hx = rot ? st.hz : st.hx, hz = rot ? st.hx : st.hz;
-    if (Math.hypot(x, z) > 80) return false;
+    // A new Headframe can go on any open ground short of the Veyl; everything else stays near a Headframe.
+    if (k === 'headframe') { const mx = MAP.out[0] / 2, mz = MAP.out[1] / 2; if (Math.hypot(x - mx, z - mz) > 190 * (MAP.k || 1)) return false; for (const b of this.buildings) if (b.alive && b.team === 1 && Math.hypot(b.pos.x - x, b.pos.z - z) < 45) return false; }
+    else if (Math.hypot(x, z) > 80 && !this.buildings.some(b => b.alive && b.team === 0 && b.kind === 'headframe' && b.built && Math.hypot(b.pos.x - x, b.pos.z - z) < 42)) return false;
     for (const b of this.buildings) if (b.alive && Math.abs(x - b.pos.x) < hx + b.hx + 1.6 && Math.abs(z - b.pos.z) < hz + b.hz + 1.6) return false;
     for (const o of this.ores) if (o.amount > 0 && Math.abs(x - o.pos.x) < hx + 2.4 && Math.abs(z - o.pos.z) < hz + 2.4) return false;
     for (const s of this.spires) if (Math.abs(x - s.x) < hx + s.r && Math.abs(z - s.z) < hz + s.r) return false;
@@ -793,9 +804,8 @@ export class Game {
   // ------------------------------------------------------------ unit AI
   updateUnits(dt: number) {
     const us = this.units, me = this.me, t = this.time;
-    const hq = this.ownB('headframe', true)[0];
     for (const u of us) {
-      if (!u.alive) continue; if (u.carrying > 0 && (u === me || u.pilot) && hq && this.distToBox(hq, u.pos.x, u.pos.z) < 2.6) this.bank(u); if (u !== me) u.moving = false; u.cd -= dt; u.think -= dt; u.swing = Math.max(0, u.swing - dt * 4); u.flashT -= dt; u.pop = Math.max(0, u.pop - dt * 7);
+      if (!u.alive) continue; if (u.carrying > 0 && (u === me || u.pilot)) { const hq = this.nearHQ(u.pos.x, u.pos.z); if (hq && this.distToBox(hq, u.pos.x, u.pos.z) < 2.6) this.bank(u); } if (u !== me) u.moving = false; u.cd -= dt; u.think -= dt; u.swing = Math.max(0, u.swing - dt * 4); u.flashT -= dt; u.pop = Math.max(0, u.pop - dt * 7);
       if (u.maxShield && t - u.lastHit > 5) u.shield = Math.min(u.maxShield, u.shield + 14 * dt);
       if (u.team === 0 && this.up.weld && u.hp < u.maxHp && t - u.lastHit > 8) u.hp = Math.min(u.maxHp, u.hp + u.maxHp * .02 * dt);
       if (u.kx || u.kz) { u.pos.x += u.kx * dt; u.pos.z += u.kz * dt; const k = Math.max(0, 1 - dt * 7); u.kx *= k; u.kz *= k; if (Math.abs(u.kx) + Math.abs(u.kz) < .05) u.kx = u.kz = 0; this.collide(u, u.pos.x, u.pos.z); }
@@ -832,14 +842,14 @@ export class Game {
     }
   }
   aiRigger(u: Unit, dt: number) {
-    const hq = this.ownB('headframe')[0];
+    const hq = this.nearHQ(u.pos.x, u.pos.z);
     if (u.site && (!u.site.alive || (u.site.built && u.site.hp >= u.site.maxHp))) { u.site.builder = null; u.site = null; u.state = 'idle'; }
     if (u.site) {
       const b = u.site; if (this.distToBox(b, u.pos.x, u.pos.z) > 1.6) { this.moveTo(u, b.pos.x, b.pos.z, dt); u.state = 'toSite'; }
       else { u.state = b.built ? 'repair' : 'build'; u.yaw = Math.atan2(b.pos.x - u.pos.x, b.pos.z - u.pos.z); if (b.built) b.hp = Math.min(b.maxHp, b.hp + 16 * dt); else b.progress += dt / BLD[b.kind].time; if (u.think <= 0) { u.think = .2; this.debris(TMP.set(u.pos.x + Math.sin(u.yaw) * .9, 1, u.pos.z + Math.cos(u.yaw) * .9), 1, .06, M.spark, 3); } }
       return;
     }
-    if (u.state === 'idle' || (u.node && u.node.amount <= 0 && u.state !== 'toHQ')) { let best: OreNode | null = null, bd = 1e9; for (const n of this.ores) { if (n.amount <= 0) continue; const d = n.pos.distanceTo(u.pos) + (this.units.filter(o => o.node === n).length) * 6 + (hq ? n.pos.distanceTo(hq.pos) * .6 : 0); if (d < bd) { bd = d; best = n; } } u.node = best; u.state = best ? 'toOre' : 'wait'; }
+    if (u.state === 'idle' || (u.node && u.node.amount <= 0 && u.state !== 'toHQ')) { let best: OreNode | null = null, bd = 1e9; for (const n of this.ores) { if (n.amount <= 0) continue; const d = n.pos.distanceTo(u.pos) + (this.units.filter(o => o.node === n).length) * 6 + (hq ? (() => { const h = this.nearHQ(n.pos.x, n.pos.z)!; return Math.hypot(n.pos.x - h.pos.x, n.pos.z - h.pos.z) * .6; })() : 0); if (d < bd) { bd = d; best = n; } } u.node = best; u.state = best ? 'toOre' : 'wait'; }
     if (u.state === 'toOre' && u.node) { if (this.moveTo(u, u.node.pos.x, u.node.pos.z, dt, 2.5)) { u.state = 'mining'; u.timer = 3; } }
     else if (u.state === 'mining' && u.node) { u.yaw = Math.atan2(u.node.pos.x - u.pos.x, u.node.pos.z - u.pos.z); u.timer -= dt * (this.up.drill ? 1.3 : 1); if (u.think <= 0) { u.think = .5; if (this.vol(u.pos) > .3) this.debris(TMP.set(u.pos.x + Math.sin(u.yaw) * 1.1, 1, u.pos.z + Math.cos(u.yaw) * 1.1), 1, .1, M.ore, 3); } if (u.timer <= 0) { const n = Math.min(this.up.buckets ? 10 : 7, u.node.amount); u.node.amount -= n; u.carrying = n; this.oreCheck(u.node); if (u.rig.pack) u.rig.pack.visible = true; u.state = 'toHQ'; } }
     else if (u.state === 'toHQ') { if (!hq) { u.state = 'wait'; return; } if (this.distToBox(hq, u.pos.x, u.pos.z) < 1.7) { this.ore += u.carrying; this.stats.mined += u.carrying; u.carrying = 0; if (u.rig.pack) u.rig.pack.visible = false; u.state = 'idle'; } else this.moveTo(u, hq.pos.x + 1.6, hq.pos.z + hq.hz + .8, dt, .3); }

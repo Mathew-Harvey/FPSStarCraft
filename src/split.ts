@@ -50,7 +50,7 @@ export class LocalMatch {
           if (!Array.isArray(c)) continue;
           if (c[0] === 'bd') { const u = g.units.find(x => x.id === c[1]); if (u && u.alive && u.team === this.teams[s.pid] && (!u.pilot || u.pilot === s.pid)) this.pilot(s, u); }
           else if (c[0] === 'rs' && this.teams[s.pid]) { if (!s.body && g.stones().length) { const u = this.veylBody(); if (u) { this.pilot(s, u); this.say(s, { t: 'yo', unit: u.id }); } } }
-          else if (c[0] === 'rs') { if (!s.body && g.ownB('headframe').length) { const u = g.spawn('rigger', 0, 2 + Math.random() * 3, 7 + Math.random() * 2); this.pilot(s, u); this.say(s, { t: 'yo', unit: u.id }); g.feedTo = s.pid; g.feed('Quartermaster', 'Found you a fresh Rigger. Try to keep this one.', ''); g.feedTo = 0; } }
+          else if (c[0] === 'rs') { if (!s.body && g.ownB('headframe').length) { const u = g.spawn('rigger', 0, ...g.hqSpot()); this.pilot(s, u); this.say(s, { t: 'yo', unit: u.id }); g.feedTo = s.pid; g.feed('Quartermaster', 'Found you a fresh Rigger. Try to keep this one.', ''); g.feedTo = 0; } }
           else serverCmd(g, s.pid, s.body, c);
         }
       }

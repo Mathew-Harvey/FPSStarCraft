@@ -22,7 +22,7 @@ export class Hud {
   private bars: HTMLElement[] = []; private barFill: HTMLElement[] = []; private labs: HTMLElement[] = [];
   private floats: Floater[] = []; private pingPos = new THREE.Vector3(); private pingT = 0;
   private hurtA = 0; private dirA = 0; private hitT = 0; private miniT = 0; private last = 0; private feedN = 0;
-  private mini: CanvasRenderingContext2D;
+  private mini: CanvasRenderingContext2D; private fogCv: HTMLCanvasElement | null = null; private fogImg: ImageData | null = null;
 
   constructor(private root: HTMLElement = document.getElementById('hud')!) {
     this.anchors = this.$('anchors'); this.mini = (this.$('mini') as HTMLCanvasElement).getContext('2d')!;
@@ -142,7 +142,7 @@ export class Hud {
       if (!b.built) { bar(b.pos, BLD[b.kind].h + 1.2, b.progress, 'hb big p'); if (d < 60) lab(b.pos, BLD[b.kind].h + 1.6, `<div class="mark" style="color:var(--cyan)">${BLD[b.kind].name} ${Math.floor(b.progress * 100)}%</div>`); }
       else if (b.hp < b.maxHp && (d < 90 || tab)) bar(b.pos, b.h + 1.2, b.hp / b.maxHp, b.team !== g.myTeam ? 'hb big e' : 'hb big');
       if (b.kind === 'wardpylon' && d < 110 && !tab && !building) lab(b.pos, b.h + 1.6, `<div class="mark out" style="color:var(--cyan)">Ward Pylon · shielding the base</div>`);
-      if (b.kind === 'choir' && d > 45 && !tab && !building) lab(b.pos, b.h + 2, `<div class="mark out">${b === near ? 'Choir Stones · ' + Math.round(d) + 'm' : ''}</div>`);
+      if (b.kind === 'choir' && d > 45 && !tab && !building && (g.myTeam || g.fog.seen(b.pos.x, b.pos.z))) lab(b.pos, b.h + 2, `<div class="mark out">${b === near ? 'Choir Stones · ' + Math.round(d) + 'm' : ''}</div>`);
       if (b.kind === 'headframe' && b.team === 0 && g.time - b.lastHit < 6 && d > 30) lab(b.pos, b.h + 3, `<div class="mark out" style="color:var(--red)">Headframe under attack</div>`);
     }
     if (building) { const k = BUILDABLE[g.buildSel]; lab(g.placePos, BLD[k].h + 1.4, `<div class="tag${g.placeOK ? '' : ' bad'}"><span class="d" style="font-size:30px;color:${g.placeOK ? 'var(--cyan)' : 'var(--red)'}">${BLD[k].name}</span> <span class="d" style="font-size:24px;color:var(--ore);margin-left:14px">${BLD[k].cost} ore</span><div class="c" style="font-size:14px">${g.placeOK ? 'Click place · R rotate · Right-click cancel' : g.ore < BLD[k].cost ? 'Not enough ore' : 'Can\'t build there'}</div></div>`); }
@@ -166,16 +166,23 @@ export class Hud {
     if (this.cache.get('crew') !== html) { this.cache.set('crew', html); el.innerHTML = html; } el.hidden = false;
   }
   private drawMini(g: Game) {
-    const c = this.mini, S = 260, span = Math.max(200, Math.abs(OUTPOST.x) + 76, (Math.abs(OUTPOST.z) + 70) / .69), x0 = OUTPOST.x / 2 - span / 2 + (MAP === MAPS[0] ? -12 : 0), z0 = OUTPOST.z / 2 - span * .345 + (MAP === MAPS[0] ? .5 : 0), k = S / span, X = (x: number) => (x - x0) * k, Z = (z: number) => (z - z0) * k;
+    // framed on everything worth finding: the yard, the outpost, both routes and every ore field
+    const pts = [[0, 0], [OUTPOST.x, OUTPOST.z], ...NORTH_PATH, ...(MAP.sites || [])], bx0 = Math.min(...pts.map(p => p[0])) - 26, bx1 = Math.max(...pts.map(p => p[0])) + 26, bz0 = Math.min(...pts.map(p => p[1])) - 22, bz1 = Math.max(...pts.map(p => p[1])) + 22;
+    const c = this.mini, S = 260, span = Math.max(bx1 - bx0, (bz1 - bz0) / .69), x0 = (bx0 + bx1) / 2 - span / 2, z0 = (bz0 + bz1) / 2 - span * .345, k = S / span, X = (x: number) => (x - x0) * k, Z = (z: number) => (z - z0) * k;
+    const fog = g.fog; fog.update(g, .12);
     c.fillStyle = '#4a2f29'; c.fillRect(0, 0, S, 180);
     c.strokeStyle = '#6b4a3a'; c.lineWidth = 7; c.beginPath(); { const a = roadPt(4), b = roadPt(ROAD.len + 6); c.moveTo(X(a[0]), Z(a[1])); c.lineTo(X(b[0]), Z(b[1])); c.stroke(); }
     c.fillStyle = 'rgba(53,224,200,.16)'; c.beginPath(); c.arc(X(OUTPOST.x - 2 * ROAD.dx), Z(OUTPOST.z - 2 * ROAD.dz), 20 * k, 0, 7); c.fill();
     c.fillStyle = 'rgba(255,194,26,.13)'; c.beginPath(); c.arc(X(0), Z(0), 30 * k, 0, 7); c.fill();
     for (const s of g.spires) { c.fillStyle = '#2a1a18'; c.beginPath(); c.arc(X(s.x), Z(s.z), Math.max(1.5, s.r * k), 0, 7); c.fill(); }
-    for (const o of g.ores) { if (o.amount <= 0) continue; c.fillStyle = '#b8f58c'; c.fillRect(X(o.pos.x) - 2.5, Z(o.pos.z) - 2.5, 5, 5); }
+    // the fog: black where nobody has been, dimmed where nobody is looking now
+    { const n = fog.n, cv = this.fogCv || (this.fogCv = document.createElement('canvas')); if (cv.width !== n) { cv.width = cv.height = n; this.fogImg = null; } const cx = cv.getContext('2d')!, img = this.fogImg || (this.fogImg = cx.createImageData(n, n)), d = img.data;
+      for (let i = 0; i < fog.cells.length; i++) { const v = fog.cells[i]; d[i * 4] = 22; d[i * 4 + 1] = 15; d[i * 4 + 2] = 14; d[i * 4 + 3] = v === 2 ? 0 : v === 1 ? 105 : 236; }
+      cx.putImageData(img, 0, 0); c.imageSmoothingEnabled = true; c.drawImage(cv, X(fog.x0), Z(fog.z0), n * 4 * k, n * 4 * k); }
+    for (const o of g.ores) { if (o.amount <= 0 || !fog.seen(o.pos.x, o.pos.z)) continue; c.fillStyle = '#b8f58c'; c.fillRect(X(o.pos.x) - 2.5, Z(o.pos.z) - 2.5, 5, 5); }
     c.lineWidth = 1.5; c.strokeStyle = '#0e0d14';
-    for (const b of g.buildings) { if (!b.alive) continue; const w = Math.max(5, b.hx * 2 * k), h = Math.max(5, b.hz * 2 * k); c.fillStyle = b.kind === 'reedgate' ? '#c58bff' : b.team ? '#35e0c8' : b.built ? '#ffc21a' : '#7ef0ff'; c.fillRect(X(b.pos.x) - w / 2, Z(b.pos.z) - h / 2, w, h); c.strokeRect(X(b.pos.x) - w / 2, Z(b.pos.z) - h / 2, w, h); }
-    for (const u of g.units) { if (!u.alive || u === g.me) continue; c.fillStyle = u.team ? (this.cb ? '#ff9d1a' : '#ff4f9a') : u.kind === 'rigger' ? (this.cb ? '#4da3ff' : '#8be04e') : '#f4ead2'; c.beginPath(); c.arc(X(u.pos.x), Z(u.pos.z), u.kind === 'warden' ? 5 : u.team ? 2.6 : 2.2, 0, 7); c.fill(); }
+    for (const b of g.buildings) { if (!b.alive || (b.team !== g.myTeam && !fog.seen(b.pos.x, b.pos.z))) continue; const w = Math.max(5, b.hx * 2 * k), h = Math.max(5, b.hz * 2 * k); c.fillStyle = b.kind === 'reedgate' ? '#c58bff' : b.team ? '#35e0c8' : b.built ? '#ffc21a' : '#7ef0ff'; c.fillRect(X(b.pos.x) - w / 2, Z(b.pos.z) - h / 2, w, h); c.strokeRect(X(b.pos.x) - w / 2, Z(b.pos.z) - h / 2, w, h); }
+    for (const u of g.units) { if (!u.alive || u === g.me || (u.team !== g.myTeam && !fog.sees(u.pos.x, u.pos.z))) continue; c.fillStyle = u.team ? (this.cb ? '#ff9d1a' : '#ff4f9a') : u.kind === 'rigger' ? (this.cb ? '#4da3ff' : '#8be04e') : '#f4ead2'; c.beginPath(); c.arc(X(u.pos.x), Z(u.pos.z), u.kind === 'warden' ? 5 : u.team ? 2.6 : 2.2, 0, 7); c.fill(); }
     for (const p of g.pings) { c.strokeStyle = '#ffc21a'; c.lineWidth = 2.5; c.beginPath(); c.arc(X(p.x), Z(p.z), 4 + (8 - p.t) % 1 * 7, 0, 7); c.stroke(); }
     for (const u of g.units) if (u.alive && u.pilot && u !== g.me && u.team === g.myTeam) { c.fillStyle = '#ffc21a'; c.strokeStyle = '#0e0d14'; c.lineWidth = 1.5; c.beginPath(); c.arc(X(u.pos.x), Z(u.pos.z), 3.6, 0, 7); c.fill(); c.stroke(); }
     const D = g.dir; if ((D.raidIn < 15 || D.raidLive) && g.stones().length && Math.floor(performance.now() / 300) % 2) { c.fillStyle = '#ff4b3a'; c.strokeStyle = '#0e0d14'; c.lineWidth = 2; c.beginPath(); { const n = NORTH_PATH.length, p = D.raidDir === 'north' ? [(NORTH_PATH[n - 1][0] + NORTH_PATH[n - 2][0]) / 2, (NORTH_PATH[n - 1][1] + NORTH_PATH[n - 2][1]) / 2] : roadPt(62), a = Math.atan2(-p[1], -p[0]); c.moveTo(X(p[0]) + Math.cos(a) * 9, Z(p[1]) + Math.sin(a) * 9); c.lineTo(X(p[0]) + Math.cos(a + 2.4) * 8, Z(p[1]) + Math.sin(a + 2.4) * 8); c.lineTo(X(p[0]) + Math.cos(a - 2.4) * 8, Z(p[1]) + Math.sin(a - 2.4) * 8); } c.closePath(); c.fill(); c.stroke(); }

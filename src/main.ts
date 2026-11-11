@@ -6,7 +6,7 @@ import { Game } from './game';
 import { Hud } from './hud';
 import { initAudio, setVolume, setMusic, audioSeat, hush } from './audio';
 import { LocalMatch } from './split';
-import { UNIT, BLD, UPGRADES, TRAINS, UNIT_NEEDS, DIFFS, Kind, BKind } from './data';
+import { UNIT, BLD, UPGRADES, TRAINS, UNIT_NEEDS, DIFFS, Kind, BKind, mapCode, validMap } from './data';
 import { MISSIONS } from './campaign';
 import { Net, Lobby } from './net';
 
@@ -65,7 +65,7 @@ const keyText = (code: string) => code.replace(/^Key|^Digit/, '').replace('Shift
 /** The key a player pressed, as the action the game code listens for. A default key that has been given away does nothing. */
 function logical(code: string) { for (const a in binds) if (binds[a] === code) return a; return binds[code] ? 'Unbound' : code; }
 let diffI = 1, mapI = 0, sens = 1, vol = .5, mus = true, curX = .5, moved = false;
-try { const o = JSON.parse(localStorage.getItem('ore-else') || '{}'); if (o.d >= 0 && o.d < 3) diffI = o.d; if (o.map >= 0 && o.map < 3) mapI = o.map; if (o.camp > 0) camp = Math.min(MISSIONS.length, o.camp); if (o.mp) mpOpen = true; if (o.mode === 'skirm') mode = 'skirm'; if (typeof o.name === 'string') pname = o.name.slice(0, 14); if (typeof o.srv === 'string') srv = o.srv.slice(0, 200); if (o.s > 0) sens = o.s; if (o.v >= 0) vol = o.v; if (o.m === false) mus = false; if (o.q >= 0 && o.q < 4) gfxI = o.q | 0; cbOn = !!o.cb; fpsOn = !!o.fps; splitSide = o.ss !== 0; if (o.k && typeof o.k === 'object') for (const [a] of ACTIONS) if (typeof o.k[a] === 'string' && o.k[a] !== a) binds[a] = o.k[a]; } catch (e) { /* storage is optional */ }
+try { const o = JSON.parse(localStorage.getItem('ore-else') || '{}'); if (o.d >= 0 && o.d < 3) diffI = o.d; if (validMap(o.map)) mapI = o.map; if (o.camp > 0) camp = Math.min(MISSIONS.length, o.camp); if (o.mp) mpOpen = true; if (o.mode === 'skirm') mode = 'skirm'; if (typeof o.name === 'string') pname = o.name.slice(0, 14); if (typeof o.srv === 'string') srv = o.srv.slice(0, 200); if (o.s > 0) sens = o.s; if (o.v >= 0) vol = o.v; if (o.m === false) mus = false; if (o.q >= 0 && o.q < 4) gfxI = o.q | 0; cbOn = !!o.cb; fpsOn = !!o.fps; splitSide = o.ss !== 0; if (o.k && typeof o.k === 'object') for (const [a] of ACTIONS) if (typeof o.k[a] === 'string' && o.k[a] !== a) binds[a] = o.k[a]; } catch (e) { /* storage is optional */ }
 const save = () => { try { localStorage.setItem('ore-else', JSON.stringify({ d: diffI, map: mapI, camp, mp: mpOpen, mode: mode === 'multi' ? 'camp' : mode, name: pname, srv, s: sens, v: vol, m: mus, q: gfxI, cb: cbOn, fps: fpsOn, ss: splitSide ? 1 : 0, k: binds })); } catch (e) { /* storage is optional */ } };
 jobI = Math.min(camp, MISSIONS.length - 1);
 const want = () => mode !== 'skirm' ? { d: DIFFS[MISSIONS[jobI].diff], map: MISSIONS[jobI].map, m: MISSIONS[jobI] } : { d: DIFFS[diffI], map: mapI, m: null };
@@ -213,13 +213,13 @@ const mName = $('mName') as HTMLInputElement, mServer = $('mServer') as HTMLInpu
 const defaultServer = () => /^https?:$/.test(location.protocol) && location.host ? (location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/ws' : '';
 mName.value = pname; mServer.value = srv || defaultServer();
 const mErr = (t: string) => { $('mErr').textContent = t; $('mErr2').textContent = t; };
-const mDiffB = Array.from($('mDiff').querySelectorAll('button')) as HTMLButtonElement[], mMapB = Array.from($('mMaps').querySelectorAll('button')) as HTMLButtonElement[];
+const mDiffB = Array.from($('mDiff').querySelectorAll('button')) as HTMLButtonElement[], mMapB = Array.from($('mMaps').querySelectorAll('button')) as HTMLButtonElement[], mSizeB = Array.from($('mSizes').querySelectorAll('button')) as HTMLButtonElement[]; let lobMap = 0;
 function showLobby(l: Lobby) {
   const inLobby = !!l.code; $('mJoin').hidden = inLobby || !mpOpen; $('mLobby').hidden = !inLobby; if (!inLobby) return;
   const host = l.host === l.you, me = l.players.find(p => p.id === l.you);
   $('mCodeShow').textContent = l.code; $('mHint').textContent = host ? 'Read the code out to your crew. You pick the map and start the shift when everyone is ready.' : 'Waiting for the host to start. Hit Ready when you are.';
   $('mPlayers').innerHTML = l.players.map(p => `<button type="button" disabled class="${p.ready || p.id === l.host ? 'dn' : ''}${p.team ? ' v' : ''}">${p.team ? 'Veyl Chorus' : p.id === l.host ? 'Host' : 'Crew'}<b>${p.name.replace(/[<>&]/g, '')}</b><small>${p.id === l.host ? 'Runs the shift' : p.ready ? 'Ready' : 'Not ready'}</small></button>`).join('');
-  mDiffB.forEach((b, i) => { b.classList.toggle('on', i === l.diff); b.disabled = !host; }); mMapB.forEach((b, i) => { b.classList.toggle('on', i === l.map); b.disabled = !host; });
+  mDiffB.forEach((b, i) => { b.classList.toggle('on', i === l.diff); b.disabled = !host; }); lobMap = l.map; mMapB.forEach((b, i) => { b.classList.toggle('on', i === l.map % 10); b.disabled = !host; }); mSizeB.forEach(b => { b.classList.toggle('on', +(b.dataset.s || 0) === Math.floor(l.map / 10)); b.disabled = !host; });
   $('mSide').textContent = me && me.team ? 'Play as Ironhold' : 'Play as the Veyl'; if (l.players.some(p => p.team)) $('mHint').textContent = (host ? 'Versus shift. ' : 'Versus shift. ') + 'Veyl players drive the raids against the Ironhold crew. ' + (host ? 'You start it when everyone is ready.' : 'Hit Ready when you are.');
   $('mStart').hidden = !host; $('mReady').hidden = host; $('mReady').textContent = me && me.ready ? 'Not ready' : 'Ready'; ($('mStart') as HTMLButtonElement).disabled = !l.players.every(p => p.ready || p.id === l.host);
 }
@@ -243,15 +243,19 @@ $('mLeave').addEventListener('click', () => { net?.send({ t: 'leave' }); });
 $('mSide').addEventListener('click', () => { const l = net?.lobby, me = l?.players.find(p => p.id === l.you); net?.send({ t: 'team', v: me && me.team ? 0 : 1 }); });
 $('mReady').addEventListener('click', () => { const l = net?.lobby, me = l?.players.find(p => p.id === l.you); net?.send({ t: 'ready', v: !(me && me.ready) }); });
 $('mStart').addEventListener('click', () => net?.send({ t: 'start' }));
-mDiffB.forEach((b, i) => b.addEventListener('click', () => net?.send({ t: 'set', diff: i }))); mMapB.forEach((b, i) => b.addEventListener('click', () => net?.send({ t: 'set', map: i })));
+mDiffB.forEach((b, i) => b.addEventListener('click', () => net?.send({ t: 'set', diff: i }))); mMapB.forEach((b, i) => b.addEventListener('click', () => net?.send({ t: 'set', map: mapCode(i, Math.floor(lobMap / 10)) }))); mSizeB.forEach(b => b.addEventListener('click', () => net?.send({ t: 'set', map: mapCode(lobMap % 10, +(b.dataset.s || 0)) })));
 showMode();
 const diffBtns = Array.from($('diff').querySelectorAll('button')) as HTMLButtonElement[];
 const showDiff = () => diffBtns.forEach((b, i) => { b.classList.toggle('on', i === diffI); b.setAttribute('aria-pressed', String(i === diffI)); });
 diffBtns.forEach((b, i) => b.addEventListener('click', () => { diffI = i; showDiff(); save(); })); showDiff();
 const mapBtns = Array.from($('maps').querySelectorAll('button')) as HTMLButtonElement[];
-const showMap = () => mapBtns.forEach((b, i) => { b.classList.toggle('on', i === mapI); b.setAttribute('aria-pressed', String(i === mapI)); });
-const pickMap = (i: number) => { mode = 'skirm'; mapI = i; showMap(); showMode(); save(); if (game.mapI !== mapI || game.mission) fresh(); };
-mapBtns.forEach((b, i) => b.addEventListener('click', () => pickMap(i))); showMap();
+const sizeBtns = Array.from($('sizes').querySelectorAll('button')) as HTMLButtonElement[];
+const showMap = () => { mapBtns.forEach((b, i) => { b.classList.toggle('on', i === mapI % 10); b.setAttribute('aria-pressed', String(i === mapI % 10)); }); sizeBtns.forEach(b => { const on = +(b.dataset.s || 0) === Math.floor(mapI / 10); b.classList.toggle('on', on); b.setAttribute('aria-pressed', String(on)); }); };
+/** Picks a map, keeping the size; a number of 10 or more is a whole map code with its size. */
+const useMap = (code: number) => { mode = 'skirm'; mapI = code; showMap(); showMode(); save(); if (game.mapI !== mapI || game.mission) fresh(); };
+const pickMap = (i: number) => useMap(i >= 10 ? i : mapCode(i, Math.floor(mapI / 10)));
+const pickSize = (s: number) => useMap(mapCode(mapI % 10, s));
+mapBtns.forEach((b, i) => b.addEventListener('click', () => pickMap(i))); sizeBtns.forEach(b => b.addEventListener('click', () => pickSize(+(b.dataset.s || 0)))); showMap();
 const sensEl = $('sens') as HTMLInputElement, volEl = $('vol') as HTMLInputElement; sensEl.value = String(sens); volEl.value = String(vol);
 sensEl.addEventListener('input', () => { sens = +sensEl.value; game.sens = sens; save(); });
 volEl.addEventListener('input', () => { vol = +volEl.value; setVolume(vol); save(); });
@@ -300,5 +304,5 @@ function frame(now: number) {
   if (fast > 900 && quality < 1) { quality = Math.min(1, quality / .85); fast = 0; resize(); }
   requestAnimationFrame(frame);
 }
-(window as any).__ore = { quit, atlasUsed: MD.atlasUsed, game, start, pipe, hud, hud2, startSplit, split: () => split, game2: () => game2, setFree: (v: boolean) => { freeMouse = v; }, pickMap, unlock: () => { camp = MISSIONS.length; mpOpen = true; mode = 'multi'; showMode(); }, net: () => net, pickJob: (i: number) => { mode = 'camp'; camp = Math.max(camp, i); jobI = i; showMode(); fresh(); } };
+(window as any).__ore = { quit, atlasUsed: MD.atlasUsed, game, start, pipe, hud, hud2, startSplit, split: () => split, game2: () => game2, setFree: (v: boolean) => { freeMouse = v; }, pickMap, pickSize, unlock: () => { camp = MISSIONS.length; mpOpen = true; mode = 'multi'; showMode(); }, net: () => net, pickJob: (i: number) => { mode = 'camp'; camp = Math.max(camp, i); jobI = i; showMode(); fresh(); } };
 requestAnimationFrame(frame);

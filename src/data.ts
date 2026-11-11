@@ -13,7 +13,7 @@ export const UNIT: Record<Kind, UnitDef> = {
   gantry: { name: 'Gantry', team: 0, hp: 420, shield: 0, speed: 3.9, eye: 2.95, headY: 3.2, bodyY: 2.1, rad: 1.25, cost: 220, time: 22, supply: 4, quip: '"Two legs, two cannons, zero paperwork."', ack: ['Walker\'s yours. Mind the paint.', 'Stomping on your say-so.', 'Big rig, bigger invoice.'] },
   longshot: { name: 'Longshot', team: 0, hp: 50, shield: 0, speed: 4.7, eye: 1.58, headY: 1.56, bodyY: .9, rad: .66, cost: 120, time: 16, supply: 2, quip: '"I bill by the mile."', ack: ['Scope\'s yours. Breathe out first.', 'One round, one invoice.', 'I was comfortable back there.'] },
   patch: { name: 'Patch', team: 0, hp: 70, shield: 0, speed: 5.0, eye: 1.55, headY: 1.56, bodyY: .9, rad: .66, cost: 90, time: 13, supply: 1, quip: '"Hold still. This is mostly glue."', ack: ['Clinic is open.', 'Who\'s leaking?', 'I do stitches and rivets.'] },
-  cantor: { name: 'Cantor', team: 1, hp: 80, shield: 40, speed: 5.4, eye: 2.2, headY: 2.42, bodyY: 1.3, rad: .66, cost: 0, time: 0, supply: 0, quip: '"We sing first. It is only polite."', ack: ['The verse is yours.', 'One voice, borrowed.', 'Blades in tune.'] },
+  cantor: { name: 'Cantor', team: 1, hp: 90, shield: 50, speed: 5.4, eye: 2.2, headY: 2.42, bodyY: 1.3, rad: .66, cost: 0, time: 0, supply: 0, quip: '"We sing first. It is only polite."', ack: ['The verse is yours.', 'One voice, borrowed.', 'Blades in tune.'] },
   lancer: { name: 'Lancer', team: 1, hp: 50, shield: 30, speed: 4.4, eye: 2.0, headY: 2.12, bodyY: 1.25, rad: .6, cost: 0, time: 0, supply: 0, quip: '"A long note, held until something breaks."', ack: ['The lance hums for you.', 'Hold the note.', 'Far voice, listening.'] },
   warden: { name: 'Warden', team: 1, hp: 900, shield: 300, speed: 3.3, eye: 3.8, headY: 4.0, bodyY: 2.7, rad: 1.5, cost: 0, time: 0, supply: 0, quip: '"The low note. The one the ground hears."', ack: ['The deep voice wakes.', 'Step loudly.', 'The ground is listening.'] },
 };
@@ -62,7 +62,7 @@ export const UPGRADES: UpDef[] = [
 export interface Order { type: 'guard' | 'amove' | 'follow' | 'raid'; x: number; z: number; path?: number[][]; lead?: Unit }
 export interface Unit {
   /** Set once a Veyl guard has broken off to regrow its shield, so it only does that once. */
-  fled?: boolean;
+  fled?: boolean; leashed?: boolean;
   /** Scenery a Veyl Lancer is sheltering behind, if any. */
   cover?: Prop | null;
   id: number; kind: Kind; team: number; pos: THREE.Vector3; yaw: number; hp: number; maxHp: number; shield: number; maxShield: number;
@@ -88,7 +88,7 @@ export interface Difficulty { name: string; enemy: number; raid: number; blurb: 
 export const DIFFS: Difficulty[] = [
   { name: 'Day shift', enemy: .75, raid: 1.25, blurb: 'Smaller raids, more time' },
   { name: 'Night shift', enemy: 1, raid: 1, blurb: 'The intended fight' },
-  { name: 'Double shift', enemy: 1.3, raid: .85, blurb: 'Bigger raids, sooner' },
+  { name: 'Double shift', enemy: 1.15, raid: .9, blurb: 'Bigger raids, sooner' },
 ];
 
 /** One battlefield. The Ironhold yard always sits at the origin; everything else hangs off these numbers. */

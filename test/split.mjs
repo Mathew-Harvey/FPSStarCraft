@@ -51,6 +51,20 @@ try {
   await p.evaluate(() => document.getElementById('toMenu').click());
   const m = await p.evaluate(() => ({ split: !!__ore.split(), huds: document.querySelectorAll('.hud:not([hidden])').length, w: __ore.pipe.w, cw: __ore.pipe.cw, net: !!__ore.game.net }));
   check(!m.split && !m.net && m.w === m.cw, 'leaving goes back to a single full-screen view');
+  // split screen versus: player two wakes up in the Veyl
+  await p.evaluate(() => { navigator.getGamepads = () => []; __ore.startSplit(true); });
+  check(await until(() => { const a = __ore.game, c = __ore.game2(); return a.me && c && c.me && c.myTeam === 1 && c.me.team === 1 && a.me.team === 0; }), 'versus: player one is Ironhold and player two drives a Veyl body');
+  check(await p.evaluate(() => { const h = __ore.split().host, c = __ore.game2(); return h.units.some(u => u.id === c.me.id && u.pilot === 2 && u.team === 1) && h.teams[2] === 1 && h.coop === 1; }), 'versus: the match has player two on the Veyl side');
+  await p.evaluate(() => { const c = __ore.game2(); c.pressed.add('Digit2'); });
+  await p.waitForTimeout(300); await p.evaluate(() => { const c = __ore.game2(); if (c.phase === 'card') c.phase = 'play'; c.pressed.add('KeyG'); });
+  check(await until(() => { const d = __ore.split().host.dir; return __ore.game2().verse === 1 && (d.raidIn <= 6 || d.raidLive); }), 'versus: player two picks the Lances verse and calls the raid');
+  const ore0 = await p.evaluate(() => { const c = __ore.game2(), h = __ore.split().host; for (let i = 0; i < 5; i++) c.net.cmd('pl', 'depot', 14, 20, 0); return [Math.floor(h.ore), h.buildings.length]; }); await p.waitForTimeout(800);
+  check(await p.evaluate(([o, n]) => { const h = __ore.split().host; return h.buildings.length === n && Math.abs(h.ore - o) < 40; }, ore0), 'versus: the Veyl player cannot build for Ironhold');
+  if (SHOTS) { await p.waitForTimeout(3000); await p.screenshot({ path: SHOTS + '/split-versus.png' }); }
+  await p.evaluate(() => { const h = __ore.split().host, b = h.ownB('headframe')[0]; h.damage(b, 99999, null); });
+  check(await until(() => __ore.game.phase === 'over' && __ore.game2().phase === 'over'), 'versus: the match ends for both halves when the Headframe falls');
+  check(await p.evaluate(() => __ore.game.won === false && __ore.game2().won === true && /Veyl/.test(document.getElementById('endTitle').textContent)), 'versus: player two wins, player one loses, and the end screen says who');
+  await p.evaluate(() => document.getElementById('toMenu').click());
 } catch (e) { console.log('ERROR', e); fail.push('exception'); }
 await b.close();
 console.log(fail.length ? `\n${fail.length} FAILED` : '\nall split screen checks passed'); process.exit(fail.length ? 1 : 0);

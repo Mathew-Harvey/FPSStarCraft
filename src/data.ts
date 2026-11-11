@@ -88,7 +88,7 @@ export interface Difficulty { name: string; enemy: number; raid: number; blurb: 
 export const DIFFS: Difficulty[] = [
   { name: 'Day shift', enemy: .75, raid: 1.25, blurb: 'Smaller raids, more time' },
   { name: 'Night shift', enemy: 1, raid: 1, blurb: 'The intended fight' },
-  { name: 'Double shift', enemy: 1.3, raid: .85, blurb: 'Bigger raids, sooner' },
+  { name: 'Double shift', enemy: 1.15, raid: .9, blurb: 'Bigger raids, sooner' },
 ];
 
 /** One battlefield. The Ironhold yard always sits at the origin; everything else hangs off these numbers. */

@@ -449,7 +449,7 @@ export class Game {
     this.vCd = Math.max(0, this.vCd - dt); this.comboT -= dt; if (this.comboT <= 0) this.combo = 0;
     // 1, 2 and 3 pick the verse the next raid is written in: all blades, mostly lances, or the deep voice.
     for (let i = 0; i < 3; i++) if (P.has('Digit' + (i + 1)) && this.verse !== i) { this.verse = i; sfx.blip(); }
-    if (P.has('KeyG')) { if (this.raidCall <= 0) { this.raidCall = 90; this.net?.cmd('rd', this.verse); sfx.callout(); } else sfx.deny(); }
+    if (P.has('KeyG') || P.has('KeyE')) { if (this.raidCall <= 0) { this.raidCall = 90; this.net?.cmd('rd', this.verse); sfx.callout(); } else sfx.deny(); }
     if (me.kind === 'warden') {
       // Right click: the Low Note. Every Veyl in earshot gets its shield back.
       if (P.has('Mouse2')) { if (this.vCd <= 0) { this.vCd = 20; this.net?.cmd('vs'); sfx.charge(1); sfx.boom(.3); this.shake = Math.max(this.shake, .5); this.warn(me.pos.x, me.pos.z, 16, .5); this.hud.damage(V3(me.pos.x, 4.6, me.pos.z), 'LOW NOTE', 'shield'); } else sfx.deny(); }
@@ -977,7 +977,7 @@ export class Game {
           if (tgt) { this.tracer(V3(b.pos.x, 6.9, b.pos.z), V3(tgt.pos.x, UNIT[tgt.kind].bodyY, tgt.pos.z), beamMat, .2); sfx.zap(this.vol(b.pos) * .7); this.damage(tgt, 10 * this.diff.enemy, b); this.puff(TMP.copy(tgt.pos).setY(1), 2, .5, M.mag, .5); } else b.cd = .3; }
       } else if (b.kind === 'choir') {
         b.cd -= dt; if (b.cd <= 0) { b.cd = 1.15; let tgt: Unit | null = null, bd = 21; for (const o of this.units) { if (!o.alive || o.team === b.team) continue; const d = o.pos.distanceTo(b.pos); if (d < bd) { bd = d; tgt = o; } }
-          if (tgt) { this.tracer(V3(b.pos.x, 9.6, b.pos.z), V3(tgt.pos.x, 1.1, tgt.pos.z), beamMat, .16); sfx.zap(this.vol(b.pos) * .8); this.damage(tgt, 8 * this.diff.enemy, b); this.puff(TMP.copy(tgt.pos).setY(1), 2, .5, M.teal, .5); } }
+          if (tgt) { this.tracer(V3(b.pos.x, 9.6, b.pos.z), V3(tgt.pos.x, 1.1, tgt.pos.z), beamMat, .16); sfx.zap(this.vol(b.pos) * .8); this.damage(tgt, 6 * this.diff.enemy, b); this.puff(TMP.copy(tgt.pos).setY(1), 2, .5, M.teal, .5); } }
       }
     }
   }

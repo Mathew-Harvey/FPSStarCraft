@@ -21,7 +21,7 @@ const { chromium } = require('playwright');
       if (mode === 'squad') { if (g.dir.callout) g.pressed.add('KeyZ'); const push = g.dir.plan && g.dir.plan.phase === 'go'; if (!push) { T = near && near[0] < 50 ? near[1] : null; ty = 1.5; if (!T) { const hx = 12 - m.pos.x, hz = 12 - m.pos.z; if (Math.hypot(hx, hz) > 4) { g.yaw = Math.atan2(hx, hz); g.pitch = 0; g.keys.add('KeyW'); } return; } } }
       if (!T) return; const dx = T.pos.x - m.pos.x, dz = T.pos.z - m.pos.z, dist = Math.hypot(dx, dz);
       // walk the road until close, then go straight at it
-      let gx = T.pos.x, gz = T.pos.z; if (dist > 45 && Math.abs(m.pos.z - 14) > 6 && m.pos.x < 100) { gx = m.pos.x + 12; gz = 14; }
+      let gx = T.pos.x, gz = T.pos.z; { const hf = g.ownB('headframe')[0], st = g.stones(); if (hf && st.length && dist > 45) { const ox = hf.pos.x + 6, oz = hf.pos.z + 6, cx = st.reduce((a, b) => a + b.pos.x, 0) / st.length - ox, cz = st.reduce((a, b) => a + b.pos.z, 0) / st.length - oz, L = Math.hypot(cx, cz) || 1, ux = cx / L, uz = cz / L, along = (m.pos.x - ox) * ux + (m.pos.z - oz) * uz, off = (m.pos.x - ox) * -uz + (m.pos.z - oz) * ux; if (Math.abs(off) > 6 && along < L - 25) { gx = ox + ux * (along + 12); gz = oz + uz * (along + 12); } } }
       const inR = dist <= tr; const mx = inR ? dx : gx - m.pos.x, mz = inR ? dz : gz - m.pos.z;
       g.yaw = Math.atan2(inR ? dx : mx, inR ? dz : mz); g.pitch = inR ? Math.atan2(ty - 1.55, dist) : 0;
       if (!inR) { g.keys.add('KeyW'); if (dist > 60) g.keys.add('ShiftLeft'); if (Math.hypot(m.pos.x - S.px, m.pos.z - S.pz) < .02) S.stuck++; else S.stuck = 0; if (S.stuck > 20) { S.strafe = 25; S.stuck = 0; } if (S.strafe > 0) { S.strafe--; g.keys.add('KeyA'); } }

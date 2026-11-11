@@ -178,7 +178,7 @@ The Veyl base answers an attack: guards walk out to whoever is shooting, however
 
 ## Split screen
 
-Two players on one machine share one Ironhold yard. Pick a map and a shift on the Skirmish tab, choose side by side or stacked, and press Split screen. No server is needed.
+Two players on one machine, no server needed. Pick a map and a shift on the Skirmish tab, choose side by side or stacked, then press **Split screen co-op** to share one Ironhold yard, or **Split screen versus** to put player two in the Veyl. In versus, player two wins by breaking the Headframe: use (Y on a controller) calls the raid, and the build key (D-pad up) changes its verse.
 
 - Player one keeps the keyboard and mouse.
 - Player two uses a controller: left stick moves, right stick looks, RT fires, LT aims or raises the shield, A dashes, B is the grenade or ability, X reloads or rotates, Y uses or trains, hold LB for the jump wheel and pick with the D-pad, RB jumps into the body in the crosshair, D-pad up opens the build menu, Start pauses.

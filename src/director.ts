@@ -426,11 +426,11 @@ export class Director implements Side {
     const foes = v ? g.ownB() : g.stones(), hfs = g.ownB('headframe');
     if (g.eco && s.raidLive && !g.army(foeOf(s.team)).some(u => u.order.type === 'amove')) s.raidLive = false;
     // Against a Chorus that builds, "the last Stone" means the Veyl base is nearly gone, not that they only ever had one.
-    const last = v ? hfs.length === 1 && g.ownB().length <= 4 : foes.length === 1 && (!g.eco || g.ownB(undefined, false, 1).length <= 3);
+    const last = v ? hfs.length === 1 && g.ownB().length <= 2 && now > 300 : foes.length === 1 && (!g.eco || g.ownB(undefined, false, 1).length <= 3);
     const enemyPush = v ? this.plan?.phase === 'go' : this.vs.plan?.phase === 'go';
     if (!s.plan && now > s.nextPlan && (foes.length || (!v && g.mission && this.targetFor(0))) && !s.raidLive && !(s.team === 0 && this.warned) && !enemyPush) {
       // Every push that dies on their doorstep makes the next muster bigger, so the side stops feeding the enemy six at a time.
-      const need = (last ? 5 : 6) + 2 * Math.min(s.fails, 3);
+      const need = g.eco && !g.army(foeOf(s.team)).length ? 7 : (last ? 5 : 6) + 2 * Math.min(s.fails, 3);   // nobody left to stop us but the towers: a fair-sized push, without the caution
       if (idle.length >= need) {
         const book = last ? 2 : s.lastFailed || s.pushes % 2 === 1 ? 1 : 0; s.plan = { phase: 'ask', t: 10, target: null, book, label: B[book].label };
         const text = v

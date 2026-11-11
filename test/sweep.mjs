@@ -55,7 +55,7 @@ try {
   const maps = await p.evaluate(() => {
     const out = {}; for (const [size, name] of [[1, 'small'], [0, 'medium'], [2, 'large']]) { __ore.pickMap(0); __ore.pickSize(size); __ore.start(); const g = __ore.game; out[name] = { fields: g.ores.length, out: Math.round(Math.hypot(g.stones()[0].pos.x, g.stones()[0].pos.z)) }; }
     __ore.pickMap(0); __ore.pickSize(0); __ore.start(); const g = __ore.game; g.noRender = true; g.introT = 0; g.dir.auto = false; g.fog.update(g, 1, true);
-    const st = g.stones()[0], far = g.ores[g.ores.length - 1];
+    const st = g.stones()[0], far = g.ores.filter(n => g.stones().every(t => Math.hypot(n.pos.x - t.pos.x, n.pos.z - t.pos.z) > 60)).pop();   // the Veyl home seams sit behind the outpost
     const fog = { yard: g.fog.sees(0, 0), outpost: g.fog.seen(st.pos.x, st.pos.z), field: g.fog.seen(far.pos.x, far.pos.z) };
     // a second Headframe out on a field: Riggers bank there, and losing the first one is not the end
     const [sx, sz] = [far.pos.x, far.pos.z], l = Math.hypot(sx, sz), at = g.dir.freeSpot('headframe', Math.round(sx - sx / l * 14), Math.round(sz - sz / l * 14)) || [0, 30], [hx, hz] = at; g.ore = 1000;

@@ -108,6 +108,8 @@ The Veyl run the same kind of economy as the yard, with their own pieces:
 
 The Choir Stone also teaches **Low Hum** (Tenders gather 30% faster) and **Wide Chorus** (more room for voices). Press G to hand the Chorus to the Conductor, who then grows it the way the bot Chorus does. The Chorus Lead pitches pushes the same way the Squad Lead does (Z yes, X hold, V follow me, middle mouse to point), the Conductor warns you when Ironhold boots are coming, and the Watcher calls out when your buildings are hit.
 
+**Balance.** A Veyl fighter that costs ore is 65% tougher and hits 45% harder than the free raiders the bot Chorus breeds in an Ironhold skirmish, so equal ore buys roughly an even fight. Ironhold bots against Veyl bots trade the lead back and forth and finish in ten to twenty-five minutes, with each side winning some (four of six soaks to the Veyl, on Needle's Eye, Switchback and Glass Flats across all three shifts). Single player as Ironhold is unchanged.
+
 `node test/veyl.mjs` plays a solo Veyl run in a browser, and `node tools/eco.cjs '[[0,1]]' 30` sets Ironhold bots against Veyl bots, both with full economies, for balancing.
 
 ## The Veyl base

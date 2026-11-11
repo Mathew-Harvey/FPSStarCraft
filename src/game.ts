@@ -112,7 +112,7 @@ export class Game {
   uById = new Map<number, Unit>(); bById = new Map<number, Building>();
   evq: any[] | null = null; coop = 1; applying = false; names: Record<number, string> = {}; feedTo = 0; score: Record<number, number[]> = {}; myTeam = 0; teams: Record<number, number> = {}; vWind = 0; vX = 0; vZ = 0; pings: { x: number; z: number; t: number; pid: number }[] = [];
   spawn(kind: Kind, team: number, x: number, z: number, id = 0): Unit {
-    const md = MD.unit(kind), st = UNIT[kind], hp = st.hp * (team === 0 || this.eco ? this.armorMul(team) : 1), sh = st.shield * (team && this.eco ? this.armorMul(team) : 1);
+    const md = MD.unit(kind), st = UNIT[kind], vb = team && this.eco && kind !== 'tender' ? this.vBoost.hp : 1, hp = st.hp * (team === 0 || this.eco ? this.armorMul(team) : 1) * vb, sh = st.shield * (team && this.eco ? this.armorMul(team) : 1) * vb;
     const rs = st.rad * 3.6, ring = mk(G.ringG, ringMat, [0, .08, 0], [rs, rs, 1], [-Math.PI / 2, 0, 0], md.obj); ring.layers.set(L_FX); ring.visible = false;
     const u: Unit = { id: id || nextId++, kind, team, pilot: 0, nx: x, nz: z, pos: V3(x, 0, z), yaw: R(0, 6), hp, maxHp: hp, shield: sh, maxShield: sh, obj: md.obj, rig: md.rig, ring, alive: true, speed: st.speed, moving: false, phase: R(0, 6), cd: R(0, 1), think: R(0, .3), target: null, order: { type: 'guard', x, z }, lastHit: -99, state: 'idle', timer: 0, carrying: 0, node: null, site: null, dashCd: R(2, 5), dashT: 0, swing: 0, slot: 0, flashT: 0, pop: 0, wind: 0, windX: 0, windZ: 0, kx: 0, kz: 0, pitch: 0, brace: false };
     md.obj.position.copy(u.pos); md.obj.rotation.y = u.yaw; this.scene.add(md.obj); this.units.push(u);
@@ -151,9 +151,11 @@ export class Game {
   /** A side the bots run hits as hard as the shift says. A side somebody plays hits at full weight. */
   foeK(team: number) { return this.human[team] ? 1 : this.diff.enemy; }
   gunMul(team = 0) { const u = this.up; return team ? (u.vedge ? 1.25 : 1) * (u.vedge2 ? 1.2 : 1) : (u.dmg ? 1.25 : 1) * (u.dmg2 ? 1.2 : 1) * (u.dmg3 ? 1.15 : 1) * (this.eco ? this.foeK(0) : 1); }
+  /** With a full economy the Veyl pay for every body, so each one is worth more than a free raider: tougher and harder hitting. */
+  vBoost = { hp: 1.65, dmg: 1.45 };
   armorMul(team = 0) { const u = this.up; return team ? (u.vglass ? 1.25 : 1) * (u.vglass2 ? 1.2 : 1) : (u.armor ? 1.25 : 1) * (u.armor2 ? 1.2 : 1) * (u.armor3 ? 1.15 : 1); }
   /** What a Veyl body's hit is worth: the shift on a bot side, and the songs the Chorus has learned. */
-  vMul() { return this.foeK(1) * (this.eco ? this.gunMul(1) : 1); }
+  vMul() { return this.foeK(1) * (this.eco ? this.gunMul(1) * this.vBoost.dmg : 1); }
   /** How much faster research makes this body walk. */
   pace(u: Unit) { return u.team ? (this.up.vstep && u.kind !== 'tender' ? 1.12 : 1) : u.kind === 'gantry' ? (this.up.servo ? 1.2 : 1) : u.kind !== 'rigger' && this.up.pay ? 1.12 : 1; }
   /** The buildings still missing before this one can be staked out. */

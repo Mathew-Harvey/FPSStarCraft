@@ -1,0 +1,167 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="description" content="Ore Else is a first-person strategy game that runs in a browser tab. Campaign, skirmish, co-op and versus.">
+<title>Ore Else</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Anton&family=Bangers&family=Barlow+Condensed:wght@500;600;700&display=swap">
+<style>
+/* Layout: a comic book cover, then pages. Ink-bordered panels tilt a degree or two off the grid; captions sit in yellow boxes on the panel edge. */
+:root{
+  --ink:#0e0d14; --night:#15131c; --panel:#201d2a; --paper:#f4ead2; --muted:#a59fb3;
+  --yel:#ffc21a; --teal:#35e0c8; --mag:#ff4f9a; --rust:#c9743f;
+  --display:"Anton","Impact","Arial Narrow",sans-serif;
+  --body:"Barlow Condensed","Arial Narrow",sans-serif;
+  --comic:"Bangers","Impact",sans-serif;
+  color-scheme:dark;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--night);color:var(--paper);font-family:var(--body);font-size:20px;line-height:1.35;font-weight:500}
+.wrap{max-width:1120px;margin:0 auto;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+h1,h2,h3{font-family:var(--display);font-weight:400;text-transform:uppercase;line-height:.95;margin:0;text-wrap:balance}
+p{margin:0;max-width:62ch}
+a{color:var(--yel)}
+a:focus-visible,button:focus-visible{outline:4px solid var(--teal);outline-offset:3px}
+
+/* cover */
+.cover{position:relative;background:var(--ink);border-bottom:6px solid var(--ink)}
+.cover .reel{display:block;width:100%;aspect-ratio:16/9;max-height:78vh;object-fit:cover;background:var(--panel)}
+.cover .shade{position:absolute;inset:0;background:linear-gradient(180deg,rgba(14,13,20,0) 45%,rgba(14,13,20,.92) 100%);pointer-events:none}
+.cover .wrap{position:absolute;left:0;right:0;bottom:0;padding-block:0 28px;display:flex;flex-direction:column;gap:10px}
+.logo{font-size:clamp(64px,13vw,168px);color:var(--yel);letter-spacing:.01em;text-shadow:5px 5px 0 var(--ink),-2px -2px 0 var(--ink),2px -2px 0 var(--ink),-2px 2px 0 var(--ink),10px 10px 0 var(--mag)}
+.tag{font-family:var(--comic);font-size:clamp(22px,3.2vw,36px);letter-spacing:.03em;text-transform:uppercase;text-shadow:3px 3px 0 var(--ink);max-width:28ch;line-height:1.05}
+@media (max-width:640px){
+  .cover .wrap{position:static;padding-block:18px 24px}.cover .shade{display:none}
+}
+
+/* strips */
+.strip{background:var(--yel);color:var(--ink);border-block:5px solid var(--ink);font-family:var(--display);text-transform:uppercase;font-size:clamp(17px,2.2vw,24px);letter-spacing:.03em}
+.strip .wrap{display:flex;flex-wrap:wrap;gap:6px 30px;padding-block:10px}
+.strip b{font-weight:400;color:#7a1f46}
+
+section{padding-block:56px}
+.lede{display:flex;flex-direction:column;gap:14px;margin-bottom:30px}
+.lede h2{font-size:clamp(40px,6vw,76px);color:var(--paper)}
+.lede h2 em{font-style:normal;color:var(--yel)}
+
+/* comic page */
+.page{display:grid;grid-template-columns:repeat(12,1fr);gap:22px}
+.pan{position:relative;border:6px solid var(--ink);background:var(--panel);box-shadow:9px 9px 0 var(--ink);min-width:0}
+.pan img{display:block;width:100%;height:100%;object-fit:cover;aspect-ratio:16/9}
+.pan .cap{position:absolute;left:-10px;bottom:14px;max-width:min(88%,430px);background:var(--yel);color:var(--ink);border:4px solid var(--ink);padding:8px 14px 10px;font-weight:600;font-size:19px;line-height:1.2;box-shadow:5px 5px 0 var(--ink)}
+.pan .cap h3{font-size:30px;margin-bottom:3px}
+.pan.a{grid-column:span 7;transform:rotate(-.8deg)} .pan.b{grid-column:span 5;transform:rotate(1deg)}
+.pan.c{grid-column:span 5;transform:rotate(.6deg)} .pan.d{grid-column:span 7;transform:rotate(-.6deg)}
+.pan.b img,.pan.c img{aspect-ratio:auto;min-height:100%}
+.pan.b .cap,.pan.d .cap{left:auto;right:-10px;background:var(--paper)}
+@media (max-width:800px){.pan.a,.pan.b,.pan.c,.pan.d{grid-column:1/-1;transform:none}.pan .cap{position:static;max-width:none;border-width:4px 0 0;box-shadow:none}.pan.b img,.pan.c img{aspect-ratio:16/9}}
+
+/* modes */
+.modes{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:0;border:6px solid var(--ink);box-shadow:9px 9px 0 var(--ink);background:var(--ink)}
+.modes div{background:var(--panel);padding:20px 20px 22px;border:3px solid var(--ink);display:flex;flex-direction:column;gap:8px;min-width:0}
+.modes h3{font-size:34px;color:var(--yel)}
+.modes .n{font-family:var(--comic);font-size:20px;letter-spacing:.06em;text-transform:uppercase;color:var(--teal)}
+.modes div.v h3{color:var(--teal)}.modes div.v .n{color:var(--mag)}
+
+/* sides */
+.sides{display:grid;grid-template-columns:1fr 1fr;gap:26px}
+.side{display:flex;flex-direction:column;gap:14px;min-width:0}
+.side .pan{transform:rotate(-.7deg)} .side.v .pan{transform:rotate(.7deg)}
+.side h3{font-size:44px;color:var(--yel)} .side.v h3{color:var(--teal)}
+.roster{display:flex;flex-wrap:wrap;gap:8px;padding:0;margin:0;list-style:none}
+.roster li{font-family:var(--display);text-transform:uppercase;font-size:17px;letter-spacing:.05em;background:var(--ink);border:3px solid var(--yel);padding:2px 10px 4px}
+.side.v .roster li{border-color:var(--teal)}
+@media (max-width:800px){.sides{grid-template-columns:1fr}.side .pan,.side.v .pan{transform:none}}
+
+/* play */
+.play{background:var(--rust);color:var(--ink);border-block:6px solid var(--ink)}
+.play .wrap{display:grid;grid-template-columns:1.1fr 1fr;gap:34px;align-items:start}
+.play h2{font-size:clamp(40px,6vw,76px)}
+.play p{font-weight:600}
+.play .col{display:flex;flex-direction:column;gap:14px;min-width:0}
+pre{margin:0;background:var(--ink);color:var(--paper);border:4px solid var(--ink);box-shadow:6px 6px 0 rgba(14,13,20,.45);padding:14px 16px;font:500 16px/1.5 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;overflow-x:auto}
+pre i{font-style:normal;color:var(--muted)}
+.btn{display:inline-block;align-self:flex-start;font-family:var(--display);text-transform:uppercase;font-size:28px;color:var(--ink);background:var(--yel);border:5px solid var(--ink);padding:6px 24px 10px;text-decoration:none;box-shadow:7px 7px 0 var(--ink);transform:skewX(-6deg)}
+.btn:hover{background:var(--paper)}
+@media (max-width:800px){.play .wrap{grid-template-columns:1fr}}
+footer{padding-block:26px 40px;color:var(--muted);font-size:17px}
+@media (prefers-reduced-motion:reduce){.reel{animation:none}}
+</style>
+</head>
+<body>
+
+<header class="cover">
+  <img class="reel" src="screenshots/push.jpg" alt="A squad pushing up the road">
+  <div class="shade"></div>
+  <div class="wrap">
+    <h1 class="logo">Ore Else</h1>
+    <p class="tag">A first-person strategy game that runs in a browser tab.</p>
+  </div>
+</header>
+
+<div class="strip"><div class="wrap"><span>Campaign</span><span>Skirmish</span><span>Co-op for <b>4</b></span><span>Versus</span><span><b>3</b> maps</span><span><b>9</b> bodies to drive</span><span><b>0</b> installs</span></div></div>
+
+<main>
+<section><div class="wrap">
+  <div class="lede">
+    <h2>Start as one worker <em>with a drill.</em></h2>
+    <p>You clock in at the Ironhold Charter as a Rigger. You dig ore, build a yard, hire a squad, and then stop being one person. Any body on your payroll is yours to drive, and the rest keep working while you do.</p>
+  </div>
+  <div class="page">
+    <div class="pan a"><img src="screenshots/push.jpg" alt="A squad of Ironhold soldiers pushing up a desert road toward a Veyl gate" loading="lazy"><div class="cap"><h3>Build an army</h3>Bunkhouse, Machine Shop, Foundry. Each building unlocks new bodies to hire and the upgrades to keep them alive.</div></div>
+    <div class="pan b"><img src="screenshots/jump.jpg" alt="The jump wheel: an overhead view of the yard with a list of bodies to jump into" loading="lazy"><div class="cap"><h3>Jump into any of it</h3>Hold Tab, pick a body, let go. Time slows while you choose.</div></div>
+    <div class="pan c"><img src="screenshots/gantry.jpg" alt="First-person view from the cockpit of a Gantry walker with a cannon on each side" loading="lazy"><div class="cap"><h3>Drive the big one</h3>The Gantry is two legs, two cannons and no paperwork.</div></div>
+    <div class="pan d"><img src="screenshots/topple.jpg" alt="A tall alien tower toppling over in pieces" loading="lazy"><div class="cap"><h3>Break everything</h3>Every rock, wall and tower comes apart. Tall buildings fall on whatever is standing under them.</div></div>
+  </div>
+</div></section>
+
+<section><div class="wrap">
+  <div class="lede"><h2>Four ways <em>to clock in.</em></h2></div>
+  <div class="modes">
+    <div><span class="n">Five jobs</span><h3>Campaign</h3><p>Each job teaches one part of the trade, from your first drill to a full assault on a new map. Finishing it unlocks multiplayer.</p></div>
+    <div><span class="n">Three maps, three shifts</span><h3>Skirmish</h3><p>One full match against the Veyl on Needle's Eye, Switchback or Glass Flats. Day shift is gentle. Double shift is not.</p></div>
+    <div><span class="n">Up to four players</span><h3>Co-op</h3><p>Share one yard and one payroll. Read out a five-letter lobby code, ready up and go. The raids grow with the crew.</p></div>
+    <div class="v"><span class="n">Up to two on the other side</span><h3>Versus</h3><p>Pick the Veyl in the lobby and lead the raids yourself. Call them early, march with them, and break the Headframe.</p></div>
+  </div>
+</div></section>
+
+<section><div class="wrap">
+  <div class="lede"><h2>Two sides. <em>Neither is reasonable.</em></h2></div>
+  <div class="sides">
+    <div class="side">
+      <div class="pan"><img src="screenshots/lineup.jpg" alt="The Ironhold units standing in a line in front of the Headframe" loading="lazy"></div>
+      <h3>Ironhold Charter</h3>
+      <p>A mining company with a payroll problem. Everyone here is paid by the bullet and has opinions about your plan.</p>
+      <ul class="roster"><li>Rigger</li><li>Linesman</li><li>Breacher</li><li>Patch</li><li>Longshot</li><li>Gantry</li></ul>
+    </div>
+    <div class="side v">
+      <div class="pan"><img src="screenshots/versus.jpg" alt="First-person view as a Veyl Lancer inside the Veyl outpost, with a singing crystal blade for an arm" loading="lazy"></div>
+      <h3>Veyl Chorus</h3>
+      <p>They sing before they shoot, which they consider polite. Their towers hum, their gates grow, and their Warden is the low note the ground hears.</p>
+      <ul class="roster"><li>Cantor</li><li>Lancer</li><li>Warden</li></ul>
+    </div>
+  </div>
+</div></section>
+
+<section class="play"><div class="wrap">
+  <div class="col">
+    <h2>Play it</h2>
+    <p>Single player is one HTML file. Multiplayer needs the game server, which runs every match and also serves the page, so there is one thing to host.</p>
+    <a class="btn" href="https://github.com/Mathew-Harvey/FPSStarCraft">Get the code</a>
+    <p>There is no public server yet. Until there is, run your own with the four commands here and send your friends the address.</p>
+  </div>
+  <div class="col">
+<pre>git clone https://github.com/Mathew-Harvey/FPSStarCraft
+cd FPSStarCraft
+npm install
+npm run build
+npm start   <i># then open http://localhost:8080</i></pre>
+    <p>The server sends each player a picture of the match fifteen times a second, about one kilobyte each. Your own body moves the moment you press the key.</p>
+  </div>
+</div></section>
+</main>
+
+<footer><div class="wrap">Ore Else is an original game. Built with three.js and TypeScript. Sound and music are synthesised in the browser.</div></footer>
+</body>
+</html>

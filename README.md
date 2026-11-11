@@ -93,6 +93,8 @@ The outpost is a working base, not a row of targets. Two **Brood Pits** hatch ev
 
 ![A Choir Stone toppling](docs/screenshots/topple.jpg)
 
+Veyl Lancers use the scenery. Between shots a Lancer ducks behind the nearest rock or pillar and leans out to fire, and squad fire aimed at it from the far side mostly chews up the rock instead. Shoot the cover away, flank it, or drive a body round the side yourself.
+
 ## Maps
 
 Pick one on the menu. **Needle's Eye** is the original road east. **Switchback** is a tight canyon at sunset with a long flank. **Glass Flats** is open salt pan with almost no cover.
@@ -143,6 +145,10 @@ To put it on the internet, deploy the `Dockerfile` to any host that supports Web
 
 How it works: the server runs the same game code as single player at 30 ticks a second and sends every client a snapshot 15 times a second, about 1 KB each. Each client moves and aims its own body, reports its hits, and the server decides health, ore, building, training and the enemy.
 
+## Trailer and landing page
+
+`docs/index.html` is a landing page with the trailer at the top. Turn on GitHub Pages for the `docs` folder to publish it. `docs/trailer.mp4` is rendered from the real game, one frame at a time, by a script that stages seven shots and steps the simulation a twenty-fourth of a second per frame. It is silent, because the game's sound is synthesised live in the browser.
+
 ## Options
 
-The Options tab on the menu has mouse speed, volume and music, four picture settings (Auto adjusts the resolution to keep the frame rate up, Low also redraws shadows less often), colour-blind friendly team colours (blue for your side and orange for the other on health bars and the minimap), and key rebinding for every keyboard action. Prompts in the game show the keys you chose. Everything is saved in the browser.
+The Options tab on the menu has mouse speed, volume and music, four picture settings (Auto adjusts the resolution to keep the frame rate up, Low also redraws shadows less often), colour-blind friendly team colours (blue for your side and orange for the other on health bars and the minimap), and key rebinding for every keyboard action. Prompts in the game show the keys you chose. Everything is saved in the browser. There is also a frame rate readout, which shows frames a second, the worst frame in the last half second, the render size and the unit count.

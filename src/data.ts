@@ -61,6 +61,8 @@ export const UPGRADES: UpDef[] = [
 
 export interface Order { type: 'guard' | 'amove' | 'follow' | 'raid'; x: number; z: number; path?: number[][]; lead?: Unit }
 export interface Unit {
+  /** Set once a Veyl guard has broken off to regrow its shield, so it only does that once. */
+  fled?: boolean;
   /** Scenery a Veyl Lancer is sheltering behind, if any. */
   cover?: Prop | null;
   id: number; kind: Kind; team: number; pos: THREE.Vector3; yaw: number; hp: number; maxHp: number; shield: number; maxShield: number;

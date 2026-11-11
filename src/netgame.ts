@@ -30,7 +30,7 @@ export function buildSnap(g: Game) {
 const BUDGET = new WeakMap<Unit, { left: number; t: number }>(), MOVED = new WeakMap<Unit, number>();
 export function serverCmd(g: Game, pid: number, unit: Unit | null, c: any[]) {
   const k = c[0], num = (i: number) => (typeof c[i] === 'number' && isFinite(c[i]) ? c[i] : 0);
-  if (g.teams[pid] === 1 && ['tn', 'up', 'pl', 'mn', 'wd', 'fx', 'pt', 'or'].includes(k)) return;   // Ironhold business
+  if (g.teams[pid] === 1 && ['tn', 'up', 'pl', 'mn', 'wd', 'fx', 'pt', 'or', 'hl'].includes(k)) return;   // Ironhold business
   if (k === 'dm') {
     // A player reports their own hits, so the server checks them: the target has to be an enemy in reach, and no body can deal more
     // in a second than the hardest-hitting gun and a grenade could together.
@@ -39,6 +39,7 @@ export function serverCmd(g: Game, pid: number, unit: Unit | null, c: any[]) {
     const bk = BUDGET.get(unit) || { left: 900, t: g.time }; BUDGET.set(unit, bk); bk.left = Math.min(900, bk.left + (g.time - bk.t) * 450); bk.t = g.time;
     const amt = Math.min(450, num(2), bk.left); if (amt <= 0) return; bk.left -= amt; g.damage(t, amt, unit, !!c[3]);
   }
+  else if (k === 'hl') { const o = g.units.find(x => x.id === num(1)); if (unit && unit.kind === 'patch' && o && o.alive && o.team === unit.team && Math.hypot(o.pos.x - unit.pos.x, o.pos.z - unit.pos.z) < 70) { const bk = BUDGET.get(unit) || { left: 900, t: g.time }; BUDGET.set(unit, bk); bk.left = Math.min(900, bk.left + (g.time - bk.t) * 450); bk.t = g.time; if (bk.left >= 80) { bk.left -= 80; o.hp = Math.min(o.maxHp, o.hp + 10); } } }
   else if (k === 'dp') { if (!unit) return; const p = g.props[num(1)]; if (p) g.damageProp(p, Math.min(900, num(2)), unit); }
   else if (k === 'tr') { if (c.length === 9) g.evq!.push(['tr', ...c.slice(1).map(Number), pid]); }
   else if (k === 'pj') { if (c.length === 9) g.evq!.push(['pj', ...c.slice(1).map(Number), 2, pid]); }
@@ -87,7 +88,7 @@ function event(g: Game, e: any[]) {
   else if (k === 'kb') { const b = g.bById.get(e[1]); if (b && b.alive) { g.fallA = e[2]; g.killBuilding(b); } }
   else if (k === 'pr') { const p = g.props[e[1]]; if (p && p.alive && p.hp > e[2]) g.damageProp(p, p.hp - e[2], null); }
   else if (k === 'wn') g.warn(e[1], e[2], e[3], e[4]);
-  else if (k === 'ht') { const me = g.me; if (me && e[1] === me.id) { g.shake = Math.min(1, g.shake + .45); const a = Math.atan2(e[2] - me.pos.x, e[3] - me.pos.z) - g.yaw; g.hud.hurt(Math.atan2(Math.sin(a), Math.cos(a))); sfx.hurt(); me.lastHit = g.time; } }
+  else if (k === 'ht') { const me = g.me; if (me && e[1] === me.id) { g.shake = Math.min(1, g.shake + .45); const a = Math.atan2(e[2] - me.pos.x, e[3] - me.pos.z) - g.yaw; g.hud.hurt(Math.atan2(Math.sin(a), Math.cos(a))); sfx.hurt(); me.lastHit = g.time; if (g.brace) { g.payback = Math.min(1, g.payback + .2); sfx.clang(); } } }
 }
 export function applySnap(g: Game, s: any) {
   const net = g.net!; g.applying = true;

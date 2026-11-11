@@ -22,10 +22,12 @@ export function tone(hex: string, k: number) { const c = new THREE.Color(hex); i
 
 // ---------------------------------------------------------------- painted textures
 export type Ctx = CanvasRenderingContext2D;
+/** Ink lines are drawn at this share of their old width: Mat found the pen "a bit heavy all round". Coloured strokes keep their width. */
+export const INK_W = (col?: string) => !col || col === INK ? .5 : 1;
 export function wob(g: Ctx, pts: number[][], w: number, col?: string) {
   g.strokeStyle = col || INK; g.lineCap = 'round'; g.lineJoin = 'round';
   for (let pass = 0; pass < 2; pass++) {
-    g.lineWidth = w * (pass ? .55 : 1); g.beginPath();
+    g.lineWidth = w * INK_W(col) * (pass ? .55 : 1); g.beginPath();
     pts.forEach((p, i) => { const x = p[0] + R(-1.4, 1.4), y = p[1] + R(-1.4, 1.4); i ? g.lineTo(x, y) : g.moveTo(x, y); });
     g.stroke();
   }
@@ -246,9 +248,11 @@ float lin(vec2 uv){ float d=texture2D(tD,uv).x; if(uOrtho>.5) return uNear+d*(uF
 vec3 nrm(vec2 uv){ return texture2D(tN,uv).xyz*2.-1.; }
 float edgeAt(vec2 u, vec2 sp){
   float d0=lin(u);
-  float th=uOrtho>.5?1.5:mix(2.5,1.1,clamp(d0/45.,0.,1.));
-  th*=(.55+1.05*vnoise(sp/46.))*uPx;
-  vec2 px=th/uRes, pw=px*1.9, pn=px*.62;
+  // Ink is drawn as if on the object, not on the screen: it narrows as the thing gets further away,
+  // so a distant Rigger gets a fine line rather than one as thick as a close one's.
+  float th=uOrtho>.5?.9:clamp(1.15/(1.+d0/16.),.28,1.15);
+  th*=(.8+.4*vnoise(sp/46.))*uPx;
+  vec2 px=th/uRes, pw=px*1.4, pn=px*.62;
   float dA=lin(u+px),dB=lin(u-px),dC=lin(u+px*vec2(-1.,1.)),dD=lin(u+px*vec2(1.,-1.));
   vec3 n0=nrm(u),nA=nrm(u+pn),nB=nrm(u-pn),nC=nrm(u+pn*vec2(-1.,1.)),nD=nrm(u+pn*vec2(1.,-1.));
   float de;
@@ -258,8 +262,10 @@ float edgeAt(vec2 u, vec2 sp){
     float eA=lin(u+pw),eB=lin(u-pw),eC=lin(u+pw*vec2(-1.,1.)),eD=lin(u+pw*vec2(1.,-1.)); float emin=min(min(eA,eB),min(eC,eD));
     de=max(de,smoothstep(.5,.8,(abs(eA-eB)+abs(eC-eD))/max(emin,.01))*(1.-smoothstep(30.,70.,emin)));
   }
-  float nd=length(nA-nB)+length(nC-nD); float ne=smoothstep(.7,1.05,nd)*(1.-smoothstep(140.,320.,d0));
-  return max(de,ne);
+  float nd=length(nA-nB)+length(nC-nD); float ne=smoothstep(.7,1.05,nd)*(1.-smoothstep(90.,220.,d0));
+  // and it fades with distance, measured to the nearer side of the edge
+  float near=uOrtho>.5?0.:min(d0,min(min(dA,dB),min(dC,dD)));
+  return max(de,ne)*mix(1.,.4,smoothstep(12.,110.,near));
 }
 void main(){
   vec2 sp=vUv*uRes/uPx;
@@ -267,7 +273,7 @@ void main(){
   vec2 u=vUv+wobv; vec2 h=.3/uRes;
   float edge=(edgeAt(u+h,sp)+edgeAt(u-h,sp)+edgeAt(u+h*vec2(1.,-1.),sp)+edgeAt(u+h*vec2(-1.,1.),sp))*.25;
   vec3 col=texture2D(tC,vUv).rgb;
-  col=mix(col,vec3(.055,.05,.08),edge*.97);
+  col=mix(col,vec3(.055,.05,.08),edge*.85);
   col=mix(col,col*vec3(1.1,.8,.84)+vec3(.03,0.,.07),uDusk*.75);
   col=mix(vec3(dot(col,vec3(.3,.59,.11))),col,1.18*uSat);
   col*=.95+.08*vnoise(sp*.5);

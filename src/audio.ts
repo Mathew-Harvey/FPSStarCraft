@@ -1,4 +1,7 @@
-// Tiny synthesised sound effects. No audio files.
+// Sound effects: recorded and designed CC0 samples (assets/sfx, sources in assets/sfx/CREDITS.md),
+// layered with a little synthesised weight underneath. If the samples cannot be decoded the old
+// all-synth set plays instead, so the game is never silent.
+import BANK from 'sfx:bank';
 let ctx: AudioContext | null = null;
 let master: GainNode | null = null;
 let noiseBuf: AudioBuffer | null = null;
@@ -26,11 +29,14 @@ export function initAudio() {
     ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
     noiseBuf = ctx.createBuffer(1, ctx.sampleRate * 2, ctx.sampleRate);
     const d = noiseBuf.getChannelData(0); for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
-    master = ctx.createGain(); master.gain.value = volume; const comp = ctx.createDynamicsCompressor(); comp.threshold.value = -14; comp.ratio.value = 5; master.connect(comp); comp.connect(ctx.destination);
+    master = ctx.createGain(); master.gain.value = volume; const comp = ctx.createDynamicsCompressor(); comp.threshold.value = -14; comp.ratio.value = 4; comp.knee.value = 12;
+    // a little warmth on the whole mix: more chest in the lows, the brittle top eased off
+    const warm = ctx.createBiquadFilter(), soft = ctx.createBiquadFilter(); warm.type = 'lowshelf'; warm.frequency.value = 140; warm.gain.value = 3; soft.type = 'highshelf'; soft.frequency.value = 7000; soft.gain.value = -3;
+    master.connect(warm); warm.connect(soft); soft.connect(comp); comp.connect(ctx.destination); loadBank();
     music = ctx.createGain(); music.gain.value = .0001; music.connect(master); setInterval(tick, 90);
     // a bed of desert wind that never quite repeats
     const w = ctx.createBufferSource(), wf = ctx.createBiquadFilter(), wg = ctx.createGain(), lfo = ctx.createOscillator(), lg = ctx.createGain();
-    w.buffer = noiseBuf; w.loop = true; wf.type = 'bandpass'; wf.frequency.value = 420; wf.Q.value = .6; wg.gain.value = .05; lfo.frequency.value = .13; lg.gain.value = 190;
+    w.buffer = noiseBuf; w.loop = true; wf.type = 'bandpass'; wf.frequency.value = 420; wf.Q.value = .6; wg.gain.value = .035; lfo.frequency.value = .13; lg.gain.value = 190;
     lfo.connect(lg); lg.connect(wf.frequency); w.connect(wf); wf.connect(wg); wg.connect(master); w.start(); lfo.start();
 
   } catch (e) { ctx = null; }
@@ -48,14 +54,14 @@ function tone(f0: number, f1: number, dur: number, peak: number, type: Oscillato
 }
 /** The second half of a two-part sound. The silent copy of the game never gets to play it. */
 function later(f: () => void, ms: number) { const l = level; if (l) setTimeout(() => { const now = level; level = l; f(); level = now; }, ms); }
-/** `vol` 0..1 lets distant events play quieter. */
-export const sfx = {
+/** The all-synthesised set, kept as the fallback. `vol` 0..1 lets distant events play quieter. */
+const synth = {
   shot: (vol = 1) => { noise(.12, 2200, .5 * vol); tone(220, 60, .09, .25 * vol, 'sawtooth'); },
   turret: (vol = 1) => { noise(.16, 1200, .4 * vol); tone(140, 50, .12, .25 * vol, 'sawtooth'); },
   hit: (vol = 1) => { noise(.06, 900, .35 * vol, 'bandpass'); },
   slash: (vol = 1) => { noise(.18, 3200, .3 * vol, 'highpass'); tone(900, 300, .16, .12 * vol, 'sine'); },
   ko: (vol = 1, veyl = true) => { if (veyl) { tone(900, 120, .35, .22 * vol, 'sine'); tone(1350, 200, .3, .1 * vol, 'triangle'); noise(.25, 2600, .2 * vol, 'highpass'); } else { tone(300, 60, .3, .3 * vol, 'triangle'); noise(.25, 600, .3 * vol); } },
-  step: (heavy = false) => { noise(.07, heavy ? 260 : 420, heavy ? .16 : .1); },
+  step: (heavy = false, walker = false) => { noise(.07, heavy ? 260 : 420, heavy ? .16 : .1); },
   crit: () => { tone(1320, 1760, .09, .16, 'triangle'); },
   streak: (n: number) => { [0, 4, 7, 12].slice(0, Math.min(4, n)).forEach((st, i) => later(() => tone(440 * Math.pow(2, st / 12), 440 * Math.pow(2, st / 12), .12, .2, 'square'), i * 70)); },
   boom: (vol = 1) => { noise(.7, 420, .9 * vol); tone(120, 28, .55, .6 * vol, 'sine'); noise(.12, 3000, .3 * vol, 'highpass'); },
@@ -67,6 +73,7 @@ export const sfx = {
   dash: (vol = 1) => { noise(.3, 2600, .22 * vol, 'bandpass'); tone(400, 900, .25, .08 * vol, 'sine'); },
   charge: (vol = 1) => { tone(70, 240, .85, .35 * vol, 'sawtooth'); tone(140, 480, .85, .12 * vol, 'sine'); },
   ore: () => { tone(880, 1320, .09, .18, 'triangle'); },
+  bank: () => { tone(660, 990, .12, .18, 'triangle'); },
   blip: () => { tone(660, 660, .05, .12); },
   deny: () => { tone(160, 110, .16, .2); },
   place: () => { tone(220, 440, .14, .2, 'triangle'); noise(.1, 500, .2); },
@@ -88,10 +95,105 @@ export const sfx = {
   win: () => { [523, 659, 784, 1046].forEach((f, i) => later(() => tone(f, f, .25, .2, 'triangle'), i * 140)); },
   lose: () => { [392, 330, 262, 196].forEach((f, i) => later(() => tone(f, f, .3, .2, 'sawtooth'), i * 180)); },
 };
+
+// ---------------------------------------------------------------- samples
+// How the new set is mixed, after the way ASMR and foley recordists work: every sound is close and dry
+// (no room), the top is damped so it lands as a deep "thock" rather than a bright clack, and the weight
+// sits in the low end. Each action layers a real transient (the click, the crack, the knock) over a body
+// (a thump or a sub tone). Every play picks a different take and nudges its pitch, so a sound heard fifty
+// times a minute never turns into a machine gun of the same file.
+const bank: Record<string, AudioBuffer[]> = {}, lastPick: Record<string, number> = {};
+let ready = false;
+function loadBank() {
+  if (!ctx) return; const c = ctx, keys = Object.keys(BANK); let left = keys.length; if (!left) return;
+  for (const k of keys) {
+    const bin = atob(BANK[k]), bytes = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    const group = k.replace(/_\d+$/, '');
+    c.decodeAudioData(bytes.buffer).then(b => { (bank[group] = bank[group] || []).push(b); if (--left === 0) ready = !!bank.crack; }, () => { left = -1; });
+  }
+}
+type Opt = { rate?: number, at?: number, lp?: number, jit?: number };
+/** Plays a take from a group of samples. `lp` closes a low pass on it (distant sounds are duller), `at` delays it in seconds. */
+function S(name: string, peak: number, o: Opt = {}) {
+  peak *= level; const list = bank[name]; if (!ctx || !master || !list || peak < .004) return;
+  let i = Math.floor(Math.random() * list.length); if (list.length > 1 && i === lastPick[name]) i = (i + 1) % list.length; lastPick[name] = i;
+  const t = ctx.currentTime + (o.at || 0), src = ctx.createBufferSource(), g = ctx.createGain(), jit = o.jit ?? .05;
+  src.buffer = list[i]; src.playbackRate.value = (o.rate || 1) * (1 + (Math.random() * 2 - 1) * jit); g.gain.value = peak;
+  let tail: AudioNode = src; if (o.lp && o.lp < 16000) { const f = ctx.createBiquadFilter(); f.type = 'lowpass'; f.frequency.value = o.lp; f.Q.value = .5; src.connect(f); tail = f; }
+  tail.connect(g); g.connect(master); src.start(t);
+}
+/** A short sine drop for weight under a transient: felt more than heard. */
+function sub(f0: number, f1: number, dur: number, peak: number, at = 0) {
+  peak *= level; if (!ctx || !master || peak < .004) return;
+  const t = ctx.currentTime + at, o = ctx.createOscillator(), g = ctx.createGain();
+  o.type = 'sine'; o.frequency.setValueAtTime(f0, t); o.frequency.exponentialRampToValueAtTime(Math.max(20, f1), t + dur);
+  g.gain.setValueAtTime(.0001, t); g.gain.exponentialRampToValueAtTime(Math.max(peak, .0002), t + .004); g.gain.exponentialRampToValueAtTime(.0001, t + dur);
+  o.connect(g); g.connect(master); o.start(t); o.stop(t + dur + .05);
+}
+/** Far away sounds lose their top end before they lose their level. */
+const far = (v: number) => 900 + 13000 * Math.min(1, v) ** 1.6;
+/** A soft, low chime for rewards: sine with a quick bloom, no buzz. */
+function chime(f: number, dur: number, peak: number, at = 0) { sub(f, f * .995, dur, peak, at); sub(f * 2, f * 1.99, dur * .6, peak * .25, at); }
+
+const sampled: typeof synth = {
+  shot: (v = 1) => { S('crack', .4 * v, { lp: far(v), rate: .95 }); S('knock_hard', .28 * v, { lp: far(v) }); sub(95, 45, .08, .16 * v); },
+  turret: (v = 1) => { S('crack', .38 * v, { lp: far(v), rate: .8 }); S('knock_hard', .4 * v, { lp: far(v), rate: .8 }); sub(80, 38, .12, .22 * v); },
+  hit: (v = 1) => { S('punch', .6 * v, { rate: 1.05 }); S('pebble', .14 * v, { rate: 1.1 }); },
+  slash: (v = 1) => { S('slice', .3 * v, { lp: far(v) }); S('swish', .3 * v, { lp: far(v) }); },
+  ko: (v = 1, veyl = true) => {
+    if (veyl) { S('glass', .5 * v, { lp: far(v), rate: .85 }); S('field', .28 * v, { lp: far(v), rate: 1.3 }); sub(180, 60, .3, .18 * v); }
+    else { S('punch_heavy', .55 * v, { lp: far(v) }); S('thud_soft', .45 * v, { at: .05 }); S('cloth', .2 * v, { lp: far(v) }); }
+  },
+  step: (heavy = false, walker = false) => {
+    if (walker) { S('stomp', .55, { rate: .9 }); S('plate', .1, { rate: .6 }); sub(70, 32, .18, .3); }
+    else if (heavy) { S('step', .24, { rate: .82, lp: 5000, jit: .08 }); S('thud_soft', .14, { rate: 1.2 }); }
+    else S('step', .2, { lp: 6000, jit: .1 });
+  },
+  crit: () => { S('tink', .26, { rate: 1.15 }); chime(1320, .12, .05); },
+  streak: (n: number) => { [0, 4, 7, 12].slice(0, Math.min(4, n)).forEach((st, i) => { S('knock', .22, { at: i * .07, rate: Math.pow(2, st / 12), jit: 0 }); chime(440 * Math.pow(2, st / 12), .16, .07, i * .07); }); },
+  boom: (v = 1) => { const lp = far(v); S('crunch', .75 * v, { lp }); S('boom', .55 * v, { lp: Math.min(lp, 4000) }); if (v > .3) S('rumble', .35 * v, { at: .02 }); sub(70, 28, .5, .3 * v); },
+  blast: (v = 1) => { const lp = far(v); S('crunch', .4 * v, { lp, rate: 1.25 }); S('knock_hard', .45 * v, { lp, rate: .85 }); sub(110, 40, .16, .25 * v); },
+  clang: () => { S('metal', .5); S('plate', .32, { rate: 1.1 }); },
+  hurt: () => { S('punch_heavy', .55, { rate: .95 }); sub(120, 55, .16, .3); },
+  throw: () => { S('swish', .4); S('cloth', .14); },
+  zap: (v = 1) => { S('zap', .42 * v, { lp: far(v) }); },
+  dash: (v = 1) => { S('whoosh', .45 * v, { lp: far(v), rate: .9 }); S('cloth', .16 * v); },
+  charge: (v = 1) => { S('field', .5 * v, { lp: far(v), rate: .8 }); S('beam', .25 * v, { lp: far(v), rate: .7, at: .55 }); sub(50, 110, .85, .14 * v); },
+  ore: () => { S('mine', .42, { jit: .07 }); S('pebble', .22, { at: .045, rate: .85, jit: .12 }); },
+  bank: () => { S('pour', .42, { rate: .72 }); S('thunk', .4); sub(90, 50, .2, .15); },
+  blip: () => { S('rocker', .42); },
+  deny: () => { S('denied', .34); S('off', .3); },
+  place: () => { S('thunk', .55); S('latch', .34, { at: .06 }); },
+  built: () => { S('lock', .75); S('thunk', .32, { at: .3 }); chime(330, .3, .06, .36); chime(495, .35, .05, .44); },
+  jump: () => { S('whoosh', .38, { rate: .8 }); S('field', .2, { rate: 1.5 }); S('cloth', .18, { at: .08 }); },
+  card: () => { S('thud_soft', .6); S('knock_deep', .3); S('card', .42); },
+  alarm: () => { S('bell', .42, { lp: 5000 }); S('bell', .34, { at: .32, rate: .84, lp: 4500 }); },
+  callout: () => { S('rocker_soft', .38); S('knock', .18, { rate: 1.4 }); },
+  reload: (dur = 1.5) => {
+    S('mag_out', .4); S('cloth', .1);
+    S('mag_in', .42, { at: dur * .52 }); S('latch', .3, { at: dur * .52 + .02 });
+    S('bolt', .5, { at: dur * .86 }); S('act_light', .28, { at: dur * .86 + .05 });
+  },
+  rifle: (low = 0) => { S('crack', .5, { rate: 1 + low * .08 }); S('knock_hard', .42 * (1 - low * .4)); sub(78, 38, .1, .34 * (1 - low * .3)); S('act_light', .1, { at: .03, rate: 1.1 }); },
+  pistol: (low = 0) => { S('crack', .42, { rate: 1.28 + low * .1 }); S('knock_hard', .24, { rate: 1.35 }); sub(120, 60, .06, .2); S('act_light', .16, { at: .02, rate: 1.25 }); },
+  sniper: () => { S('crack_tail', .6); S('drum', .5); S('knock_deep', .45); sub(105, 30, .45, .4); S('act_heavy', .3, { at: .42 }); S('bolt', .4, { at: .6 }); },
+  scatter: () => { S('crack', .5, { rate: .72 }); S('knock_deep', .55); S('knock_hard', .5, { rate: .78 }); S('crack_tail', .26, { rate: .8 }); sub(85, 30, .26, .38); S('slide', .32, { at: .33 }); S('latch', .44, { at: .47 }); },
+  cannon: () => { S('drum', .55, { rate: 1.1 }); S('crunch', .32, { rate: 1.35 }); S('knock_hard', .5, { rate: .7 }); sub(80, 28, .3, .4); },
+  dry: () => { S('dry', .8); S('off', .3); },
+  kill: () => { S('knock', .45, { rate: .9, jit: .02 }); S('space', .28); chime(660, .14, .05, .03); },
+  win: () => { [523, 659, 784, 1046].forEach((f, i) => { chime(f / 2, .5, .12, i * .14); S('knock', .2, { at: i * .14, rate: f / 523, jit: 0 }); }); S('bell', .3, { at: .56, lp: 6000 }); },
+  lose: () => { [392, 330, 262, 196].forEach((f, i) => chime(f / 2, .55, .18, i * .18)); S('knock_deep', .4, { at: .72 }); },
+};
+/** Every sound effect. Plays the sampled set once it has decoded, the synthesised one until then. */
+export const soundsReady = () => ready;
+/** Both sets, for the sound board (tools/sfx/board.ts). */
+export const sets = { synth, sampled };
+export const sfx: typeof synth = new Proxy(synth, { get: (t, k: string) => (ready ? sampled : t)[k] });
+
 export function drillSound(on: boolean, biting: boolean) {
   if (!ctx || !master || !level) return;
-  if (on && !drillOsc) { drillOsc = ctx.createOscillator(); drillGain = ctx.createGain(); drillOsc.type = 'sawtooth'; drillGain.gain.value = .0001; drillOsc.connect(drillGain); drillGain.connect(master); drillOsc.start(); }
-  if (drillOsc && drillGain) { const t = ctx.currentTime; drillGain.gain.setTargetAtTime(on ? (biting ? .13 : .06) : .0001, t, .04); drillOsc.frequency.setTargetAtTime(biting ? 95 + Math.random() * 20 : 150, t, .05); }
+  if (on && !drillOsc) { drillOsc = ctx.createOscillator(); drillGain = ctx.createGain(); const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 700; lp.Q.value = 1.5; drillOsc.type = 'sawtooth'; drillGain.gain.value = .0001; drillOsc.connect(lp); lp.connect(drillGain); drillGain.connect(master); drillOsc.start(); }
+  if (drillOsc && drillGain) { const t = ctx.currentTime; drillGain.gain.setTargetAtTime(on ? (biting ? .16 : .07) * level : .0001, t, .04); drillOsc.frequency.setTargetAtTime(biting ? 70 + Math.random() * 16 : 110, t, .05); }
 }
 
 // ---------------------------------------------------------------- music

@@ -73,9 +73,9 @@ export const MISSIONS: Mission[] = [
     outro: 'Gate is down and their reinforcements have to walk. Next time we bring the heavy gear.',
   },
   {
-    name: 'Heavy Metal', tag: 'Job 4', map: 0, diff: 0, teaches: 'Foundry, Longshots, the Gantry, wrecking the map',
+    name: 'Heavy Metal', tag: 'Job 4', map: 0, diff: 0, teaches: 'Foundry, Assay Office, Longshots, the Gantry, wrecking the map',
     brief: 'The Foundry builds the Gantry, which is a crane that learned to hate. Everything on this map breaks, and that is a weapon. The Needle\'s Eye arch stands over their only road. Shoot out a leg and the lintel lands on whoever is under it. Then walk the Gantry into a Brood Pit and close it for good.',
-    allow: ['bunkhouse', 'depot', 'watchpost', 'machineshop', 'foundry'], units: ['linesman', 'breacher', 'patch', 'longshot', 'gantry'], raids: true, auto: true,
+    allow: ['bunkhouse', 'depot', 'watchpost', 'machineshop', 'assay', 'foundry', 'mast'], units: ['linesman', 'breacher', 'patch', 'longshot', 'gantry'], raids: true, auto: true,
     objectives: [
       { text: () => 'Build a Foundry', done: g => has(g, 'foundry') },
       { text: () => 'Field a Gantry walker', done: g => g.ms.gantry > 0 },
@@ -91,7 +91,7 @@ export const MISSIONS: Mission[] = [
   {
     name: 'Ore Else', tag: 'Job 5', map: 1, diff: 0, teaches: 'Everything, on new ground',
     brief: 'Switchback Canyon. The whole Veyl base, and nobody is coming to help. The Ward Pylon halves every hit on their buildings, so it goes first. Brood Pits feed the raids. The Reed Gate feeds the garrison. The Choir Stones are the job. Finish this and the Charter clears you for joint operations.',
-    allow: ['bunkhouse', 'depot', 'watchpost', 'machineshop', 'foundry'], units: ['linesman', 'breacher', 'patch', 'longshot', 'gantry'], raids: true, auto: true,
+    allow: ['bunkhouse', 'depot', 'watchpost', 'machineshop', 'assay', 'foundry', 'mast'], units: ['linesman', 'breacher', 'patch', 'longshot', 'gantry'], raids: true, auto: true,
     objectives: [
       { text: () => 'Knock down the Ward Pylon', done: g => !g.buildings.some(b => b.alive && b.kind === 'wardpylon') },
       { text: g => `Cave in both Brood Pits (${2 - g.pits().length}/2)`, done: g => !g.pits().length },

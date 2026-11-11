@@ -6,7 +6,7 @@ import { Game } from './game';
 import { Hud } from './hud';
 import { initAudio, setVolume, setMusic, audioSeat } from './audio';
 import { LocalMatch } from './split';
-import { UNIT, DIFFS, Kind } from './data';
+import { UNIT, BLD, UPGRADES, TRAINS, UNIT_NEEDS, DIFFS, Kind, BKind } from './data';
 import { MISSIONS } from './campaign';
 import { Net, Lobby } from './net';
 
@@ -104,7 +104,17 @@ document.addEventListener('pointerlockchange', () => { if (!locked() && live() &
 
 function fresh() { endSplit(); hud.reset(); const w = want(); game = new Game(pipe, hud, w.d, w.map, w.m); game.sens = sens; ended = false; (window as any).__ore.game = game; }
 function start() { initAudio(); setVolume(vol); setMusic(mus); { const w = want(); if (game.diff !== w.d || game.mapI !== w.map || game.mission !== w.m || game.time > 0) fresh(); } $('menu').hidden = true; $('pause').hidden = true; $('end').hidden = true; hud.show(true); game.phase = 'play'; game.introT = 1.8; lock(); }
-function pause() { if (game.phase !== 'play' && game.phase !== 'card') return; if (game2) { game2.phase = 'paused'; game2.keys.clear(); game2.lmb = game2.rmb = false; look2.clear(); } if (game.net) { game.phase = 'paused'; game.keys.clear(); game.lmb = game.rmb = false; $('pause').hidden = false; return; } game.phase = 'paused'; game.keys.clear(); game.lmb = game.rmb = false; $('pause').hidden = false; }
+/** The pause screen shows the whole tech tree: what is standing, what can be built next and what each building sells. */
+function showTree() {
+  const g = game, tiers: BKind[][] = [['headframe'], ['bunkhouse', 'depot'], ['watchpost', 'machineshop', 'assay'], ['foundry'], ['mast']];
+  $('tree').innerHTML = tiers.map(row => `<div class="tier">${row.map(k => {
+    const have = g.ownB(k, true).length > 0, miss = g.missing(k), off = !!g.mission && k !== 'headframe' && !g.mission.allow.includes(k);
+    const units = (TRAINS[k] || []).map(u => { const nb = UNIT_NEEDS[u], ok = have && (!nb || g.ownB(nb, true).length > 0); return `<li class="${ok ? 'ok' : ''}"><b>${UNIT[u].name}</b><small>${nb ? 'Needs ' + BLD[nb].name : 'Unit'} · ${UNIT[u].cost}</small></li>`; }).join('');
+    const ups = UPGRADES.filter(u => u.at === k).map(u => { const nu = u.needs ? UPGRADES.find(x => x.key === u.needs)! : null; return `<li class="${g.up[u.key] ? 'dn' : have && (!nu || g.up[nu.key]) ? 'ok' : ''}"><b>${u.name}</b><small>${g.up[u.key] ? 'Bought' : u.blurb + ' · ' + u.cost}${nu && !g.up[u.key] ? ' · after ' + nu.name : ''}</small></li>`; }).join('');
+    return `<div class="node ${have ? 'have' : off || miss.length ? 'lock' : 'can'}"><h4>${BLD[k].name}</h4><p>${have ? 'Standing' : off ? 'Not on this job' : miss.length ? 'Needs ' + miss.map(n => BLD[n].name).join(' and ') : k === 'headframe' ? '' : 'Ready to build · ' + BLD[k].cost}</p>${units || ups ? `<ul>${units}${ups}</ul>` : `<ul><li class="${have ? 'ok' : ''}"><small>${BLD[k].blurb}</small></li></ul>`}</div>`;
+  }).join('')}</div>`).join('');
+}
+function pause() { if (game.phase !== 'play' && game.phase !== 'card') return; showTree(); if (game2) { game2.phase = 'paused'; game2.keys.clear(); game2.lmb = game2.rmb = false; look2.clear(); } if (game.net) { game.phase = 'paused'; game.keys.clear(); game.lmb = game.rmb = false; $('pause').hidden = false; return; } game.phase = 'paused'; game.keys.clear(); game.lmb = game.rmb = false; $('pause').hidden = false; }
 function resume(byPad = false) { if (game.phase !== 'paused') return; initAudio(); $('pause').hidden = true; game.phase = 'play'; if (game2) game2.phase = 'play'; if (!byPad) lock(); }
 $('start').addEventListener('click', start);
 $('resume').addEventListener('click', () => resume());

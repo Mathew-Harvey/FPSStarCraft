@@ -3,11 +3,11 @@
 // everyone a snapshot of the world about fifteen times a second, plus a list of things to draw and say.
 import * as THREE from 'three';
 import { Game, beamMat } from './game';
-import { UNIT, BLD, BUILDABLE, UPGRADES, Kind, BKind, Unit, Building, UpKey, isSoldier } from './data';
+import { UNIT, BLD, BUILDABLE, UPGRADES, TRAINS, UNIT_NEEDS, Kind, BKind, Unit, Building, UpKey, isSoldier } from './data';
 import { V3, M, R, tracerMat } from './gfx';
 import { sfx, babble } from './audio';
 
-const KINDS = Object.keys(UNIT) as Kind[], BKINDS = Object.keys(BLD) as BKind[], UPS: UpKey[] = ['dmg', 'armor', 'dmg2', 'armor2'], ORD = ['guard', 'amove', 'follow', 'raid'] as const;
+const KINDS = Object.keys(UNIT) as Kind[], BKINDS = Object.keys(BLD) as BKind[], UPS: UpKey[] = UPGRADES.map(u => u.key), ORD = ['guard', 'amove', 'follow', 'raid'] as const;
 const r1 = (v: number) => Math.round(v * 10) / 10;
 const F_MOVE = 1, F_TGT = 2, F_WORK = 4, F_CARRY = 8, F_FIRE = 16, F_BRACE = 128;
 
@@ -27,7 +27,6 @@ export function buildSnap(g: Game) {
 }
 
 // ---------------------------------------------------------------- server: one player's actions
-const TRAINS: Record<string, Kind[]> = { headframe: ['rigger'], bunkhouse: ['linesman', 'breacher', 'patch', 'longshot'], foundry: ['gantry'] };
 export function serverCmd(g: Game, pid: number, unit: Unit | null, c: any[]) {
   const k = c[0], num = (i: number) => (typeof c[i] === 'number' && isFinite(c[i]) ? c[i] : 0);
   if (g.teams[pid] === 1 && ['tn', 'up', 'pl', 'mn', 'wd', 'fx', 'pt', 'or'].includes(k)) return;   // Ironhold business
@@ -37,7 +36,7 @@ export function serverCmd(g: Game, pid: number, unit: Unit | null, c: any[]) {
   else if (k === 'pj') { if (c.length === 9) g.evq!.push(['pj', ...c.slice(1).map(Number), 2, pid]); }
   else if (k === 'tn') {
     const b = g.buildings.find(x => x.id === num(1)), kind = c[2] as Kind; if (!b || !b.alive || b.team !== 0 || !b.built || !(TRAINS[b.kind] || []).includes(kind)) return;
-    const shop = g.ownB('machineshop', true).length > 0, fdy = g.ownB('foundry', true).length > 0; if (((kind === 'breacher' || kind === 'patch') && !shop) || (kind === 'longshot' && !fdy)) return;
+    const nb = UNIT_NEEDS[kind]; if (nb && !g.ownB(nb, true).length) return;
     g.feedTo = pid; g.train(b, kind, true); g.feedTo = 0;
   }
   else if (k === 'up') { const u = UPGRADES.find(x => x.key === c[1]); if (u && g.ownB(u.at, true).length) { g.feedTo = pid; g.buyUpgrade(u.key, true); g.feedTo = 0; } }

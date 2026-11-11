@@ -4,7 +4,7 @@ import * as THREE from 'three';
 import { V3, R, M } from './gfx';
 import { sfx } from './audio';
 import type { Game } from './game';
-import { Kind, UNIT, BLD, Unit, Building, Callout, OUTPOST, GATE, RALLY, RALLY_N, NORTH_PATH, MAP, ROAD, veylPt, roadPt, isSoldier } from './data';
+import { Kind, BKind, UNIT, BLD, UPGRADES, Unit, Building, Callout, OUTPOST, GATE, RALLY, RALLY_N, NORTH_PATH, MAP, ROAD, veylPt, roadPt, isSoldier } from './data';
 
 const DEPOT_SLOTS = [[-13, 9], [-13, -9], [-19, 0], [-22, 12], [-26, -6], [-20, 22]];
 const POST_SLOTS = [[31, 20], [9, -31], [33, 5], [-8, 26]];
@@ -138,10 +138,13 @@ export class Director {
     const hq = g.ownB('headframe', true)[0], bunk = g.ownB('bunkhouse'), bunkUp = bunk.filter(b => b.built), sites = g.ownB().filter(b => !b.built), shop = g.ownB('machineshop'), shopUp = shop.some(b => b.built);
     const free = g.supplyCap() - g.supplyUsed(), army = g.soldiers().length, posts = g.ownB('watchpost').length, building = sites.length > 0;
     const wantDepot = bunk.length > 0 && free <= 3 && !sites.some(b => b.kind === 'depot') && g.ownB('depot').length < 6;
-    const put = (k: 'bunkhouse' | 'depot' | 'watchpost' | 'machineshop' | 'foundry', x: number, z: number, line: string) => { if (g.ore < BLD[k].cost || (g.mission && !g.mission.allow.includes(k)) || !g.canPlace(k, x, z, false)) return false; g.place(k, x, z, false); this.say('Quartermaster', line, ''); return true; };
+    const put = (k: BKind, x: number, z: number, line: string) => { if (g.ore < BLD[k].cost || (g.mission && !g.mission.allow.includes(k)) || !g.canPlace(k, x, z, false)) return false; g.place(k, x, z, false); this.say('Quartermaster', line, ''); return true; };
     const wantPosts = army >= 3 ? 1 + (this.raidN >= 2 ? 1 : 0) + (this.raidN >= 4 ? 1 : 0) : 0;
     // One goal at a time, in priority order. While a goal is unpaid, training holds back a reserve so the goal gets bought.
-    let saving = true, hold = 95; const fdy = g.ownB('foundry'), fdyB = fdy.find(b => b.built);
+    let saving = true, hold = 95; const fdy = g.ownB('foundry'), fdyB = fdy.find(b => b.built), lab = g.ownB('assay'), labUp = lab.some(b => b.built), mast = g.ownB('mast'), mastUp = mast.some(b => b.built);
+    const spot = (k: BKind, slots: number[][], line: string) => { const sl = slots.find(([x, z]) => g.canPlace(k, x, z, false)); return !!sl && put(k, sl[0], sl[1], line); };
+    // research the yard can afford without starving the big purchases: bought when there is ore to spare
+    const spare = (keys: string[]) => { for (const k of keys) { const u = UPGRADES.find(x => x.key === k)!; if (!g.up[u.key] && g.ownB(u.at, true).length && (!u.needs || g.up[u.needs]) && g.ore >= u.cost + 120) return g.buyUpgrade(u.key); } return false; };
     if (!bunk.length) put('bunkhouse', 15, 8, 'Staking out a Bunkhouse. Then we get rich.');
     else if (wantDepot) { const s = DEPOT_SLOTS.find(([x, z]) => g.canPlace('depot', x, z, false)); if (s) put('depot', s[0], s[1], 'Running out of beds. Stacking another Depot.'); }
     else if (building) saving = false;
@@ -149,19 +152,24 @@ export class Director {
     else if (bunkUp.length && !shop.length && army >= 4) put('machineshop', 0, -15, 'Machine Shop going in out back. Bigger guns, thicker hats.');
     else if (bunkUp.length && posts < wantPosts) { const s = POST_SLOTS.find(([x, z]) => g.canPlace('watchpost', x, z, false)); if (s) put('watchpost', s[0], s[1], 'Another Watchpost. I sleep better with crossfire.'); }
     else if (shopUp && !g.up.dmg && army >= 5) g.buyUpgrade('dmg');
-    else if (shopUp && g.up.dmg && !fdy.length && army >= 7) { hold = 150; const sl = [[-14, -14], [-15, 6], [15, -17], [-4, -28]].find(([x, z]) => g.canPlace('foundry', x, z, false)); if (sl) put('foundry', sl[0], sl[1], 'Foundry going up. Longshots, walkers, and the good plating.'); }
+    else if (shopUp && g.up.dmg && !fdy.length && army >= 7) { hold = 150; const sl = [[-14, -14], [-15, 6], [15, -17], [-4, -28]].find(([x, z]) => g.canPlace('foundry', x, z, false)); if (sl) put('foundry', sl[0], sl[1], 'Foundry going up. Walkers, and the good plating.'); }
     else if (fdyB && army >= 6 && free >= 4 && g.own('gantry').length + fdyB.queue.length < (g.time > 660 ? 2 : 1)) { hold = UNIT.gantry.cost; if (g.ore >= hold) g.train(fdyB, 'gantry'); }
+    else if (fdyB && !lab.length && army >= 6 && (!g.mission || g.mission.allow.includes('assay'))) spot('assay', [[-15, 6], [15, -17], [-16, 18], [14, 22]], 'Assay Office going up. Longshots, and people who read.');
     else if (bunkUp.length === 1 && bunk.length === 1 && g.time > 230) put('bunkhouse', 4, 23, 'Second Bunkhouse. Twice the complaints.');
     else if (shopUp && !g.up.armor && army >= 6) g.buyUpgrade('armor');
     else if (fdyB && !g.up.dmg2 && army >= 9) { hold = 150; g.buyUpgrade('dmg2'); }
     else if (fdyB && !g.up.armor2 && army >= 10) { hold = 150; g.buyUpgrade('armor2'); }
+    else if (fdyB && labUp && !mast.length && g.up.dmg2 && army >= 10 && (!g.mission || g.mission.allow.includes('mast'))) { hold = 200; spot('mast', [[15, -17], [-4, -28], [-16, 18], [-24, -4], [14, 22]], 'Signal Mast going up. Head office wants to listen in, and they pay in kit.'); }
+    else if (mastUp && !g.up.dmg3 && army >= 10) { hold = 200; g.buyUpgrade('dmg3'); }
+    else if (mastUp && !g.up.armor3 && army >= 11) { hold = 200; g.buyUpgrade('armor3'); }
+    else if (spare(['drill', 'post', 'pay', 'stitch', 'glass', 'beds', 'servo', 'weld', 'buckets', 'frag'])) saving = true;
     else saving = false;
     if (hq && !hq.queue.length && g.own('rigger').length < 8 && free > 0 && g.ore >= 50 && (bunk.length || g.own('rigger').length < 6)) g.train(hq, 'rigger');
     const heavy = g.own('breacher').length, light = g.own('linesman').length;
     const docs = g.own('patch').length, longs = g.own('longshot').length;
     for (const b of bunkUp) if (b.queue.length < 2) {
       const q = (k: Kind) => b.queue.filter(x => x.kind === k).length;
-      const k: Kind = fdyB && light >= 4 && longs + q('longshot') < Math.floor(light / 4) && free >= 2 ? 'longshot' : shopUp && army >= 5 && docs + q('patch') < 1 + Math.floor(army / 10) ? 'patch' : shopUp && heavy + q('breacher') < Math.floor(light / 3) && free >= 2 ? 'breacher' : 'linesman';
+      const k: Kind = labUp && light >= 4 && longs + q('longshot') < Math.floor(light / 4) && free >= 2 ? 'longshot' : shopUp && army >= 5 && docs + q('patch') < 1 + Math.floor(army / 10) ? 'patch' : shopUp && heavy + q('breacher') < Math.floor(light / 3) && free >= 2 ? 'breacher' : 'linesman';
       if (g.ore >= UNIT[k].cost + (saving ? hold : 0)) g.train(b, k);
     }
   }

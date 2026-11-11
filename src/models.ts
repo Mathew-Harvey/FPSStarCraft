@@ -167,6 +167,43 @@ export function oreCluster(n: number, sc: number) {
 const rockPool: THREE.BufferGeometry[] = [];
 /** One of a handful of knocked-about boulder shapes. */
 export function rocks(i: number) { if (!rockPool.length) { let s = 7; const rand = () => { s = (s * 16807) % 2147483647; return s / 2147483647; }; for (let k = 0; k < 6; k++) rockPool.push(boulder(rand)); } return rockPool[Math.abs(Math.floor(i)) % 6]; }
+/** Assay Office: the clever end of the yard. A balance scale on the roof weighs ore against the Charter's promises. */
+export function assay(anim: ((t: number) => void)[]) {
+  const g = new THREE.Group();
+  put(slab(7.2, .2, 6.4, 3, .05), M.conc, g, [0, .1, 0]);
+  put(slab(5.8, 3.0, 4.6, 2.2, .12), M.wallT, g, [0, 1.7, -.3]); put(slab(6.2, .3, 5.0, 3, .08), M.wallD, g, [0, 3.35, -.3]);
+  put(plate(rrect(1.3, 2.2, .1), .2, .05), M.doorP, g, [-1.6, 1.3, 2.02]); put(slab(1.9, .36, .24, 1, .05), M.haz, g, [-1.6, 2.7, 2.08]);
+  win(g, [1.0, 2.0, 2.02], 1.9, 1.0); win(g, [2.92, 2.0, -.3], 1.5, .9, H2); win(g, [-2.92, 2.0, -.3], 1.5, .9, H2);
+  // the scale
+  tb([0, 3.4, -.3], [0, 5.9, -.3], .13, M.bY, g); put(slab(1.1, .3, 1.1, 1, .06), M.wallS, g, [0, 3.6, -.3]); put(blob(.3, .3, .3), M.nS, g, [0, 5.95, -.3]);
+  const beam = grp('beam', g, [0, 5.9, -.3]); tb([-2.2, 0, 0], [2.2, 0, 0], .09, M.bD, beam);
+  for (const sx of [-1, 1]) { tb([sx * 2.2, 0, 0], [sx * 2.2, -1.1, 0], .03, M.nD, beam, 5); put(lathe([...spl([[0, 0], [.5, .06], [.78, .32]], 6), ...hard([[.84, .34], [.8, .4]])], 14), M.bS, beam, [sx * 2.2, -1.42, 0]); }
+  put(shard(.3, .8, 5, .2), M.ore, beam, [-2.2, -1.36, 0]); put(rbox(.5, .34, .4, .05), M.pY, beam, [2.2, -1.2, 0]);
+  anim.push(t => { beam.rotation.z = Math.sin(t * .9) * .1 - .05; });
+  // sample stack and pipework round the side
+  put(can(.55, 2.6, .05), M.bS, g, [2.1, 4.7, -1.7]); put(lathe([...hard([[.55, 0], [.6, .04]]), ...spl([[.58, .1], [.4, .36], [0, .46]], 6)], 14), M.cO, g, [2.1, 6.0, -1.7]); put(ring(.57, .05), M.nD, g, [2.1, 4.4, -1.7], [H2, 0, 0]);
+  pipe(g, [[2.1, 3.9, -1.1], [2.1, 3.9, .2], [2.6, 3.2, .8]], .09);
+  put(slab(1.0, 1.0, 1.0, 1, .07), M.wallY, g, [2.9, .6, 2.6], [0, .4, 0]); put(can(.38, 1.1, .04), M.bS, g, [-3.1, .6, 2.5]); put(ring(.39, .035), M.nD, g, [-3.1, .85, 2.5], [H2, 0, 0]);
+  return bake(g);
+}
+/** Signal Mast: a lattice tower with a turning dish. The Charter listens in, and sends the good kit. */
+export function mast(anim: ((t: number) => void)[]) {
+  const g = new THREE.Group(), top = 10, r0 = 1.7, r1 = .42, at = (y: number) => r0 + (r1 - r0) * y / top;
+  put(slab(4.6, .2, 4.6, 2, .05), M.conc, g, [0, .1, 0]);
+  for (const sx of [-1, 1]) for (const sz of [-1, 1]) { tb([sx * r0, 0, sz * r0], [sx * r1, top, sz * r1], .2, M.bY, g); put(slab(.6, .24, .6, 1, .04), M.conc, g, [sx * r0, .14, sz * r0]); }
+  const lv = [1.6, 3.8, 5.9, 7.8, 9.4];
+  lv.forEach((y, i) => { const r = at(y), y2 = i < lv.length - 1 ? lv[i + 1] : top, r2 = at(y2);
+    for (const s of [-1, 1]) { tb([-r, y, s * r], [r, y, s * r], .1, M.bY, g, 6); tb([s * r, y, -r], [s * r, y, r], .1, M.bY, g, 6); tb([-r * s, y, s * r], [r2 * s, y2, s * r2], .07, M.bS, g, 5); tb([s * r, y, r * s], [s * r2, y2, -r2 * s], .07, M.bS, g, 5); } });
+  put(slab(1.5, .26, 1.5, 1, .05), M.wallS, g, [0, top + .1, 0]); for (const sx of [-1, 1]) for (const sz of [-1, 1]) tb([sx * .7, top + .2, sz * .7], [sx * .7, top + .9, sz * .7], .03, M.nD, g, 5);
+  tb([0, top + .2, 0], [0, top + 3.2, 0], .1, M.bS, g, 6); for (const y of [1.2, 1.9, 2.6]) tb([-.5 + y * .12, top + y, 0], [.5 - y * .12, top + y, 0], .03, M.nS, g, 5);
+  put(blob(.24, .24, .24), M.red, g, [0, top + 3.3, 0]);
+  const dish = grp('dish', g, [0, top + .5, 0]); put(lathe([...spl([[0, 0], [.6, .08], [1.1, .4], [1.35, .86]], 8), ...hard([[1.4, .88], [1.36, .96]])], 18), M.bS, dish, [0, .6, .5], [1.15, 0, 0]); tb([0, .6, .5], [0, 1.15, 1.7], .035, M.nD, dish, 5); put(blob(.14, .14, .14), M.pY, dish, [0, 1.15, 1.7]); tb([0, 0, 0], [0, .6, .5], .08, M.bD, dish, 6);
+  anim.push(t => { dish.rotation.y = t * .5; });
+  // relay hut at the foot
+  put(slab(2.0, 1.7, 1.6, 1.2, .08), M.wallR, g, [0, 1.05, 0]); put(slab(2.2, .2, 1.8, 1.2, .05), M.wallD, g, [0, 2.0, 0]); win(g, [0, 1.25, .82], .9, .5); put(slab(.5, .5, .1, .5, .03), M.haz, g, [-.7, 1.2, .84]);
+  pipe(g, [[1.0, 1.5, 0], [1.5, 1.1, .3], [2.0, .25, .7]], .06);
+  return bake(g);
+}
 /** Workshop: unlocks Breachers and sells upgrades. */
 export function machineshop(anim: ((t: number) => void)[]) {
   const g = new THREE.Group();

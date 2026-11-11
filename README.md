@@ -148,6 +148,23 @@ To put it on the internet, deploy the `Dockerfile` to any host that supports Web
 
 How it works: the server runs the same game code as single player at 30 ticks a second and sends every client a snapshot 15 times a second, about 1 KB each. Each client moves and aims its own body, reports its hits, and the server decides health, ore, building, training and the enemy.
 
+## Tech tree
+
+The Ironhold tree has five tiers. Each building needs the one above it standing, some units need a second building, and research comes in chains.
+
+| Tier | Building | Needs | Trains | Research |
+| --- | --- | --- | --- | --- |
+| 0 | Headframe | | Rigger | Diamond Bits, Bunk Stacks |
+| 1 | Bunkhouse | | Linesman, Breacher (Machine Shop), Patch (Machine Shop), Longshot (Assay Office) | |
+| 1 | Depot | | | |
+| 2 | Watchpost | Bunkhouse | | |
+| 2 | Machine Shop | Bunkhouse | | Hollow Points, Plating, Twin Mounts |
+| 2 | Assay Office | Bunkhouse | | Hazard Pay, Long Glass, Field Stitches, Short Fuses |
+| 3 | Foundry | Machine Shop | Gantry | Tungsten Core (after Hollow Points), Reactive Plating (after Plating), Servo Legs |
+| 4 | Signal Mast | Foundry and Assay Office | | Charter Specials (after Tungsten Core), Vault Plate (after Reactive Plating), Field Welders, Deep Buckets (after Diamond Bits) |
+
+The tables live in `src/data.ts` (`BLD`, `TRAINS`, `UNIT_NEEDS`, `UPGRADES`). The pause screen draws the whole tree with what is standing and bought. The Quartermaster follows the same tree when it runs the yard.
+
 ## Split screen
 
 Two players on one machine share one Ironhold yard. Pick a map and a shift on the Skirmish tab, choose side by side or stacked, and press Split screen. No server is needed.

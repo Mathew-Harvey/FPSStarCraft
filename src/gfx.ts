@@ -18,11 +18,11 @@ export const R = (a: number, b: number) => a + rnd() * (b - a);
 /** Restarts the random sequence. The world is laid out from a fixed seed so every player in a match gets the same map. */
 export const reseed = (s: number) => { seed = s | 0; };
 
-function tone(hex: string, k: number) { const c = new THREE.Color(hex); if (k >= 1) c.lerp(new THREE.Color('#ffffff'), k - 1); else c.multiplyScalar(k); return '#' + c.getHexString(); }
+export function tone(hex: string, k: number) { const c = new THREE.Color(hex); if (k >= 1) c.lerp(new THREE.Color('#ffffff'), k - 1); else c.multiplyScalar(k); return '#' + c.getHexString(); }
 
 // ---------------------------------------------------------------- painted textures
-type Ctx = CanvasRenderingContext2D;
-function wob(g: Ctx, pts: number[][], w: number, col?: string) {
+export type Ctx = CanvasRenderingContext2D;
+export function wob(g: Ctx, pts: number[][], w: number, col?: string) {
   g.strokeStyle = col || INK; g.lineCap = 'round'; g.lineJoin = 'round';
   for (let pass = 0; pass < 2; pass++) {
     g.lineWidth = w * (pass ? .55 : 1); g.beginPath();
@@ -30,7 +30,7 @@ function wob(g: Ctx, pts: number[][], w: number, col?: string) {
     g.stroke();
   }
 }
-function paint(base: string, draw?: (g: Ctx, s: number) => void, o: { size?: number; blot?: number } = {}) {
+export function paint(base: string, draw?: (g: Ctx, s: number) => void, o: { size?: number; blot?: number } = {}) {
   const s = o.size || 512;
   const c = document.createElement('canvas'); c.width = c.height = s; const g = c.getContext('2d')!;
   g.fillStyle = base; g.fillRect(0, 0, s, s);
@@ -42,33 +42,33 @@ function paint(base: string, draw?: (g: Ctx, s: number) => void, o: { size?: num
   g.globalAlpha = 1; if (draw) draw(g, s);
   const t = new THREE.CanvasTexture(c); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.anisotropy = 8; return t;
 }
-function scratches(g: Ctx, s: number, n: number, col: string, len = 46) {
+export function scratches(g: Ctx, s: number, n: number, col: string, len = 46) {
   for (let i = 0; i < n; i++) { g.globalAlpha = R(.3, .8); const x = R(0, s), y = R(0, s), a = R(0, 6.3), l = R(6, len); wob(g, [[x, y], [x + Math.cos(a) * l, y + Math.sin(a) * l]], R(1, 2.4), col); }
   g.globalAlpha = 1;
 }
-function chips(g: Ctx, s: number, n: number, col: string, rmax = 20) {
+export function chips(g: Ctx, s: number, n: number, col: string, rmax = 20) {
   for (let i = 0; i < n; i++) {
     const x = R(0, s), y = R(0, s), r = R(4, rmax); g.beginPath();
     for (let k = 0; k < 8; k++) { const a = k / 8 * 6.283, rr = r * R(.45, 1.15); k ? g.lineTo(x + Math.cos(a) * rr, y + Math.sin(a) * rr) : g.moveTo(x + Math.cos(a) * rr, y + Math.sin(a) * rr); }
     g.closePath(); g.fillStyle = col; g.fill(); g.strokeStyle = INK; g.lineWidth = 2.2; g.stroke();
   }
 }
-function panels(g: Ctx, s: number, nx: number, ny: number, w = 5) {
+export function panels(g: Ctx, s: number, nx: number, ny: number, w = 5) {
   for (let i = 0; i <= nx; i++) { const x = Math.min(s - 3, Math.max(3, i * s / nx)); wob(g, [[x, 0], [x, s / 2], [x, s]], w); }
   for (let j = 0; j <= ny; j++) { const y = Math.min(s - 3, Math.max(3, j * s / ny)); wob(g, [[0, y], [s / 2, y], [s, y]], w); }
   for (let i = 0; i < nx; i++) for (let j = 0; j < ny; j++) for (const [dx, dy] of [[.1, .1], [.9, .1], [.1, .9], [.9, .9]]) {
     const x = (i + dx) * s / nx, y = (j + dy) * s / ny; g.fillStyle = INK; g.beginPath(); g.arc(x, y, 5, 0, 7); g.fill(); g.fillStyle = 'rgba(255,255,255,.55)'; g.beginPath(); g.arc(x - 1.5, y - 1.5, 1.8, 0, 7); g.fill();
   }
 }
-function grime(g: Ctx, s: number, n: number) {
+export function grime(g: Ctx, s: number, n: number) {
   for (let i = 0; i < n; i++) { const x = R(0, s), y = R(0, s * .5), l = R(30, 160); const gr = g.createLinearGradient(0, y, 0, y + l); gr.addColorStop(0, 'rgba(30,18,24,.42)'); gr.addColorStop(1, 'rgba(30,18,24,0)'); g.fillStyle = gr; g.fillRect(x, y, R(3, 10), l); }
 }
-function hatchPatch(g: Ctx, s: number, n: number) {
+export function hatchPatch(g: Ctx, s: number, n: number) {
   for (let i = 0; i < n; i++) { const x = R(0, s), y = R(0, s), w = R(20, 70); g.globalAlpha = .7; for (let k = 0; k < 6; k++) wob(g, [[x + k * 7, y], [x + k * 7 - w * .4, y + w * .5]], 1.8); }
   g.globalAlpha = 1;
 }
-function stencil(g: Ctx, txt: string, x: number, y: number, px: number, col: string, rot = 0) { g.save(); g.translate(x, y); g.rotate(rot); g.font = '900 ' + px + 'px Impact, "Arial Narrow", sans-serif'; g.fillStyle = col; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(txt, 0, 0); g.restore(); }
-function ribs(g: Ctx, s: number, n: number) { for (let i = 0; i < n; i++) wob(g, [[i * s / n, 0], [i * s / n, s]], 3.5); }
+export function stencil(g: Ctx, txt: string, x: number, y: number, px: number, col: string, rot = 0) { g.save(); g.translate(x, y); g.rotate(rot); g.font = '900 ' + px + 'px Impact, "Arial Narrow", sans-serif'; g.fillStyle = col; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(txt, 0, 0); g.restore(); }
+export function ribs(g: Ctx, s: number, n: number) { for (let i = 0; i < n; i++) wob(g, [[i * s / n, 0], [i * s / n, s]], 3.5); }
 
 export const TX: Record<string, THREE.Texture> = {};
 function makeTextures() {
@@ -136,15 +136,21 @@ void main(){
   float t=dot(n,normalize(vL))+nz*.24; t=mix(t,1.,uFlat*.6);
   float sh=shadowAt(vW+wn*.07);
   float lit=smoothstep(-.03,.03,t)*smoothstep(.3,.7,sh), hi=smoothstep(.74,.78,t)*sh, deep=1.-smoothstep(-.6,-.54,t);
-  vec3 shc=base*vec3(.44,.38,.66)+vec3(.03,.01,.07);
-  vec3 col=mix(shc,base,lit);
+  vec3 shc=base*vec3(.46,.4,.68)+vec3(.03,.01,.07);
+  vec3 col=mix(shc,base*vec3(.8,.75,.8),lit);
+  col=mix(col,base,smoothstep(.3,.36,t)*lit);
   col=mix(col,min(base*1.2+vec3(.08,.07,.03),vec3(1.)),hi*.75);
   vec2 fc=gl_FragCoord.xy/uPx+(vnoise(gl_FragCoord.xy/uPx*.045)-.5)*7.;
-  float l1=smoothstep(.56,.74,abs(fract((fc.x+fc.y)/10.)-.5)*2.);
-  float l2=smoothstep(.56,.74,abs(fract((fc.x-fc.y)/10.)-.5)*2.);
-  float mid=lit*(1.-smoothstep(.03,.34,t));
-  float hatch=(1.-lit)*l1*.6+deep*l2*.6+mid*l1*.16;
-  col=mix(col,col*.38,clamp(hatch,0.,1.)*uHatch);
+  float a1=(fc.x+fc.y)/9., a2=(fc.x-fc.y)/9.;
+  float br1=smoothstep(.3,.5,vnoise(vec2(a2*.11,floor(a1)*7.3))), br2=smoothstep(.36,.56,vnoise(vec2(a1*.11,floor(a2)*5.1)+9.));
+  float l1=smoothstep(.6,.8,abs(fract(a1)-.5)*2.)*br1;
+  float l2=smoothstep(.6,.8,abs(fract(a2)-.5)*2.)*br2;
+  float term=smoothstep(-.42,-.3,t)*(1.-smoothstep(-.05,.03,t));
+  float cst=smoothstep(-.03,.03,t)*(1.-smoothstep(.3,.7,sh));
+  float hatch=term*l1*.62+deep*(l1*.5+l2*.5)+cst*l1*.2;
+  col=mix(col,col*.4,clamp(hatch,0.,1.)*uHatch);
+  float fres=1.-max(dot(n,normalize(-vP)),0.);
+  col=mix(col,min(base*1.22+vec3(.1,.09,.06),vec3(1.)),smoothstep(.7,.78,fres)*lit*.45*(1.-uFlat)*uHatch);
   float rim=pow(1.-max(dot(n,normalize(-vP)),0.),3.)*(1.-lit)*.4; col+=rim*vec3(.45,.6,.95);
   float em=min(1.,uEmis+vEm); col=mix(col,base*1.08,em);
   float d=length(vP); col=mix(col,uFog,(1.-exp(-d*uFogK))*.92*(1.-em*.6));
@@ -161,6 +167,8 @@ export function T(map?: THREE.Texture | null, o: ToonOpts = {}) {
   });
 }
 export const M: Record<string, THREE.ShaderMaterial> = {};
+/** Other modules add their materials here; they are built together with the rest. */
+export const EXTRA: (() => void)[] = [];
 export { T as toonMaterial };
 function makeMaterials() {
   Object.assign(M, {
@@ -175,6 +183,7 @@ function makeMaterials() {
     scorch: T(null, { color: '#2a1a1c', hatch: 0, flat: 1 }), bolt: T(null, { color: '#9dfcff', emis: 1 }), fire: T(null, { color: '#ffb23a', emis: 1 }), spark: T(null, { color: '#fff1a0', emis: 1 }),
     sign: T(TX.sign), violet: T(null, { color: '#b58cff', emis: .9 }), flash: T(null, { color: '#fff6c0', emis: 1, side: THREE.DoubleSide }),
   });
+  for (const f of EXTRA) f();
   M.scorch.polygonOffset = true; M.scorch.polygonOffsetFactor = -3; M.scorch.polygonOffsetUnits = -3;
   M.road.polygonOffset = true; M.road.polygonOffsetFactor = -2; M.road.polygonOffsetUnits = -2;
 }
@@ -237,14 +246,18 @@ float lin(vec2 uv){ float d=texture2D(tD,uv).x; if(uOrtho>.5) return uNear+d*(uF
 vec3 nrm(vec2 uv){ return texture2D(tN,uv).xyz*2.-1.; }
 float edgeAt(vec2 u, vec2 sp){
   float d0=lin(u);
-  float th=uOrtho>.5?1.5:mix(2.6,1.15,clamp(d0/45.,0.,1.));
-  th*=(.8+.5*vnoise(sp/60.))*uPx;
-  vec2 px=th/uRes;
+  float th=uOrtho>.5?1.5:mix(2.5,1.1,clamp(d0/45.,0.,1.));
+  th*=(.55+1.05*vnoise(sp/46.))*uPx;
+  vec2 px=th/uRes, pw=px*1.9, pn=px*.62;
   float dA=lin(u+px),dB=lin(u-px),dC=lin(u+px*vec2(-1.,1.)),dD=lin(u+px*vec2(1.,-1.));
-  vec3 n0=nrm(u),nA=nrm(u+px),nB=nrm(u-px),nC=nrm(u+px*vec2(-1.,1.)),nD=nrm(u+px*vec2(1.,-1.));
+  vec3 n0=nrm(u),nA=nrm(u+pn),nB=nrm(u-pn),nC=nrm(u+pn*vec2(-1.,1.)),nD=nrm(u+pn*vec2(1.,-1.));
   float de;
   if(uOrtho>.5){ de=smoothstep(.5,1.,(abs(dA-dB)+abs(dC-dD))); }
-  else { float dmin=min(min(dA,dB),min(dC,dD)); float dd=(abs(dA-dB)+abs(dC-dD))/max(dmin,.01); de=smoothstep(.05,.09,dd*clamp(abs(n0.z),.08,1.)); }
+  else {
+    float dmin=min(min(dA,dB),min(dC,dD)); float dd=(abs(dA-dB)+abs(dC-dD))/max(dmin,.01); de=smoothstep(.05,.09,dd*clamp(abs(n0.z),.08,1.));
+    float eA=lin(u+pw),eB=lin(u-pw),eC=lin(u+pw*vec2(-1.,1.)),eD=lin(u+pw*vec2(1.,-1.)); float emin=min(min(eA,eB),min(eC,eD));
+    de=max(de,smoothstep(.5,.8,(abs(eA-eB)+abs(eC-eD))/max(emin,.01))*(1.-smoothstep(30.,70.,emin)));
+  }
   float nd=length(nA-nB)+length(nC-nD); float ne=smoothstep(.7,1.05,nd)*(1.-smoothstep(140.,320.,d0));
   return max(de,ne);
 }

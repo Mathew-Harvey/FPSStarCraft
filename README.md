@@ -70,10 +70,13 @@ One skirmish as the Ironhold Charter against a Veyl outpost. Smash the three Cho
 
 ## How it is built
 
-TypeScript and three.js, bundled by esbuild into one HTML file. No art or sound assets: models are built from primitives, textures are painted on canvases at boot, and sound is synthesised.
+TypeScript and three.js, bundled by esbuild into one HTML file. No art or sound assets: models are sculpted in code, textures are inked and painted on canvases at boot, and sound is synthesised.
 
-- `src/gfx.ts`: the comic-ink renderer. Toon shading with hatched shadows, a real shadow map, and a post pass that inks outlines from depth and normals.
-- `src/models.ts`: units, structures, the world and first-person view-models. Models are merged per material when built, and units are cloned from a cached prototype.
+- `src/gfx.ts`: the comic-ink renderer. Three flat tones with hatching only where a pen would put it, a real shadow map, and a post pass that inks outlines from depth and normals: heavy on silhouettes, lighter on creases, with pen pressure along the line.
+- `src/sculpt.ts`: the sculpting kit. Lathed, swept, pressed and bevelled forms with smooth shading, so the only hard lines are deliberate creases.
+- `src/skins.ts`: the hand-inked skins. Brushed colour, tapered pen strokes, edge wear, hatching, seams, rivets and stencils, in cuts for boxes, turned forms and domes.
+- `src/units.ts`: the cast, for both sides.
+- `src/models.ts`: structures, the world, first-person view-models and the unit atlas. Models are merged per material when built, and units are cloned from a cached prototype.
 - `src/data.ts`: stat tables, shared types and map constants.
 - `src/game.ts`: the simulation and the player. Entities, combat, effects, the first-person bodies and jumping between them.
 - `src/director.ts`: the strategy layer. The Quartermaster, the Veyl raid planner, squad playbooks, callouts and chatter.

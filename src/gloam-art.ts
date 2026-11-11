@@ -356,3 +356,45 @@ export function bloomPatch(seed: number, rad: number) {
   for (let i = 0; i < Math.round(4 + rad * .6); i++) { const a = rr() * TAU, e = edge(a) * rad * (.55 + rr() * .4), k = .18 + rr() * .2; put(blob(k, k * .7, k), M.gS, grow, [Math.cos(a) * e, .04, Math.sin(a) * e]); }
   return g;
 }
+
+// ---------------------------------------------------------------- first person
+/** What a player sees as a Gloam body: a pair of mandibles, claws or tusks either side of the view, plus a spit snout for the Quillback. `L` and `R` snap shut on a bite. */
+export function vmGloam(kind: string, bake: (g: THREE.Group) => THREE.Group, L_VM: number) {
+  const g = new THREE.Group(), big = kind === 'mulcher', s = big ? 1.5 : kind === 'grazer' ? .8 : 1;
+  for (const sx of [-1, 1]) {
+    const side = grp(sx < 0 ? 'L' : 'R', g, [sx * .3 * s, -.2 * s, -.3]);
+    if (big) {
+      put(tube([[0, -.1, .2], [sx * .08, -.12, -.25], [-sx * .02, .02, -.7], [-sx * .2, .2, -.9]], [.12, .11, .07, .01], 10), M.gB, side);
+      for (const t of [.2, .45]) put(ring(.11 - t * .06, .025), M.gD, side, [sx * .05, -.1 + t * .1, -.2 - t * .8], [-.2, 0, 0]);
+    } else if (kind === 'quillback') {
+      put(tube([[0, -.12, .2], [sx * .04, -.08, -.1], [-sx * .03, -.06, -.26]], [.06, .05, .03], 8), M.gH, side);
+      spine(side, [-sx * .03, -.06, -.26], .14, .025, [-H - .3, 0, sx * .6]);
+    } else {
+      // Mandible: a curved bone hook with teeth on its inner edge.
+      put(tube([[0, -.1, .15], [sx * .05, -.06, -.12], [-sx * .03, -.02, -.36], [-sx * .13, 0, -.44]], [.06, .055, .035, .006], 9), kind === 'blister' ? M.gH : M.gB, side);
+      for (let i = 0; i < 3; i++) spine(side, [-sx * (.0 + i * .03), -.04, -.14 - i * .1], .06, .014, [0, 0, sx * H]);
+      put(blob(.14, .12, .2), M.gHn, side, [0, -.12, .12]);
+    }
+  }
+  if (kind === 'quillback') {
+    const sn = grp('snout', g, [0, -.2, -.3]);
+    put(tube([[0, -.05, .35], [0, -.02, 0], [0, .0, -.32]], [.1, .085, .07], 9), M.gH, sn); for (const z of [.1, -.06, -.22]) put(ring(.082, .02), M.gB, sn, [0, -.01, z]);
+    put(ring(.062, .02), M.gS, sn, [0, 0, -.34]);
+  }
+  if (kind === 'blister') put(lathe(spl([[.6, -.2], [.5, .05], [.2, .14]], 6), 20, PI * .9), M.gS, g, [0, -.55, -.35], [-.3, 0, 0]);
+  if (kind === 'grazer') sacs(g, [0, -.3, -.4], 3, .04, 2);
+  const flash = grp('flash', g, kind === 'quillback' ? [0, -.2, -.7] : [0, -.18, -.75]); mk(G.sph, M.gSpit, [0, 0, 0], [.14, .14, .14], 0, flash); mk(G.oct, M.gSpit, [0, 0, -.06], [.05, .05, .3], 0, flash); flash.visible = false;
+  bake(g); setLayer(g, L_VM); setLayer(flash, L_FX);
+  g.userData.flash = flash; g.userData.L = g.getObjectByName('L'); g.userData.R = g.getObjectByName('R'); g.userData.rest = [0, -.02, -.1, 0, 0, 0];
+  return g;
+}
+
+/** Walk cycle for the many-legged: legs in two alternating tripods, lifting and swinging forward. Call once a frame per Gloam body. */
+export function poseLegs(obj: THREE.Object3D, phase: number, moving: boolean, ease: number) {
+  const legs: THREE.Object3D[] = obj.userData.legs || (obj.userData.legs = (() => { const out: THREE.Object3D[] = []; obj.traverse(o => { if (/^lg\d[LR]$/.test(o.name)) out.push(o); }); return out; })());
+  for (const l of legs) {
+    const i = +l.name[2], side = l.name[3] === 'L' ? 0 : 1, odd = (i + side) % 2, s = Math.sin(phase + odd * PI) * (moving ? 1 : 0);
+    const sx = side ? 1 : -1, lift = Math.max(0, s) * .45;
+    l.rotation.y += (s * .38 - l.rotation.y) * ease; l.rotation.z += (sx * lift * .6 - l.rotation.z) * ease;
+  }
+}

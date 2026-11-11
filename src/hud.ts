@@ -69,8 +69,8 @@ export class Hud {
         thornspire: 'Most of your crew fell to Thorn Spires. A Longshot out-ranges them: clear the Spires before the squad walks in.',
         choir: 'Most of your crew fell beside the Choir Stones, which sting anything near them. Bring a Patch and break one Stone at a time.',
         cantor: 'Most of your crew fell to Cantors. They have to reach you first: rifles and Watchposts cut them down on the way in.',
-        lancer: 'Most of your crew fell to Lancers. They trade evenly with rifles, so put a Breacher in front and a Longshot behind.',
-        warden: 'Most of your crew fell to a Warden. Rifles alone lose to it: bring Longshots and a mixed squad.' };
+        lancer: 'Most of your crew fell to Lancers. They wear down a Gantry and anything standing still, so put a Breacher in front and a Longshot behind.',
+        warden: 'Most of your crew fell to a Warden. It walks through Breachers and Gantries: bring Longshots and a mixed squad.' };
       const tip = g.myTeam ? 'A mixed Ironhold squad beats any single verse. Call the raid while their squad is away from the yard, and change the verse when they adapt.' : top && why[top[0]];
       if (tip) this.$('endLine').textContent += ' ' + tip;
     }

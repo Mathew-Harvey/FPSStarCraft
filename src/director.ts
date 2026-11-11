@@ -35,7 +35,7 @@ export class Director {
   plan: { phase: 'ask' | 'count' | 'go'; t: number; target: Building | null; book: number; label: string } | null = null;
   nextPlan = 60; callout: Callout | null = null; pushes = 0; lastFailed = false;
   playbook = { name: 'Yard Push', steps: BOOKS[0].steps, idx: 0 };
-  raidIn: number; raidDir: 'east' | 'north' = 'east'; raidN = 0; /** The verse a Veyl player picked for the next raid: 0 all blades, 1 mostly lances, 2 the deep voice. -1 leaves it to the Conductor. */ verse = -1; raidLive = false; warned = false; raidAge = 0; raidSeen = false; reinT = 50;
+  raidIn: number; raidDir: 'east' | 'north' = 'east'; raidN = 0; /** The verse a Veyl player picked for the next raid: 0 all blades, 1 mostly lances, 2 the deep voice. -1 leaves it to the Conductor. */ verse = -1; /** When the Veyl last answered a failed push with a raid of their own. Rationed, so a bad start does not snowball. */ lastCounter = -999; raidLive = false; warned = false; raidAge = 0; raidSeen = false; reinT = 50;
   flags: Record<string, boolean> = {};
 
   constructor(public g: Game) {
@@ -197,7 +197,7 @@ export class Director {
     }
     if (this.raidIn <= 0) {
       const n = this.raidN++; this.raidIn = 92 * g.diff.raid; this.warned = false; this.raidLive = true; this.raidAge = 0; this.raidSeen = false;
-      let budget = Math.min(14 + 4 * (g.coop - 1), (2.2 + n * 1.0) * g.diff.enemy * (1 + .4 * (g.coop - 1))) * (gate ? 1 : .6) * (pits.length ? .6 + .2 * pits.length : .35); const north = this.raidDir === 'north'; let count = 0;
+      let budget = Math.min(11 + 4 * (g.coop - 1), (2 + n * .8) * g.diff.enemy * (1 + .4 * (g.coop - 1))) * (gate ? 1 : .6) * (pits.length ? .6 + .2 * pits.length : .35); const north = this.raidDir === 'north'; let count = 0;
       // The Conductor reads the yard before it writes the raid: what is standing guard, and what would hurt most to lose.
       const posts = g.ownB('watchpost', true), longs = g.own('longshot').length, heavies = g.own('breacher').length + 2 * g.own('gantry').length, riggers = g.own('rigger').filter(u => !u.pilot && u.node);
       let share = n >= 1 ? .3 : 0; if (posts.length >= 2 || heavies >= 3) share += .2; if (longs >= 2) share -= .15; share = n >= 1 ? Math.max(.1, Math.min(.55, share)) : 0;
@@ -278,7 +278,7 @@ export class Director {
       }
     } else {
       const pushing = all.filter(u => u.order.type === 'amove');
-      if (!pushing.length || (pushing.length < 2 && all.length < 3)) { this.plan = null; this.nextPlan = now + 40; this.lastFailed = true; this.regroup(); this.say('Alpha', 'Push is spent. Pulling back to regroup.', 'al'); if (g.diff.enemy >= 1 && stones.length && !(g.mission && !g.mission.raids)) this.raidIn = Math.min(this.raidIn, 22); }
+      if (!pushing.length || (pushing.length < 2 && all.length < 3)) { this.plan = null; this.nextPlan = now + 40; this.lastFailed = true; this.regroup(); this.say('Alpha', 'Push is spent. Pulling back to regroup.', 'al'); if (g.diff.enemy >= 1 && stones.length && !(g.mission && !g.mission.raids) && g.time > 300 && now - this.lastCounter > 150) { this.lastCounter = now; this.raidIn = Math.min(this.raidIn, 22); } }
     }
   }
 

@@ -884,12 +884,19 @@ export class Game {
     else if (o.type !== 'follow') this.advance(u, dt, o.type === 'amove' ? 5 : .7);
   }
   /** A guard whose shield is gone and whose health is low breaks off, once, and comes back when the shield has regrown. */
+  /** A Veyl guard that has chased someone too far from its post gives up and walks home, so a lone scout cannot drag the garrison into the pit. */
+  leash(u: Unit, dt: number) {
+    if (u.order.type !== 'guard' || u.pilot) return false; const d = Math.hypot(u.pos.x - u.order.x, u.pos.z - u.order.z);
+    if (d > 60) u.leashed = true; else if (d < 12) u.leashed = false; if (!u.leashed) return false;
+    u.target = null; u.wind = 0; this.moveTo(u, u.order.x, u.order.z, dt, 1, 1); return true;
+  }
   aiFallBack(u: Unit, dt: number) {
     if (u.state === 'flee') { u.timer -= dt; const st = this.stones()[0]; if (u.timer <= 0 || !st || u.shield > u.maxShield * .7) { u.state = 'idle'; return false; } u.target = null; this.moveTo(u, st.pos.x + ((u.id % 5) - 2) * 2, st.pos.z + ((u.id % 3) - 1) * 3, dt, 3, 1.15); return true; }
     if (u.order.type === 'guard' && this.dir.alarmT <= 0 && u.maxShield && u.shield <= 0 && u.hp < u.maxHp * .4 && !u.fled && this.stones().length) { u.fled = true; u.state = 'flee'; u.timer = 7; return true; }
     return false;
   }
   aiCantor(u: Unit, dt: number) {
+    if (this.leash(u, dt)) return;
     u.dashCd -= dt; u.dashT -= dt; if (this.aiFallBack(u, dt)) return;
     if (u.think <= 0) { u.think = .3; const raid = u.order.type === 'raid', cur = u.target; if (!cur || !cur.alive || !isUnit(cur)) u.target = this.acquire(u, raid ? 22 : 28, raid && !(u.order.path && u.order.path.length) ? 14 : 0); }
     const t = u.target;
@@ -906,6 +913,7 @@ export class Game {
     this.advance(u, dt, u.order.type === 'raid' ? 3 : 1.5, u.order.type === 'raid' || this.dir.alarmT > 0 ? 1 : .6);
   }
   aiLancer(u: Unit, dt: number) {
+    if (this.leash(u, dt)) return;
     if (u.wind <= 0 && this.aiFallBack(u, dt)) return;
     if (u.wind > 0) {
       u.wind -= dt; const t = u.target; if (t && t.alive) this.aimAt(u, t, 1.5);
@@ -960,6 +968,10 @@ export class Game {
       if (b.kind === 'watchpost') {
         b.cd -= dt; let tgt: Unit | null = null, bd = b.team === 0 && this.up.post ? 42 : 34; for (const o of this.units) { if (!o.alive || o.team === b.team) continue; const d = o.pos.distanceTo(b.pos); if (d < bd) { bd = d; tgt = o; } }
         if (tgt) { const gun = b.obj.userData.gun; gun.rotation.y = Math.atan2(tgt.pos.x - b.pos.x, tgt.pos.z - b.pos.z) - b.obj.rotation.y; if (b.cd <= 0) { b.cd = this.up.post ? .3 : .45; const a = V3(b.pos.x, 6, b.pos.z), e = V3(tgt.pos.x, UNIT[tgt.kind].bodyY, tgt.pos.z); this.tracer(a, e, tracerMat, .1); sfx.turret(this.vol(b.pos) * .6); this.damage(tgt, 10 * this.gunMul(), b); } }
+      } else if (b.kind === 'headframe') {
+        // The night watchman on the Headframe: a slow rivet gun, so two raiders cannot empty the pit while the squad is away.
+        b.cd -= dt; if (b.cd <= 0) { b.cd = .8; let tgt: Unit | null = null, bd = 20; for (const o of this.units) { if (!o.alive || o.team === b.team) continue; const d = o.pos.distanceTo(b.pos); if (d < bd) { bd = d; tgt = o; } }
+          if (tgt) { this.tracer(V3(b.pos.x, b.h + .6, b.pos.z), V3(tgt.pos.x, UNIT[tgt.kind].bodyY, tgt.pos.z), tracerMat, .08); sfx.turret(this.vol(b.pos) * .4); this.damage(tgt, 9 * this.gunMul(), b); } else b.cd = .3; }
       } else if (b.kind === 'thornspire') {
         b.cd -= dt; if (b.cd <= 0) { b.cd = 1; let tgt: Unit | null = null, bd = 26; for (const o of this.units) { if (!o.alive || o.team === b.team) continue; const d = o.pos.distanceTo(b.pos); if (d < bd) { bd = d; tgt = o; } }
           if (tgt) { this.tracer(V3(b.pos.x, 6.9, b.pos.z), V3(tgt.pos.x, UNIT[tgt.kind].bodyY, tgt.pos.z), beamMat, .2); sfx.zap(this.vol(b.pos) * .7); this.damage(tgt, 10 * this.diff.enemy, b); this.puff(TMP.copy(tgt.pos).setY(1), 2, .5, M.mag, .5); } else b.cd = .3; }

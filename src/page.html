@@ -83,9 +83,38 @@
         </div>
       </div>
       <div class="panel" id="pMulti" hidden>
-        <div class="brief">
+        <div class="brief" id="mLocked">
           <h3 id="mTitle">Joint operations</h3>
           <p id="mText"></p>
+        </div>
+        <div class="brief" id="mJoin" hidden>
+          <h3>Joint operations</h3>
+          <p>Two to four players share one Ironhold yard against the Veyl. One of you creates a lobby and reads out the five-letter code.</p>
+          <div class="row form">
+            <label>Your name <input type="text" id="mName" maxlength="14" autocomplete="off" spellcheck="false"></label>
+            <label>Server <input type="text" id="mServer" autocomplete="off" spellcheck="false" placeholder="wss://your-server/ws"></label>
+          </div>
+          <div class="row form">
+            <button class="go" id="mCreate">Create lobby</button>
+            <label>Code <input type="text" id="mCode" maxlength="5" autocomplete="off" spellcheck="false" placeholder="ABCDE" class="code"></label>
+            <button type="button" class="mini-btn big" id="mJoinBtn">Join</button>
+          </div>
+          <p class="small" id="mErr" role="status"></p>
+        </div>
+        <div class="brief" id="mLobby" hidden>
+          <h3>Lobby <span class="codebig" id="mCodeShow"></span></h3>
+          <p class="teach" id="mHint"></p>
+          <div class="jobs" id="mPlayers"></div>
+          <div class="row">
+            <div class="diff" id="mDiff" role="group" aria-label="Difficulty"><button type="button">Day shift</button><button type="button">Night shift</button><button type="button">Double shift</button></div>
+            <div class="diff" id="mMaps" role="group" aria-label="Map"><button type="button">Needle's Eye</button><button type="button">Switchback</button><button type="button">Glass Flats</button></div>
+          </div>
+          <div class="row form">
+            <button class="go" id="mStart">Clock in</button>
+            <button type="button" class="mini-btn big" id="mReady">Ready</button>
+            <button type="button" class="mini-btn" id="mLeave">Leave lobby</button>
+          </div>
+          <p class="small" id="mErr2" role="status"></p>
         </div>
       </div>
       <div class="keys">

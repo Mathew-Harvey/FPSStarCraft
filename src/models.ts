@@ -3,7 +3,7 @@
 // costs a handful of draw calls, and units are cloned from one prototype per kind.
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
-import { G, M, R, mk, beam, setLayer, L_FX, L_VM, holoLine, V3, toonMaterial } from './gfx';
+import { G, M, R, reseed, mk, beam, setLayer, L_FX, L_VM, holoLine, V3, toonMaterial } from './gfx';
 import type { Prop } from './data';
 import { MAP, OUTPOST, ROAD, NORTH_PATH, roadPt, veylPt } from './data';
 
@@ -503,7 +503,7 @@ function flora(g: THREE.Object3D, x: number, z: number, s: number) {
   for (let i = 0; i < n; i++) { const a = R(0, 6.3), l = R(.6, 1.6) * s, tx = x + Math.cos(a) * .3 * s, tz = z + Math.sin(a) * .3 * s; beam([x, 0, z], [tx + Math.cos(a) * l * .4, l, tz + Math.sin(a) * l * .4], .05 * s, M.cloth, g); mk(G.sph, i % 2 ? M.mag : M.violet, [tx + Math.cos(a) * l * .4, l + .1 * s, tz + Math.sin(a) * l * .4], [.3 * s, .34 * s, .3 * s], 0, g); }
 }
 export function buildWorld(scene: THREE.Scene, props: Prop[], anim: ((t: number) => void)[]) {
-  const w = new THREE.Group(); scene.add(w);
+  const w = new THREE.Group(); scene.add(w); reseed(7919 + Math.round(MAP.out[0] * 31 + MAP.out[1] * 17));
   // Scenery is drawn as a few big merged meshes. Each prop remembers which vertices are its own, so it can crumble or vanish without costing a draw call.
   const batches = new Map<THREE.Material, { geos: THREE.BufferGeometry[]; recs: { p: Prop; start: number; count: number }[]; n: number }>();
   type Opt = { solid?: boolean; stages?: number; y0?: number; at?: [number, number, number] };
@@ -573,6 +573,7 @@ export function buildWorld(scene: THREE.Scene, props: Prop[], anim: ((t: number)
   // floating shards over the outpost
   for (let i = 0; i < 9; i++) { const a = i / 9 * 6.283, d = 12 + (i % 3) * 7, y0 = 9 + (i % 4) * 2.5, x = OUTPOST.x + 2 * ROAD.dx + Math.cos(a) * d, z = OUTPOST.z + 2 * ROAD.dz + Math.sin(a) * d; const m = mk(G.oct, i % 2 ? M.crys : M.indigo, [x, y0, z], [1.2, 2.6 + (i % 3), 1.2], [R(-.3, .3), 0, R(-.3, .3)], scene); anim.push(t => { m.position.y = y0 + Math.sin(t * .6 + i) * .7; m.rotation.y = t * .2 + i; });
     prop('crystal', 'Sky shard', x, z, .9, y0 + 2.6, 90, { y0: y0 - 2.4 }).obj = m; }
+  reseed((Math.random() * 2147483647) | 0);
 }
 const i3 = (x: number) => Math.round(x * 10) % 3 === 0;
 export { V3 };

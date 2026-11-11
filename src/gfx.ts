@@ -15,6 +15,8 @@ export const L_FX = 1, L_VM = 2, L_SELF = 3;
 let seed = 11;
 export const rnd = () => { seed |= 0; seed = seed + 0x6D2B79F5 | 0; let t = Math.imul(seed ^ seed >>> 15, 1 | seed); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; };
 export const R = (a: number, b: number) => a + rnd() * (b - a);
+/** Restarts the random sequence. The world is laid out from a fixed seed so every player in a match gets the same map. */
+export const reseed = (s: number) => { seed = s | 0; };
 
 function tone(hex: string, k: number) { const c = new THREE.Color(hex); if (k >= 1) c.lerp(new THREE.Color('#ffffff'), k - 1); else c.multiplyScalar(k); return '#' + c.getHexString(); }
 
@@ -322,3 +324,5 @@ export class Pipeline {
     r.setRenderTarget(null); r.render(this.postScene, this.postCam);
   }
 }
+/** Builds the shared textures and materials without a renderer, for the match server. */
+export function initHeadless() { makeTextures(); makeMaterials(); }

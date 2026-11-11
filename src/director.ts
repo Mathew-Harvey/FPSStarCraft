@@ -38,7 +38,7 @@ export class Director {
 
   constructor(public g: Game) {
     this.raidIn = 170 * g.diff.raid;
-    const guard = (k: Kind, x: number, z: number) => { const u = g.spawn(k, 1, x, z); u.order = { type: 'guard', x, z }; };
+    const guard = (k: Kind, x: number, z: number) => { if (g.net) return; const u = g.spawn(k, 1, x, z); u.order = { type: 'guard', x, z }; };
     for (const [x, z] of [[-14, -5], [-12, 7], [-4, 0], [-18, 1]]) guard('cantor', ...veylPt(x, z));
     for (const [x, z] of [[0, -7], [0, 9]]) guard('lancer', ...veylPt(x, z));
   }
@@ -52,13 +52,13 @@ export class Director {
   enlist(u: Unit) {
     const g = this.g; u.slot = g.soldiers().filter(x => x !== u).length;
     if (this.plan?.phase === 'go' && this.plan.target && !this.raidLive && !this.warned) u.order = { type: 'amove', x: this.plan.target.pos.x, z: this.plan.target.pos.z };
-    else if (this.following()) u.order = { type: 'follow', x: 0, z: 0 };
+    else if (this.following()) u.order = { type: 'follow', x: 0, z: 0, lead: g.soldiers().find(x => x.order.type === 'follow')?.order.lead };
     else { const p = this.rallyAt(u.slot, this.raidLive && this.raidDir === 'north'); u.order = { type: 'guard', x: p.x, z: p.z }; }
   }
   regroup(north = false) { this.g.soldiers().filter(u => u !== this.g.me && u.order.type !== 'follow').forEach((u, i) => { u.slot = i; const p = this.rallyAt(i, north); u.order = { type: 'guard', x: p.x, z: p.z }; }); }
   squadTask() { return this.plan?.phase === 'go' ? BOOKS[this.plan.book].name + ' under way' : this.following() ? 'Following you' : this.raidLive ? 'Holding off the raid' : 'Holding the yard'; }
   say(who: string, msg: string, cls = '') { this.g.feed(who, msg, cls); }
-  bark(u: Unit, kind: 'kill' | 'down') { if (this.g.time < this.barkT) return; this.barkT = this.g.time + 7; const l = kind === 'kill' ? KILL : DOWN; this.say(UNIT[u.kind].name, l[Math.floor(Math.random() * l.length)], kind === 'down' ? 'al' : ''); }
+  bark(u: Unit, kind: 'kill' | 'down') { if (this.g.net || this.g.time < this.barkT) return; this.barkT = this.g.time + 7; const l = kind === 'kill' ? KILL : DOWN; this.say(UNIT[u.kind].name, l[Math.floor(Math.random() * l.length)], kind === 'down' ? 'al' : ''); }
 
   // ------------------------------------------------------------ events from the simulation
   trained(u: Unit) {
@@ -92,19 +92,29 @@ export class Director {
 
   // ------------------------------------------------------------ orders from the player
   playerOrders(P: Set<string>, eye: THREE.Vector3, dir: THREE.Vector3, lookDist: number) {
-    const g = this.g, me = g.me!, squad = g.soldiers().filter(u => u !== me);
-    if (P.has('KeyG')) { this.auto = !this.auto; this.say('Quartermaster', this.auto ? 'Back on the clock. I\'ll handle the building.' : 'Fine. You build it. I\'ll watch.', ''); sfx.blip(); }
-    if (P.has('KeyV')) {
-      if (squad.length) { const rel = this.following(); squad.forEach((u, i) => { u.slot = i; const p = this.rallyAt(i); u.order = rel ? { type: 'guard', x: p.x, z: p.z } : { type: 'follow', x: 0, z: 0 }; }); this.say('Alpha', rel ? 'Back to the rally point. Finally, a sit-down.' : 'On you, boss. Try not to get us killed.', ''); this.plan = null; this.callout = null; this.nextPlan = g.time + (rel ? 25 : 60); sfx.callout(); } else sfx.deny();
-    }
-    if (P.has('Mouse1')) {
-      const p = V3(); if (g.groundPoint(p, 160) || (lookDist > 0 && p.copy(eye).addScaledVector(dir, lookDist).setY(0))) { if (squad.length) { for (const u of squad) u.order = { type: 'amove', x: p.x + R(-2.5, 2.5), z: p.z + R(-2.5, 2.5) }; if (this.plan?.phase !== 'go') { this.plan = null; this.callout = null; this.nextPlan = g.time + 60; } this.say('Alpha', 'Moving. Shooting anything purple on the way.', ''); g.hud.ping(p); sfx.callout(); } else sfx.deny(); }
-    }
-    const p = this.plan;
+    const g = this.g, net = g.net, p = this.plan;
+    if (P.has('KeyG')) { if (net) net.cmd('or', 'G'); else this.order('G'); sfx.blip(); }
+    if (P.has('KeyV')) { if (net) net.cmd('or', 'V'); else this.order('V'); }
+    if (P.has('Mouse1')) { const q = V3(); if (g.groundPoint(q, 160) || (lookDist > 0 && q.copy(eye).addScaledVector(dir, lookDist).setY(0))) { g.hud.ping(q); if (net) net.cmd('or', 'M', Math.round(q.x), Math.round(q.z)); else this.order('M', q.x, q.z); } }
     if (p && p.phase === 'ask') {
-      if (P.has('KeyX')) { this.plan = null; this.callout = null; this.nextPlan = g.time + 40; g.obj.answered = true; this.say('Alpha', 'Holding. Wake us when you\'re ready.', ''); sfx.blip(); }
-      else if (P.has('KeyZ')) this.accept(true);
-      else if (P.has('KeyC') && p.book < 2) { P.delete('KeyC'); p.book = 1 - p.book; p.label = BOOKS[p.book].label; this.accept(true); }
+      const k = P.has('KeyX') ? 'X' : P.has('KeyZ') ? 'Z' : P.has('KeyC') && p.book < 2 ? 'C' : '';
+      if (k) { if (k === 'C') P.delete('KeyC'); g.obj.answered = true; if (net) { net.cmd('or', k); sfx.blip(); } else this.order(k); }
+    }
+  }
+  /** One squad or base order. In multiplayer the server runs this for whichever player sent it, with lead set to their body. */
+  order(k: string, x = 0, z = 0, lead: Unit | null = this.g.me) {
+    const g = this.g, squad = g.soldiers().filter(u => u !== lead && !u.pilot), p = this.plan;
+    if (k === 'G') { this.auto = !this.auto; this.say('Quartermaster', this.auto ? 'Back on the clock. I\'ll handle the building.' : 'Fine. You build it. I\'ll watch.', ''); }
+    else if (k === 'V') {
+      if (squad.length) { const rel = this.following(); squad.forEach((u, i) => { u.slot = i; const q = this.rallyAt(i); u.order = rel ? { type: 'guard', x: q.x, z: q.z } : { type: 'follow', x: 0, z: 0, lead: lead || undefined }; }); this.say('Alpha', rel ? 'Back to the rally point. Finally, a sit-down.' : 'On you, boss. Try not to get us killed.', ''); this.plan = null; this.callout = null; this.nextPlan = g.time + (rel ? 25 : 60); sfx.callout(); } else sfx.deny();
+    }
+    else if (k === 'M') {
+      if (squad.length) { for (const u of squad) u.order = { type: 'amove', x: x + R(-2.5, 2.5), z: z + R(-2.5, 2.5) }; if (this.plan?.phase !== 'go') { this.plan = null; this.callout = null; this.nextPlan = g.time + 60; } this.say('Alpha', 'Moving. Shooting anything purple on the way.', ''); sfx.callout(); } else sfx.deny();
+    }
+    else if (p && p.phase === 'ask') {
+      if (k === 'X') { this.plan = null; this.callout = null; this.nextPlan = g.time + 40; this.say('Alpha', 'Holding. Wake us when you\'re ready.', ''); sfx.blip(); }
+      else if (k === 'Z') this.accept(true);
+      else if (k === 'C' && p.book < 2) { p.book = 1 - p.book; p.label = BOOKS[p.book].label; this.accept(true); }
     }
   }
   accept(byPlayer: boolean) {
@@ -170,7 +180,7 @@ export class Director {
     }
     if (this.raidIn <= 0) {
       const n = this.raidN++; this.raidIn = 92 * g.diff.raid; this.warned = false; this.raidLive = true; this.raidAge = 0; this.raidSeen = false;
-      let budget = Math.min(16, (2.5 + n * 1.2) * g.diff.enemy) * (gate ? 1 : .6) * (pits.length ? .6 + .2 * pits.length : .35); const north = this.raidDir === 'north'; let count = 0;
+      let budget = Math.min(16 + 4 * (g.coop - 1), (2.5 + n * 1.2) * g.diff.enemy * (1 + .4 * (g.coop - 1))) * (gate ? 1 : .6) * (pits.length ? .6 + .2 * pits.length : .35); const north = this.raidDir === 'north'; let count = 0;
       const send = (k: Kind) => { const pit = pits.length ? pits[count % pits.length] : null; const u = pit ? g.spawn(k, 1, pit.pos.x - ROAD.dx * 5.5 + R(-2, 2), pit.pos.z - ROAD.dz * 5.5 + R(-2, 2)) : g.spawn(k, 1, src.x - 8 + R(-4, 4), src.z + R(-7, 7)); if (pit) g.puff(V3(u.pos.x, 1, u.pos.z), 5, 1, M.violet, .8); const tg = north ? [RALLY_N.x * .3 + R(-3, 3), RALLY_N.z * .3 + R(-2, 2)] : roadPt(R(-3, 6), R(-10, -5)); u.order = { type: 'raid', x: tg[0], z: tg[1], path: north ? NORTH_PATH.map(p => [p[0] + R(-3, 3), p[1] + R(-3, 3)]) : undefined }; count++; };
       if (n >= 4 && n % 3 === 1 && budget >= 6) { send('warden'); budget -= 5; }
       const lancers = n >= 1 ? Math.floor(budget * .3) : 0; for (let i = 0; i < lancers; i++) send('lancer');
@@ -185,7 +195,7 @@ export class Director {
   }
 
   squad(dt: number) {
-    const g = this.g, now = g.time, all = g.soldiers(), idle = all.filter(u => u.order.type === 'guard' && u !== g.me), stones = g.stones();
+    const g = this.g, now = g.time, all = g.soldiers(), idle = all.filter(u => u.order.type === 'guard' && u !== g.me && !u.pilot), stones = g.stones();
     if (!this.plan && now > this.nextPlan && (stones.length || (g.mission && this.targetFor(0))) && !this.raidLive && !this.warned) {
       const last = stones.length === 1, need = last ? 5 : 6;
       if (idle.length >= need) {
@@ -199,7 +209,7 @@ export class Director {
     else if (p.phase === 'count') {
       if (p.t <= 0) {
         p.phase = 'go'; p.target = this.targetFor(p.book); this.pushes++;
-        if (p.target) { let i = 0; for (const u of all) if (u !== g.me && u.order.type === 'guard') { u.order = { type: 'amove', x: p.target.pos.x + R(-3, 3), z: p.target.pos.z + R(-3, 3), path: this.pathFor(p.book, i++) }; } }
+        if (p.target) { let i = 0; for (const u of all) if (u !== g.me && !u.pilot && u.order.type === 'guard') { u.order = { type: 'amove', x: p.target.pos.x + R(-3, 3), z: p.target.pos.z + R(-3, 3), path: this.pathFor(p.book, i++) }; } }
         this.say('Alpha', BOOKS[p.book].go, ''); sfx.callout();
       }
     } else {

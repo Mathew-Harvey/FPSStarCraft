@@ -1,0 +1,7 @@
+# One-click deploy on Render: New > Blueprint, then pick this repository.
+services:
+  - type: web
+    name: ore-else
+    runtime: docker
+    plan: free
+    healthCheckPath: /healthz

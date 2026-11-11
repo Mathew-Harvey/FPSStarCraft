@@ -7,6 +7,7 @@ import { Hud } from './hud';
 import { initAudio, setVolume, setMusic } from './audio';
 import { UNIT, DIFFS, Kind } from './data';
 import { MISSIONS } from './campaign';
+import { Net, Lobby } from './net';
 
 THREE.ColorManagement.enabled = false;
 const $ = (id: string) => document.getElementById(id)!;
@@ -40,12 +41,13 @@ function portraits() {
 
 portraits();
 pipe.w = 0; resize();
-let camp = 0, mpOpen = false, mode = 'camp', jobI = 0;
+let camp = 0, mpOpen = false, mode = 'camp', jobI = 0, pname = '', srv = '';
+let net: Net | null = null;
 let diffI = 1, mapI = 0, sens = 1, vol = .5, mus = true, curX = .5, moved = false;
-try { const o = JSON.parse(localStorage.getItem('ore-else') || '{}'); if (o.d >= 0 && o.d < 3) diffI = o.d; if (o.map >= 0 && o.map < 3) mapI = o.map; if (o.camp > 0) camp = Math.min(MISSIONS.length, o.camp); if (o.mp) mpOpen = true; if (o.mode === 'skirm') mode = 'skirm'; if (o.s > 0) sens = o.s; if (o.v >= 0) vol = o.v; if (o.m === false) mus = false; } catch (e) { /* storage is optional */ }
-const save = () => { try { localStorage.setItem('ore-else', JSON.stringify({ d: diffI, map: mapI, camp, mp: mpOpen, mode, s: sens, v: vol, m: mus })); } catch (e) { /* storage is optional */ } };
+try { const o = JSON.parse(localStorage.getItem('ore-else') || '{}'); if (o.d >= 0 && o.d < 3) diffI = o.d; if (o.map >= 0 && o.map < 3) mapI = o.map; if (o.camp > 0) camp = Math.min(MISSIONS.length, o.camp); if (o.mp) mpOpen = true; if (o.mode === 'skirm') mode = 'skirm'; if (typeof o.name === 'string') pname = o.name.slice(0, 14); if (typeof o.srv === 'string') srv = o.srv.slice(0, 200); if (o.s > 0) sens = o.s; if (o.v >= 0) vol = o.v; if (o.m === false) mus = false; } catch (e) { /* storage is optional */ }
+const save = () => { try { localStorage.setItem('ore-else', JSON.stringify({ d: diffI, map: mapI, camp, mp: mpOpen, mode: mode === 'multi' ? 'camp' : mode, name: pname, srv, s: sens, v: vol, m: mus })); } catch (e) { /* storage is optional */ } };
 jobI = Math.min(camp, MISSIONS.length - 1);
-const want = () => mode === 'camp' ? { d: DIFFS[MISSIONS[jobI].diff], map: MISSIONS[jobI].map, m: MISSIONS[jobI] } : { d: DIFFS[diffI], map: mapI, m: null };
+const want = () => mode !== 'skirm' ? { d: DIFFS[MISSIONS[jobI].diff], map: MISSIONS[jobI].map, m: MISSIONS[jobI] } : { d: DIFFS[diffI], map: mapI, m: null };
 let game = new Game(pipe, hud, want().d, want().map, want().m); game.sens = sens;
 window.addEventListener('resize', resize);
 
@@ -71,13 +73,13 @@ document.addEventListener('pointerlockchange', () => { if (!locked() && live() &
 
 function fresh() { hud.reset(); const w = want(); game = new Game(pipe, hud, w.d, w.map, w.m); game.sens = sens; ended = false; (window as any).__ore.game = game; }
 function start() { initAudio(); setVolume(vol); setMusic(mus); { const w = want(); if (game.diff !== w.d || game.mapI !== w.map || game.mission !== w.m || game.time > 0) fresh(); } $('menu').hidden = true; $('pause').hidden = true; $('end').hidden = true; hud.show(true); game.phase = 'play'; game.introT = 1.8; lock(); }
-function pause() { if (game.phase !== 'play' && game.phase !== 'card') return; game.phase = 'paused'; game.keys.clear(); game.lmb = game.rmb = false; $('pause').hidden = false; }
+function pause() { if (game.phase !== 'play' && game.phase !== 'card') return; if (game.net) { game.phase = 'paused'; game.keys.clear(); game.lmb = game.rmb = false; $('pause').hidden = false; return; } game.phase = 'paused'; game.keys.clear(); game.lmb = game.rmb = false; $('pause').hidden = false; }
 function resume() { if (game.phase !== 'paused') return; initAudio(); $('pause').hidden = true; game.phase = 'play'; lock(); }
 $('start').addEventListener('click', start);
 $('resume').addEventListener('click', resume);
-$('again').addEventListener('click', () => { if (game.mission && game.won && jobI < MISSIONS.length - 1) jobI++; fresh(); start(); });
+$('again').addEventListener('click', () => { if (game.net) { toMenu(); return; } if (game.mission && game.won && jobI < MISSIONS.length - 1) jobI++; fresh(); start(); });
 $('startJob').addEventListener('click', start);
-function toMenu() { $('end').hidden = true; $('pause').hidden = true; hud.show(false); showMode(); fresh(); $('menu').hidden = false; }
+function toMenu() { $('end').hidden = true; $('pause').hidden = true; hud.show(false); if (document.pointerLockElement) document.exitPointerLock(); showMode(); fresh(); $('menu').hidden = false; }
 $('toMenu').addEventListener('click', toMenu);
 // ---- campaign and mode tabs
 let ended = false;
@@ -91,6 +93,7 @@ function showMode() {
   modeBtns.forEach(b => { const on = b.dataset.m === mode; b.classList.toggle('on', on); b.setAttribute('aria-selected', String(on)); });
   $('pCamp').hidden = mode !== 'camp'; $('pSkirm').hidden = mode !== 'skirm'; $('pMulti').hidden = mode !== 'multi';
   $('multiBtn').classList.toggle('locked', !mpOpen); $('multiNote').textContent = mpOpen ? 'Unlocked' : 'Locked. Finish the campaign.';
+  $('mLocked').hidden = mpOpen; $('mJoin').hidden = !mpOpen || !!(net && net.lobby && net.lobby.code); $('mLobby').hidden = !mpOpen || !(net && net.lobby && net.lobby.code);
   $('mTitle').textContent = mpOpen ? 'Joint operations: cleared' : 'Joint operations: locked';
   $('mText').textContent = mpOpen ? 'You are cleared for multiplayer. Lobbies open as soon as the game server is switched on, which is the next part of the build. Until then, Skirmish has all three maps.' : 'The Charter does not let strangers share a payroll. Finish the five campaign jobs to unlock multiplayer, or use the unlock button on the Campaign tab if you have done them before.';
   showJobs();
@@ -98,6 +101,40 @@ function showMode() {
 modeBtns.forEach(b => b.addEventListener('click', () => { mode = b.dataset.m || 'camp'; save(); showMode(); if (mode !== 'multi') { const w = want(); if (game.mapI !== w.map || game.mission !== w.m) fresh(); } }));
 $('jobs').addEventListener('click', e => { const b = (e.target as HTMLElement).closest('button') as HTMLButtonElement | null; if (!b || b.disabled) return; jobI = +(b.dataset.j || 0); showJobs(); const w = want(); if (game.mapI !== w.map || game.mission !== w.m) fresh(); });
 $('skipCamp').addEventListener('click', () => { camp = MISSIONS.length; mpOpen = true; save(); showMode(); });
+// ---- multiplayer lobby
+const mName = $('mName') as HTMLInputElement, mServer = $('mServer') as HTMLInputElement, mCode = $('mCode') as HTMLInputElement;
+const defaultServer = () => /^https?:$/.test(location.protocol) && location.host ? (location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/ws' : '';
+mName.value = pname; mServer.value = srv || defaultServer();
+const mErr = (t: string) => { $('mErr').textContent = t; $('mErr2').textContent = t; };
+const mDiffB = Array.from($('mDiff').querySelectorAll('button')) as HTMLButtonElement[], mMapB = Array.from($('mMaps').querySelectorAll('button')) as HTMLButtonElement[];
+function showLobby(l: Lobby) {
+  const inLobby = !!l.code; $('mJoin').hidden = inLobby || !mpOpen; $('mLobby').hidden = !inLobby; if (!inLobby) return;
+  const host = l.host === l.you, me = l.players.find(p => p.id === l.you);
+  $('mCodeShow').textContent = l.code; $('mHint').textContent = host ? 'Read the code out to your crew. You pick the map and start the shift when everyone is ready.' : 'Waiting for the host to start. Hit Ready when you are.';
+  $('mPlayers').innerHTML = l.players.map(p => `<button type="button" disabled class="${p.ready || p.id === l.host ? 'dn' : ''}">${p.id === l.host ? 'Host' : 'Crew'}<b>${p.name.replace(/[<>&]/g, '')}</b><small>${p.id === l.host ? 'Runs the shift' : p.ready ? 'Ready' : 'Not ready'}</small></button>`).join('');
+  mDiffB.forEach((b, i) => { b.classList.toggle('on', i === l.diff); b.disabled = !host; }); mMapB.forEach((b, i) => { b.classList.toggle('on', i === l.map); b.disabled = !host; });
+  $('mStart').hidden = !host; $('mReady').hidden = host; $('mReady').textContent = me && me.ready ? 'Not ready' : 'Ready'; ($('mStart') as HTMLButtonElement).disabled = !l.players.every(p => p.ready || p.id === l.host);
+}
+async function mpConnect(then: (n: Net) => void) {
+  pname = mName.value.trim().slice(0, 14) || 'Rigger'; srv = mServer.value.trim(); save(); mErr('');
+  if (!srv) { mErr('This copy of the game is not on a game server, so there is nobody to connect to. Open the game from its server address, or paste a server address above.'); return; }
+  if (net && net.open) { then(net); return; }
+  mErr('Connecting...'); const n = new Net();
+  n.onLobby = l => { showLobby(l); if (l.code) mErr(''); }; n.onError = m => mErr(m);
+  n.onClose = () => { net = null; if (game.net) { game.net = null; toMenu(); } showMode(); mErr('Lost the connection to the server.'); };
+  n.onBegin = m => {
+    mode = 'multi'; hud.reset(); game = new Game(pipe, hud, DIFFS[m.diff], m.map, null, n); game.sens = sens; game.names = m.names; ended = false; (window as any).__ore.game = game;
+    initAudio(); setVolume(vol); setMusic(mus); $('menu').hidden = true; $('pause').hidden = true; $('end').hidden = true; hud.show(true); game.phase = 'play'; game.introT = 1.8; lock();
+  };
+  try { await n.connect(srv); net = n; mErr(''); then(n); } catch (e) { mErr(String((e as Error).message || e) + ' Check the server address.'); }
+}
+$('mCreate').addEventListener('click', () => mpConnect(n => n.send({ t: 'create', name: pname })));
+$('mJoinBtn').addEventListener('click', () => { const c = mCode.value.trim().toUpperCase(); if (c.length !== 5) { mErr('Lobby codes are five letters.'); return; } mpConnect(n => n.send({ t: 'join', code: c, name: pname })); });
+mCode.addEventListener('keydown', e => { if (e.key === 'Enter') $('mJoinBtn').click(); });
+$('mLeave').addEventListener('click', () => { net?.send({ t: 'leave' }); });
+$('mReady').addEventListener('click', () => { const l = net?.lobby, me = l?.players.find(p => p.id === l.you); net?.send({ t: 'ready', v: !(me && me.ready) }); });
+$('mStart').addEventListener('click', () => net?.send({ t: 'start' }));
+mDiffB.forEach((b, i) => b.addEventListener('click', () => net?.send({ t: 'set', diff: i }))); mMapB.forEach((b, i) => b.addEventListener('click', () => net?.send({ t: 'set', map: i })));
 showMode();
 const diffBtns = Array.from($('diff').querySelectorAll('button')) as HTMLButtonElement[];
 const showDiff = () => diffBtns.forEach((b, i) => { b.classList.toggle('on', i === diffI); b.setAttribute('aria-pressed', String(i === diffI)); });
@@ -120,12 +157,12 @@ function frame(now: number) {
   if (freeMouse && moved && live() && !game.tab) { const ex = curX < .1 ? (curX - .1) / .1 : curX > .9 ? (curX - .9) / .1 : 0; game.mdx += ex * 900 * dt; }
   if (freeMouse !== freeShown) { freeShown = freeMouse; $('edgeNote').hidden = !freeMouse; $('freeNote').hidden = !freeMouse; }
   game.update(dt);
-  if (game.phase === 'over' && !ended) { ended = true; const m = game.mission; if (m && game.won) { const i = MISSIONS.indexOf(m); camp = Math.max(camp, i + 1); if (camp >= MISSIONS.length) mpOpen = true; save(); } $('again').textContent = m ? (game.won ? (MISSIONS.indexOf(m) < MISSIONS.length - 1 ? 'Next job' : 'Run it again') : 'Try that again') : 'Another shift'; }
+  if (game.phase === 'over' && !ended) { ended = true; const m = game.mission; if (m && game.won) { const i = MISSIONS.indexOf(m); camp = Math.max(camp, i + 1); if (camp >= MISSIONS.length) mpOpen = true; save(); } $('again').textContent = game.net ? 'Back to the lobby' : m ? (game.won ? (MISSIONS.indexOf(m) < MISSIONS.length - 1 ? 'Next job' : 'Run it again') : 'Try that again') : 'Another shift'; }
   // Drop the render resolution if the machine can't keep up, and bring it back if it can.
   if (dt > .034) { slow++; fast = 0; } else if (dt < .02) { fast++; slow = Math.max(0, slow - 1); }
   if (slow > 50 && quality > .5) { quality = Math.max(.5, quality * .85); slow = 0; resize(); }
   if (fast > 900 && quality < 1) { quality = Math.min(1, quality / .85); fast = 0; resize(); }
   requestAnimationFrame(frame);
 }
-(window as any).__ore = { atlasUsed: MD.atlasUsed, game, start, pipe, hud, setFree: (v: boolean) => { freeMouse = v; }, pickMap, pickJob: (i: number) => { mode = 'camp'; camp = Math.max(camp, i); jobI = i; showMode(); fresh(); } };
+(window as any).__ore = { atlasUsed: MD.atlasUsed, game, start, pipe, hud, setFree: (v: boolean) => { freeMouse = v; }, pickMap, unlock: () => { camp = MISSIONS.length; mpOpen = true; mode = 'multi'; showMode(); }, net: () => net, pickJob: (i: number) => { mode = 'camp'; camp = Math.max(camp, i); jobI = i; showMode(); fresh(); } };
 requestAnimationFrame(frame);

@@ -1,0 +1,54 @@
+// Two headless browsers join one lobby on a local server and play a short co-op match.
+// Run with: npm run build && node test/coop.mjs
+import { spawn } from 'node:child_process';
+import { createRequire } from 'node:module';
+const require = createRequire(import.meta.url); const { chromium } = require('playwright');
+const PORT = 8137, URL = `http://localhost:${PORT}/`, SHOTS = process.env.SHOTS || '';
+const srv = spawn('node', ['dist/server.mjs'], { env: { ...process.env, PORT: String(PORT) }, stdio: ['ignore', 'pipe', 'pipe'] });
+let srvLog = ''; srv.stdout.on('data', d => { srvLog += d; }); srv.stderr.on('data', d => { srvLog += d; });
+const fail = []; const check = (ok, what) => { console.log((ok ? 'PASS ' : 'FAIL ') + what); if (!ok) fail.push(what); };
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+try {
+  await sleep(1200);
+  const b = await chromium.launch({ args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist', '--enable-webgl'] });
+  const open = async name => { const p = await b.newPage({ viewport: { width: 1280, height: 720 } }); p.setDefaultTimeout(120000); p.on('pageerror', e => { console.log(`[${name} pageerror]`, e.message.slice(0, 400)); fail.push(name + ' page error'); }); await p.goto(URL); await p.waitForFunction('window.__ore'); await p.evaluate(n => { __ore.setFree(true); __ore.game.noRender = true; __ore.unlock(); document.getElementById('mName').value = n; }, name); return p; };
+  const A = await open('Ada'), B = await open('Bo');
+  await A.click('#mCreate'); await A.waitForFunction(() => document.getElementById('mCodeShow').textContent.length === 5);
+  const code = await A.evaluate(() => document.getElementById('mCodeShow').textContent); check(/^[A-Z]{5}$/.test(code), 'lobby created with a five-letter code: ' + code);
+  await B.fill('#mCode', code); await B.click('#mJoinBtn'); await B.waitForFunction(() => !document.getElementById('mLobby').hidden);
+  await A.waitForFunction(() => document.querySelectorAll('#mPlayers button').length === 2); check(true, 'second player joined and both see two names');
+  check(await A.evaluate(() => document.getElementById('mStart').disabled), 'host cannot start until the crew is ready');
+  await A.click('#mMaps button:nth-child(1)'); await B.click('#mReady'); await A.waitForFunction(() => !document.getElementById('mStart').disabled); await A.click('#mStart');
+  for (const p of [A, B]) { await p.waitForFunction(() => __ore.game.net && __ore.game.me && __ore.game.units.length > 6); await p.evaluate(() => { __ore.game.noRender = true; }); }
+  const state = p => p.evaluate(() => { const g = __ore.game; return { me: g.me && g.me.id, kind: g.me && g.me.kind, units: g.units.filter(u => u.alive).length, bld: g.buildings.filter(b => b.alive).length, ore: g.ore, time: g.time, pilots: g.units.filter(u => u.pilot).map(u => u.id).sort(), props: g.props.length, propsAlive: g.props.filter(q => q.alive).length, stones: g.stones().length }; });
+  let a = await state(A), c = await state(B);
+  check(a.me && c.me && a.me !== c.me, `each player drives a different body (${a.me}, ${c.me})`);
+  check(a.props === c.props && a.props > 300, `both built the same map (${a.props} props)`);
+  check(a.units === c.units && a.bld === c.bld, `same world on both screens (${a.units} units, ${a.bld} buildings)`);
+  check(a.pilots.length === 2 && String(a.pilots) === String(c.pilots), 'both see who is driving what');
+  // Ada walks, drills and stakes out a Bunkhouse. Bo jumps into another Rigger.
+  const ax = await A.evaluate(() => { const g = __ore.game; g.me.pos.x += 3; for (let i = 0; i < 24; i++) g.net.cmd('mn', 0, 3); g.net.cmd('pl', 'bunkhouse', -14, 10, 0); return g.me.pos.x; });
+  const bo = await B.evaluate(() => { const g = __ore.game; const u = g.units.find(u => u.team === 0 && !u.pilot && u.kind === 'rigger'); g.possess(u, true); return u.id; });
+  await sleep(1500); a = await state(A); c = await state(B);
+  check(Math.abs(a.ore - c.ore) < 8 && a.bld === c.bld && a.bld === 11, `Ada's Bunkhouse and ore reached both players (ore ${a.ore}/${c.ore}, buildings ${a.bld})`);
+  check(Math.abs(await B.evaluate(id => __ore.game.uById.get(id).pos.x, a.me) - ax) < .6, 'Bo sees Ada where Ada is standing');
+  check(c.me === bo && a.pilots.includes(bo), 'Bo jumped bodies and Ada can see it');
+  // Bo shoots a Choir Stone and a rock through the server; both worlds must agree afterwards.
+  await B.evaluate(() => { const g = __ore.game, s = g.stones()[0], q = g.props.find(p => p.alive && p.name === 'Boulder'); window.__q = q.id; window.__s = s.id; window.__hp = s.hp; g.net.cmd('dm', s.id, 500, 0); g.net.cmd('dp', q.id, 900); });
+  await sleep(1200);
+  const hit = await B.evaluate(() => { const g = __ore.game; return { s: g.bById.get(window.__s).hp, was: window.__hp, q: g.props[window.__q].alive }; });
+  const hitA = await A.evaluate(([s, q]) => { const g = __ore.game; return { s: g.bById.get(s).hp, q: g.props[q].alive }; }, await B.evaluate(() => [window.__s, window.__q]));
+  check(hit.s < hit.was && hit.s === hitA.s, `damage goes through the server and both see the Stone at ${hit.s} of ${hit.was}`);
+  check(!hit.q && !hitA.q, 'a boulder Bo broke is broken for Ada too');
+  // let the match run, then compare again
+  await sleep(20000); a = await state(A); c = await state(B);
+  check(a.time > 20 && Math.abs(a.time - c.time) < 1, `match clock advanced together (${a.time.toFixed(0)}s)`);
+  check(a.units === c.units && a.bld === c.bld && a.propsAlive === c.propsAlive, `still the same world after twenty seconds (${a.units} units, ${a.bld} buildings, ${a.propsAlive} props standing)`);
+  if (SHOTS) { for (const [p, n] of [[A, 'ada'], [B, 'bo']]) { await p.evaluate(() => { const g = __ore.game, o = g.units.find(u => u.pilot && u !== g.me); g.noRender = false; if (o) { g.yaw = Math.atan2(o.pos.x - g.me.pos.x, o.pos.z - g.me.pos.z); g.pitch = 0; } }); await sleep(2500); await p.screenshot({ path: `${SHOTS}/coop-${n}.jpg`, type: 'jpeg', quality: 88 }); await p.evaluate(() => { __ore.game.noRender = true; }); } }
+  // Bo leaves: Ada keeps playing and the body goes back to the AI
+  await B.close(); await sleep(1500); a = await state(A);
+  check(a.pilots.length === 1, 'when Bo leaves, his body goes back to the crew and the match carries on');
+  await b.close();
+} catch (e) { console.log('ERROR', e); fail.push('exception'); }
+srv.kill(); if (srvLog.includes('crashed') || srvLog.includes('bad command')) { console.log(srvLog); fail.push('server errors'); }
+console.log(fail.length ? `\n${fail.length} FAILED` : '\nALL PASSED'); process.exit(fail.length ? 1 : 0);

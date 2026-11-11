@@ -41,12 +41,14 @@ export const UPGRADES: UpDef[] = [
   { key: 'armor2', name: 'Reactive Plating', cost: 200, blurb: '+20% health', at: 'foundry', say: 'Reactive Plating fitted. It bites back, allegedly.' },
 ];
 
-export interface Order { type: 'guard' | 'amove' | 'follow' | 'raid'; x: number; z: number; path?: number[][] }
+export interface Order { type: 'guard' | 'amove' | 'follow' | 'raid'; x: number; z: number; path?: number[][]; lead?: Unit }
 export interface Unit {
   id: number; kind: Kind; team: number; pos: THREE.Vector3; yaw: number; hp: number; maxHp: number; shield: number; maxShield: number;
   obj: THREE.Group; rig: Rig; ring: THREE.Mesh; alive: boolean; speed: number; moving: boolean; phase: number; cd: number; think: number;
   target: Unit | Building | null; order: Order; lastHit: number; state: string; timer: number; carrying: number; node: OreNode | null; site: Building | null;
   dashCd: number; dashT: number; swing: number; slot: number; flashT: number; pop: number; wind: number; windX: number; windZ: number; kx: number; kz: number; pitch: number; brace: boolean; mend?: Unit | null;
+  /** Multiplayer: which player is driving this body (0 for nobody), and where the server last said it was. */
+  pilot: number; nx: number; nz: number;
 }
 export interface Building {
   id: number; kind: BKind; team: number; pos: THREE.Vector3; hx: number; hz: number; h: number; hp: number; maxHp: number; obj: THREE.Group; holo: THREE.Group | null;

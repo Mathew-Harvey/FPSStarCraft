@@ -113,3 +113,26 @@ Five jobs teach the game one system at a time and finishing the last one unlocks
 | 5. Ore Else | Everything, on Switchback | Level the whole Veyl base |
 
 ![Campaign menu](docs/screenshots/campaign.jpg)
+
+## Multiplayer
+
+![Lobby](docs/screenshots/lobby.jpg)
+![Co-op](docs/screenshots/coop.jpg)
+
+Co-op for up to four players. Everyone shares one Ironhold base and fights the Veyl together, each driving their own body. Jump into any body nobody else is driving. The raids grow with the size of the crew.
+
+Finish campaign job two to unlock the Multiplayer tab. One player creates a lobby and reads out the five-letter code, the others join with it, the crew readies up and the host clocks everyone in.
+
+Multiplayer needs the game server, because the server runs the match and every player's browser is a window onto it. The server also serves the game page, so there is only one thing to host.
+
+```
+npm install
+npm run build
+npm start          # http://localhost:8080
+```
+
+To put it on the internet, deploy the `Dockerfile` to any host that supports WebSockets. `render.yaml` is a ready blueprint for Render. The server listens on `PORT` (default 8080) and answers `/healthz`. Players open the server's address and the lobby connects on its own.
+
+`npm test` starts a local server, joins two headless browsers to one lobby and checks that both see the same match (needs Playwright with Chromium).
+
+How it works: the server runs the same game code as single player at 30 ticks a second and sends every client a snapshot 15 times a second, about 1 KB each. Each client moves and aims its own body, reports its hits, and the server decides health, ore, building, training and the enemy.

@@ -14,6 +14,8 @@ async function bundle(minify) {
   writeFileSync('dist/fragment.html', page);
   const full = '<!doctype html>\n<html lang="en">\n<head>\n<meta charset="utf-8">\n<meta name="viewport" content="width=device-width,initial-scale=1">\n</head>\n<body>\n' + page + '</body>\n</html>\n';
   writeFileSync('dist/index.html', full);
+  // The match server: the same game code, bundled for Node, with the page beside it.
+  await build({ entryPoints: ['server/main.ts'], bundle: true, minify: false, platform: 'node', format: 'esm', target: 'node20', outfile: 'dist/server.mjs', legalComments: 'none', banner: { js: "import { createRequire as __cr } from 'node:module'; const require = __cr(import.meta.url);" }, logLevel: 'warning' });
   return full;
 }
 

@@ -104,7 +104,9 @@ export class Hud {
     const bar = (p: THREE.Vector3, y: number, frac: number, cls: string) => { if (bi >= this.bars.length) return; V.set(p.x, y, p.z); const q = V.clone(); if (!this.project(q, cam)) return; const b = this.bars[bi]; if (b.className !== cls) b.className = cls; b.hidden = false; b.style.transform = `translate(${V.x.toFixed(1)}px,${V.y.toFixed(1)}px)`; this.barFill[bi].style.width = Math.max(0, Math.min(1, frac)) * 100 + '%'; bi++; };
     const lab = (p: THREE.Vector3, y: number, html: string) => { if (li >= this.labs.length) return; const q = new THREE.Vector3(p.x, y, p.z); if (!this.project(q, cam)) return; const l = this.labs[li]; l.hidden = false; l.style.transform = `translate(${Math.max(150, Math.min(this.W - 150, V.x)).toFixed(1)}px,${Math.max(130, V.y).toFixed(1)}px)`; const k = 'l' + li; if (this.cache.get(k) !== html) { this.cache.set(k, html); l.firstElementChild!.innerHTML = html; } li++; };
     for (const u of g.units as Unit[]) {
-      if (!u.alive || u === me && !tab) continue; const d = u.pos.distanceTo(me.pos); if (!tab && d > 70) continue;
+      if (!u.alive || u === me && !tab) continue; const d = u.pos.distanceTo(me.pos);
+      if (u.pilot && u !== me && g.names[u.pilot] && d < 120) lab(u.pos, UNIT[u.kind].headY + 1.25, `<div class="mark out" style="color:var(--yel)">${g.names[u.pilot]}</div>`);
+      if (!tab && d > 70) continue;
       const hurtU = u.hp < u.maxHp || u.shield < u.maxShield; if (u.team === 0 && !hurtU && !tab) continue; if (u.team === 1 && !hurtU && d > 40) continue;
       const y = UNIT[u.kind].headY + .75;
       if (u.maxShield && u.shield > 0) bar(u.pos, y + .22, u.shield / u.maxShield, 'hb s');

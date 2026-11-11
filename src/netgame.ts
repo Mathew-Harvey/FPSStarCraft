@@ -3,7 +3,8 @@
 // everyone a snapshot of the world about fifteen times a second, plus a list of things to draw and say.
 import * as THREE from 'three';
 import { Game, beamMat } from './game';
-import { UNIT, BLD, BUILDABLE, UPGRADES, TRAINS, UNIT_NEEDS, Kind, BKind, Unit, Building, UpKey, isSoldier } from './data';
+import { UNIT, BLD, BUILDABLE, UPGRADES, TRAINS, UNIT_NEEDS, FACTION, VOICE_SIDE, Kind, BKind, Unit, Building, UpKey, isSoldier, isWorker } from './data';
+import type { Side } from './director';
 import { V3, M, R, tracerMat } from './gfx';
 import { sfx, babble } from './audio';
 
@@ -22,14 +23,20 @@ export function buildSnap(g: Game) {
   return {
     t: 's', time: r1(g.time), ore: Math.floor(g.ore), up: UPS.reduce((a, k, i) => a | (g.up[k] ? 1 << i : 0), 0), o: g.ores.map(n => Math.round(n.amount)), u, b,
     d: [r1(D.raidIn), D.raidDir === 'north' ? 1 : 0, D.raidLive ? 1 : 0, D.auto ? 1 : 0, D.plan ? [D.plan.phase, r1(D.plan.t), D.plan.label, D.plan.book] : 0, D.callout ? [D.callout.who, D.callout.text, r1(D.callout.t), D.callout.dur, D.callout.keys] : 0, [D.playbook.name, D.playbook.steps, D.playbook.idx]],
-    st: [Math.floor(st.mined), st.built, st.kills, st.lost], e, sc: Object.keys(g.score).map(k => [+k, g.score[+k][0], Math.floor(g.score[+k][1]), g.score[+k][2]]),
+    v: g.eco ? sideSnap(D.vs) : 0, vo: Math.floor(g.cash(1)),
+    st: [Math.floor(st.mined), st.built, st.kills, st.lost, Math.floor(st.minedV)], e, sc: Object.keys(g.score).map(k => [+k, g.score[+k][0], Math.floor(g.score[+k][1]), g.score[+k][2]]),
   };
 }
 
+/** One side's squad and economy brain, for the players on that side. */
+function sideSnap(S: Side) { return [S.raidLive ? 1 : 0, S.auto ? 1 : 0, S.plan ? [S.plan.phase, r1(S.plan.t), S.plan.label, S.plan.book] : 0, S.callout ? [S.callout.who, S.callout.text, r1(S.callout.t), S.callout.dur, S.callout.keys] : 0, [S.playbook.name, S.playbook.steps, S.playbook.idx]]; }
+function sideApply(g: Game, S: Side, d: any[]) {
+  S.raidLive = !!d[0]; S.auto = !!d[1]; S.plan = d[2] ? { phase: d[2][0], t: d[2][1], target: null, book: d[2][3], label: d[2][2] } : null;
+  if (d[3]) { if (!S.callout || S.callout.text !== d[3][1]) sfx.callout(); S.callout = { who: d[3][0], text: d[3][1], t: d[3][2], dur: d[3][3], keys: d[3][4] }; } else S.callout = null;
+  S.playbook.name = d[4][0]; S.playbook.steps = d[4][1]; S.playbook.idx = d[4][2];
+}
+
 // ---------------------------------------------------------------- server: one player's actions
-/** Match time before a Veyl player may call the first raid. Without it, a raid called in the first seconds reaches the yard before it has a single rifle.
- *  A test server can lower it with ORE_RAID_CALL_AT. */
-export const RAID_CALL_AT = +((globalThis as any).process?.env?.ORE_RAID_CALL_AT ?? 120);
 const BUDGET = new WeakMap<Unit, { left: number; t: number }>(), MOVED = new WeakMap<Unit, number>();
 /** A refilling allowance per body and per kind of claim: ore drilled, seconds of welding, damage to scenery, and the Patch's pulse.
  *  An honest client never comes near these. They stop a doctored one from claiming a thousand ore or a finished Foundry in one message. */
@@ -40,7 +47,7 @@ function allow(g: Game, u: Unit, key: string, want: number, cap: number, perSec:
 }
 export function serverCmd(g: Game, pid: number, unit: Unit | null, c: any[]) {
   const k = c[0], num = (i: number) => (typeof c[i] === 'number' && isFinite(c[i]) ? c[i] : 0);
-  if (g.teams[pid] === 1 && ['tn', 'up', 'pl', 'mn', 'wd', 'fx', 'pt', 'or', 'hl'].includes(k)) return;   // Ironhold business
+  const side = g.teams[pid] || 0;
   if (k === 'dm') {
     // A player reports their own hits, so the server checks them: the target has to be an enemy in reach, and no body can deal more
     // in a second than the hardest-hitting gun and a grenade could together.
@@ -55,25 +62,25 @@ export function serverCmd(g: Game, pid: number, unit: Unit | null, c: any[]) {
   else if (k === 'tr') { if (c.length === 9) g.evq!.push(['tr', ...c.slice(1).map(Number), pid]); }
   else if (k === 'pj') { if (c.length === 9) g.evq!.push(['pj', ...c.slice(1).map(Number), 2, pid]); }
   else if (k === 'tn') {
-    const b = g.buildings.find(x => x.id === num(1)), kind = c[2] as Kind; if (!b || !b.alive || b.team !== 0 || !b.built || !(TRAINS[b.kind] || []).includes(kind)) return;
-    const nb = UNIT_NEEDS[kind]; if (nb && !g.ownB(nb, true).length) return;
+    const b = g.buildings.find(x => x.id === num(1)), kind = c[2] as Kind; if (!b || !b.alive || b.team !== side || !b.built || !(TRAINS[b.kind] || []).includes(kind) || UNIT[kind].team !== side) return;
+    const nb = UNIT_NEEDS[kind]; if (nb && !g.ownB(nb, true, side).length) return;
     g.feedTo = pid; g.train(b, kind, true); g.feedTo = 0;
   }
-  else if (k === 'up') { const u = UPGRADES.find(x => x.key === c[1]); if (u && g.ownB(u.at, true).length) { g.feedTo = pid; g.buyUpgrade(u.key, true); g.feedTo = 0; } }
+  else if (k === 'up') { const u = UPGRADES.find(x => x.key === c[1]); if (u && (u.team || 0) === side && g.ownB(u.at, true, side).length) { g.feedTo = pid; g.buyUpgrade(u.key, true); g.feedTo = 0; } }
   else if (k === 'pl') {
-    const kind = c[1] as BKind, x = Math.round(num(2)), z = Math.round(num(3)), rot = !!c[4]; if (!BUILDABLE.includes(kind as any)) return;
-    if (g.unlocked(kind) && g.canPlace(kind, x, z, rot) && g.ore >= BLD[kind].cost) { g.place(kind, x, z, rot); if (g.score[pid]) g.score[pid][2]++; g.feedTo = pid; g.feed('Quartermaster', `${BLD[kind].name} staked out. Hold the drill on it to speed things up.`, ''); g.feedTo = 0; }
-    else { g.feedTo = pid; g.feed('Quartermaster', `Could not stake out that ${BLD[kind].name}. Somebody beat you to the spot or the ore.`, 'al'); g.feedTo = 0; }
+    const kind = c[1] as BKind, x = Math.round(num(2)), z = Math.round(num(3)), rot = !!c[4], v = FACTION[side].voice; if (!FACTION[side].builds.includes(kind)) return;
+    if (g.unlocked(kind, side) && g.canPlace(kind, x, z, rot, side) && g.cash(side) >= BLD[kind].cost) { g.place(kind, x, z, rot, side); if (g.score[pid]) g.score[pid][2]++; g.feedTo = pid; g.feed(v, side ? `${BLD[kind].name} seeded. Hold click on it to sing it up faster.` : `${BLD[kind].name} staked out. Hold the drill on it to speed things up.`, ''); g.feedTo = 0; }
+    else { g.feedTo = pid; g.feed(v, `Could not ${side ? 'seed' : 'stake out'} that ${BLD[kind].name}. Somebody beat you to the spot or the ore.`, 'al'); g.feedTo = 0; }
   }
-  else if (k === 'mn') { const n = g.ores[num(1)]; if (!n || !unit || unit.kind !== 'rigger' || Math.hypot(n.pos.x - unit.pos.x, n.pos.z - unit.pos.z) > 8) return; const a = allow(g, unit, 'mn', Math.max(0, Math.min(3, num(2), n.amount, g.packCap() - unit.carrying)), 12, 12); n.amount -= a; unit.carrying += a; g.oreCheck(n); }   // banked when the body reaches the Headframe
-  else if (k === 'wd') { const b = g.buildings.find(x => x.id === num(1)); if (unit && unit.kind === 'rigger' && b && b.alive && b.team === 0 && !b.built && g.distToBox(b, unit.pos.x, unit.pos.z) < 8) b.progress += allow(g, unit, 'wd', Math.min(.6, Math.max(0, num(2))), 1, 1.25) / BLD[b.kind].time * 1.6; }
-  else if (k === 'fx') { const b = g.buildings.find(x => x.id === num(1)); if (unit && unit.kind === 'rigger' && b && b.alive && b.team === 0 && b.built && g.distToBox(b, unit.pos.x, unit.pos.z) < 8) b.hp = Math.min(b.maxHp, b.hp + 40 * allow(g, unit, 'wd', Math.min(.6, Math.max(0, num(2))), 1, 1.25)); }
+  else if (k === 'mn') { const n = g.ores[num(1)]; if (!n || !unit || !isWorker(unit.kind) || Math.hypot(n.pos.x - unit.pos.x, n.pos.z - unit.pos.z) > 8) return; const a = allow(g, unit, 'mn', Math.max(0, Math.min(3, num(2), n.amount, g.packCap(unit.team) - unit.carrying)), 12, 12); n.amount -= a; unit.carrying += a; g.oreCheck(n); }   // banked when the body reaches the Headframe
+  else if (k === 'wd') { const b = g.buildings.find(x => x.id === num(1)); if (unit && isWorker(unit.kind) && b && b.alive && b.team === unit.team && !b.built && g.distToBox(b, unit.pos.x, unit.pos.z) < 8) b.progress += allow(g, unit, 'wd', Math.min(.6, Math.max(0, num(2))), 1, 1.25) / BLD[b.kind].time * 1.6; }
+  else if (k === 'fx') { const b = g.buildings.find(x => x.id === num(1)); if (unit && isWorker(unit.kind) && b && b.alive && b.team === unit.team && b.built && g.distToBox(b, unit.pos.x, unit.pos.z) < 8) b.hp = Math.min(b.maxHp, b.hp + 40 * allow(g, unit, 'wd', Math.min(.6, Math.max(0, num(2))), 1, 1.25)); }
   else if (k === 'xx') { g.evq!.push(['ex', num(1), 0, num(2), Math.min(8, Math.max(1, num(3))), 1, pid]); }
-  else if (k === 'rd') { if (g.teams[pid] !== 1) return; const now = g.time; if (now < RAID_CALL_AT) { g.feedTo = pid; g.feed('Chorus', `The Chorus is still waking. The first raid can be called in ${Math.ceil(RAID_CALL_AT - now)} seconds.`, 'al'); g.feedTo = 0; return; } if (now < (g as any).raidLock) return; (g as any).raidLock = now + 85; g.dir.raidIn = Math.min(g.dir.raidIn, 6); g.dir.verse = Math.max(0, Math.min(2, Math.floor(num(1)) || 0)); g.feed('Lookout', 'The singing just changed key. They are coming early.', 'al'); }
+  else if (k === 'rd') { /* the old raid call: the Veyl now march as a squad, answered with Z like Ironhold's */ }
   else if (k === 'pg') { const x = Math.max(-400, Math.min(400, num(1))), z = Math.max(-400, Math.min(400, num(2))); g.evq!.push(['pg', pid, x, z]); }
   else if (k === 'ch') { const t = String(c[1] || '').replace(/[<>&]/g, '').trim().slice(0, 120); if (t) g.evq!.push(['fd', g.names[pid] || 'Crew', t, 'ch']); }
   else if (k === 'pt') { if (unit && unit.kind === 'patch' && allow(g, unit, 'pt', 1, 1, 1 / 6.5) >= 1) g.patchUp(unit); }
-  else if (k === 'or') { const o = String(c[1]); if ('GVMXZC'.includes(o) && o.length === 1) g.dir.order(o, num(2), num(3), unit); }
+  else if (k === 'or') { const o = String(c[1]); if ('GVMXZC'.includes(o) && o.length === 1 && (unit ? unit.team === side : !side)) g.dir.order(o, num(2), num(3), unit); }
 }
 /** The player's own body, as their browser last reported it. */
 export function serverMove(g: Game, unit: Unit, m: any[]) {
@@ -88,7 +95,7 @@ export function serverMove(g: Game, unit: Unit, m: any[]) {
 // ---------------------------------------------------------------- client: snapshot to world
 function event(g: Game, e: any[]) {
   const net = g.net!, k = e[0];
-  if (k === 'fd') { if (e[4] ? e[4] === net.id : !g.myTeam || e[3] === 'ch' || e[1] === 'Signal' || e[1] === 'Chorus') { g.hud.feed(e[1], e[2], e[3]); if (e[3] === 'ch') sfx.blip(); else babble(e[1], String(e[2]).length); } }
+  if (k === 'fd') { if (e[4] ? e[4] === net.id : e[3] === 'ch' || e[1] === 'Signal' || (VOICE_SIDE[e[1]] || 0) === g.myTeam) { g.hud.feed(e[1], e[2], e[3]); if (e[3] === 'ch') sfx.blip(); else babble(e[1], String(e[2]).length); } }
   else if (k === 'pg') { if ((g.teams[e[1]] || 0) !== g.myTeam) return; g.pings.push({ pid: e[1], x: e[2], z: e[3], t: 8 }); if (g.pings.length > 8) g.pings.shift(); sfx.callout(); }
   else if (k === 'nm') { g.names = e[1]; if (e[2]) g.teams = e[2]; }
   else if (k === 'ph') { for (const r of e[1]) { const p = g.props[r[0]]; if (p && p.alive && p.hp > r[1]) g.damageProp(p, p.hp - r[1], null); } }
@@ -104,10 +111,10 @@ function event(g: Game, e: any[]) {
 export function applySnap(g: Game, s: any) {
   const net = g.net!; g.applying = true;
   for (const e of s.e) event(g, e);
-  g.time = s.time; g.ore = s.ore; UPS.forEach((k, i) => { g.up[k] = !!(s.up & (1 << i)); });
+  g.time = s.time; g.ore = s.ore; if (s.vo !== undefined) g.purse[1] = s.vo; UPS.forEach((k, i) => { g.up[k] = !!(s.up & (1 << i)); });
   g.ores.forEach((n, i) => { const a = s.o[i]; if (a !== undefined && a !== n.amount) { n.amount = a; g.oreCheck(n); } });
   if (s.sc) { g.score = {}; for (const r of s.sc) g.score[r[0]] = [r[1], r[2], r[3]]; }
-  g.stats.mined = s.st[0]; g.stats.built = s.st[1]; g.stats.kills = s.st[2]; g.stats.lost = s.st[3];
+  g.stats.mined = s.st[0]; g.stats.built = s.st[1]; g.stats.kills = s.st[2]; g.stats.lost = s.st[3]; g.stats.minedV = s.st[4] || 0;
   const seen = new Set<number>();
   for (const r of s.u) {
     let u = g.uById.get(r[0]); if (u && !u.alive) continue;
@@ -131,6 +138,7 @@ export function applySnap(g: Game, s: any) {
   for (const b of g.buildings) if (b.alive && !seenB.has(b.id)) { b.alive = false; g.scene.remove(b.obj); if (b.holo) g.scene.remove(b.holo); }
   const D = g.dir, d = s.d; D.raidIn = d[0]; D.raidDir = d[1] ? 'north' : 'east'; D.raidLive = !!d[2]; D.auto = !!d[3];
   D.plan = d[4] ? { phase: d[4][0], t: d[4][1], target: null, book: d[4][3], label: d[4][2] } : null;
+  if (s.v) sideApply(g, D.vs, s.v);
   if (d[5] && !g.myTeam) { if (!D.callout || D.callout.text !== d[5][1]) sfx.callout(); D.callout = { who: d[5][0], text: d[5][1], t: d[5][2], dur: d[5][3], keys: d[5][4] }; } else D.callout = null;
   D.playbook.name = d[6][0]; D.playbook.steps = d[6][1]; D.playbook.idx = d[6][2];
   g.applying = false;
@@ -142,7 +150,7 @@ export function netTick(g: Game, dt: number) {
   for (const m of net.inbox) {
     if (m.t === 's') applySnap(g, m);
     else if (m.t === 'yo') net.unit = m.unit;
-    else if (m.t === 'over') { g.stats.mined = m.stats[0]; g.stats.built = m.stats[1]; g.stats.kills = m.stats[2]; g.stats.lost = m.stats[3]; g.time = m.time; g.end(g.myTeam ? !m.won : !!m.won); }
+    else if (m.t === 'over') { g.stats.mined = m.stats[0]; g.stats.built = m.stats[1]; g.stats.kills = m.stats[2]; g.stats.lost = m.stats[3]; g.stats.minedV = m.stats[4] || 0; g.time = m.time; g.end(g.myTeam ? !m.won : !!m.won); }
   }
   net.inbox.length = 0;
   // a body the server has given us and we are not yet driving
@@ -164,7 +172,7 @@ export function netTick(g: Game, dt: number) {
   // damaged friendly buildings smoke, as they do offline
   for (const b of g.buildings) if (b.alive && b.built && b.team === 0 && b.hp < b.maxHp * .5) { b.smokeT -= dt; if (b.smokeT <= 0) { const bad = b.hp < b.maxHp * .25; b.smokeT = bad ? .18 : .4; g.puff(V3(b.pos.x + R(-b.hx, b.hx) * .6, b.h * R(.6, 1), b.pos.z + R(-b.hz, b.hz) * .6), 1, 1.5, bad && Math.random() < .5 ? M.fire : M.smoke, 2.4, .5); } }
   for (let i = g.pings.length - 1; i >= 0; i--) if ((g.pings[i].t -= dt) <= 0) g.pings.splice(i, 1);
-  const D = g.dir; D.raidIn -= dt; if (D.callout) D.callout.t -= dt; if (D.plan) D.plan.t -= dt;
+  const D = g.dir; D.raidIn -= dt; for (const S of [D, D.vs] as Side[]) { if (S.callout) S.callout.t -= dt; if (S.plan) S.plan.t -= dt; }
   net.sendT -= dt;
   if (net.sendT <= 0) {
     net.sendT = .05;

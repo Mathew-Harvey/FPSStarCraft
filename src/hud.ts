@@ -1,8 +1,7 @@
 // The heads-up display: plain HTML over the canvas, laid out in a 900-unit-tall space and scaled to fit.
 import * as THREE from 'three';
 import type { Game } from './game';
-import { RAID_CALL_AT } from './netgame';
-import { UNIT, BLD, BUILDABLE, Unit, Building, MAP, MAPS, OUTPOST, ROAD, NORTH_PATH, roadPt } from './data';
+import { UNIT, BLD, FACTION, Unit, Building, MAP, MAPS, OUTPOST, ROAD, NORTH_PATH, roadPt, isWorker } from './data';
 const capW = (t: string) => t.charAt(0).toUpperCase() + t.slice(1);
 
 const V = new THREE.Vector3();
@@ -63,20 +62,21 @@ export class Hud {
   showEnd(g: Game) {
     this.$('endTitle').textContent = g.won ? (g.mission ? 'Job done' : 'Paid in full') : 'Shift over'; this.$('endTitle').className = 'logo sm' + (g.won ? '' : ' bad');
     this.$('endLine').textContent = g.won && g.mission ? g.mission.outro : g.won ? 'Every Choir Stone is gravel. The Charter thanks you with a smaller invoice.' : 'The Headframe is scrap. The Charter will be billing your next of kin.';
-    if (g.myTeam) { this.$('endTitle').textContent = g.won ? 'The last verse' : 'Out of tune'; this.$('endLine').textContent = g.won ? 'The Headframe is scrap and the valley is quiet again. The Chorus holds the note.' : 'Every Choir Stone is gravel. The singing has stopped, for now.'; }
+    if (g.myTeam) { this.$('endTitle').textContent = g.won ? 'The last verse' : 'Out of tune'; this.$('endLine').textContent = g.won ? 'Every Headframe is scrap and the valley is quiet again. The Chorus holds the note.' : 'Every Choir Stone is gravel. The singing has stopped, for now.'; }
     if (!g.won) {
       // Say what did the damage and what answers it, so a loss teaches something.
-      const top = Object.entries(g.stats.lostTo).sort((a, b) => b[1] - a[1])[0], why: Record<string, string> = {
+      const top = Object.entries(g.myTeam ? g.stats.lostToV : g.stats.lostTo).sort((a, b) => b[1] - a[1])[0], why: Record<string, string> = {
         thornspire: 'Most of your crew fell to Thorn Spires. A Longshot out-ranges them: clear the Spires before the squad walks in.',
         choir: 'Most of your crew fell beside the Choir Stones, which sting anything near them. Bring a Patch and break one Stone at a time.',
         cantor: 'Most of your crew fell to Cantors. They have to reach you first: rifles and Watchposts cut them down on the way in.',
         lancer: 'Most of your crew fell to Lancers. They wear down a Gantry and anything standing still, so put a Breacher in front and a Longshot behind.',
         warden: 'Most of your crew fell to a Warden. It walks through Breachers and Gantries: bring Longshots and a mixed squad.' };
-      const tip = g.myTeam ? 'A mixed Ironhold squad beats any single verse. Call the raid while their squad is away from the yard, and change the verse when they adapt.' : top && why[top[0]];
+      const vwhy: Record<string, string> = { watchpost: 'Most of the Chorus fell to Watchposts. Lancers out-range a crowd of Cantors on a tower: send them first, or go round by the ridge.', headframe: 'Most of the Chorus fell beside a Headframe. Its rivet gun is slow: bring enough voices to finish it in one march.', longshot: 'Longshots picked the Chorus apart. Cantors close the distance fast; send them in first and keep the Lancers behind.', gantry: 'A Gantry broke the Chorus. Lancers wear it down from range, and a Warden walks straight through it.', breacher: 'Breachers held the line. Lancers shoot over the shields, and a Warden\'s slam ignores them.' };
+      const tip = g.myTeam ? (top && vwhy[top[0]]) || 'A mixed Chorus beats any one answer. Grow a second Brood Pit early, learn Keener Edges, and march when the Chorus Lead asks.' : top && why[top[0]];
       if (tip) this.$('endLine').textContent += ' ' + tip;
     }
     const m = Math.floor(g.time / 60), s = Math.floor(g.time % 60);
-    this.$('endStats').innerHTML = [[`${m}:${String(s).padStart(2, '0')}`, 'Shift length'], [Math.floor(g.stats.mined), 'Ore dug'], [g.stats.built, 'Buildings up'], [g.stats.kills, g.myTeam ? 'Voices lost' : 'Veyl dropped'], [g.stats.lost, g.myTeam ? 'Crew broken' : 'Crew lost']].map(([a, b]) => `<div><b>${a}</b><span>${b}</span></div>`).join('');
+    this.$('endStats').innerHTML = [[`${m}:${String(s).padStart(2, '0')}`, 'Shift length'], [Math.floor(g.myTeam ? g.stats.minedV : g.stats.mined), g.myTeam ? 'Ore hummed' : 'Ore dug'], [g.stats.built, 'Buildings up'], [g.stats.kills, g.myTeam ? 'Voices lost' : 'Veyl dropped'], [g.stats.lost, g.myTeam ? 'Crew broken' : 'Crew lost']].map(([a, b]) => `<div><b>${a}</b><span>${b}</span></div>`).join('');
     this.$('end').hidden = false; this.show(false);
   }
 
@@ -88,33 +88,33 @@ export class Hud {
     const tab = g.tab, lost = g.staticT > 0;
     this.vis('hudMain', !tab && !lost); this.vis('jump', tab); this.vis('lost', lost); this.vis('anchors', !lost);
     // top row
-    this.set('ore', String(Math.floor(g.ore)));
-    const used = g.supplyUsed(), cap = g.supplyCap(); this.set('sup', `${used}/${cap}`); this.cls('resSup', used >= cap ? 'low' : '');
+    const side = g.myTeam, F = FACTION[side], cash = g.cash(side); this.set('ore', String(Math.floor(cash)));
+    const used = g.supplyUsed(side), cap = g.supplyCap(side); this.set('sup', `${used}/${cap}`); this.cls('resSup', used >= cap ? 'low' : '');
     const m = Math.floor(g.time / 60), s = Math.floor(g.time % 60); this.set('clock', `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`);
-    const D = g.dir, pb = D.playbook, ph = pb.idx; this.set('play', `<b>${pb.name}</b>` + pb.steps.map((n, i) => `<span class="${i === ph ? 'on' : i < ph ? 'dn' : ''}">${n}</span>`).join(''), true);
-    const st = g.stones().length, sq = g.soldiers().length; this.vis('resOre', !g.myTeam); this.vis('play', !g.myTeam); this.set('whoSub', g.myTeam ? 'You · Veyl Chorus' : 'You · Ironhold Charter'); this.vis('resSup', !g.myTeam); if (g.myTeam) this.set('goal', `Break the Headframe · <em>${st} Stone${st === 1 ? '' : 's'} still singing</em>`, true); else if (g.mission) { const next = g.mission.objectives.find(o => !o.done(g)); this.set('goal', (next ? next.text(g) : 'Job done') + (sq ? ` · Squad ${sq}` : ''), true); } else this.set('goal', `Smash the Choir Stones · <em>${st} left</em>` + (sq ? ` · Squad ${sq}` : ''), true);
-    if (g.myTeam) this.set('qm', `<span class="k" style="font-size:13px">G</span> Call the raid <b>${Math.max(g.raidCall, RAID_CALL_AT - g.time) > 0 ? Math.ceil(Math.max(g.raidCall, RAID_CALL_AT - g.time)) + 's' : 'Ready'}</b> · <span class="k" style="font-size:13px">1 2 3</span> <b>${['Blades', 'Lances', 'Deep Voice'][g.verse]}</b>`, true); else this.set('qm', `<span class="k" style="font-size:13px">G</span> Quartermaster <b>${D.auto ? 'Auto' : 'Off'}</b>`, true); this.cls('qm', 'qm c out' + (D.auto ? '' : ' off'));
+    const D = g.dir, S = D.side(side), pb = S.playbook, ph = pb.idx; this.set('play', `<b>${pb.name}</b>` + pb.steps.map((n, i) => `<span class="${i === ph ? 'on' : i < ph ? 'dn' : ''}">${n}</span>`).join(''), true);
+    const st = g.stones().length, sq = g.army(side).length, hfs = g.ownB('headframe').length; this.set('whoSub', 'You · ' + F.name); if (side) this.set('goal', `Break ${hfs > 1 ? 'every Headframe' : 'the Headframe'} · <em>${hfs} standing</em>` + (sq ? ` · Chorus ${sq}` : ''), true); else if (g.mission) { const next = g.mission.objectives.find(o => !o.done(g)); this.set('goal', (next ? next.text(g) : 'Job done') + (sq ? ` · Squad ${sq}` : ''), true); } else this.set('goal', `Smash the Choir Stones · <em>${st} left</em>` + (sq ? ` · Squad ${sq}` : ''), true);
+    this.set('qm', `<span class="k" style="font-size:13px">G</span> ${F.voice} <b>${S.auto ? 'Auto' : 'Off'}</b>`, true); this.cls('qm', 'qm c out' + (S.auto ? '' : ' off'));
     // who
     this.set('whoName', UNIT[me.kind].name); this.img('whoImg', me.kind); this.set('whoHp', String(Math.max(0, Math.ceil(me.hp))));
     const hpw = Math.max(0, me.hp / me.maxHp * 100).toFixed(0); if (this.cache.get('hpw') !== hpw) { this.cache.set('hpw', hpw); const b = this.$('whoBar'); b.style.width = hpw + '%'; b.style.background = +hpw < 35 ? 'var(--red)' : 'var(--grn)'; }
     // tools
-    const rig = me.kind === 'rigger'; this.vis('slots', rig); this.vis('ammo', !rig);
-    if (rig) this.set('slots', `<div class="${g.tool === 1 ? 'on' : ''}"><b>1</b><span>Drill${g.tool === 1 ? ' · RMB kick' : ''}</span></div><div class="${me.carrying >= g.packCap() ? 'on' : ''}"><b>${me.carrying}</b><span>/ ${g.packCap()} ore in the pack</span></div><div class="${g.tool === 2 ? 'on' : ''}"><b>2</b><span>Build</span></div>`, true);
+    const rig = isWorker(me.kind), vt = me.team === 1; this.vis('slots', rig); this.vis('ammo', !rig);
+    if (rig) this.set('slots', `<div class="${g.tool === 1 ? 'on' : ''}"><b>1</b><span>${vt ? 'Hum' : 'Drill'}${g.tool === 1 ? (vt ? ' · RMB sharp note' : ' · RMB kick') : ''}</span></div><div class="${me.carrying >= g.packCap(me.team) ? 'on' : ''}"><b>${me.carrying}</b><span>/ ${g.packCap(me.team)} ore in the ${vt ? 'sling' : 'pack'}</span></div><div class="${g.tool === 2 ? 'on' : ''}"><b>2</b><span>${vt ? 'Grow' : 'Build'}</span></div>`, true);
     else if (me.team === 1) { this.set('ammoN', g.vWind > 0 ? '<small>Winding</small>' : g.fireCd > 0 ? '<small>...</small>' : '<small>Ready</small>', true); this.cls('ammoN', 'n d out'); this.set('ammoL', (me.kind === 'cantor' ? `Chorus Blades${g.combo ? ' · <b style="color:var(--yel)">Crescendo ' + g.combo + '</b>' : ''} · <span class="k">RMB</span> Whirl ` : me.kind === 'lancer' ? 'Long Note · <span class="k">RMB</span> Held Note ' : 'Ground slam · <span class="k">RMB</span> Low Note ') + (g.vCd > 0 ? Math.ceil(g.vCd) + 's' : 'ready'), true); }
     else { const w = g.weapon()!; this.set('ammoN', g.reloadT > 0 ? '<small>Reloading</small>' : `${g.ammo}<small> / ${w.mag}</small>`, true); this.cls('ammoN', 'n d out' + (g.ammo <= w.mag / 4 && g.reloadT <= 0 ? ' low' : '')); this.set('ammoL', me.kind === 'longshot' ? `Long Rifle · <span class="k">RMB</span> Scope` : me.kind === 'patch' ? `Rivet Pistol · shoot friends to mend · <span class="k">C</span> Patch-up ${g.nadeCd > 0 ? Math.ceil(g.nadeCd) + 's' : 'ready'}` : me.kind === 'gantry' ? `Autocannon · <span class="k">RMB</span> Salvo ${g.salvoCd > 0 ? Math.ceil(g.salvoCd) + 's' : 'ready'} · <span class="k">C</span> Stomp ${g.nadeCd > 0 ? Math.ceil(g.nadeCd) + 's' : 'ready'}` : me.kind === 'breacher' ? `Scattergun · <span class="k">RMB</span> Shield${g.brace ? ' up · click to bash' : ''}${g.payback > .3 ? ' · <b style="color:var(--yel)">Payback ' + Math.round(g.payback * 80) + '%</b>' : ''}` : `Rifle · <span class="k">C</span> Grenade ${g.nadeCd > 0 ? Math.ceil(g.nadeCd) + 's' : 'ready'}`, true); }
     this.cls('cross', 'cross' + (me.kind === 'breacher' || me.kind === 'gantry' ? ' ring' : (me.kind === 'linesman' || me.kind === 'patch') && g.ads > .6 ? ' dot' : me.kind === 'longshot' && g.ads > .6 ? ' scope' : ''));
     { const b = (1 + g.bloom * .9 + (me.moving ? .12 : 0)).toFixed(2); if (this.cache.get('bloom') !== b) { this.cache.set('bloom', b); this.$('cross').style.scale = b; } }
-    const building = rig && g.tool === 2; this.vis('build', building);
-    if (building) this.set('buildRows', BUILDABLE.map((k, i) => { const lock = !g.unlocked(k); return `<div class="${i === g.buildSel ? 'on' : ''}${lock ? ' lock' : g.ore < BLD[k].cost ? ' no' : ''}"><span>${BLD[k].name}<small>${lock ? (g.missing(k).length ? 'Needs ' + g.missing(k).map(n => BLD[n].name).join(' and ') : 'Not on this job') : BLD[k].blurb}</small></span><span>${lock ? 'locked' : BLD[k].cost + ' ore'}</span></div>`; }).join(''), true);
+    const building = rig && g.tool === 2, blist = FACTION[me.team].builds; this.vis('build', building);
+    if (building) this.set('buildRows', blist.map((k, i) => { const lock = !g.unlocked(k, me.team), miss = g.missing(k, me.team); return `<div class="${i === g.buildSel ? 'on' : ''}${lock ? ' lock' : cash < BLD[k].cost ? ' no' : ''}"><span>${BLD[k].name}<small>${lock ? (miss.length ? 'Needs ' + miss.map(n => BLD[n].name).join(' and ') : 'Not on this job') : BLD[k].blurb}</small></span><span>${lock ? 'locked' : BLD[k].cost + ' ore'}</span></div>`; }).join(''), true);
     this.vis('prompt', !!g.prompt && !building); if (g.prompt) this.set('prompt', g.prompt, true);
-    this.set('hint', `<span><span class="k">TAB</span> Jump${g.jumpCd > 0 ? ` <span class="cd">${g.jumpCd.toFixed(1)}s</span>` : ''}</span>` + (g.lastBody?.alive ? `<span><span class="k">Q</span> Last body</span>` : '') + (!g.myTeam && g.soldiers().some(u => u !== me) ? `<span><span class="k">V</span> ${D.following() ? 'Send squad home' : 'Squad on me'}</span><span><span class="k">MMB</span> Send</span>` : ''), true);
+    this.set('hint', `<span><span class="k">TAB</span> Jump${g.jumpCd > 0 ? ` <span class="cd">${g.jumpCd.toFixed(1)}s</span>` : ''}</span>` + (g.lastBody?.alive ? `<span><span class="k">Q</span> Last body</span>` : '') + (g.army(side).some(u => u !== me) ? `<span><span class="k">V</span> ${D.following(S) ? 'Send squad home' : 'Squad on me'}</span><span><span class="k">MMB</span> Send</span>` : ''), true);
     // squad callout and countdown
-    const co = D.callout; this.vis('callout', !!co && !tab);
-    if (co) { this.set('callKeys', co.keys.map(k => `<span><b>${k[0]}</b>${k[1]}</span>`).join(''), true); this.set('callWho', co.who); this.set('callText', co.text, true); this.img('callImg', 'linesman'); this.$('callTm').style.width = Math.max(0, co.t / co.dur * 100) + '%'; }
-    const cnt = D.plan?.phase === 'count'; this.vis('count', !!cnt); if (cnt) { this.set('countN', 'GO IN ' + Math.ceil(D.plan!.t)); this.set('countL', D.plan!.label); }
-    const raid = D.raidIn < 15 && g.stones().length > 0 && !co && !cnt; this.vis('raid', raid); if (raid) this.set('raid', `Raid in ${Math.max(0, Math.ceil(D.raidIn))} · ${D.raidDir === 'north' ? capW(MAP.flankName) : capW(MAP.road)}`);
-    const objs = D.objectives(), teach = g.mission ? true : !(objs[0].done && objs[1].done && objs[2].done) && g.time < 600; this.vis('objs', teach && !building); if (teach) this.set('objs', `<h6>${g.mission ? g.mission.tag + ' · ' + g.mission.name : 'First shift'}</h6>` + objs.map(o => `<div class="${o.done ? 'dn' : ''}">${o.text}</div>`).join(''), true);
-    let boss: Unit | null = null; for (const u of g.units) if (u.alive && u.kind === 'warden' && u.team === 1 && !g.myTeam && u.pos.distanceTo(me.pos) < 70) { boss = u; break; }
+    const co = S.callout; this.vis('callout', !!co && !tab);
+    if (co) { this.set('callKeys', co.keys.map(k => `<span><b>${k[0]}</b>${k[1]}</span>`).join(''), true); this.set('callWho', co.who); this.set('callText', co.text, true); this.img('callImg', F.lead); this.$('callTm').style.width = Math.max(0, co.t / co.dur * 100) + '%'; }
+    const cnt = S.plan?.phase === 'count'; this.vis('count', !!cnt); if (cnt) { this.set('countN', (side ? 'SING IN ' : 'GO IN ') + Math.ceil(S.plan!.t)); this.set('countL', S.plan!.label); }
+    const raid = !side && !g.eco && D.raidIn < 15 && g.stones().length > 0 && !co && !cnt; this.vis('raid', raid); if (raid) this.set('raid', `Raid in ${Math.max(0, Math.ceil(D.raidIn))} · ${D.raidDir === 'north' ? capW(MAP.flankName) : capW(MAP.road)}`);
+    const objs = D.objectives(), teach = g.mission ? true : !(objs[0].done && objs[1].done && objs[2].done) && g.time < 600; this.vis('objs', teach && !building); if (teach) this.set('objs', `<h6>${g.mission ? g.mission.tag + ' · ' + g.mission.name : side ? 'First verse' : 'First shift'}</h6>` + objs.map(o => `<div class="${o.done ? 'dn' : ''}">${o.text}</div>`).join(''), true);
+    let boss: Unit | null = null; for (const u of g.units) if (u.alive && (u.kind === 'warden' || u.kind === 'gantry') && u.team !== side && u.pos.distanceTo(me.pos) < 70) { boss = u; break; }
     this.vis('boss', !!boss && !co && !cnt && !raid); if (boss) { this.$('bossHp').style.width = (boss.hp / boss.maxHp * 100).toFixed(1) + '%'; this.$('bossSh').style.width = (boss.shield / boss.maxShield * 100).toFixed(1) + '%'; }
     // jump cards
     if (tab) this.set('cards', g.tabList.length ? g.tabList.map((e, i) => `<div class="card${i === g.tabSel ? ' on' : ''}${e.alert ? ' alert' : ''}"><div class="frame"><img src="${this.portraits[e.unit.kind] || ''}" alt=""></div><div class="n d">${e.label}</div><div class="t">${e.task}</div><div class="bar"><i style="width:${(e.hp * 100).toFixed(0)}%;background:${e.hp < .35 ? 'var(--red)' : 'var(--grn)'}"></i></div><span class="k">${i + 1}</span></div>`).join('') : '<div class="none">Nobody else to jump into yet. Train someone first.</div>', true);
@@ -136,16 +136,17 @@ export class Hud {
       if (u.maxShield && u.shield > 0) bar(u.pos, y + .22, u.shield / u.maxShield, 'hb s');
       bar(u.pos, y, u.hp / u.maxHp, u.team !== g.myTeam ? 'hb e' : 'hb');
     }
-    const near = g.nearestStone(me.pos);
+    const near = g.nearestStone(me.pos), nearHF = side ? g.ownB('headframe').filter(b => g.fog.seen(b.pos.x, b.pos.z)).sort((a, b) => a.pos.distanceTo(me.pos) - b.pos.distanceTo(me.pos))[0] : null;
     for (const b of g.buildings as Building[]) {
       if (!b.alive) continue; const d = b.pos.distanceTo(me.pos);
       if (!b.built) { bar(b.pos, BLD[b.kind].h + 1.2, b.progress, 'hb big p'); if (d < 60) lab(b.pos, BLD[b.kind].h + 1.6, `<div class="mark" style="color:var(--cyan)">${BLD[b.kind].name} ${Math.floor(b.progress * 100)}%</div>`); }
       else if (b.hp < b.maxHp && (d < 90 || tab)) bar(b.pos, b.h + 1.2, b.hp / b.maxHp, b.team !== g.myTeam ? 'hb big e' : 'hb big');
       if (b.kind === 'wardpylon' && d < 110 && !tab && !building) lab(b.pos, b.h + 1.6, `<div class="mark out" style="color:var(--cyan)">Ward Pylon · shielding the base</div>`);
-      if (b.kind === 'choir' && d > 45 && !tab && !building && (g.myTeam || g.fog.seen(b.pos.x, b.pos.z))) lab(b.pos, b.h + 2, `<div class="mark out">${b === near ? 'Choir Stones · ' + Math.round(d) + 'm' : ''}</div>`);
-      if (b.kind === 'headframe' && b.team === 0 && g.time - b.lastHit < 6 && d > 30) lab(b.pos, b.h + 3, `<div class="mark out" style="color:var(--red)">Headframe under attack</div>`);
+      if (b.kind === 'choir' && !side && d > 45 && !tab && !building && g.fog.seen(b.pos.x, b.pos.z)) lab(b.pos, b.h + 2, `<div class="mark out">${b === near ? 'Choir Stones · ' + Math.round(d) + 'm' : ''}</div>`);
+      if (b === nearHF && d > 45 && !tab && !building) lab(b.pos, b.h + 3, `<div class="mark out">Headframe · ${Math.round(d)}m</div>`);
+      if (b.kind === FACTION[side].hq && b.team === side && g.time - b.lastHit < 6 && d > 30) lab(b.pos, b.h + 3, `<div class="mark out" style="color:var(--red)">${BLD[b.kind].name} under attack</div>`);
     }
-    if (building) { const k = BUILDABLE[g.buildSel]; lab(g.placePos, BLD[k].h + 1.4, `<div class="tag${g.placeOK ? '' : ' bad'}"><span class="d" style="font-size:30px;color:${g.placeOK ? 'var(--cyan)' : 'var(--red)'}">${BLD[k].name}</span> <span class="d" style="font-size:24px;color:var(--ore);margin-left:14px">${BLD[k].cost} ore</span><div class="c" style="font-size:14px">${g.placeOK ? 'Click place · R rotate · Right-click cancel' : g.ore < BLD[k].cost ? 'Not enough ore' : 'Can\'t build there'}</div></div>`); }
+    if (building) { const k = blist[g.buildSel] || blist[0]; lab(g.placePos, BLD[k].h + 1.4, `<div class="tag${g.placeOK ? '' : ' bad'}"><span class="d" style="font-size:30px;color:${g.placeOK ? 'var(--cyan)' : 'var(--red)'}">${BLD[k].name}</span> <span class="d" style="font-size:24px;color:var(--ore);margin-left:14px">${BLD[k].cost} ore</span><div class="c" style="font-size:14px">${g.placeOK ? 'Click place · R rotate · Right-click cancel' : cash < BLD[k].cost ? 'Not enough ore' : 'Can\'t build there'}</div></div>`); }
     if (this.pingT > 0) { this.pingT -= dt; lab(this.pingPos, 1.5, `<div class="mark ping out">Squad moving here</div>`); }
     for (let i = bi; i < this.bars.length; i++) if (!this.bars[i].hidden) this.bars[i].hidden = true;
     for (let i = li; i < this.labs.length; i++) if (!this.labs[i].hidden) this.labs[i].hidden = true;
@@ -162,7 +163,7 @@ export class Hud {
 
   private crew(g: Game) {
     const el = this.$('crew'); if (!g.net) { if (!el.hidden) el.hidden = true; return; }
-    const html = Object.keys(g.names).map(k => { const id = +k, u = (g.units as Unit[]).find(x => x.alive && x.pilot === id), s = g.score[id] || [0, 0, 0]; return `<div class="${id === g.net!.id ? 'me' : ''}${g.teams[id] ? ' v' : ''}"><b>${g.names[id]}</b><span>${u ? UNIT[u.kind].name : 'Down'}</span><em>${s[0]} kills${g.teams[id] ? '' : ` · ${s[1]} ore`}</em></div>`; }).join('');
+    const html = Object.keys(g.names).map(k => { const id = +k, u = (g.units as Unit[]).find(x => x.alive && x.pilot === id), s = g.score[id] || [0, 0, 0]; return `<div class="${id === g.net!.id ? 'me' : ''}${g.teams[id] ? ' v' : ''}"><b>${g.names[id]}</b><span>${u ? UNIT[u.kind].name : 'Down'}</span><em>${s[0]} kills · ${s[1]} ore</em></div>`; }).join('');
     if (this.cache.get('crew') !== html) { this.cache.set('crew', html); el.innerHTML = html; } el.hidden = false;
   }
   private drawMini(g: Game) {
@@ -182,10 +183,10 @@ export class Hud {
     for (const o of g.ores) { if (o.amount <= 0 || !fog.seen(o.pos.x, o.pos.z)) continue; c.fillStyle = '#b8f58c'; c.fillRect(X(o.pos.x) - 2.5, Z(o.pos.z) - 2.5, 5, 5); }
     c.lineWidth = 1.5; c.strokeStyle = '#0e0d14';
     for (const b of g.buildings) { if (!b.alive || (b.team !== g.myTeam && !fog.seen(b.pos.x, b.pos.z))) continue; const w = Math.max(5, b.hx * 2 * k), h = Math.max(5, b.hz * 2 * k); c.fillStyle = b.kind === 'reedgate' ? '#c58bff' : b.team ? '#35e0c8' : b.built ? '#ffc21a' : '#7ef0ff'; c.fillRect(X(b.pos.x) - w / 2, Z(b.pos.z) - h / 2, w, h); c.strokeRect(X(b.pos.x) - w / 2, Z(b.pos.z) - h / 2, w, h); }
-    for (const u of g.units) { if (!u.alive || u === g.me || (u.team !== g.myTeam && !fog.sees(u.pos.x, u.pos.z))) continue; c.fillStyle = u.team ? (this.cb ? '#ff9d1a' : '#ff4f9a') : u.kind === 'rigger' ? (this.cb ? '#4da3ff' : '#8be04e') : '#f4ead2'; c.beginPath(); c.arc(X(u.pos.x), Z(u.pos.z), u.kind === 'warden' ? 5 : u.team ? 2.6 : 2.2, 0, 7); c.fill(); }
+    for (const u of g.units) { if (!u.alive || u === g.me || (u.team !== g.myTeam && !fog.sees(u.pos.x, u.pos.z))) continue; c.fillStyle = u.kind === 'tender' ? '#c58bff' : u.team ? (this.cb ? '#ff9d1a' : '#ff4f9a') : u.kind === 'rigger' ? (this.cb ? '#4da3ff' : '#8be04e') : '#f4ead2'; c.beginPath(); c.arc(X(u.pos.x), Z(u.pos.z), u.kind === 'warden' ? 5 : u.team ? 2.6 : 2.2, 0, 7); c.fill(); }
     for (const p of g.pings) { c.strokeStyle = '#ffc21a'; c.lineWidth = 2.5; c.beginPath(); c.arc(X(p.x), Z(p.z), 4 + (8 - p.t) % 1 * 7, 0, 7); c.stroke(); }
     for (const u of g.units) if (u.alive && u.pilot && u !== g.me && u.team === g.myTeam) { c.fillStyle = '#ffc21a'; c.strokeStyle = '#0e0d14'; c.lineWidth = 1.5; c.beginPath(); c.arc(X(u.pos.x), Z(u.pos.z), 3.6, 0, 7); c.fill(); c.stroke(); }
-    const D = g.dir; if ((D.raidIn < 15 || D.raidLive) && g.stones().length && Math.floor(performance.now() / 300) % 2) { c.fillStyle = '#ff4b3a'; c.strokeStyle = '#0e0d14'; c.lineWidth = 2; c.beginPath(); { const n = NORTH_PATH.length, p = D.raidDir === 'north' ? [(NORTH_PATH[n - 1][0] + NORTH_PATH[n - 2][0]) / 2, (NORTH_PATH[n - 1][1] + NORTH_PATH[n - 2][1]) / 2] : roadPt(62), a = Math.atan2(-p[1], -p[0]); c.moveTo(X(p[0]) + Math.cos(a) * 9, Z(p[1]) + Math.sin(a) * 9); c.lineTo(X(p[0]) + Math.cos(a + 2.4) * 8, Z(p[1]) + Math.sin(a + 2.4) * 8); c.lineTo(X(p[0]) + Math.cos(a - 2.4) * 8, Z(p[1]) + Math.sin(a - 2.4) * 8); } c.closePath(); c.fill(); c.stroke(); }
+    const D = g.dir; if (!g.myTeam && (D.raidIn < 15 || D.raidLive) && g.stones().length && Math.floor(performance.now() / 300) % 2) { c.fillStyle = '#ff4b3a'; c.strokeStyle = '#0e0d14'; c.lineWidth = 2; c.beginPath(); { const n = NORTH_PATH.length, p = D.raidDir === 'north' ? [(NORTH_PATH[n - 1][0] + NORTH_PATH[n - 2][0]) / 2, (NORTH_PATH[n - 1][1] + NORTH_PATH[n - 2][1]) / 2] : roadPt(62), a = Math.atan2(-p[1], -p[0]); c.moveTo(X(p[0]) + Math.cos(a) * 9, Z(p[1]) + Math.sin(a) * 9); c.lineTo(X(p[0]) + Math.cos(a + 2.4) * 8, Z(p[1]) + Math.sin(a + 2.4) * 8); c.lineTo(X(p[0]) + Math.cos(a - 2.4) * 8, Z(p[1]) + Math.sin(a - 2.4) * 8); } c.closePath(); c.fill(); c.stroke(); }
     if (this.pingT > 0) { c.strokeStyle = '#ffc21a'; c.lineWidth = 2; c.beginPath(); c.arc(X(this.pingPos.x), Z(this.pingPos.z), 5, 0, 7); c.stroke(); }
     const me = g.me; if (me) { c.save(); c.translate(X(me.pos.x), Z(me.pos.z)); c.rotate(-g.yaw); c.fillStyle = '#fff'; c.strokeStyle = '#0e0d14'; c.lineWidth = 1.5; c.beginPath(); c.moveTo(0, 8); c.lineTo(5, -5); c.lineTo(0, -2); c.lineTo(-5, -5); c.closePath(); c.fill(); c.stroke(); c.restore(); }
   }

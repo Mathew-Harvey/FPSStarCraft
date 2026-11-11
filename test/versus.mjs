@@ -4,7 +4,7 @@ import { spawn } from 'node:child_process';
 import { createRequire } from 'node:module';
 const require = createRequire(import.meta.url); const { chromium } = require('playwright');
 const PORT = 8139, URL = `http://localhost:${PORT}/`, SHOTS = process.env.SHOTS || '';
-const srv = spawn('node', ['dist/server.mjs'], { env: { ...process.env, PORT: String(PORT), ORE_RAID_CALL_AT: '0' }, stdio: ['ignore', 'pipe', 'pipe'] });
+const srv = spawn('node', ['dist/server.mjs'], { env: { ...process.env, PORT: String(PORT) }, stdio: ['ignore', 'pipe', 'pipe'] });
 let srvLog = ''; srv.stdout.on('data', d => { srvLog += d; }); srv.stderr.on('data', d => { srvLog += d; });
 const fail = []; const check = (ok, what) => { console.log((ok ? 'PASS ' : 'FAIL ') + what); if (!ok) fail.push(what); };
 const sleep = ms => new Promise(r => setTimeout(r, ms));
@@ -24,19 +24,22 @@ try {
   const st = p => p.evaluate(() => { const g = __ore.game; return { me: g.me && g.me.id, team: g.me && g.me.team, kind: g.me && g.me.kind, my: g.myTeam, ore: g.ore, bld: g.buildings.filter(b => b.alive).length, hq: g.ownB('headframe')[0]?.hp, phase: g.phase, won: g.won, raidIn: g.dir.raidIn }; });
   let a = await st(A), v = await st(V);
   check(a.team === 0 && v.team === 1 && v.my === 1, `Ada is a ${a.kind} for Ironhold and Vex is a ${v.kind} for the Veyl`);
-  // Vex tries Ironhold business and is refused, then calls the raid
-  await V.evaluate(() => { const g = __ore.game; for (let i = 0; i < 10; i++) g.net.cmd('mn', 0, 3); g.net.cmd('pl', 'depot', 14, 20, 0); g.net.cmd('rd'); });
-  check(await until(A, () => { const d = __ore.game.dir; return d.raidIn <= 6 || d.raidLive; }), 'Vex calls the raid early'); const a2 = await st(A);
+  check(v.kind === 'tender' && await A.evaluate(() => __ore.game.eco), 'a Veyl player starts as a Tender in a match with a Veyl economy');
+  // Vex tries Ironhold business and is refused, then sings up a Hushwell of their own
+  await V.evaluate(() => { const g = __ore.game; for (let i = 0; i < 10; i++) g.net.cmd('mn', 0, 3); g.net.cmd('pl', 'depot', 14, 20, 0); g.net.cmd('pl', 'headframe', 30, 20, 0); });
+  await sleep(1500); const a2 = await st(A);
   check(Math.abs(a2.ore - a.ore) < 12 && a2.bld === a.bld, 'a Veyl player cannot mine or build for Ironhold');
+  const well = await V.evaluate(() => { const g = __ore.game, st = g.buildings.find(b => b.alive && b.team === 1 && b.kind === 'choir'); for (let r = 14; r < 40; r += 3) for (let t = 0; t < 6.28; t += .4) { const x = st.pos.x + Math.cos(t) * r, z = st.pos.z + Math.sin(t) * r; if (g.canPlace('hushwell', x, z, false, 1)) { g.place('hushwell', x, z, false, 1); return true; } } return false; });
+  check(well && await until(A, () => __ore.game.buildings.some(b => b.alive && b.team === 1 && b.kind === 'hushwell')), 'Vex lays out a Hushwell and Ada sees it go up');
   // every Veyl body works in first person, with the picture on
   // A slow runner draws a frame in a few hundred milliseconds and the match clock only moves a tenth of a second a frame, so a wind-up can take seconds of wall time: keep pressing for up to fifteen.
   const kinds = await V.evaluate(async () => {
     const g = __ore.game, out = [], sleep = ms => new Promise(r => setTimeout(r, ms)); g.noRender = false;
-    for (const k of ['cantor', 'lancer', 'warden']) { const u = g.units.find(u => u.alive && u.team === 1 && u.kind === k && (!u.pilot || u === g.me)); if (!u) continue; if (u !== g.me) { g.jumpCd = 0; g.possess(u); await sleep(600); if (g.phase === 'card') await sleep(1400); } g.lmb = true; await sleep(2600); g.lmb = false; await sleep(300); g.vCd = 0; for (let i = 0; i < 150 && g.vCd <= 0; i++) { if (g.phase === 'card') g.phase = 'play'; g.pressed.add('Mouse2'); await sleep(100); } out.push(k + (g.me === u ? '' : '?') + (g.vCd > 0 ? '+' : '!')); }
+    for (const k of ['tender', 'cantor', 'lancer', 'warden']) { const u = g.units.find(u => u.alive && u.team === 1 && u.kind === k && u !== g.me && !u.pilot); if (!u) continue; if (u !== g.me) { g.jumpCd = 0; g.possess(u); await sleep(600); if (g.phase === 'card') await sleep(1400); } g.lmb = true; await sleep(2600); g.lmb = false; await sleep(300); g.vCd = 0; for (let i = 0; i < 150 && g.vCd <= 0; i++) { if (g.phase === 'card') g.phase = 'play'; g.pressed.add('Mouse2'); await sleep(100); } out.push(k + (g.me === u ? '' : '?') + (g.vCd > 0 ? '+' : '!')); }
     g.keys.add('Tab'); await sleep(500); const tabs = g.tabList.length; g.keys.delete('Tab'); await sleep(300); g.noRender = true; return out.join(' ') + ' tab=' + tabs;
   });
-  check(/cantor/.test(kinds) && !/\?/.test(kinds), 'Vex jumps between Veyl bodies and swings each one: ' + kinds);
-  check(!/!/.test(kinds), 'every Veyl body has its second move on right click');
+  check(/tender/.test(kinds) && !/\?/.test(kinds), 'Vex jumps between Veyl bodies and uses each one: ' + kinds);
+  check(!/(cantor|lancer|warden)!/.test(kinds), 'every Veyl fighter has its second move on right click');
   if (SHOTS) { await V.evaluate(() => { const g = __ore.game; g.noRender = false; g.pitch = 0; }); await sleep(2500); await V.screenshot({ path: `${SHOTS}/versus-vex.jpg`, type: 'jpeg', quality: 88 }); await V.evaluate(() => { __ore.game.noRender = true; }); }
   // each side hurts the other through the server
   v = await st(V);

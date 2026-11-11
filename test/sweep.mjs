@@ -132,17 +132,12 @@ try {
     const h = __ore.split().host, c = __ore.game2(), body = h.units.find(u => u.alive && u.pilot === 2), victim = h.spawn('rigger', 0, body.pos.x + 1, body.pos.z);
     h.damage(victim, 9999, body); ff(1);
     for (let i = 0; i < 3; i++) h.spawn('linesman', 0, 4 + i, 12); ff(1);
-    c.noRender = false; c.update(1 / 30); c.noRender = true; const hint = document.querySelector('.hud.p2 #hint').textContent;
-    const early = h.dir.raidIn; c.pressed.add('KeyG'); ff(1); const refused = h.dir.raidIn > early - 3 && c.raidCall <= 0;
-    h.time = Math.max(h.time, 125); ff(1); c.pressed.add('KeyG'); ff(1); const called = h.dir.raidIn <= 6 || h.dir.raidLive; ff(95, () => c.keys.clear());
+    c.noRender = false; c.update(1 / 30); c.noRender = true;
     const objs = c.dir.objectives();
-    return { kills: h.score[2][0], squadHint: /Squad on me|Send squad/.test(hint), called: objs[1].done, refused, accepted: called };
+    return { kills: h.score[2][0], objs: objs.length, eco: h.eco };
   });
   check(vs.kills >= 1, `the Veyl player's kills reach the scoreboard (${vs.kills})`);
-  check(!vs.squadHint, 'the Veyl player is not offered squad orders they cannot give');
-  check(vs.refused, 'the Veyl player cannot call a raid in the opening two minutes');
-  check(vs.accepted, 'after two minutes the Veyl player can call the raid');
-  check(vs.called, 'the "call a raid" objective stays ticked after the cooldown');
+  check(vs.eco && vs.objs > 0, 'versus runs the Veyl economy and the Veyl player has objectives of their own');
 
   // 6. The pause screen has a way out of a running shift.
   const quit = await p.evaluate(() => { const q = document.getElementById('quit'); if (!q) return 'no button'; document.dispatchEvent(new KeyboardEvent('keydown', { code: 'Escape', bubbles: true })); q.click(); return { split: !!__ore.split(), menu: !document.getElementById('menu').hidden }; });

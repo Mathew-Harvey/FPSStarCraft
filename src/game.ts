@@ -6,11 +6,11 @@ import * as MD from './models';
 import { sfx, drillSound, setMood, babble } from './audio';
 import type { Hud } from './hud';
 import { Fog } from './fog';
-import { Kind, BKind, UNIT, BLD, BUILDABLE, UPGRADES, TRAINS, UNIT_NEEDS, UpKey, Unit, Building, Prop, OreNode, Difficulty, DIFFS, OUTPOST, GATE, MAP, MAPS, ROAD, setMap, veylPt, isUnit, isSoldier } from './data';
+import { Kind, BKind, UNIT, BLD, BUILDABLE, UPGRADES, TRAINS, UNIT_NEEDS, UpKey, Unit, Building, Prop, OreNode, Difficulty, DIFFS, OUTPOST, GATE, MAP, MAPS, ROAD, VHOME, FACTION, setMap, veylPt, isUnit, isSoldier, isWorker, isFighter, foeOf } from './data';
 import { Director } from './director';
 import type { Mission } from './campaign';
 import type { Net } from './net';
-import { applySnap, netTick, RAID_CALL_AT } from './netgame';
+import { applySnap, netTick } from './netgame';
 
 const TMP = V3(), TMP2 = V3(), UP = V3(0, 1, 0), QT = new THREE.Quaternion();
 export const beamMat = new THREE.MeshBasicMaterial({ color: 0x6dfff0, depthWrite: false });
@@ -39,7 +39,13 @@ export class Game {
   wrecks: { b: Building; t: number; dur: number; tall: boolean; dx: number; dz: number; yaw: number; puffT: number }[] = [];
   craters: { m: THREE.Group; t: number }[] = [];
   anim: ((t: number) => void)[] = [];
-  ore = 100; time = 0; phase: 'menu' | 'play' | 'paused' | 'card' | 'over' = 'menu'; won = false;
+  /** Ore in the bank, by team. */
+  purse: number[] = [100, 100];
+  get ore() { return this.purse[0]; } set ore(v: number) { this.purse[0] = v; }
+  cash(team: number) { return this.purse[team] || 0; }
+  /** Which sides have a player on them. A side nobody plays is run by the bots. */
+  human: boolean[] = [true, false];
+  time = 0; phase: 'menu' | 'play' | 'paused' | 'card' | 'over' = 'menu'; won = false;
   up = Object.fromEntries(UPGRADES.map(u => [u.key, false])) as Record<UpKey, boolean>;
   dir!: Director;
   // the player
@@ -49,7 +55,7 @@ export class Game {
   tab = false; tabSel = 0; tabList: { label: string; task: string; unit: Unit; hp: number; alert: boolean }[] = [];
   keys = new Set<string>(); pressed = new Set<string>(); mdx = 0; mdy = 0; lmb = false; rmb = false; wheel = 0;
   obj = { drilled: 0, jumped: false, answered: false, built: false, called: false };
-  stats = { kills: 0, lost: 0, mined: 0, built: 0, lostTo: {} as Record<string, number> };
+  stats = { kills: 0, lost: 0, mined: 0, minedV: 0, built: 0, lostTo: {} as Record<string, number>, lostToV: {} as Record<string, number> };
   // effects
   vm: Record<string, THREE.Group> = {};
   tracers: { m: THREE.Mesh; t: number }[] = []; puffs: { m: THREE.Mesh; t: number; life: number; v: THREE.Vector3; s: number }[] = [];
@@ -59,12 +65,12 @@ export class Game {
   shake = 0; noRender = false; alertT = 0; mood = 0;
   introT = 0; menuPos = V3(); menuQuat = new THREE.Quaternion(); hitStop = 0; streak = 0; streakT = 0; kick = 0; stepPhase = 0; dustT = 0; hopT = 0; hopCd = 0; hopX = 0; hopZ = 0; endT = 0; endWon = false;
 
-  constructor(public pipe: Pipeline | ViewPipe, public hud: Hud, public diff: Difficulty = DIFFS[1], public mapI = 0, public mission: Mission | null = null, public net: Net | null = null) {
+  constructor(public pipe: Pipeline | ViewPipe, public hud: Hud, public diff: Difficulty = DIFFS[1], public mapI = 0, public mission: Mission | null = null, public net: Net | null = null, /** The Veyl run a real economy (Tenders, building, training) instead of breeding raids for free. On whenever somebody plays the Veyl. */ public eco = false) {
     setMap(mapI); (M.ground as any).uniforms.uColor.value.setRGB(MAP.ground[0], MAP.ground[1], MAP.ground[2]); (M.mesa as any).uniforms.uColor.value.setRGB(MAP.mesa[0], MAP.mesa[1], MAP.mesa[2]); (M.rock as any).uniforms.uColor.value.setRGB(MAP.rock[0], MAP.rock[1], MAP.rock[2]); 
     const s = this.scene; s.add(makeSky()); MD.buildWorld(s, this.props, this.anim); this.spires = this.props.filter(p => p.solid); s.add(this.cam);
     this.vm = { drill: MD.vmDrill(), rifle: MD.vmRifle(), scatter: MD.vmScatter(), shield: MD.vmShield(), cannon: MD.vmCannon(), long: MD.vmLong(), pistol: MD.vmPistol(), veyl: MD.vmVeyl() };
     for (const k in this.vm) { this.vm[k].visible = false; this.cam.add(this.vm[k]); }
-    for (const k of BUILDABLE) { const src = this.model(k); this.ghost[k] = MD.hologram(src, holoOK); this.ghostBad[k] = MD.hologram(src, holoBad); this.ghost[k].visible = this.ghostBad[k].visible = false; s.add(this.ghost[k], this.ghostBad[k]); }
+    for (const k of [...BUILDABLE, ...FACTION[1].builds]) { const src = this.model(k); this.ghost[k] = MD.hologram(src, holoOK); this.ghostBad[k] = MD.hologram(src, holoBad); this.ghost[k].visible = this.ghostBad[k].visible = false; s.add(this.ghost[k], this.ghostBad[k]); }
     const pool = (n: number, geo: THREE.BufferGeometry, mat: THREE.Material, fx: boolean) => { const out: THREE.Mesh[] = []; for (let i = 0; i < n; i++) { const m = mk(geo, mat, 0, 0, 0, s); if (fx) m.layers.set(L_FX); m.visible = false; out.push(m); } return out; };
     this.tracers = pool(36, G.cyl8, tracerMat, true).map(m => ({ m, t: 0 }));
     this.puffs = pool(80, G.sph, M.dust, false).map(m => ({ m, t: 0, life: 1, v: V3(), s: 1 }));
@@ -80,13 +86,17 @@ export class Game {
     // the rich seam, then the other fields out on the map, each with room for a new Headframe on the side facing the yard
     MAP.sites!.forEach(([ex, ez], i) => { if (!i) field([[ex - 1, ez, 10, 1.5], [ex + 4, ez + 4, 8, 1.3], [ex - 3, ez - 5, 9, 1.4]], 1600); else { const l = Math.hypot(ex, ez) || 1, ux = ex / l, uz = ez / l; field([[ex + ux * 3 - uz * 6, ez + uz * 3 + ux * 6, 8, 1.2], [ex + ux * 6, ez + uz * 6, 9, 1.3], [ex + ux * 3 + uz * 6, ez + uz * 3 - ux * 6, 7, 1.1], [ex + ux * 9 - uz * 2, ez + uz * 9 + ux * 2, 8, 1.2]].map(p => [Math.round(p[0]), Math.round(p[1]), p[2], p[3]]), 1000); } });
     if (!net) for (const [x, z] of [[6, 7], [10, -6], [13, -10], [-8, -8], [9, 2], [-6, 8]]) this.spawn('rigger', 0, x, z);
-    // the Veyl outpost
+    // the Veyl home seams, behind the outpost
+    field([[25, -11, 8, 1.2], [28, -4, 7, 1.0], [28, 5, 8, 1.3], [24, 12, 7, 1.1], [31, -14, 6, .9], [32, 11, 7, 1.0]].map(([lx, lz, n, sc]) => { const [x, z] = veylPt(lx, lz); return [Math.round(x), Math.round(z), n, sc]; }), 900);
+    // the Veyl outpost: a whole working base against the bots, or one Choir Stone and six Tenders when the Veyl run their own economy
     const V = (k: BKind, lx: number, lz: number, rot = false) => { if (net) return; const [x, z] = veylPt(lx, lz); this.addBuilding(k, 1, x, z, true, rot); };
+    if (eco) { if (!net) { this.addBuilding('choir', 1, VHOME.x, VHOME.z, true); for (const [lx, lz] of [[14, 4], [15, -3], [17, 6], [13, -6], [16, 1], [12, 7]]) this.spawn('tender', 1, ...veylPt(lx, lz)); } }
+    else {
     for (const [x, z] of [[-6, -9], [3, 1], [-6, 11]]) V('choir', x, z);
     V('reedgate', 14, -1, Math.abs(ROAD.dx) >= Math.abs(ROAD.dz));
     for (const [x, z] of [[7, -9.5], [7, 10.5]]) V('broodpit', x, z);
     for (const [x, z] of [[-12, -11.5], [-12, 13]]) V('thornspire', x, z);
-    V('wardpylon', -10.5, 1);
+    V('wardpylon', -10.5, 1); }
     this.fog = new Fog();
     this.dir = new Director(this); if (mission) { this.dir.auto = mission.auto; mission.setup?.(this); }
     if (!net) { this.me = this.units[0]; this.possess(this.me, true); } this.yaw = Math.atan2(ROAD.dx - .4, ROAD.dz - .4);
@@ -95,18 +105,18 @@ export class Game {
   /** Frees this world's own meshes on the graphics card once the game is thrown away. Shared shapes stay; three.js re-uploads anything used again. */
   dispose() { const keep = new Set<THREE.BufferGeometry>(Object.values(G) as THREE.BufferGeometry[]); this.scene.traverse((o: any) => { if (o.geometry && !keep.has(o.geometry)) o.geometry.dispose(); }); for (const w of this.wrecks) w.b.obj.traverse((o: any) => { if (o.geometry) o.geometry.dispose(); }); }
   model(k: BKind): THREE.Group { return MD.atlasify(this.rawModel(k)); }
-  rawModel(k: BKind): THREE.Group { return k === 'headframe' ? MD.headframe(this.anim) : k === 'bunkhouse' ? MD.bunkhouse() : k === 'depot' ? MD.depot() : k === 'watchpost' ? MD.watchpost() : k === 'machineshop' ? MD.machineshop(this.anim) : k === 'foundry' ? MD.foundry(this.anim) : k === 'assay' ? MD.assay(this.anim) : k === 'mast' ? MD.mast(this.anim) : k === 'reedgate' ? MD.reedgate(this.anim) : k === 'broodpit' ? MD.broodpit(this.anim) : k === 'thornspire' ? MD.thornspire(this.anim) : k === 'wardpylon' ? MD.wardpylon(this.anim) : MD.choir(this.anim); }
+  rawModel(k: BKind): THREE.Group { return k === 'headframe' ? MD.headframe(this.anim) : k === 'bunkhouse' ? MD.bunkhouse() : k === 'depot' ? MD.depot() : k === 'watchpost' ? MD.watchpost() : k === 'machineshop' ? MD.machineshop(this.anim) : k === 'foundry' ? MD.foundry(this.anim) : k === 'assay' ? MD.assay(this.anim) : k === 'mast' ? MD.mast(this.anim) : k === 'reedgate' ? MD.reedgate(this.anim) : k === 'broodpit' ? MD.broodpit(this.anim) : k === 'thornspire' ? MD.thornspire(this.anim) : k === 'wardpylon' ? MD.wardpylon(this.anim) : k === 'hushwell' ? MD.hushwell(this.anim) : MD.choir(this.anim); }
 
   // ------------------------------------------------------------ entities
   /** Multiplayer server: things clients need to see or hear, queued until the next snapshot. */
   uById = new Map<number, Unit>(); bById = new Map<number, Building>();
-  evq: any[] | null = null; coop = 1; applying = false; names: Record<number, string> = {}; feedTo = 0; score: Record<number, number[]> = {}; myTeam = 0; teams: Record<number, number> = {}; vWind = 0; vX = 0; vZ = 0; raidCall = 0; pings: { x: number; z: number; t: number; pid: number }[] = [];
+  evq: any[] | null = null; coop = 1; applying = false; names: Record<number, string> = {}; feedTo = 0; score: Record<number, number[]> = {}; myTeam = 0; teams: Record<number, number> = {}; vWind = 0; vX = 0; vZ = 0; pings: { x: number; z: number; t: number; pid: number }[] = [];
   spawn(kind: Kind, team: number, x: number, z: number, id = 0): Unit {
-    const md = MD.unit(kind), st = UNIT[kind], hp = st.hp * (team === 0 ? this.armorMul() : 1);
+    const md = MD.unit(kind), st = UNIT[kind], hp = st.hp * (team === 0 || this.eco ? this.armorMul(team) : 1), sh = st.shield * (team && this.eco ? this.armorMul(team) : 1);
     const rs = st.rad * 3.6, ring = mk(G.ringG, ringMat, [0, .08, 0], [rs, rs, 1], [-Math.PI / 2, 0, 0], md.obj); ring.layers.set(L_FX); ring.visible = false;
-    const u: Unit = { id: id || nextId++, kind, team, pilot: 0, nx: x, nz: z, pos: V3(x, 0, z), yaw: R(0, 6), hp, maxHp: hp, shield: st.shield, maxShield: st.shield, obj: md.obj, rig: md.rig, ring, alive: true, speed: st.speed, moving: false, phase: R(0, 6), cd: R(0, 1), think: R(0, .3), target: null, order: { type: 'guard', x, z }, lastHit: -99, state: 'idle', timer: 0, carrying: 0, node: null, site: null, dashCd: R(2, 5), dashT: 0, swing: 0, slot: 0, flashT: 0, pop: 0, wind: 0, windX: 0, windZ: 0, kx: 0, kz: 0, pitch: 0, brace: false };
+    const u: Unit = { id: id || nextId++, kind, team, pilot: 0, nx: x, nz: z, pos: V3(x, 0, z), yaw: R(0, 6), hp, maxHp: hp, shield: sh, maxShield: sh, obj: md.obj, rig: md.rig, ring, alive: true, speed: st.speed, moving: false, phase: R(0, 6), cd: R(0, 1), think: R(0, .3), target: null, order: { type: 'guard', x, z }, lastHit: -99, state: 'idle', timer: 0, carrying: 0, node: null, site: null, dashCd: R(2, 5), dashT: 0, swing: 0, slot: 0, flashT: 0, pop: 0, wind: 0, windX: 0, windZ: 0, kx: 0, kz: 0, pitch: 0, brace: false };
     md.obj.position.copy(u.pos); md.obj.rotation.y = u.yaw; this.scene.add(md.obj); this.units.push(u);
-    if (isSoldier(u) && this.dir && !this.net) this.dir.enlist(u);
+    if (this.dir && !this.net && (isSoldier(u) || (this.eco && team === 1 && isFighter(u)))) this.dir.enlist(u);
     return u;
   }
   addBuilding(kind: BKind, team: number, x: number, z: number, built: boolean, rot = false, id = 0): Building {
@@ -115,32 +125,41 @@ export class Game {
     if (!built) { b.holo = MD.hologram(obj, holoOK); b.holo.position.copy(obj.position); b.holo.rotation.copy(obj.rotation); this.scene.add(b.holo); obj.scale.y = .06; }
     this.buildings.push(b); return b;
   }
-  own(kind?: Kind) { return this.units.filter(u => u.alive && u.team === 0 && (!kind || u.kind === kind)); }
+  own(kind?: Kind, team = 0) { return this.units.filter(u => u.alive && u.team === team && (!kind || u.kind === kind)); }
+  /** The fighting bodies on a side: everything but its workers. */
+  army(team: number) { return team === 0 ? this.soldiers() : this.units.filter(u => u.alive && u.team === team && isFighter(u)); }
   /** Bodies on the player's own side: Ironhold normally, the Veyl for a player on the other side of a versus match. */
   mine(kind?: Kind) { return this.units.filter(u => u.alive && u.team === this.myTeam && (!kind || u.kind === kind)); }
   soldiers() { return this.units.filter(u => u.alive && u.team === 0 && isSoldier(u)); }
   foes() { return this.units.filter(u => u.alive && u.team === 1); }
   /** The nearest finished Headframe: where Riggers bank, and where new bodies turn up. */
-  nearHQ(x: number, z: number) { let best: Building | null = null, bd = 1e9; for (const b of this.buildings) if (b.alive && b.team === 0 && b.kind === 'headframe' && b.built) { const d = Math.hypot(b.pos.x - x, b.pos.z - z); if (d < bd) { bd = d; best = b; } } return best; }
+  nearHQ(x: number, z: number, team = 0) { let best: Building | null = null, bd = 1e9; const hq = FACTION[team].hq; for (const b of this.buildings) if (b.alive && b.team === team && b.kind === hq && b.built) { const d = Math.hypot(b.pos.x - x, b.pos.z - z); if (d < bd) { bd = d; best = b; } } return best; }
   /** Where a fresh Rigger turns up: in front of the first Headframe still standing. */
-  hqSpot(): [number, number] { const h = this.ownB('headframe', true)[0] || this.ownB('headframe')[0]; return h ? [h.pos.x + 2 + Math.random() * 3, h.pos.z + h.hz + 2.4 + Math.random() * 2] : [2, 7]; }
-  ownB(kind?: BKind, builtOnly = false) { return this.buildings.filter(b => b.alive && b.team === 0 && (!kind || b.kind === kind) && (!builtOnly || b.built)); }
+  hqSpot(team = 0): [number, number] { const k = FACTION[team].hq, h = this.ownB(k, true, team)[0] || this.ownB(k, false, team)[0]; return h ? [h.pos.x + 2 + Math.random() * 3, h.pos.z + h.hz + 2.4 + Math.random() * 2] : team ? [VHOME.x - 4, VHOME.z + 4] : [2, 7]; }
+  ownB(kind?: BKind, builtOnly = false, team = 0) { return this.buildings.filter(b => b.alive && b.team === team && (!kind || b.kind === kind) && (!builtOnly || b.built)); }
   stones() { return this.buildings.filter(b => b.alive && b.kind === 'choir'); }
   pits() { return this.buildings.filter(b => b.alive && b.kind === 'broodpit'); }
   /** The Ward Pylon covering this spot, if one still stands. */
   ward(p: { x: number; z: number }) { for (const b of this.buildings) if (b.alive && b.kind === 'wardpylon' && Math.hypot(b.pos.x - p.x, b.pos.z - p.z) < 34) return b; return null; }
   wardFx = 0;
   gate() { return this.buildings.find(b => b.alive && b.kind === 'reedgate') || null; }
-  supplyCap() { const d = this.ownB('depot', true).length, h = Math.max(0, this.ownB('headframe', true).length - 1); return 12 + 8 * d + 8 * h + (this.up.beds ? 4 + 2 * d : 0); }
-  supplyUsed() { let n = 0; for (const u of this.units) if (u.alive && u.team === 0) n += UNIT[u.kind].supply; for (const b of this.buildings) if (b.alive && b.team === 0) for (const q of b.queue) n += UNIT[q.kind].supply; return n; }
-  gunMul() { return (this.up.dmg ? 1.25 : 1) * (this.up.dmg2 ? 1.2 : 1) * (this.up.dmg3 ? 1.15 : 1); }
-  armorMul() { return (this.up.armor ? 1.25 : 1) * (this.up.armor2 ? 1.2 : 1) * (this.up.armor3 ? 1.15 : 1); }
+  supplyCap(team = 0) {
+    const F = FACTION[team], d = this.ownB(F.supply, true, team).length, h = Math.max(0, this.ownB(F.hq, true, team).length - 1);
+    return 12 + 8 * d + 8 * h + ((team ? this.up.vwide : this.up.beds) ? 4 + 2 * d : 0);
+  }
+  supplyUsed(team = 0) { let n = 0; for (const u of this.units) if (u.alive && u.team === team) n += UNIT[u.kind].supply; for (const b of this.buildings) if (b.alive && b.team === team) for (const q of b.queue) n += UNIT[q.kind].supply; return n; }
+  /** A side the bots run hits as hard as the shift says. A side somebody plays hits at full weight. */
+  foeK(team: number) { return this.human[team] ? 1 : this.diff.enemy; }
+  gunMul(team = 0) { const u = this.up; return team ? (u.vedge ? 1.25 : 1) * (u.vedge2 ? 1.2 : 1) : (u.dmg ? 1.25 : 1) * (u.dmg2 ? 1.2 : 1) * (u.dmg3 ? 1.15 : 1) * (this.eco ? this.foeK(0) : 1); }
+  armorMul(team = 0) { const u = this.up; return team ? (u.vglass ? 1.25 : 1) * (u.vglass2 ? 1.2 : 1) : (u.armor ? 1.25 : 1) * (u.armor2 ? 1.2 : 1) * (u.armor3 ? 1.15 : 1); }
+  /** What a Veyl body's hit is worth: the shift on a bot side, and the songs the Chorus has learned. */
+  vMul() { return this.foeK(1) * (this.eco ? this.gunMul(1) : 1); }
   /** How much faster research makes this body walk. */
-  pace(u: Unit) { return u.team ? 1 : u.kind === 'gantry' ? (this.up.servo ? 1.2 : 1) : u.kind !== 'rigger' && this.up.pay ? 1.12 : 1; }
+  pace(u: Unit) { return u.team ? (this.up.vstep && u.kind !== 'tender' ? 1.12 : 1) : u.kind === 'gantry' ? (this.up.servo ? 1.2 : 1) : u.kind !== 'rigger' && this.up.pay ? 1.12 : 1; }
   /** The buildings still missing before this one can be staked out. */
-  missing(k: BKind) { return (BLD[k].needs || []).filter(n => !this.ownB(n, true).length); }
+  missing(k: BKind, team = 0) { return (BLD[k].needs || []).filter(n => !this.ownB(n, true, team).length); }
   ms: Record<string, number> = {};
-  unlocked(k: BKind) { if (this.mission && !this.mission.allow.includes(k)) return false; return !this.missing(k).length; }
+  unlocked(k: BKind, team = 0) { if (this.mission && !this.mission.allow.includes(k)) return false; return FACTION[team].builds.includes(k) && !this.missing(k, team).length; }
 
   // ------------------------------------------------------------ helpers
   distToBox(b: Building, x: number, z: number) { const dx = Math.max(Math.abs(x - b.pos.x) - b.hx, 0), dz = Math.max(Math.abs(z - b.pos.z) - b.hz, 0); return Math.hypot(dx, dz); }
@@ -226,22 +245,23 @@ export class Game {
     const head = V3(t.pos.x, u ? UNIT[u.kind].headY + .4 : (t as Building).h * .7, t.pos.z);
     if (from === me && me && !this.quiet) this.hud.damage(head, (crit ? 'CRIT ' : '') + Math.max(1, Math.round(dealt)), crit ? 'crit' : shielded ? 'shield' : '');
     if (t === me && me) { this.shake = Math.min(1, this.shake + .45); let ang = 0; if (from) { const a = Math.atan2(from.pos.x - me.pos.x, from.pos.z - me.pos.z) - this.yaw; ang = Math.atan2(Math.sin(a), Math.cos(a)); } this.hud.hurt(from ? ang : null); sfx.hurt(); }
-    if (u && from && isUnit(from) && u !== me && !u.target && u.kind !== 'rigger') u.target = from;
-    if (!u && from && isUnit(from) && t.team === 1) this.dir.alarm(from);
-    if (!u && from && isUnit(from) && t.team === 1) for (const c of this.units) if (c.alive && c.team === 1 && !c.target && c.order.type === 'guard' && c.pos.distanceTo(t.pos) < 50) c.target = from;
+    if (u && from && isUnit(from) && u !== me && !u.target && !isWorker(u.kind)) u.target = from;
+    if (!u && from && isUnit(from) && t.team === 1 && !this.eco) this.dir.alarm(from);
+    if (!u && from && isUnit(from)) for (const c of this.units) if (c.alive && c.team === t.team && c.team !== 0 && !c.target && c.order.type === 'guard' && c.pos.distanceTo(t.pos) < 50) c.target = from;
     if (!u && t.team === 0 && from && this.time > this.alertT) { this.alertT = this.time + 20; this.feed('Lookout', `They're chewing on the ${BLD[(t as Building).kind].name}! Get back here.`, 'al'); sfx.alarm(); }
+    if (!u && t.team === 1 && this.eco && from && this.time > this.vAlertT) { this.vAlertT = this.time + 20; this.feed('Watcher', `The ${BLD[(t as Building).kind].name} is cracking. Come and sing it whole.`, 'al'); }
     if (!u && t.hp > 0) { const b = t as Building, st = b.hp < b.maxHp * .33 ? 2 : b.hp < b.maxHp * .66 ? 1 : 0; if (b.built && st > b.stage) this.crack(b, st); }
     if (t.hp <= 0) u ? this.killUnit(u, from) : this.killBuilding(t as Building);
   }
-  quiet = false;
+  quiet = false; vAlertT = 0;
   /** Counts down while a freshly taken body brings its weapon up into view. */
   drawT = 0;
   /** How far sustained fire has opened the crosshair, 0 to 1. The first shot after a pause is the accurate one. */
   bloom = 0;
   /** Damage a Breacher has soaked on the shield, 0 to 1. It comes back out with the next blast. */
   payback = 0; salvoCd = 0;
-  /** Veyl player: cooldown on the body's second move, the verse picked for the next raid, and the Cantor's rising combo. */
-  vCd = 0; verse = 0; combo = 0; comboT = 0;
+  /** Veyl player: cooldown on the body's second move and the Cantor's rising combo. */
+  vCd = 0; combo = 0; comboT = 0;
   killUnit(u: Unit, from: Unit | Building | null) {
     if (this.evq) { this.evq.push(['ku', u.id, from ? from.id : 0]); const kp = from && (from as Unit).pilot; if (kp && u.team !== from!.team && this.score[kp]) this.score[kp][0]++; }
     if (u.kind === 'gantry' && u.alive && !this.net) { u.alive = false; this.explode(V3(u.pos.x, 0, u.pos.z), 0, 40, 6, null); u.alive = true; }
@@ -251,9 +271,10 @@ export class Game {
     u.ring.visible = false; if (u.rig.flash) u.rig.flash.visible = false; this.bodyLayer(u, false);
     let ax = R(-1, 1), az = R(-1, 1); if (from) { ax = u.pos.x - from.pos.x; az = u.pos.z - from.pos.z; } const al = Math.hypot(ax, az) || 1;
     this.corpses.push({ obj: u.obj, t: 0, veyl, ax: ax / al, az: az / al, s: u.obj.scale.x });
-    if (veyl && from === this.me && this.me) { sfx.kill(); this.hitStop = u.kind === 'warden' ? .25 : this.me.kind === 'longshot' ? .12 : .06; this.streak = this.time < this.streakT ? this.streak + 1 : 1; this.streakT = this.time + 4; if (this.streak >= 2) { this.hud.streak(['', '', 'DOUBLE KO!', 'TRIPLE!', 'OVERTIME!', 'RAMPAGE!'][Math.min(5, this.streak)]); sfx.streak(this.streak); } }
-    if (veyl) { this.stats.kills++; if (u.kind === 'warden') { this.shake = Math.max(this.shake, v); this.feed('Alpha', 'Warden down! Did everybody see that? I did that.', ''); } else if (from && isUnit(from) && from.team === 0 && from !== this.me && Math.random() < .12) this.dir.bark(from, 'kill'); }
-    else { this.stats.lost++; { const kk = from ? from.kind : 'other'; this.stats.lostTo[kk] = (this.stats.lostTo[kk] || 0) + 1; } if (u !== this.me && isSoldier(u) && Math.random() < .35) this.dir.bark(u, 'down'); }
+    if (u.team !== this.myTeam && from === this.me && this.me) { sfx.kill(); this.hitStop = u.kind === 'warden' ? .25 : this.me.kind === 'longshot' ? .12 : .06; this.streak = this.time < this.streakT ? this.streak + 1 : 1; this.streakT = this.time + 4; if (this.streak >= 2) { this.hud.streak(['', '', 'DOUBLE KO!', 'TRIPLE!', 'OVERTIME!', 'RAMPAGE!'][Math.min(5, this.streak)]); sfx.streak(this.streak); } }
+    if (veyl) { const kk = from ? from.kind : 'other'; this.stats.lostToV[kk] = (this.stats.lostToV[kk] || 0) + 1; }
+    if (veyl) { this.stats.kills++; if (u.kind === 'warden') { this.shake = Math.max(this.shake, v); this.feed('Alpha', 'Warden down! Did everybody see that? I did that.', ''); } else if (from && isUnit(from) && from.team === 0 && from !== this.me && Math.random() < .12) this.dir.bark(from, 'kill'); if (this.eco && u !== this.me && isFighter(u) && Math.random() < .3) this.dir.bark(u, 'down'); }
+    else { this.stats.lost++; { const kk = from ? from.kind : 'other'; this.stats.lostTo[kk] = (this.stats.lostTo[kk] || 0) + 1; } if (u !== this.me && isSoldier(u) && Math.random() < .35) this.dir.bark(u, 'down'); if (this.eco && from && isUnit(from) && from.team === 1 && from !== this.me && Math.random() < .12) this.dir.bark(from, 'kill'); }
     if (u.site) u.site.builder = null;
     if (u === this.me) { this.staticT = 1.9; this.feed('Signal', 'Body lost. Finding you a new one.', 'al'); sfx.deny(); drillSound(false, false); }
   }
@@ -324,7 +345,7 @@ export class Game {
   possess(u: Unit, force = false) {
     if (!u.alive || (u === this.me && !force)) return; if (!force && this.jumpCd > 0) { sfx.deny(); return; }
     if (this.net) { if (u.pilot && u.pilot !== this.net.id) { sfx.deny(); this.feed('Signal', `${this.names[u.pilot] || 'Someone'} is already in that body.`, 'al'); return; } this.net.cmd('bd', u.id); u.pilot = this.net.id; this.possT = this.time; if (this.me && this.me !== u) this.me.pilot = 0; }
-    const old = this.me; if (old && old.alive && old !== u) { this.bodyLayer(old, false); if (old.kind === 'rigger') { old.state = old.carrying > 0 ? 'toHQ' : 'idle'; old.site = null; if (old.rig.pack) old.rig.pack.visible = old.carrying > 0; } old.target = null; this.lastBody = old; if (isSoldier(old) && !this.net) this.dir.enlist(old); }
+    const old = this.me; if (old && old.alive && old !== u) { this.bodyLayer(old, false); if (isWorker(old.kind)) { old.state = old.carrying > 0 ? 'toHQ' : 'idle'; old.site = null; if (old.rig.pack) old.rig.pack.visible = old.carrying > 0; } old.target = null; this.lastBody = old; if (isSoldier(old) && !this.net) this.dir.enlist(old); }
     this.me = u; this.bodyLayer(u, true); this.yaw = u.yaw; this.pitch = 0; this.jumpCd = force ? 0 : 3; this.tool = 1; this.reloadT = 0; this.ads = 0; this.brace = false; this.recoil = 0; u.target = null; u.wind = 0;
     this.ammo = GUNS[u.kind] ? GUNS[u.kind].mag : 0;
     if (u.site) { u.site.builder = null; u.site = null; } u.state = 'idle'; if (u.carrying > 0 && !this.net) this.bank(u); u.carrying = 0; if (u.rig.pack) u.rig.pack.visible = false; if (u.rig.flash) u.rig.flash.visible = false;
@@ -334,7 +355,13 @@ export class Game {
   }
   refreshTab() {
     const me = this.me!, list: Game['tabList'] = [], t = this.dir.squadTask();
-    if (this.myTeam) { for (const k of ['cantor', 'lancer', 'warden'] as Kind[]) { const all = this.mine(k), x = all.filter(u => u !== me && !u.pilot).sort((a, b) => a.pos.distanceTo(me.pos) - b.pos.distanceTo(me.pos))[0]; if (x) list.push({ label: `${UNIT[k].name} ×${all.length}`, task: x.order.type === 'raid' ? 'Marching on the Headframe' : 'Guarding the Stones', unit: x, hp: x.hp / x.maxHp, alert: this.time - x.lastHit < 4 }); } this.tabList = list; if (this.tabSel >= list.length) this.tabSel = 0; return; }
+    if (this.myTeam) {
+      const hot = this.mine().filter(u => u !== me && !u.pilot && this.time - u.lastHit < 4).sort((a, b) => b.lastHit - a.lastHit)[0];
+      if (hot) list.push({ label: UNIT[hot.kind].name + ' under attack', task: 'Jump in and save them', unit: hot, hp: hot.hp / hot.maxHp, alert: true });
+      for (const k of ['cantor', 'lancer', 'warden', 'tender'] as Kind[]) { const all = this.mine(k), x = all.filter(u => u !== me && !u.pilot && u !== hot).sort((a, b) => a.pos.distanceTo(me.pos) - b.pos.distanceTo(me.pos))[0]; if (x) list.push({ label: `${UNIT[k].name} ×${all.length}`, task: k === 'tender' ? (x.state === 'build' || x.state === 'toSite' ? 'Singing a building up' : 'Humming ore') : x.order.type === 'raid' || x.order.type === 'amove' ? 'Marching on the yard' : x.order.type === 'follow' ? 'Following you' : 'Guarding the Stones', unit: x, hp: x.hp / x.maxHp, alert: false }); }
+      if (this.lastBody && this.lastBody.alive && this.lastBody !== me && !list.some(e => e.unit === this.lastBody)) list.push({ label: 'Last body · ' + UNIT[this.lastBody.kind].name, task: 'Where you just were', unit: this.lastBody, hp: this.lastBody.hp / this.lastBody.maxHp, alert: false });
+      this.tabList = list.slice(0, 5); if (this.tabSel >= this.tabList.length) this.tabSel = 0; return;
+    }
     const near = (k: Kind) => this.own(k).filter(u => u !== me && !u.pilot).sort((a, b) => a.pos.distanceTo(me.pos) - b.pos.distanceTo(me.pos))[0];
     const hot = this.own().filter(u => u !== me && this.time - u.lastHit < 4).sort((a, b) => b.lastHit - a.lastHit)[0];
     if (hot) list.push({ label: UNIT[hot.kind].name + ' under attack', task: 'Jump in and save them', unit: hot, hp: hot.hp / hot.maxHp, alert: true });
@@ -396,18 +423,18 @@ export class Game {
   }
 
   /** How much ore a driven Rigger's pack holds before it has to be walked to the Headframe. */
-  packCap() { return this.up.buckets ? 21 : 15; }
+  packCap(team = 0) { return !team && this.up.buckets ? 21 : 15; }
   /** Puts a driven Rigger's pack on the books. Online the server does this and the replica only empties its own pack. */
   bank(u: Unit) {
     const n = u.carrying; u.carrying = 0; if (u.rig.pack) u.rig.pack.visible = false; if (n <= 0) return;
-    if (!this.net) { this.ore += n; this.stats.mined += n; if (u.pilot && this.score[u.pilot]) this.score[u.pilot][1] += n; }
+    if (!this.net) { this.purse[u.team] += n; if (u.team) this.stats.minedV += n; else this.stats.mined += n; if (u.pilot && this.score[u.pilot]) this.score[u.pilot][1] += n; }
     if (u === this.me) { sfx.bank(); this.hud.damage(V3(u.pos.x, 2.2, u.pos.z), `+${n} banked`, 'ore'); }
   }
   /** What this side has found of the map. */
   fog!: Fog;
   safeT = 0;
   respawn() {
-    const me = this.me!; let best: Unit | null = null, bd = 1e9; for (const u of this.mine()) { if (this.net && u.pilot && u.pilot !== this.net.id) continue; const d = u.pos.distanceTo(me.pos) + (isSoldier(u) || u.team ? 0 : 25); if (d < bd) { bd = d; best = u; } }
+    const me = this.me!; let best: Unit | null = null, bd = 1e9; for (const u of this.mine()) { if (this.net && u.pilot && u.pilot !== this.net.id) continue; const d = u.pos.distanceTo(me.pos) + (isFighter(u) ? 0 : 25); if (d < bd) { bd = d; best = u; } }
     if (!best && this.net) { if (this.myTeam ? this.stones().length : this.ownB('headframe').length) { this.net.cmd('rs'); this.staticT = 1.2; } return; }
     if (!best && this.ownB('headframe').length) { best = this.spawn('rigger', 0, ...this.hqSpot()); this.safeT = 4; this.feed('Quartermaster', 'Found you a fresh Rigger. Try to keep this one.', ''); }
     if (best) { this.jumpCd = 0; this.possess(best, true); sfx.jump(); this.pipe.flash = .4; } else if (this.endT <= 0) this.end(false);
@@ -431,7 +458,7 @@ export class Game {
     if (P.has('Space') && this.hopCd <= 0 && !this.brace) { const s = Math.sin(this.yaw), c = Math.cos(this.yaw), l = Math.hypot(fx, fz); let dx = s, dz = c; if (l) { dx = (s * fz - c * fx) / l; dz = (c * fz + s * fx) / l; } this.hopX = dx; this.hopZ = dz; this.hopT = .17; this.hopCd = 1.4; sfx.dash(.8); this.puff(TMP.set(me.pos.x, .15, me.pos.z), 3, .5, M.dust, .3, 1); }
     if (this.hopT > 0) { this.hopT -= dt; const v = (me.kind === 'gantry' ? 11 : me.kind === 'breacher' ? 15 : 19) * dt; me.pos.x += this.hopX * v; me.pos.z += this.hopZ * v; me.moving = true; this.collide(me, me.pos.x, me.pos.z); }
     me.yaw = this.yaw; me.pitch = this.pitch;
-    if (this.net && me.carrying > 0) { const hq = this.nearHQ(me.pos.x, me.pos.z); if (hq && this.distToBox(hq, me.pos.x, me.pos.z) < 2.6) this.bank(me); }
+    if (this.net && me.carrying > 0) { const hq = this.nearHQ(me.pos.x, me.pos.z, me.team); if (hq && this.distToBox(hq, me.pos.x, me.pos.z) < 2.6) this.bank(me); }
     this.bloom = Math.max(0, this.bloom - dt * (this.fireCd > -.12 ? .25 : 3.2)); this.salvoCd = Math.max(0, this.salvoCd - dt);
     this.fireCd -= dt; this.recoil = Math.max(0, this.recoil - dt * 6); this.nadeCd = Math.max(0, this.nadeCd - dt); this.bashCd = Math.max(0, this.bashCd - dt); this.bashT = Math.max(0, this.bashT - dt);
     const eye = V3(me.pos.x, UNIT[me.kind].eye, me.pos.z), dir = this.lookDir(V3());
@@ -440,37 +467,33 @@ export class Game {
     if (P.has('KeyQ') && this.lastBody?.alive) { this.possess(this.lastBody); return; }
     const look = this.ray(eye, dir, 70, -1, me);
     if (look?.unit && look.unit.team === this.myTeam && look.unit.pilot) this.prompt = `${this.names[look.unit.pilot] || 'A crewmate'} is driving this one`; else if (look?.unit && look.unit.team === this.myTeam) { this.prompt = `<b>F</b> Jump into ${UNIT[look.unit.kind].name}`; if (P.has('KeyF')) { this.possess(look.unit); return; } }
-    if (this.myTeam) { this.updateVeyl(dt, P, eye, dir); return; }
     this.dir.playerOrders(P, eye, dir, look ? look.dist : -1);
     // production buildings
-    const lb = look?.b && look.b.team === 0 && look.b.built && look.dist < 10 ? look.b : null;
-    if (lb && (TRAINS[lb.kind] || UPGRADES.some(u => u.at === lb.kind))) {
+    const side = me.team, voice = FACTION[side].voice, lb = look?.b && look.b.team === side && look.b.built && look.dist < 10 ? look.b : null;
+    if (lb && (TRAINS[lb.kind] || UPGRADES.some(u => u.at === lb.kind && (u.team || 0) === side))) {
       // One key per thing on offer: units first, then the research this building sells that has not been bought.
       const keys = 'ETYU', rows: string[] = [], notes: string[] = []; let i = 0;
       for (const k of TRAINS[lb.kind] || []) {
         const nb = UNIT_NEEDS[k], ok = !nb || this.ownB(nb, true).length > 0, key = keys[i++];
         if (ok) rows.push(`<b>${key}</b> ${UNIT[k].name} · ${UNIT[k].cost}`); else if (!notes.some(n => n.includes(BLD[nb!].name))) notes.push(`<i>${BLD[nb!].name} unlocks ${(TRAINS[lb.kind] || []).filter(x => UNIT_NEEDS[x] === nb).map(x => UNIT[x].name).join(' and ')}</i>`);
-        if (P.has('Key' + key)) { if (ok) this.train(lb, k, true); else { sfx.deny(); this.feed('Quartermaster', `${UNIT[k].name} needs ${/^[AEIOU]/.test(BLD[nb!].name) ? 'an' : 'a'} ${BLD[nb!].name} first.`, 'al'); } }
+        if (P.has('Key' + key)) { if (ok) this.train(lb, k, true); else { sfx.deny(); this.feed(voice, `${UNIT[k].name} needs ${/^[AEIOU]/.test(BLD[nb!].name) ? 'an' : 'a'} ${BLD[nb!].name} first.`, 'al'); } }
       }
-      const sold = UPGRADES.filter(u => u.at === lb.kind), open = sold.filter(u => !this.up[u.key]);
+      const sold = UPGRADES.filter(u => u.at === lb.kind && (u.team || 0) === side), open = sold.filter(u => !this.up[u.key]);
       for (const u of open) {
         if (u.needs && !this.up[u.needs]) { notes.push(`<i>${u.name} needs ${UPGRADES.find(x => x.key === u.needs)!.name}</i>`); continue; }
         if (i >= keys.length) break; const key = keys[i++]; rows.push(`<b>${key}</b> ${u.name} · ${u.cost} <i>${u.blurb}</i>`); if (P.has('Key' + key)) this.buyUpgrade(u.key, true);
       }
-      if (sold.length && !open.length) notes.push('All research here is bought');
+      if (sold.length && !open.length) notes.push(side ? 'Every song here is learned' : 'All research here is bought');
       const all = rows.concat(notes.slice(0, 2)); if (lb.queue.length) all.push(`${lb.queue.length} queued`);
       this.prompt = all.join(all.length > 2 ? '<br>' : ' &nbsp; ');
     }
-    if (!this.prompt && look?.prop && me.kind !== 'rigger' && look.dist < 60) { const q = look.prop.owner || look.prop; if (q.hp < q.maxHp) this.prompt = `${q.name} · <b>${Math.ceil(q.hp / q.maxHp * 100)}%</b>`; }
-    if (me.kind === 'rigger') this.updateRigger(dt, P, eye, dir, look); else if (me.kind === 'gantry') this.updateCannon(dt, P, eye, dir, gun); else this.updateGun(dt, P, eye, dir, gun);
+    if (!this.prompt && look?.prop && !isWorker(me.kind) && look.dist < 60) { const q = look.prop.owner || look.prop; if (q.hp < q.maxHp) this.prompt = `${q.name} · <b>${Math.ceil(q.hp / q.maxHp * 100)}%</b>`; }
+    if (isWorker(me.kind)) this.updateRigger(dt, P, eye, dir, look); else if (me.team) this.updateVeyl(dt, P, eye, dir); else if (me.kind === 'gantry') this.updateCannon(dt, P, eye, dir, gun); else this.updateGun(dt, P, eye, dir, gun);
   }
-  /** First person as a Veyl body. Only in versus, where a player sings for the Chorus. */
+  /** First person as a Veyl fighter. */
   updateVeyl(dt: number, P: Set<string>, eye: THREE.Vector3, dir: THREE.Vector3) {
-    const me = this.me!, vm = this.vm.veyl, flash = vm.userData.flash; flash.visible = false; this.raidCall = Math.max(0, this.raidCall - dt);
+    const me = this.me!, vm = this.vm.veyl, flash = vm.userData.flash; flash.visible = false;
     this.vCd = Math.max(0, this.vCd - dt); this.comboT -= dt; if (this.comboT <= 0) this.combo = 0;
-    // 1, 2 and 3 pick the verse the next raid is written in: all blades, mostly lances, or the deep voice.
-    for (let i = 0; i < 3; i++) if (P.has('Digit' + (i + 1)) && this.verse !== i) { this.verse = i; sfx.blip(); }
-    if (P.has('KeyG') || P.has('KeyE')) { if (this.time < RAID_CALL_AT) { sfx.deny(); this.hud.feed('Chorus', `The Chorus is still waking. The first raid can be called in ${Math.ceil(RAID_CALL_AT - this.time)} seconds.`, 'al'); } else if (this.raidCall <= 0) { this.raidCall = 90; this.obj.called = true; this.net?.cmd('rd', this.verse); sfx.callout(); } else sfx.deny(); }
     if (me.kind === 'warden') {
       // Right click: the Low Note. Every Veyl in earshot gets its shield back.
       if (P.has('Mouse2')) { if (this.vCd <= 0) { this.vCd = 20; this.net?.cmd('vs'); sfx.charge(1); sfx.boom(.3); this.shake = Math.max(this.shake, .5); this.warn(me.pos.x, me.pos.z, 16, .5); this.hud.damage(V3(me.pos.x, 4.6, me.pos.z), 'LOW NOTE', 'shield'); } else sfx.deny(); }
@@ -518,69 +541,75 @@ export class Game {
   train(b: Building, k: Kind, manual = false) {
     const st = UNIT[k];
     if (this.net) { this.net.cmd('tn', b.id, k); sfx.blip(); return true; }
+    const t = b.team, v = t ? 'Conductor' : 'Quartermaster';
     if (this.mission && k !== 'rigger' && !this.mission.units.includes(k)) { if (manual) { sfx.deny(); this.feed('Quartermaster', `No ${st.name}s on this job's paperwork. Later.`, 'al'); } return false; }
-    if (this.ore < st.cost) { if (manual) { sfx.deny(); this.feed('Quartermaster', 'Can\'t. We\'re broke. Go hit a rock.', 'al'); } return false; }
-    if (this.supplyUsed() + st.supply > this.supplyCap()) { if (manual) { sfx.deny(); this.feed('Quartermaster', 'No beds. Build a Depot first.', 'al'); } return false; }
+    if (this.cash(t) < st.cost) { if (manual) { sfx.deny(); this.feed(v, t ? 'The Chorus is out of ore. Send the Tenders to the seams.' : 'Can\'t. We\'re broke. Go hit a rock.', 'al'); } return false; }
+    if (this.supplyUsed(t) + st.supply > this.supplyCap(t)) { if (manual) { sfx.deny(); this.feed(v, t ? 'No room in the song. Grow a Hush Well first.' : 'No beds. Build a Depot first.', 'al'); } return false; }
     if (b.queue.length >= 5) { if (manual) sfx.deny(); return false; }
-    this.ore -= st.cost; b.queue.push({ kind: k, t: st.time }); if (manual) sfx.blip(); return true;
+    this.purse[t] -= st.cost; b.queue.push({ kind: k, t: st.time }); if (manual) sfx.blip(); return true;
   }
   buyUpgrade(key: UpKey, manual = false) {
     const u = UPGRADES.find(x => x.key === key)!; if (this.up[key]) return false;
     if (this.net) { this.net.cmd('up', key); return true; }
-    if (!this.ownB(u.at, true).length || (u.needs && !this.up[u.needs])) { if (manual) sfx.deny(); return false; }
-    if (this.ore < u.cost) { if (manual) { sfx.deny(); this.feed('Quartermaster', `${u.name} is ${u.cost} ore. Keep digging.`, 'al'); } return false; }
-    this.ore -= u.cost; this.up[key] = true; sfx.built();
-    const plate = key === 'armor' ? 1.25 : key === 'armor2' ? 1.2 : key === 'armor3' ? 1.15 : 0; if (plate) for (const x of this.own()) { x.maxHp *= plate; x.hp *= plate; }
-    this.feed('Quartermaster', u.say, ''); return true;
+    const t = u.team || 0, v = t ? 'Conductor' : 'Quartermaster';
+    if (!this.ownB(u.at, true, t).length || (u.needs && !this.up[u.needs])) { if (manual) sfx.deny(); return false; }
+    if (this.cash(t) < u.cost) { if (manual) { sfx.deny(); this.feed(v, `${u.name} is ${u.cost} ore. ${t ? 'Hum some more.' : 'Keep digging.'}`, 'al'); } return false; }
+    this.purse[t] -= u.cost; this.up[key] = true; sfx.built();
+    const plate = key === 'armor' || key === 'vglass' ? 1.25 : key === 'armor2' || key === 'vglass2' ? 1.2 : key === 'armor3' ? 1.15 : 0; if (plate) for (const x of this.own(undefined, t)) { x.maxHp *= plate; x.hp *= plate; if (t) { x.maxShield *= plate; x.shield *= plate; } }
+    this.feed(v, u.say, ''); return true;
   }
-  canPlace(k: BKind, x: number, z: number, rot: boolean) {
-    const st = BLD[k], hx = rot ? st.hz : st.hx, hz = rot ? st.hx : st.hz;
-    // A new Headframe can go on any open ground short of the Veyl; everything else stays near a Headframe.
-    if (k === 'headframe') { const mx = MAP.out[0] / 2, mz = MAP.out[1] / 2; if (Math.hypot(x - mx, z - mz) > 190 * (MAP.k || 1)) return false; for (const b of this.buildings) if (b.alive && b.team === 1 && Math.hypot(b.pos.x - x, b.pos.z - z) < 45) return false; }
-    else if (Math.hypot(x, z) > 80 && !this.buildings.some(b => b.alive && b.team === 0 && b.kind === 'headframe' && b.built && Math.hypot(b.pos.x - x, b.pos.z - z) < 42)) return false;
+  canPlace(k: BKind, x: number, z: number, rot: boolean, team = 0) {
+    const st = BLD[k], hx = rot ? st.hz : st.hx, hz = rot ? st.hx : st.hz, hq = FACTION[team].hq;
+    // A new base (Headframe or Choir Stone) can go on any open ground short of the enemy; everything else stays near one of your own.
+    if (k === hq) { const mx = MAP.out[0] / 2, mz = MAP.out[1] / 2; if (Math.hypot(x - mx, z - mz) > 190 * (MAP.k || 1)) return false; for (const b of this.buildings) if (b.alive && b.team !== team && Math.hypot(b.pos.x - x, b.pos.z - z) < 45) return false; }
+    else if ((team || Math.hypot(x, z) > 80) && !this.buildings.some(b => b.alive && b.team === team && b.kind === hq && b.built && Math.hypot(b.pos.x - x, b.pos.z - z) < 42)) return false;
     for (const b of this.buildings) if (b.alive && Math.abs(x - b.pos.x) < hx + b.hx + 1.6 && Math.abs(z - b.pos.z) < hz + b.hz + 1.6) return false;
     for (const o of this.ores) if (o.amount > 0 && Math.abs(x - o.pos.x) < hx + 2.4 && Math.abs(z - o.pos.z) < hz + 2.4) return false;
     for (const s of this.spires) if (Math.abs(x - s.x) < hx + s.r && Math.abs(z - s.z) < hz + s.r) return false;
     return true;
   }
-  place(k: BKind, x: number, z: number, rot: boolean) { if (this.net) { this.net.cmd('pl', k, x, z, rot ? 1 : 0); sfx.place(); this.puff(TMP.set(x, .3, z), 5, 1.2, M.dust, .5, 2); return null; } this.ore -= BLD[k].cost; const b = this.addBuilding(k, 0, x, z, false, rot); sfx.place(); this.puff(TMP.set(x, .3, z), 5, 1.2, M.dust, .5, 2); return b; }
+  place(k: BKind, x: number, z: number, rot: boolean, team = 0) { if (this.net) { this.net.cmd('pl', k, x, z, rot ? 1 : 0); sfx.place(); this.puff(TMP.set(x, .3, z), 5, 1.2, M.dust, .5, 2); return null; } this.purse[team] -= BLD[k].cost; const b = this.addBuilding(k, team, x, z, false, rot); sfx.place(); this.puff(TMP.set(x, .3, z), 5, 1.2, team ? M.violet : M.dust, .5, 2); return b; }
 
   weldAcc = 0;
+  /** First person as a worker: a Rigger's drill, or a Tender's hum. Both mine, build, mend and kick. */
   updateRigger(dt: number, P: Set<string>, eye: THREE.Vector3, dir: THREE.Vector3, look: Hit | null) {
-    const me = this.me!;
+    const me = this.me!, side = me.team, foe = foeOf(side), veyl = side === 1, list = FACTION[side].builds, voice = FACTION[side].voice, home = BLD[FACTION[side].hq].name, cash = this.cash(side);
     if (P.has('Digit1')) { this.tool = 1; sfx.blip(); }
-    if (P.has('Digit2')) { if (this.tool === 2) this.buildSel = (this.buildSel + 1) % BUILDABLE.length; this.tool = 2; sfx.blip(); }
-    if (this.tool === 2 && this.wheel) { this.buildSel = (this.buildSel + (this.wheel > 0 ? 1 : BUILDABLE.length - 1)) % BUILDABLE.length; sfx.blip(); }
+    if (P.has('Digit2')) { if (this.tool === 2) this.buildSel = (this.buildSel + 1) % list.length; this.tool = 2; sfx.blip(); }
+    if (this.buildSel >= list.length) this.buildSel = 0;
+    if (this.tool === 2 && this.wheel) { this.buildSel = (this.buildSel + (this.wheel > 0 ? 1 : list.length - 1)) % list.length; sfx.blip(); }
     if (this.tool === 2 && P.has('KeyR')) { this.buildRot = !this.buildRot; sfx.blip(); }
     if (this.tool === 2 && P.has('Mouse2')) { this.tool = 1; sfx.blip(); }
     else if (this.tool === 1 && P.has('Mouse2') && this.bashCd <= 0) {
-      // Right click: the drill kicks like a jackhammer. Short reach, big shove, and it cracks scenery.
-      this.bashCd = 1.1; this.bashT = .25; this.recoil = 1; this.shake = Math.max(this.shake, .4); sfx.clang(); sfx.dash(.6); let any = false;
-      for (const u of this.units) { if (!u.alive || u.team !== 1) continue; const dx = u.pos.x - me.pos.x, dz = u.pos.z - me.pos.z, d = Math.hypot(dx, dz); if (d > 3.2 + UNIT[u.kind].rad || (dx * dir.x + dz * dir.z) / (d || 1) < .45) continue; this.damage(u, 22, me); any = true; }
-      if (look?.prop && look.dist < 3.6) { this.damageProp(look.prop, 60, me, V3().copy(eye).addScaledVector(dir, look.dist)); any = true; } else if (look?.b && look.b.team === 1 && look.dist < 3.6) { this.damage(look.b, 40, me); any = true; }
-      if (any) { this.hud.hitmark(false); sfx.hit(); this.hud.damage(V3().copy(eye).addScaledVector(dir, 2), 'CLONK!', 'ko'); }
+      // Right click: the drill kicks like a jackhammer (a Tender throws one sharp note). Short reach, big shove, and it cracks scenery.
+      this.bashCd = 1.1; this.bashT = .25; this.recoil = 1; this.shake = Math.max(this.shake, .4); veyl ? sfx.zap(1) : sfx.clang(); sfx.dash(.6); let any = false;
+      for (const u of this.units) { if (!u.alive || u.team !== foe) continue; const dx = u.pos.x - me.pos.x, dz = u.pos.z - me.pos.z, d = Math.hypot(dx, dz); if (d > 3.2 + UNIT[u.kind].rad || (dx * dir.x + dz * dir.z) / (d || 1) < .45) continue; this.damage(u, 22, me); any = true; }
+      if (look?.prop && look.dist < 3.6) { this.damageProp(look.prop, 60, me, V3().copy(eye).addScaledVector(dir, look.dist)); any = true; } else if (look?.b && look.b.team === foe && look.dist < 3.6) { this.damage(look.b, 40, me); any = true; }
+      if (any) { this.hud.hitmark(false); sfx.hit(); this.hud.damage(V3().copy(eye).addScaledVector(dir, 2), veyl ? 'TWANG!' : 'CLONK!', 'ko'); }
     }
     let biting = false; const drilling = this.tool === 1 && this.lmb;
     if (this.tool === 2) {
-      const k = BUILDABLE[this.buildSel], g = this.placePos;
+      const k = list[this.buildSel], g = this.placePos;
       if (!this.groundPoint(g, 26)) g.set(me.pos.x + Math.sin(this.yaw) * 12, 0, me.pos.z + Math.cos(this.yaw) * 12);
       g.x = Math.round(g.x); g.z = Math.round(g.z);
-      this.placeOK = this.unlocked(k) && this.canPlace(k, g.x, g.z, this.buildRot) && this.ore >= BLD[k].cost && Math.hypot(g.x - me.pos.x, g.z - me.pos.z) > Math.max(BLD[k].hx, BLD[k].hz) + 1;
-      if (P.has('Mouse0')) { if (this.placeOK) { this.place(k, g.x, g.z, this.buildRot); this.tool = 1; this.obj.built = true; this.feed('Quartermaster', `${BLD[k].name} staked out. Hold the drill on it to speed things up.`, ''); } else { sfx.deny(); if (!this.unlocked(k)) this.feed('Quartermaster', this.missing(k).length ? `${BLD[k].name} needs a finished ${this.missing(k).map(n => BLD[n].name).join(' and ')} first.` : `No ${BLD[k].name} on this job's paperwork. Later.`, 'al'); else if (this.ore < BLD[k].cost) this.feed('Quartermaster', `A ${BLD[k].name} is ${BLD[k].cost} ore. We have ${Math.floor(this.ore)}.`, 'al'); } }
+      this.placeOK = this.unlocked(k, side) && this.canPlace(k, g.x, g.z, this.buildRot, side) && cash >= BLD[k].cost && Math.hypot(g.x - me.pos.x, g.z - me.pos.z) > Math.max(BLD[k].hx, BLD[k].hz) + 1;
+      if (P.has('Mouse0')) { if (this.placeOK) { this.place(k, g.x, g.z, this.buildRot, side); this.tool = 1; this.obj.built = true; this.feed(voice, veyl ? `${BLD[k].name} seeded. Hold click on it to sing it up faster.` : `${BLD[k].name} staked out. Hold the drill on it to speed things up.`, ''); } else { sfx.deny(); if (!this.unlocked(k, side)) this.feed(voice, this.missing(k, side).length ? `${BLD[k].name} needs a finished ${this.missing(k, side).map(n => BLD[n].name).join(' and ')} first.` : `No ${BLD[k].name} on this job's paperwork. Later.`, 'al'); else if (cash < BLD[k].cost) this.feed(voice, `A ${BLD[k].name} is ${BLD[k].cost} ore. We have ${Math.floor(cash)}.`, 'al'); } }
     } else if (drilling) {
       this.mineT -= dt;
       if (look && look.dist < 4.2) {
-        const at = V3().copy(eye).addScaledVector(dir, look.dist - .15);
-        if (look.ore && me.carrying >= this.packCap()) { this.prompt = 'Pack full · <b>walk it to the Headframe</b>'; if (this.mineT <= 0) { this.mineT = .6; sfx.deny(); } }
-        else if (look.ore) { biting = true; if (this.mineT <= 0) { this.mineT = this.up.drill ? .32 : .42; const n = Math.min(3, look.ore.amount, this.packCap() - me.carrying); look.ore.amount -= n; me.carrying += n; this.obj.drilled += n; this.net?.cmd('mn', this.ores.indexOf(look.ore), n); sfx.ore(); this.debris(at, 3, .12, M.ore, 3); this.hud.damage(at, '+' + n, 'ore'); this.oreCheck(look.ore); this.shake = Math.max(this.shake, .12); } }
-        else if (look.b && look.b.team === 0 && !look.b.built) { biting = true; look.b.progress += dt / BLD[look.b.kind].time * 1.6; this.weldAcc += dt; if (this.mineT <= 0) { if (this.net) { this.net.cmd('wd', look.b.id, r1(this.weldAcc * 100) / 100); } this.weldAcc = 0; this.mineT = .16; this.debris(at, 2, .06, M.spark, 4); } }
-        else if (look.b && look.b.team === 0 && look.b.built && look.b.hp < look.b.maxHp) { biting = true; look.b.hp = Math.min(look.b.maxHp, look.b.hp + 40 * dt); this.weldAcc += dt; if (this.mineT <= 0) { if (this.net) { this.net.cmd('fx', look.b.id, r1(this.weldAcc * 100) / 100); } this.weldAcc = 0; this.mineT = .16; this.debris(at, 2, .06, M.spark, 4); } }
+        const at = V3().copy(eye).addScaledVector(dir, look.dist - .15), quick = veyl ? this.up.vhum : this.up.drill;
+        if (look.ore && me.carrying >= this.packCap(side)) { this.prompt = `Pack full · <b>${veyl ? 'carry it to a Choir Stone' : 'walk it to the Headframe'}</b>`; if (this.mineT <= 0) { this.mineT = .6; sfx.deny(); } }
+        else if (look.ore) { biting = true; if (this.mineT <= 0) { this.mineT = quick ? .32 : .42; const n = Math.min(3, look.ore.amount, this.packCap(side) - me.carrying); look.ore.amount -= n; me.carrying += n; this.obj.drilled += n; this.net?.cmd('mn', this.ores.indexOf(look.ore), n); sfx.ore(); this.debris(at, 3, .12, M.ore, 3); this.hud.damage(at, '+' + n, 'ore'); this.oreCheck(look.ore); this.shake = Math.max(this.shake, .12); } }
+        else if (look.b && look.b.team === side && !look.b.built) { biting = true; look.b.progress += dt / BLD[look.b.kind].time * 1.6; this.weldAcc += dt; if (this.mineT <= 0) { if (this.net) { this.net.cmd('wd', look.b.id, r1(this.weldAcc * 100) / 100); } this.weldAcc = 0; this.mineT = .16; this.debris(at, 2, .06, veyl ? M.crys : M.spark, 4); } }
+        else if (look.b && look.b.team === side && look.b.built && look.b.hp < look.b.maxHp) { biting = true; look.b.hp = Math.min(look.b.maxHp, look.b.hp + 40 * dt); this.weldAcc += dt; if (this.mineT <= 0) { if (this.net) { this.net.cmd('fx', look.b.id, r1(this.weldAcc * 100) / 100); } this.weldAcc = 0; this.mineT = .16; this.debris(at, 2, .06, veyl ? M.crys : M.spark, 4); } }
         else if (look.prop) { biting = true; if (this.mineT <= 0) { this.mineT = .2; this.damageProp(look.prop, 11, me, at); sfx.hit(); } }
-        else if ((look.unit && look.unit.team === 1 && look.dist < 3) || (look.b && look.b.team === 1 && look.dist < 3)) { biting = true; if (this.mineT <= 0) { this.mineT = .25; this.damage((look.unit || look.b)!, 10, me); sfx.hit(); this.debris(at, 2, .08, M.spark, 4); } }
+        else if ((look.unit && look.unit.team === foe && look.dist < 3) || (look.b && look.b.team === foe && look.dist < 3)) { biting = true; if (this.mineT <= 0) { this.mineT = .25; this.damage((look.unit || look.b)!, 10, me); sfx.hit(); this.debris(at, 2, .08, M.spark, 4); } }
       }
-      this.vm.drill.userData.bit.rotation.z += dt * (biting ? 34 : 24); if (biting) this.shake = Math.max(this.shake, .06);
+      if (veyl) { const f = this.vm.veyl.userData.flash; f.visible = biting || Math.random() < .3; f.scale.setScalar(biting ? .55 + Math.random() * .25 : .3); } else this.vm.drill.userData.bit.rotation.z += dt * (biting ? 34 : 24); if (biting) this.shake = Math.max(this.shake, .06);
     }
-    if (!this.prompt && this.tool === 1 && look && look.dist < 4.2) { if (look.ore) this.prompt = '<b>Hold click</b> Drill ore'; else if (look.prop) this.prompt = `<b>Hold click</b> Drill the ${(look.prop.owner || look.prop).name.toLowerCase()} apart`; else if (look.b && look.b.team === 0 && !look.b.built) this.prompt = '<b>Hold click</b> Weld it up faster'; else if (look.b && look.b.team === 0 && look.b.hp < look.b.maxHp) this.prompt = '<b>Hold click</b> Patch it up'; }
+    if (veyl && !drilling) this.vm.veyl.userData.flash.visible = false;
+    if (!this.prompt && this.tool === 1 && look && look.dist < 4.2) { if (look.ore) this.prompt = veyl ? '<b>Hold click</b> Hum the ore loose' : '<b>Hold click</b> Drill ore'; else if (look.prop) this.prompt = `<b>Hold click</b> ${veyl ? 'Hum' : 'Drill'} the ${(look.prop.owner || look.prop).name.toLowerCase()} apart`; else if (look.b && look.b.team === side && !look.b.built) this.prompt = veyl ? '<b>Hold click</b> Sing it up faster' : '<b>Hold click</b> Weld it up faster'; else if (look.b && look.b.team === side && look.b.hp < look.b.maxHp) this.prompt = veyl ? '<b>Hold click</b> Sing it whole' : '<b>Hold click</b> Patch it up'; }
+    if (me.carrying > 0 && !this.prompt && me.carrying >= this.packCap(side) * .5) this.prompt = `${me.carrying} ore in the pack · bring it to ${veyl ? 'a' : 'the'} ${home}`;
     drillSound(drilling, biting);
   }
   oreCheck(n: OreNode) { if (n.amount <= 0) { n.obj.traverse((m: any) => { if (m.isMesh && m.material === M.ore) m.material = M.oreDead; }); n.obj.scale.setScalar(.6); } else { n.obj.traverse((m: any) => { if (m.isMesh && m.material === M.oreDead) m.material = M.ore; }); n.obj.scale.setScalar(.75 + .25 * n.amount / n.max); } }
@@ -805,13 +834,13 @@ export class Game {
   updateUnits(dt: number) {
     const us = this.units, me = this.me, t = this.time;
     for (const u of us) {
-      if (!u.alive) continue; if (u.carrying > 0 && (u === me || u.pilot)) { const hq = this.nearHQ(u.pos.x, u.pos.z); if (hq && this.distToBox(hq, u.pos.x, u.pos.z) < 2.6) this.bank(u); } if (u !== me) u.moving = false; u.cd -= dt; u.think -= dt; u.swing = Math.max(0, u.swing - dt * 4); u.flashT -= dt; u.pop = Math.max(0, u.pop - dt * 7);
-      if (u.maxShield && t - u.lastHit > 5) u.shield = Math.min(u.maxShield, u.shield + 14 * dt);
+      if (!u.alive) continue; if (u.carrying > 0 && (u === me || u.pilot)) { const hq = this.nearHQ(u.pos.x, u.pos.z, u.team); if (hq && this.distToBox(hq, u.pos.x, u.pos.z) < 2.6) this.bank(u); } if (u !== me) u.moving = false; u.cd -= dt; u.think -= dt; u.swing = Math.max(0, u.swing - dt * 4); u.flashT -= dt; u.pop = Math.max(0, u.pop - dt * 7);
+      if (u.maxShield && t - u.lastHit > 5) u.shield = Math.min(u.maxShield, u.shield + 14 * (u.team && this.up.vbloom ? 2 : 1) * dt);
       if (u.team === 0 && this.up.weld && u.hp < u.maxHp && t - u.lastHit > 8) u.hp = Math.min(u.maxHp, u.hp + u.maxHp * .02 * dt);
       if (u.kx || u.kz) { u.pos.x += u.kx * dt; u.pos.z += u.kz * dt; const k = Math.max(0, 1 - dt * 7); u.kx *= k; u.kz *= k; if (Math.abs(u.kx) + Math.abs(u.kz) < .05) u.kx = u.kz = 0; this.collide(u, u.pos.x, u.pos.z); }
       if (u.team === 0 && u.hp < u.maxHp && t - u.lastHit > 5) for (const b of this.buildings) if (b.team === 0 && b.built && (b.kind === 'depot' || b.kind === 'headframe') && Math.abs(b.pos.x - u.pos.x) < 16 && Math.abs(b.pos.z - u.pos.z) < 16) { u.hp = Math.min(u.maxHp, u.hp + 5 * dt); break; }
       if (u.pilot) { u.kx = u.kz = 0; if (u.hp < u.maxHp && t - u.lastHit > 6) u.hp = Math.min(u.maxHp, u.hp + u.maxHp * .05 * dt); }
-      else if (u !== me || this.staticT > 0) { if (u.kind === 'rigger') this.aiRigger(u, dt); else if (u.team === 0) this.aiSoldier(u, dt); else if (u.kind === 'cantor') this.aiCantor(u, dt); else if (u.kind === 'lancer') this.aiLancer(u, dt); else this.aiWarden(u, dt); }
+      else if (u !== me || this.staticT > 0) { if (isWorker(u.kind)) this.aiRigger(u, dt); else if (u.team === 0) this.aiSoldier(u, dt); else if (u.kind === 'cantor') this.aiCantor(u, dt); else if (u.kind === 'lancer') this.aiLancer(u, dt); else this.aiWarden(u, dt); }
     }
     // keep bodies apart
     for (let i = 0; i < us.length; i++) { const a = us[i]; if (!a.alive) continue; const ra = UNIT[a.kind].rad; for (let j = i + 1; j < us.length; j++) { const b = us[j]; if (!b.alive) continue; const dx = b.pos.x - a.pos.x; if (dx > 4 || dx < -4) continue; const dz = b.pos.z - a.pos.z, mine = a === me || b === me, lim = (ra + UNIT[b.kind].rad) * (mine ? (a.team === b.team ? 1.8 : 1.25) : 1.12), d2 = dx * dx + dz * dz; if (d2 < lim * lim && d2 > 1e-5) { const d = Math.sqrt(d2), p = (lim - d) * .5; const wa = a === me || a.pilot ? 0 : b.kind === 'warden' ? 2 : mine ? 2 : 1, wb = b === me || b.pilot ? 0 : a.kind === 'warden' ? 2 : mine ? 2 : 1; a.pos.x -= dx / d * p * wa; a.pos.z -= dz / d * p * wa; b.pos.x += dx / d * p * wb; b.pos.z += dz / d * p * wb; } } }
@@ -836,23 +865,29 @@ export class Game {
         const big = u.kind === 'warden'; o.position.y = (big ? .3 : .12) + Math.sin(t * (big ? 1.4 : 2.4) + u.id) * (big ? .12 : .07);
         r.body.rotation.x += ((u.moving ? (u.dashT > 0 ? .5 : .16) : 0) - u.pop * .1 - r.body.rotation.x) * ease; if (r.halo) r.halo.rotation.z += dt * (u.wind > 0 ? 9 : 1.6);
         if (u.kind === 'cantor' && r.armR) r.armR.rotation.x = -u.swing * 1.7;
+        if (u.kind === 'tender') { const work = u.state === 'mining' || u.state === 'build' || u.state === 'repair'; if (r.armR) r.armR.rotation.x += ((work ? -1.1 + Math.sin(t * 31 + u.id) * .07 : -u.swing * 1.3) - r.armR.rotation.x) * ease; if (r.armL) r.armL.rotation.x += ((work ? -.5 : u.moving ? Math.sin(u.phase) * .3 : 0) - r.armL.rotation.x) * ease; }
         if (u.kind === 'lancer') { if (r.arms) r.arms.rotation.x = -u.pitch; if (r.flash) { r.flash.visible = u.wind > 0; const k = u.wind > 0 ? 1.4 - u.wind : 0; r.flash.scale.setScalar(Math.max(.01, k)); r.flash.rotation.z = t * 9; } }
         if (big && r.armL && r.armR) { const k = u.wind > 0 ? Math.min(1, (1 - u.wind / .9) * 1.4) : 0; const a = u.wind > 0 ? -2.4 * k : u.swing * .9; r.armL.rotation.x += (a - r.armL.rotation.x) * Math.min(1, dt * 18); r.armR.rotation.x = r.armL.rotation.x; }
       }
     }
   }
+  /** A worker the AI drives: a Rigger or a Tender. Builds what it was sent to, otherwise mines the best seam and carries the ore home. */
   aiRigger(u: Unit, dt: number) {
-    const hq = this.nearHQ(u.pos.x, u.pos.z);
+    const side = u.team, hq = this.nearHQ(u.pos.x, u.pos.z, side), quick = side ? this.up.vhum : this.up.drill;
     if (u.site && (!u.site.alive || (u.site.built && u.site.hp >= u.site.maxHp))) { u.site.builder = null; u.site = null; u.state = 'idle'; }
     if (u.site) {
       const b = u.site; if (this.distToBox(b, u.pos.x, u.pos.z) > 1.6) { this.moveTo(u, b.pos.x, b.pos.z, dt); u.state = 'toSite'; }
-      else { u.state = b.built ? 'repair' : 'build'; u.yaw = Math.atan2(b.pos.x - u.pos.x, b.pos.z - u.pos.z); if (b.built) b.hp = Math.min(b.maxHp, b.hp + 16 * dt); else b.progress += dt / BLD[b.kind].time; if (u.think <= 0) { u.think = .2; this.debris(TMP.set(u.pos.x + Math.sin(u.yaw) * .9, 1, u.pos.z + Math.cos(u.yaw) * .9), 1, .06, M.spark, 3); } }
+      else { u.state = b.built ? 'repair' : 'build'; u.yaw = Math.atan2(b.pos.x - u.pos.x, b.pos.z - u.pos.z); if (b.built) b.hp = Math.min(b.maxHp, b.hp + 16 * dt); else b.progress += dt / BLD[b.kind].time; if (u.think <= 0) { u.think = .2; this.debris(TMP.set(u.pos.x + Math.sin(u.yaw) * .9, 1, u.pos.z + Math.cos(u.yaw) * .9), 1, .06, side ? M.crys : M.spark, 3); } }
       return;
     }
-    if (u.state === 'idle' || (u.node && u.node.amount <= 0 && u.state !== 'toHQ')) { let best: OreNode | null = null, bd = 1e9; for (const n of this.ores) { if (n.amount <= 0) continue; const d = n.pos.distanceTo(u.pos) + (this.units.filter(o => o.node === n).length) * 6 + (hq ? (() => { const h = this.nearHQ(n.pos.x, n.pos.z)!; return Math.hypot(n.pos.x - h.pos.x, n.pos.z - h.pos.z) * .6; })() : 0); if (d < bd) { bd = d; best = n; } } u.node = best; u.state = best ? 'toOre' : 'wait'; }
+    // A Tender is no fighter: one with enemy fighters close by runs the other way for a few seconds, pack and all.
+    if (side && u.state !== 'flee' && u.think <= 0) { const th = this.units.find(e => e.alive && e.team !== side && isFighter(e) && Math.hypot(e.pos.x - u.pos.x, e.pos.z - u.pos.z) < 11); if (th) { const dx = u.pos.x - th.pos.x, dz = u.pos.z - th.pos.z, l = Math.hypot(dx, dz) || 1; u.windX = u.pos.x + dx / l * 18; u.windZ = u.pos.z + dz / l * 18; u.state = 'flee'; u.timer = 3; } }
+    if (u.state === 'flee') { u.timer -= dt; this.moveTo(u, u.windX, u.windZ, dt, 1); if (u.timer <= 0) u.state = u.carrying > 0 ? 'toHQ' : 'idle'; return; }
+    // A seam right under the enemy's guns is not worth the walk.
+    if (u.state === 'idle' || (u.node && u.node.amount <= 0 && u.state !== 'toHQ')) { let best: OreNode | null = null, bd = 1e9; for (const n of this.ores) { if (n.amount <= 0 || this.buildings.some(b => b.alive && b.team !== side && Math.hypot(b.pos.x - n.pos.x, b.pos.z - n.pos.z) < 30)) continue; const d = n.pos.distanceTo(u.pos) + (this.units.filter(o => o.node === n).length) * 6 + (hq ? (() => { const h = this.nearHQ(n.pos.x, n.pos.z, side)!; return Math.hypot(n.pos.x - h.pos.x, n.pos.z - h.pos.z) * .6; })() : 0); if (d < bd) { bd = d; best = n; } } u.node = best; u.state = best ? 'toOre' : 'wait'; }
     if (u.state === 'toOre' && u.node) { if (this.moveTo(u, u.node.pos.x, u.node.pos.z, dt, 2.5)) { u.state = 'mining'; u.timer = 3; } }
-    else if (u.state === 'mining' && u.node) { u.yaw = Math.atan2(u.node.pos.x - u.pos.x, u.node.pos.z - u.pos.z); u.timer -= dt * (this.up.drill ? 1.3 : 1); if (u.think <= 0) { u.think = .5; if (this.vol(u.pos) > .3) this.debris(TMP.set(u.pos.x + Math.sin(u.yaw) * 1.1, 1, u.pos.z + Math.cos(u.yaw) * 1.1), 1, .1, M.ore, 3); } if (u.timer <= 0) { const n = Math.min(this.up.buckets ? 10 : 7, u.node.amount); u.node.amount -= n; u.carrying = n; this.oreCheck(u.node); if (u.rig.pack) u.rig.pack.visible = true; u.state = 'toHQ'; } }
-    else if (u.state === 'toHQ') { if (!hq) { u.state = 'wait'; return; } if (this.distToBox(hq, u.pos.x, u.pos.z) < 1.7) { this.ore += u.carrying; this.stats.mined += u.carrying; u.carrying = 0; if (u.rig.pack) u.rig.pack.visible = false; u.state = 'idle'; } else this.moveTo(u, hq.pos.x + 1.6, hq.pos.z + hq.hz + .8, dt, .3); }
+    else if (u.state === 'mining' && u.node) { u.yaw = Math.atan2(u.node.pos.x - u.pos.x, u.node.pos.z - u.pos.z); u.timer -= dt * (quick ? 1.3 : 1); if (u.think <= 0) { u.think = .5; if (this.vol(u.pos) > .3) this.debris(TMP.set(u.pos.x + Math.sin(u.yaw) * 1.1, 1, u.pos.z + Math.cos(u.yaw) * 1.1), 1, .1, M.ore, 3); } if (u.timer <= 0) { const n = Math.min(!side && this.up.buckets ? 10 : 7, u.node.amount); u.node.amount -= n; u.carrying = n; this.oreCheck(u.node); if (u.rig.pack) u.rig.pack.visible = true; u.state = 'toHQ'; } }
+    else if (u.state === 'toHQ') { if (!hq) { u.state = 'wait'; return; } if (this.distToBox(hq, u.pos.x, u.pos.z) < 1.7) { this.purse[side] += u.carrying; if (side) this.stats.minedV += u.carrying; else this.stats.mined += u.carrying; u.carrying = 0; if (u.rig.pack) u.rig.pack.visible = false; u.state = 'idle'; } else this.moveTo(u, hq.pos.x + 1.6, hq.pos.z + hq.hz + .8, dt, .3); }
   }
   acquire(u: Unit, range: number, bRange: number) {
     let best: Unit | Building | null = null, bd = range;
@@ -921,10 +956,17 @@ export class Game {
     if (u.order.type === 'guard' && this.dir.alarmT <= 0 && u.maxShield && u.shield <= 0 && u.hp < u.maxHp * .4 && !u.fled && this.stones().length) { u.fled = true; u.state = 'flee'; u.timer = 7; return true; }
     return false;
   }
+  /** A Veyl body with nothing to fight: walks its order, or keeps up with whoever it was told to follow. */
+  vIdle(u: Unit, dt: number, stop: number, mul: number) {
+    const o = u.order; if (o.type !== 'follow') { this.advance(u, dt, stop, mul); return; }
+    if (o.lead && !o.lead.alive && o.lead.pilot) { const nb = this.units.find(x => x.alive && x.pilot === o.lead!.pilot && x.team === u.team); if (nb) o.lead = nb; }
+    const lead = o.lead?.alive ? o.lead : null; if (!lead) { o.type = 'guard'; o.x = u.pos.x; o.z = u.pos.z; return; }
+    const a = u.slot * 2.4, r = 3.2 + (u.slot % 3) * 1.2 + (u.kind === 'warden' ? 2 : 0), tx = lead.pos.x + Math.cos(a) * r, tz = lead.pos.z + Math.sin(a) * r; if (Math.hypot(tx - u.pos.x, tz - u.pos.z) > 1.8) this.moveTo(u, tx, tz, dt, .5, 1.3);
+  }
   aiCantor(u: Unit, dt: number) {
     if (this.leash(u, dt)) return;
     u.dashCd -= dt; u.dashT -= dt; if (this.aiFallBack(u, dt)) return;
-    if (u.think <= 0) { u.think = .3; const raid = u.order.type === 'raid', cur = u.target; if (!cur || !cur.alive || !isUnit(cur)) u.target = this.acquire(u, raid ? 22 : 28, raid && !(u.order.path && u.order.path.length) ? 14 : 0); }
+    if (u.think <= 0) { u.think = .3; const raid = u.order.type === 'raid' || u.order.type === 'amove', cur = u.target; if (!cur || !cur.alive || !isUnit(cur)) u.target = this.acquire(u, raid ? 22 : 28, raid && !(u.order.path && u.order.path.length) ? 14 : 0); }
     const t = u.target;
     if (t && t.alive) {
       const isB = !isUnit(t), d = isB ? this.distToBox(t as Building, u.pos.x, u.pos.z) : t.pos.distanceTo(u.pos);
@@ -933,30 +975,30 @@ export class Game {
         // closing on someone with a gun, a Cantor weaves instead of running down the barrel
         let wx = 0, wz = 0; if (!isB && d > 7 && u.dashT <= 0) { const k = Math.sin(this.time * 3.1 + u.id * 1.7) * Math.min(4.5, d * .3), nx = -(t.pos.z - u.pos.z) / d, nz = (t.pos.x - u.pos.x) / d; wx = nx * k; wz = nz * k; }
         this.moveTo(u, t.pos.x + wx, t.pos.z + wz, dt, .5, u.dashT > 0 ? 2.6 : 1); }
-      else { u.yaw = Math.atan2(t.pos.x - u.pos.x, t.pos.z - u.pos.z); if (u.cd <= 0) { u.cd = .95; u.swing = 1; sfx.slash(this.vol(u.pos)); this.damage(t, (isB ? 10 : 13) * this.diff.enemy, u); } }
+      else { u.yaw = Math.atan2(t.pos.x - u.pos.x, t.pos.z - u.pos.z); if (u.cd <= 0) { u.cd = .95; u.swing = 1; sfx.slash(this.vol(u.pos)); this.damage(t, (isB ? 10 : 13) * this.vMul(), u); } }
       return;
     }
-    this.advance(u, dt, u.order.type === 'raid' ? 3 : 1.5, u.order.type === 'raid' || this.dir.alarmT > 0 ? 1 : .6);
+    this.vIdle(u, dt, u.order.type === 'raid' ? 3 : 1.5, u.order.type !== 'guard' || this.dir.alarmT > 0 ? 1 : .6);
   }
   aiLancer(u: Unit, dt: number) {
     if (this.leash(u, dt)) return;
     if (u.wind <= 0 && this.aiFallBack(u, dt)) return;
     if (u.wind > 0) {
       u.wind -= dt; const t = u.target; if (t && t.alive) this.aimAt(u, t, 1.5);
-      if (u.wind <= 0) { u.cd = 2 + R(0, .4); if (t && t.alive) { const from = V3(u.pos.x + Math.sin(u.yaw) * 2, 1.5, u.pos.z + Math.cos(u.yaw) * 2), ty = isUnit(t) ? UNIT[t.kind].bodyY : Math.min(t.h * .5, 3), v = V3(t.pos.x - from.x, ty - from.y, t.pos.z - from.z).normalize().multiplyScalar(30); this.shoot(from, v, 1, 20 * this.diff.enemy, false, u); sfx.zap(this.vol(u.pos)); u.swing = 1; } }
+      if (u.wind <= 0) { u.cd = 2 + R(0, .4); if (t && t.alive) { const from = V3(u.pos.x + Math.sin(u.yaw) * 2, 1.5, u.pos.z + Math.cos(u.yaw) * 2), ty = isUnit(t) ? UNIT[t.kind].bodyY : Math.min(t.h * .5, 3), v = V3(t.pos.x - from.x, ty - from.y, t.pos.z - from.z).normalize().multiplyScalar(30); this.shoot(from, v, 1, 20 * this.vMul() * (this.eco && this.up.vbreath ? 1.15 : 1), false, u); sfx.zap(this.vol(u.pos)); u.swing = 1; } }
       return;
     }
-    if (u.think <= 0) { u.think = .35; const raid = u.order.type === 'raid'; u.target = this.acquire(u, 34, raid && !(u.order.path && u.order.path.length) ? 24 : 0); }
+    if (u.think <= 0) { u.think = .35; const raid = u.order.type === 'raid' || u.order.type === 'amove'; u.target = this.acquire(u, this.eco && this.up.vbreath ? 40 : 34, raid && !(u.order.path && u.order.path.length) ? 24 : 0); }
     const t = u.target;
     if (t && t.alive) {
       const isB = !isUnit(t), d = isB ? this.distToBox(t as Building, u.pos.x, u.pos.z) : t.pos.distanceTo(u.pos); this.aimAt(u, t, 1.5);
-      if (d > 25) this.moveTo(u, t.pos.x, t.pos.z, dt);
+      if (d > (this.eco && this.up.vbreath ? 30 : 25)) this.moveTo(u, t.pos.x, t.pos.z, dt);
       else if (!isB && d < 9) { const ax = u.pos.x - t.pos.x, az = u.pos.z - t.pos.z, l = Math.hypot(ax, az) || 1; this.moveTo(u, u.pos.x + ax / l * 4, u.pos.z + az / l * 4, dt, .2, .9); u.yaw = Math.atan2(-ax, -az); if (u.cd <= 0) u.wind = .55; }
       else if (u.cd <= 0) u.wind = .7;
       else if (!isB) this.takeCover(u, t as Unit, dt);
       return;
     }
-    u.cover = null; u.pitch *= .9; this.advance(u, dt, u.order.type === 'raid' ? 6 : 1.5, u.order.type === 'raid' || this.dir.alarmT > 0 ? 1 : .6);
+    u.cover = null; u.pitch *= .9; this.vIdle(u, dt, u.order.type === 'raid' ? 6 : 1.5, u.order.type !== 'guard' || this.dir.alarmT > 0 ? 1 : .6);
   }
   /** Between shots a Lancer ducks behind the nearest solid scenery, then leans out to fire. */
   takeCover(u: Unit, t: Unit, dt: number) {
@@ -967,8 +1009,8 @@ export class Game {
     this.moveTo(u, c.x + ax / l * off - az / l * peek * side, c.z + az / l * off + ax / l * peek * side, dt, .3);
   }
   aiWarden(u: Unit, dt: number) {
-    if (u.wind > 0) { u.wind -= dt; if (u.wind <= 0) { u.cd = 2.2; u.swing = 1; this.explode(V3(u.windX, 0, u.windZ), 1, 34 * this.diff.enemy, 4.6, u, true); } return; }
-    if (u.think <= 0) { u.think = .4; const raid = u.order.type === 'raid', cur = u.target; if (!cur || !cur.alive || !isUnit(cur) || cur.pos.distanceTo(u.pos) > 30) u.target = this.acquire(u, raid ? 20 : 26, raid && !(u.order.path && u.order.path.length) ? 18 : 0); }
+    if (u.wind > 0) { u.wind -= dt; if (u.wind <= 0) { u.cd = 2.2; u.swing = 1; this.explode(V3(u.windX, 0, u.windZ), 1, 34 * this.vMul(), 4.6, u, true); } return; }
+    if (u.think <= 0) { u.think = .4; const raid = u.order.type === 'raid' || u.order.type === 'amove', cur = u.target; if (!cur || !cur.alive || !isUnit(cur) || cur.pos.distanceTo(u.pos) > 30) u.target = this.acquire(u, raid ? 20 : 26, raid && !(u.order.path && u.order.path.length) ? 18 : 0); }
     const t = u.target;
     if (t && t.alive) {
       const isB = !isUnit(t), d = isB ? this.distToBox(t as Building, u.pos.x, u.pos.z) : t.pos.distanceTo(u.pos);
@@ -977,7 +1019,7 @@ export class Game {
       else { u.yaw = Math.atan2(t.pos.x - u.pos.x, t.pos.z - u.pos.z); if (u.cd <= 0) { u.wind = .9; const f = Math.min(d, 3.2); u.windX = u.pos.x + Math.sin(u.yaw) * f; u.windZ = u.pos.z + Math.cos(u.yaw) * f; this.warn(u.windX, u.windZ, 4.6, .9); sfx.charge(this.vol(u.pos)); } }
       return;
     }
-    this.advance(u, dt, u.order.type === 'raid' ? 4 : 2, u.order.type === 'raid' ? 1 : .6);
+    this.vIdle(u, dt, u.order.type === 'raid' ? 4 : 2, u.order.type !== 'guard' ? 1 : .6);
   }
   updateBuildings(dt: number) {
     for (const b of this.buildings) {
@@ -985,12 +1027,12 @@ export class Game {
       if (!b.built) {
         b.progress = Math.min(1, b.progress); b.hp = Math.max(b.hp, b.maxHp * (.1 + .9 * b.progress)); b.obj.scale.y = Math.max(.06, b.progress);
         if (b.progress >= 1) { b.built = true; b.hp = b.maxHp; b.obj.scale.y = 1; if (b.holo) { this.scene.remove(b.holo); b.holo = null; } if (b.builder) { b.builder.site = null; b.builder.state = 'idle'; b.builder = null; } sfx.built(); this.stats.built++; this.puff(TMP.copy(b.pos).setY(1.5), 8, 1.8, M.dust, .8, 2.5); this.dir.buildingDone(b); }
-        else if (b.team === 0 && this.needsBuilder(b)) this.assignRigger(b);
+        else if ((b.team === 0 || this.eco) && this.needsBuilder(b)) this.assignRigger(b);
         continue;
       }
-      if (b.team === 0 && b.hp < b.maxHp * .7 && this.time - b.lastHit > 6 && this.needsBuilder(b)) this.assignRigger(b);
+      if ((b.team === 0 || this.eco) && b.hp < b.maxHp * .7 && this.time - b.lastHit > 6 && this.needsBuilder(b)) this.assignRigger(b);
       if (b.hp < b.maxHp * .5 && b.team === 0) { b.smokeT -= dt; if (b.smokeT <= 0) { const bad = b.hp < b.maxHp * .25; b.smokeT = bad ? .18 : .4; const fire = bad && Math.random() < .5; this.puff(TMP.set(b.pos.x + R(-b.hx, b.hx) * .6, b.h * R(.6, 1), b.pos.z + R(-b.hz, b.hz) * .6), 1, fire ? 1.1 : 1.5, fire ? M.fire : M.smoke, 2.4, .5); } }
-      if (b.queue.length) { const q = b.queue[0]; q.t -= dt; if (q.t <= 0) { b.queue.shift(); const side = b.kind === 'bunkhouse' && !b.rot; const u = this.spawn(q.kind, 0, b.pos.x + (side ? b.hx + 1.2 : R(-1, 3)), b.pos.z + (side ? R(-.5, .5) : b.hz + 1.2)); this.puff(TMP.copy(u.pos).setY(1), 4, .8, M.dust); if (this.vol(b.pos) > .2) sfx.blip(); this.dir.trained(u); } }
+      if (b.queue.length) { const q = b.queue[0]; q.t -= dt; if (q.t <= 0) { b.queue.shift(); const side = b.kind === 'bunkhouse' && !b.rot; const u = this.spawn(q.kind, b.team, b.pos.x + (side ? b.hx + 1.2 : R(-1, 3)), b.pos.z + (side ? R(-.5, .5) : b.hz + 1.2)); this.puff(TMP.copy(u.pos).setY(1), 4, .8, b.team ? M.violet : M.dust); if (this.vol(b.pos) > .2) sfx.blip(); this.dir.trained(u); } }
       if (b.kind === 'watchpost') {
         b.cd -= dt; let tgt: Unit | null = null, bd = b.team === 0 && this.up.post ? 42 : 34; for (const o of this.units) { if (!o.alive || o.team === b.team) continue; const d = o.pos.distanceTo(b.pos); if (d < bd) { bd = d; tgt = o; } }
         if (tgt) { const gun = b.obj.userData.gun; gun.rotation.y = Math.atan2(tgt.pos.x - b.pos.x, tgt.pos.z - b.pos.z) - b.obj.rotation.y; if (b.cd <= 0) { b.cd = this.up.post ? .3 : .45; const a = V3(b.pos.x, 6, b.pos.z), e = V3(tgt.pos.x, UNIT[tgt.kind].bodyY, tgt.pos.z); this.tracer(a, e, tracerMat, .1); sfx.turret(this.vol(b.pos) * .6); this.damage(tgt, 10 * this.gunMul(), b); } }
@@ -999,27 +1041,27 @@ export class Game {
         b.cd -= dt; if (b.cd <= 0) { b.cd = .8; let tgt: Unit | null = null, bd = 20; for (const o of this.units) { if (!o.alive || o.team === b.team) continue; const d = o.pos.distanceTo(b.pos); if (d < bd) { bd = d; tgt = o; } }
           if (tgt) { this.tracer(V3(b.pos.x, b.h + .6, b.pos.z), V3(tgt.pos.x, UNIT[tgt.kind].bodyY, tgt.pos.z), tracerMat, .08); sfx.turret(this.vol(b.pos) * .4); this.damage(tgt, 9 * this.gunMul(), b); } else b.cd = .3; }
       } else if (b.kind === 'thornspire') {
-        b.cd -= dt; if (b.cd <= 0) { b.cd = 1; let tgt: Unit | null = null, bd = 26; for (const o of this.units) { if (!o.alive || o.team === b.team) continue; const d = o.pos.distanceTo(b.pos); if (d < bd) { bd = d; tgt = o; } }
-          if (tgt) { this.tracer(V3(b.pos.x, 6.9, b.pos.z), V3(tgt.pos.x, UNIT[tgt.kind].bodyY, tgt.pos.z), beamMat, .2); sfx.zap(this.vol(b.pos) * .7); this.damage(tgt, 10 * this.diff.enemy, b); this.puff(TMP.copy(tgt.pos).setY(1), 2, .5, M.mag, .5); } else b.cd = .3; }
+        b.cd -= dt; if (b.cd <= 0) { const twin = this.eco && this.up.vthorn; b.cd = twin ? .7 : 1; let tgt: Unit | null = null, bd = twin ? 32 : 26; for (const o of this.units) { if (!o.alive || o.team === b.team) continue; const d = o.pos.distanceTo(b.pos); if (d < bd) { bd = d; tgt = o; } }
+          if (tgt) { this.tracer(V3(b.pos.x, 6.9, b.pos.z), V3(tgt.pos.x, UNIT[tgt.kind].bodyY, tgt.pos.z), beamMat, .2); sfx.zap(this.vol(b.pos) * .7); this.damage(tgt, 10 * this.vMul(), b); this.puff(TMP.copy(tgt.pos).setY(1), 2, .5, M.mag, .5); } else b.cd = .3; }
       } else if (b.kind === 'choir') {
         b.cd -= dt; if (b.cd <= 0) { b.cd = 1.15; let tgt: Unit | null = null, bd = 21; for (const o of this.units) { if (!o.alive || o.team === b.team) continue; const d = o.pos.distanceTo(b.pos); if (d < bd) { bd = d; tgt = o; } }
-          if (tgt) { this.tracer(V3(b.pos.x, 9.6, b.pos.z), V3(tgt.pos.x, 1.1, tgt.pos.z), beamMat, .16); sfx.zap(this.vol(b.pos) * .8); this.damage(tgt, 6 * this.diff.enemy, b); this.puff(TMP.copy(tgt.pos).setY(1), 2, .5, M.teal, .5); } }
+          if (tgt) { this.tracer(V3(b.pos.x, 9.6, b.pos.z), V3(tgt.pos.x, 1.1, tgt.pos.z), beamMat, .16); sfx.zap(this.vol(b.pos) * .8); this.damage(tgt, 6 * this.vMul(), b); this.puff(TMP.copy(tgt.pos).setY(1), 2, .5, M.teal, .5); } }
       }
     }
   }
   /** A site with nobody on it: no builder, a dead one, one a player is driving, or one that has gone off to other work. */
   needsBuilder(b: Building) { const u = b.builder; return !u || !u.alive || u === this.me || !!u.pilot || u.site !== b; }
-  assignRigger(b: Building) { let best: Unit | null = null, bd = 1e9; for (const u of this.units) { if (!u.alive || u.team !== 0 || u.kind !== 'rigger' || u === this.me || u.pilot || u.site) continue; const d = u.pos.distanceTo(b.pos) + (u.carrying ? 15 : 0); if (d < bd) { bd = d; best = u; } } if (best && (bd < 90 || !b.built)) { best.site = b; b.builder = best; } }
+  assignRigger(b: Building) { let best: Unit | null = null, bd = 1e9; const wk = FACTION[b.team]?.worker; for (const u of this.units) { if (!u.alive || u.team !== b.team || u.kind !== wk || u === this.me || u.pilot || u.site) continue; const d = u.pos.distanceTo(b.pos) + (u.carrying ? 15 : 0); if (d < bd) { bd = d; best = u; } } if (best && (bd < 90 || !b.built)) { best.site = b; b.builder = best; } }
 
   // ------------------------------------------------------------ render
   render(dt: number) {
     const me = this.me, cam = this.cam, pipe = this.pipe, vm = this.vm; this.drawT = Math.max(0, this.drawT - dt);
     cam.aspect = pipe.w / pipe.h; pipe.setDusk(Math.min(1, MAP.dusk + Math.max(0, (this.time - 120) / 780)));
-    const build = this.phase !== 'menu' && this.tool === 2 && me?.kind === 'rigger' && me.alive && !this.tab && this.staticT <= 0;
-    for (const k of BUILDABLE) { const on = build && BUILDABLE[this.buildSel] === k; this.ghost[k].visible = on && this.placeOK; this.ghostBad[k].visible = on && !this.placeOK; if (on) { const g = this.placeOK ? this.ghost[k] : this.ghostBad[k]; g.position.copy(this.placePos); g.rotation.y = this.buildRot ? Math.PI / 2 : 0; } }
+    const build = this.phase !== 'menu' && this.tool === 2 && !!me && isWorker(me.kind) && me.alive && !this.tab && this.staticT <= 0, blist = FACTION[me?.team || 0].builds;
+    for (const k in this.ghost) { const on = build && blist[this.buildSel] === k; this.ghost[k].visible = on && this.placeOK; this.ghostBad[k].visible = on && !this.placeOK; if (on) { const g = this.placeOK ? this.ghost[k] : this.ghostBad[k]; g.position.copy(this.placePos); g.rotation.y = this.buildRot ? Math.PI / 2 : 0; } }
     holoOK.opacity = .3 + Math.sin(pipe.time * 3) * .07; warnMat.opacity = .6 + Math.sin(pipe.time * 30) * .3;
     const near = !this.tab && this.phase !== 'menu' && me ? me : null;
-    for (const u of this.units) { u.ring.visible = this.tab && u.team === 0; u.obj.visible = !(near && u !== near && u.team === 0 && Math.hypot(u.pos.x - near.pos.x, u.pos.z - near.pos.z) < 1.05); }
+    for (const u of this.units) { u.ring.visible = this.tab && u.team === this.myTeam; u.obj.visible = !(near && u !== near && u.team === this.myTeam && Math.hypot(u.pos.x - near.pos.x, u.pos.z - near.pos.z) < 1.05); }
     pipe.static = this.staticT > 0 ? .85 : 0; pipe.sat = this.tab ? .8 : 1;
     for (const k in vm) vm[k].visible = false;
     if (this.phase === 'menu') {
@@ -1046,7 +1088,7 @@ export class Game {
           g.rotation.set(a[3] + (b[3] - a[3]) * k + kick * 1.6 - dip * 2.4 - this.drawT * 1.6 + this.swayY * 2, a[4] + (b[4] - a[4]) * k - this.swayX * 2, a[5] + (b[5] - a[5]) * k + dip * 1.2);
         };
         const gun = GUNS[me.kind], rl = this.reloadT > 0 && gun ? Math.sin(Math.min(1, this.reloadT / gun.reload) * Math.PI) : 0;
-        if (me.team === 1) pose(vm.veyl, 0, this.recoil * (me.kind === 'cantor' ? -.3 : .1), this.vWind > 0 ? -.12 : 0);
+        if (me.team === 1) pose(vm.veyl, 0, this.recoil * (me.kind === 'cantor' ? -.3 : .1) + (me.kind === 'tender' ? (this.lmb && this.tool === 1 ? -.02 + R(-.004, .004) : 0) - this.bashT * .8 : 0), this.vWind > 0 ? -.12 : me.kind === 'tender' && this.tool === 2 ? .12 : 0);
         else if (me.kind === 'rigger') pose(vm.drill, 0, (this.lmb && this.tool === 1 ? -.03 + R(-.004, .004) : 0) - this.bashT * 1.1, this.tool === 2 ? .12 : 0);
         else if (SHOT[me.kind]) { const v = vm[SHOT[me.kind].vm], m = v.userData.mag; if (v.userData.magY === undefined) v.userData.magY = m.position.y; pose(v, this.ads, this.recoil * (me.kind === 'longshot' ? .11 : .05), rl * .14 + (me.kind === 'longshot' && this.fireCd > 0 && gun ? Math.sin(Math.min(1, 1 - this.fireCd / gun.cd) * Math.PI) * .05 * (1 - this.ads * .6) : 0)); m.position.y = v.userData.magY - (rl > .5 ? (rl - .5) * .5 : 0); }
         else if (me.kind === 'gantry') { pose(vm.cannon, 0, 0, rl * .1); const k = this.recoil * .09; vm.cannon.userData.gunR.position.z = this.side > 0 ? k : 0; vm.cannon.userData.gunL.position.z = this.side < 0 ? k : 0; }
@@ -1057,7 +1099,7 @@ export class Game {
     pipe.draw(this.scene, cam, me ? me.pos : V3(), 110);
     this.hud.update(this, cam);
     // music follows how hot things are around the player
-    if (me) { let hot = this.time - me.lastHit < 6 ? 1 : 0; if (!hot) for (const u of this.units) if (u.team === 1 && u.alive && Math.abs(u.pos.x - me.pos.x) < 45 && Math.abs(u.pos.z - me.pos.z) < 45) { hot = 1; break; } this.mood += (hot - this.mood) * Math.min(1, dt * (hot ? 2 : .4)); setMood(this.phase === 'play' ? .25 + this.mood * .75 : .15); }
+    if (me) { let hot = this.time - me.lastHit < 6 ? 1 : 0; if (!hot) for (const u of this.units) if (u.team !== this.myTeam && u.alive && Math.abs(u.pos.x - me.pos.x) < 45 && Math.abs(u.pos.z - me.pos.z) < 45) { hot = 1; break; } this.mood += (hot - this.mood) * Math.min(1, dt * (hot ? 2 : .4)); setMood(this.phase === 'play' ? .25 + this.mood * .75 : .15); }
   }
   /** Split screen halves are very wide or very tall. This keeps the view from stretching in the first and from feeling boxed in in the second. */
   fitFov(fov: number) { const a = this.pipe.w / this.pipe.h; return a > 2.6 ? 2 * Math.atan(Math.tan(fov * Math.PI / 360) * 2.6 / a) * 180 / Math.PI : a < 1.2 ? fov + 9 : fov; }

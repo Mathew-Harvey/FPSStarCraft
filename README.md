@@ -138,7 +138,7 @@ The Gloam are cheap, fast and always more of them, with three rules of their own
 | Foundry | Tusk Hollow | Grows Mulchers. Sells the second tier and Bull Charge. |
 | Signal Mast | Old Growth | Top research, Deep Bloom and Fat Gut. |
 
-The Overgrowth runs the Gloam economy when nobody tells it otherwise (press G to take over), and the Swarm Lead pitches pushes the way Alpha does. `node test/gloam.mjs` plays a solo Gloam run, an Ironhold skirmish against Gloam bots, and an online versus. `node tools/geco.cjs '[[0,1]]' 20` sets Ironhold bots against Gloam bots for balancing; the last runs split one win each with an eighteen-minute draw.
+The Overgrowth runs the Gloam economy when nobody tells it otherwise (press G to take over), and the Swarm Lead pitches pushes the way Alpha does. `node test/gloam.mjs` plays a solo Gloam run, an Ironhold skirmish against Gloam bots, and an online versus. `node tools/geco.cjs '[[0,1]]' 20` sets Ironhold bots against Gloam bots for balancing. In the November matchup sweep (30 headless bot matches per pairing over every map size and shift, `npm run sim`) Ironhold beat the Veyl 17 to 13 and the Gloam 14 to 15 with one draw. Gloam fighters scatter from a grenade in the air; without that, Linesman grenades took a pack of Snappers each and the Gloam won 1 match in 30.
 
 ## The Veyl base
 
@@ -226,6 +226,7 @@ The tables live in `src/data.ts` (`BLD`, `TRAINS`, `UNIT_NEEDS`, `UPGRADES`). Th
 
 Two scripts play whole matches in a headless browser at many times real speed, with drawing switched off.
 
+- `npm run sim -- '{"out":2,"map":0,"diff":1,"seed":1}'` plays one bot-against-bot match in Node with no browser (40 minutes of match in about 20 seconds): Ironhold against the Veyl (`out` 1) or the Gloam (`out` 2), on any map code and shift. `human: [1, 0]` makes a side turtle (it builds but never says yes to a push), `verbose: 1` prints both sides every two minutes, and `probe: "park"` runs a cheese scenario. `npm run test:rules` runs the checks from the matchup sweep (`test/matchups.ts`) the same way.
 - `node tools/soak.cjs '[[0,1],[1,1]]'` plays hands-off matches (pairs of map and difficulty) and reports errors, bodies that stop moving, and who won.
 - `node tools/monkey.cjs [seconds] [scenario]` mashes every control at random in single player on every map and shift, each campaign job, and split screen co-op and versus, and reports crashes and broken state (NaN positions, bodies off the map, health over the maximum, halves of a split screen that disagree).
 - `node tools/bot.cjs <mode> <difficulty> [map]` plays as a scripted first-person player with perfect aim. Modes: `linesman` (walk in alone and shoot), `rigger` (drill rush), `longshot`, `squad` (defend, say yes to pushes, go with them) and `afk`. It exists to find one-trick wins.

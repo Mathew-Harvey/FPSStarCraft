@@ -40,7 +40,7 @@ function sides(l: Lobby) { if (l.game) l.game.human = [l.players.some(p => !p.te
 function release(g: Game, p: Player) { const u = p.unit; p.unit = null; if (!u || !u.alive) return; u.pilot = 0; u.brace = false; u.moving = false; u.think = 0; if (isWorker(u.kind)) { u.state = u.carrying > 0 ? 'toHQ' : 'idle'; u.site = null; } else if (u.team && g.eco) g.dir.enlist(u); else if (u.team) { const st = g.stones()[0]; u.order = st && Math.hypot(u.pos.x - st.pos.x, u.pos.z - st.pos.z) > 60 ? { type: 'raid', x: 0, z: 0 } : { type: 'guard', x: u.pos.x, z: u.pos.z }; } else if (isSoldier(u)) g.dir.enlist(u); else { u.state = u.carrying > 0 ? 'toHQ' : 'idle'; u.site = null; } }
 /** A Veyl body for a player on the Chorus side: a free Tender or fighter, or a fresh Tender at a Choir Stone. */
 function veylBody(g: Game): Unit | null { return g.freshBody(SIDE.out); }
-function pilot(g: Game, p: Player, u: Unit) { if (p.unit && p.unit !== u) release(g, p); u.pilot = p.id; p.unit = u; u.target = null; u.wind = 0; if (u.site) { u.site.builder = null; u.site = null; } u.state = 'idle'; if (u.carrying > 0) g.bank(u); u.order = { type: 'guard', x: u.pos.x, z: u.pos.z }; }
+function pilot(g: Game, p: Player, u: Unit) { if (p.unit && p.unit !== u) release(g, p); u.pilot = p.id; p.unit = u; u.target = null; u.wind = 0; if (u.site) { u.site.builder = null; u.site = null; } u.state = 'idle'; /* ore in the pack stays there until the body walks it home: banking it here was a free trip */ u.order = { type: 'guard', x: u.pos.x, z: u.pos.z }; }
 
 function begin(l: Lobby) {
   setMap(l.map); SIDE.out = l.out; const eco = l.players.some(p => p.team) || l.out === 2, g = new Game(noPipe(), noHud, DIFFS[l.diff], l.map, null, null, eco); g.noRender = true; g.evq = []; g.coop = l.players.length; g.me = null; g.phase = 'play';
@@ -74,7 +74,8 @@ function step(l: Lobby) {
         try {
           if (c[0] === 'bd') { const u = g.units.find(x => x.id === c[1]); if (u && u.alive && u.team === p.team && (!u.pilot || u.pilot === p.id)) pilot(g, p, u); }
           else if (c[0] === 'rs' && p.team) { if (!p.unit && g.stones().length) { const u = veylBody(g); if (u) { pilot(g, p, u); send(p, { t: 'yo', unit: u.id }); g.feedTo = p.id; g.feed(FACTION[p.team].voice, p.team === 2 ? 'A fresh Grazer, wet from the Bud. Mind it.' : 'A fresh voice for you. Mind this one.', ''); g.feedTo = 0; } } }
-          else if (c[0] === 'rs') { if (!p.unit && g.ownB('headframe').length) { const u = g.spawn('rigger', 0, ...g.hqSpot()); pilot(g, p, u); send(p, { t: 'yo', unit: u.id }); g.feedTo = p.id; g.feed('Quartermaster', 'Found you a fresh Rigger. Try to keep this one.', ''); g.feedTo = 0; } }
+          // A spare body first: a fresh Rigger only when the crew has none. It used to spawn one free on every ask, whatever was standing around.
+          else if (c[0] === 'rs') { const u = !p.unit ? g.freshBody(0) : null; if (u) { pilot(g, p, u); send(p, { t: 'yo', unit: u.id }); g.feedTo = p.id; g.feed('Quartermaster', 'Found you a fresh Rigger. Try to keep this one.', ''); g.feedTo = 0; } }
           else serverCmd(g, p.id, p.unit, c);
         } catch (e) { console.error('bad command', c[0], e); }
       }

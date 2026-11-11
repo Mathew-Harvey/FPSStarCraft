@@ -59,7 +59,9 @@ const VDOWN = ['A voice is gone.', 'We are one fewer.', 'The song thins.', 'They
 /** One side's squad and economy brain. The Director keeps Ironhold's on itself; a Veyl side that somebody plays gets its own. */
 export interface Side {
   team: number; auto: boolean; qmT: number; hintI: number; chatT: number;
-  plan: { phase: 'ask' | 'count' | 'go'; t: number; target: Building | null; book: number; label: string } | null;
+  plan: { phase: 'ask' | 'count' | 'go'; t: number; target: Building | null; book: number; label: string; /** When the push set off. */ goT?: number } | null;
+  /** When this side last broke one of the enemy's buildings. */
+  brokeT?: number;
   nextPlan: number; callout: Callout | null; pushes: number; lastFailed: boolean; fails: number; playbook: { name: string; steps: string[]; idx: number };
   /** An enemy push is on its way in. */
   raidLive: boolean; retarget: number;
@@ -72,7 +74,7 @@ export class Director implements Side {
   /** The Veyl side's brain, used when they run their own economy. */
   vs: Side = { team: 1, auto: true, qmT: 0, hintI: 0, chatT: 70, plan: null, nextPlan: 75, callout: null, pushes: 0, lastFailed: false, fails: 0, playbook: { name: VBOOKS[0].name, steps: VBOOKS[0].steps, idx: 0 }, raidLive: false, retarget: 0 };
   side(team: number): Side { return team ? this.vs : this; }
-  plan: { phase: 'ask' | 'count' | 'go'; t: number; target: Building | null; book: number; label: string } | null = null;
+  plan: { phase: 'ask' | 'count' | 'go'; t: number; target: Building | null; book: number; label: string; goT?: number } | null = null; brokeT = 0;
   nextPlan = 60; callout: Callout | null = null; pushes = 0; lastFailed = false; /** Pushes in a row that broke nothing. */ fails = 0;
   playbook = { name: 'Yard Push', steps: BOOKS[0].steps, idx: 0 };
   raidIn: number; raidDir: 'east' | 'north' = 'east'; raidN = 0; /** The verse a Veyl player picked for the next raid: 0 all blades, 1 mostly lances, 2 the deep voice. -1 leaves it to the Conductor. */ verse = -1; /** When the Veyl last answered a failed push with a raid of their own. Rationed, so a bad start does not snowball. */ lastCounter = -999; raidLive = false; warned = false; raidAge = 0; raidSeen = false; reinT = 50;
@@ -107,8 +109,8 @@ export class Director implements Side {
   /** Gives a soldier a place in the squad that matches whatever the squad is doing right now. */
   enlist(u: Unit) {
     const g = this.g, s = this.side(u.team), army = g.army(s.team); u.slot = army.filter(x => x !== u).length;
-    if (s.plan?.phase === 'go' && s.plan.target && !s.raidLive && !(s.team === 0 && this.warned)) u.order = { type: 'amove', x: s.plan.target.pos.x, z: s.plan.target.pos.z };
-    else if (this.following(s)) u.order = { type: 'follow', x: 0, z: 0, lead: army.find(x => x.order.type === 'follow')?.order.lead };
+    // A body that turns up after a push has left waits at the rally for the next one, rather than walking out alone to die one at a time.
+    if (this.following(s)) u.order = { type: 'follow', x: 0, z: 0, lead: army.find(x => x.order.type === 'follow')?.order.lead };
     else { const p = this.rallyAt(u.slot, s.raidLive && (s.team ? false : this.raidDir === 'north'), s); u.order = { type: 'guard', x: p.x, z: p.z }; }
   }
   regroup(north = false, s: Side = this) { this.g.army(s.team).filter(u => u !== this.g.me && !u.pilot && u.order.type !== 'follow').forEach((u, i) => { u.slot = i; const p = this.rallyAt(i, north, s); u.order = { type: 'guard', x: p.x, z: p.z }; }); }
@@ -160,7 +162,7 @@ export class Director implements Side {
   }
   buildingLost(b: Building) {
     const g = this.g;
-    if (b.team) this.fails = 0; else this.vs.fails = 0;
+    if (b.team) this.fails = 0; else this.vs.fails = 0; this.side(foeOf(b.team)).brokeT = g.time;
     if (b.team === 2) { this.say('Rootwatch', `The ${BLD[b.kind].name} has withered.`, 'al'); if (b.kind === 'mothercap' && g.stones().length) this.say('Lookout', `A Mother Cap is down. ${g.stones().length} still growing.`, 'in'); else if (b.kind !== 'mothercap') this.say('Alpha', `${BLD[b.kind].name} squashed. Keep swinging.`, ''); return; }
     if (g.eco && b.team === 1) { this.say('Watcher', `The ${BLD[b.kind].name} has fallen silent.`, 'al'); if (b.kind === 'choir' && g.stones().length) this.say('Lookout', `A Choir Stone is down. ${g.stones().length} still singing.`, 'in'); else if (b.kind !== 'choir') this.say('Alpha', `${BLD[b.kind].name} down. Keep swinging.`, ''); return; }
     if (g.eco && b.team === 0 && b.kind === 'headframe' && g.ownB('headframe').length) this.say('Watcher', `A Headframe is down. ${g.ownB('headframe').length} still standing.`, 'in');
@@ -228,7 +230,9 @@ export class Director implements Side {
   // ------------------------------------------------------------ every frame
   update(dt: number) {
     // A crew with no Riggers and no money is not out of the game: the Charter fronts enough for one more.
-    if (this.g.ore < 50 && !this.g.own('rigger').length && this.g.ownB('headframe').length) this.g.ore = Math.min(50, this.g.ore + dt * 2.5);
+    // Same rule for every side: only a side with no workers at all, and none on the way, gets the loan. It used to be fewer than three for the
+    // Veyl and the Gloam, so a Gloam player could root every Grazer into buildings and live on 150 free ore a minute.
+    for (const t of [0, SIDE.out]) { if (t && !this.g.eco) continue; const F = FACTION[t], cap = UNIT[F.worker].cost; if (this.g.cash(t) < cap && !this.g.own(F.worker, t).length && !this.g.ownB(undefined, false, t).some(b => b.queue.some(q => q.kind === F.worker)) && this.g.ownB(F.hq, true, t).length) this.g.purse[t] = Math.min(cap, this.g.purse[t] + dt * 2.5); }
     const g = this.g, now = g.time;
     // A drilled-out seam settles and the ore creeps back, a third of it, so a long shift never runs the yard dry for good.
     for (const n of g.ores) { if (n.amount > 0) { n.dryT = 0; continue; } n.dryT = (n.dryT || 0) + dt; if (n.dryT > 150) { n.amount = Math.round(n.max * .35); n.dryT = 0; g.oreCheck(n); if (!g.mission) this.say('Quartermaster', 'An old seam has settled and the green is showing again. Worth another dig.', ''); } }
@@ -240,14 +244,12 @@ export class Director implements Side {
     if (g.eco && SIDE.out === 2) {
       const V = this.vs; if (!g.human[2]) V.auto = true; if (V.callout) V.callout.t -= dt;
       while (V.hintI < GHINTS.length && now >= GHINTS[V.hintI][0]) { const h = GHINTS[V.hintI++]; this.say(h[1], h[2], 'in'); }
-      if (g.cash(2) < 45 && g.own('grazer', 2).length < 3 && g.ownB('mothercap', false, 2).length) g.purse[2] = Math.min(45, g.purse[2] + dt * 2.5);
       overgrowth(this, dt); this.squad(dt, V);
       V.chatT -= dt; if (V.chatT <= 0) { V.chatT = R(40, 75); const a = g.army(2).filter(u => u !== g.me && !u.pilot && !u.target); if (a.length >= 2 && !V.raidLive && !V.callout) { const u = a[Math.floor(Math.random() * a.length)]; this.say(UNIT[u.kind].name, GCHATTER[Math.floor(Math.random() * GCHATTER.length)], ''); } }
       const gb = V.plan ? GBOOKS[V.plan.book] : GBOOKS[0]; V.playbook.name = gb.name; V.playbook.steps = gb.steps; V.playbook.idx = !g.ownB('warren', true, 2).length ? 0 : V.plan?.phase === 'go' ? 2 : 1;
     } else if (g.eco) {
       const V = this.vs; if (!g.human[1]) V.auto = true; if (V.callout) V.callout.t -= dt;
       while (V.hintI < VHINTS.length && now >= VHINTS[V.hintI][0]) { const h = VHINTS[V.hintI++]; this.say(h[1], h[2], 'in'); }
-      if (g.cash(1) < 50 && g.own('tender', 1).length < 3 && g.ownB('choir', false, 1).length) g.purse[1] = Math.min(50, g.purse[1] + dt * 2.5);
       this.conductor(dt); this.squad(dt, V);
       V.chatT -= dt; if (V.chatT <= 0) { V.chatT = R(40, 75); const a = g.army(1).filter(u => u !== g.me && !u.pilot && !u.target); if (a.length >= 2 && !V.raidLive && !V.callout) { const u = a[Math.floor(Math.random() * a.length)]; this.say(UNIT[u.kind].name, VCHATTER[Math.floor(Math.random() * VCHATTER.length)], ''); } }
       const vb = V.plan ? VBOOKS[V.plan.book] : VBOOKS[0]; V.playbook.name = vb.name; V.playbook.steps = vb.steps; V.playbook.idx = !g.ownB('broodpit', true, 1).length ? 0 : V.plan?.phase === 'go' ? 2 : 1;
@@ -475,7 +477,7 @@ export class Director implements Side {
     if (p.phase === 'ask') { if (p.t <= 0) { if (g.diff.enemy < 1 || !g.human[s.team]) this.accept(false, s); else { s.plan = null; s.callout = null; s.nextPlan = now + 45; this.say(v ? VG(s.team, 'Chorus Lead', 'Swarm Lead') : 'Alpha', v ? VG(s.team, 'No word from you. We guard the Stones until you call.', 'No word from you. We wait in the Bloom until you call.') : 'No word from you. We hold the yard until you say go.', ''); } } }
     else if (p.phase === 'count') {
       if (p.t <= 0) {
-        p.phase = 'go'; p.target = this.targetFor(p.book, s); s.pushes++; s.retarget = 2;
+        p.phase = 'go'; p.goT = now; p.target = this.targetFor(p.book, s); s.pushes++; s.retarget = 2;
         if (p.target) { let i = 0; for (const u of all) if (u !== g.me && !u.pilot && u.order.type === 'guard') { u.order = { type: 'amove', x: p.target.pos.x + R(-3, 3), z: p.target.pos.z + R(-3, 3), path: this.pathFor(p.book, i++, s) }; } }
         this.say(v ? VG(s.team, 'Chorus Lead', 'Swarm Lead') : 'Alpha', B[p.book].go, ''); sfx.callout();
         if (g.eco) this.incoming(s, p.book);
@@ -483,8 +485,15 @@ export class Director implements Side {
     } else {
       const pushing = all.filter(u => u.order.type === 'amove');
       // A building the push was walking to has fallen: on to the next one.
-      s.retarget -= dt; if (s.retarget <= 0 && g.eco) { s.retarget = 2; if (!p.target || !p.target.alive) { p.target = this.targetFor(p.book, s); if (p.target) for (const u of pushing) if (!u.target && !(u.order.path && u.order.path.length)) u.order = { type: 'amove', x: p.target.pos.x + R(-3, 3), z: p.target.pos.z + R(-3, 3) }; } }
-      if (!pushing.length || (pushing.length < 2 && all.length < 3)) {
+      s.retarget -= dt; if (s.retarget <= 0 && g.eco) { s.retarget = 2; if (!p.target || !p.target.alive) p.target = this.targetFor(p.book, s);
+        // Anyone standing idle at a spot the push has moved on from walks on to the new target (a squad once stood 10 minutes where a Ward Pylon had been).
+        if (p.target) for (const u of pushing) if (!u.target && !(u.order.path && u.order.path.length) && Math.hypot(u.order.x - p.target.pos.x, u.order.z - p.target.pos.z) > 8) u.order = { type: 'amove', x: p.target.pos.x + R(-3, 3), z: p.target.pos.z + R(-3, 3) }; }
+      // A push is spent when its bodies are gone, or when it has broken nothing for two and a half minutes: stuck on the rocks, or bleeding
+      // to towers. Left running, it held the other side in "incoming" forever and both armies stood still (40-minute draws in the bot runs).
+      // Also when it has dwindled to a sideshow while a real army stands at the rally: fold it in, and muster again.
+      const stale = now - Math.max(p.goT ?? now, s.brokeT || 0) > 150 || (now - (p.goT ?? now) > 60 && idle.length >= 6 && pushing.length * 3 < idle.length);
+      if (!pushing.length || (pushing.length < 2 && all.length < 3) || stale) {
+        if (stale) for (const u of pushing) if (!u.pilot && u !== g.me) u.target = null;
         s.plan = null; s.nextPlan = now + 40; s.lastFailed = true; s.fails++; this.regroup(false, s); this.say(v ? VG(s.team, 'Chorus Lead', 'Swarm Lead') : 'Alpha', v ? VG(s.team, 'The march is spent. Back to the Stones.', 'The swarm is spent. Back to the Bloom.') : 'Push is spent. Pulling back to regroup.', 'al');
         if (g.eco) { const o = this.side(foeOf(s.team)); if (o.raidLive) { o.raidLive = false; this.say(o.team ? VG(o.team, 'Watcher', 'Rootwatch') : 'Alpha', o.team ? VG(o.team, 'The Ironhold have gone home. The Stones still sing.', 'The Ironhold have gone home. The Caps still grow.') : 'Yard\'s clear. Somebody sweep up the purple.', ''); } }
         else if (g.diff.enemy >= 1 && foes.length && !(g.mission && !g.mission.raids) && g.time > 300 && now - this.lastCounter > 150) { this.lastCounter = now; this.raidIn = Math.min(this.raidIn, 22); }

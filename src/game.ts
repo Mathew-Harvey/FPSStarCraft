@@ -375,7 +375,10 @@ export class Game {
     const old = this.me; if (old && old.alive && old !== u) { this.bodyLayer(old, false); if (isWorker(old.kind)) { old.state = old.carrying > 0 ? 'toHQ' : 'idle'; old.site = null; if (old.rig.pack) old.rig.pack.visible = old.carrying > 0; } old.target = null; this.lastBody = old; if (isSoldier(old) && !this.net) this.dir.enlist(old); }
     this.me = u; this.bodyLayer(u, true); this.yaw = u.yaw; this.pitch = 0; this.jumpCd = force ? 0 : 3; this.tool = 1; this.reloadT = 0; this.ads = 0; this.brace = false; this.recoil = 0; u.target = null; u.wind = 0;
     this.ammo = GUNS[u.kind] ? GUNS[u.kind].mag : 0;
-    if (u.site) { u.site.builder = null; u.site = null; } u.state = 'idle'; if (u.carrying > 0 && !this.net) this.bank(u); u.carrying = 0; if (u.rig.pack) u.rig.pack.visible = false; if (u.rig.flash) u.rig.flash.visible = false;
+    if (u.site) { u.site.builder = null; u.site = null; } u.state = 'idle';
+    // Ore a worker is carrying stays in its pack until it is walked to a base. Banking it on the jump let a player drill a pack full, hop out and
+    // back in, and bank 15 ore every few seconds from a far seam (the hand-drilling exploit again). Online the replica cannot see the amount.
+    if (this.net) u.carrying = 0; if (u.rig.pack) u.rig.pack.visible = u.carrying > 0; if (u.rig.flash) u.rig.flash.visible = false;
     drillSound(false, false);
     this.drawT = .32; this.vWind = 0; if (!force) { sfx.jump(); this.hud.feed(UNIT[u.kind].name, UNIT[u.kind].ack[Math.floor(Math.random() * UNIT[u.kind].ack.length)] || '...', 'in'); this.obj.jumped = true; this.pipe.flash = .35; }
     if (!this.seenKinds.has(u.kind) && !force) { this.seenKinds.add(u.kind); this.phase = 'card'; this.cardT = 1.15; this.hud.titleCard(u.kind, UNIT[u.kind].name, UNIT[u.kind].quip); sfx.card(); } else this.seenKinds.add(u.kind);
@@ -592,7 +595,12 @@ export class Game {
   canPlace(k: BKind, x: number, z: number, rot: boolean, team = 0) {
     const st = BLD[k], hx = rot ? st.hz : st.hx, hz = rot ? st.hx : st.hz, hq = FACTION[team].hq;
     // A new base (Headframe or Choir Stone) can go on any open ground short of the enemy; everything else stays near one of your own.
-    if (k === hq) { const mx = MAP.out[0] / 2, mz = MAP.out[1] / 2; if (Math.hypot(x - mx, z - mz) > 190 * (MAP.k || 1)) return false; for (const b of this.buildings) if (b.alive && b.team !== team && Math.hypot(b.pos.x - x, b.pos.z - z) < 45) return false; }
+    // Nothing can be staked out on the far side of the edge of the world, where bodies cannot walk up to it and hit it.
+    const mx = MAP.out[0] / 2, mz = MAP.out[1] / 2, fromMid = Math.hypot(x - mx, z - mz); if (fromMid + Math.max(hx, hz) > 198 * (MAP.k || 1)) return false;
+    // And nothing goes up on the enemy's doorstep. A new base always needed 45 m of clear ground from the enemy; the buildings round it
+    // did not, so a Headframe 45 m out could put a Watchpost, Thorn Spire or Stinger Stalk right beside the enemy's ore line.
+    for (const b of this.buildings) if (b.alive && b.team !== team && Math.hypot(b.pos.x - x, b.pos.z - z) < 45) return false;
+    if (k === hq) { if (fromMid > 190 * (MAP.k || 1)) return false; }
     else if ((team || Math.hypot(x, z) > 80) && !this.buildings.some(b => b.alive && b.team === team && b.kind === hq && b.built && Math.hypot(b.pos.x - x, b.pos.z - z) < 42)) return false;
     for (const b of this.buildings) if (b.alive && Math.abs(x - b.pos.x) < hx + b.hx + 1.6 && Math.abs(z - b.pos.z) < hz + b.hz + 1.6) return false;
     for (const o of this.ores) if (o.amount > 0 && Math.abs(x - o.pos.x) < hx + 2.4 && Math.abs(z - o.pos.z) < hz + 2.4) return false;
@@ -921,12 +929,21 @@ export class Game {
     const side = u.team, hq = this.nearHQ(u.pos.x, u.pos.z, side), quick = side === 2 ? this.up.gtongue : side ? this.up.vhum : this.up.drill;
     if (u.site && (!u.site.alive || (u.site.built && u.site.hp >= u.site.maxHp))) { u.site.builder = null; u.site = null; u.state = 'idle'; }
     if (u.site) {
-      const b = u.site; if (this.distToBox(b, u.pos.x, u.pos.z) > 1.6) { this.moveTo(u, b.pos.x, b.pos.z, dt); u.state = 'toSite'; }
+      const b = u.site, gap = this.distToBox(b, u.pos.x, u.pos.z);
+      if (gap > 1.6) {
+        // Walking to a site with no paths: wedged behind another building it can press on for ever (a Depot site stayed at 0% for 25 minutes and
+        // capped the yard's supply). No headway in three seconds means a detour to the side for a moment.
+        const w = u as Unit & { siteGap?: number; detT?: number };
+        if (u.state !== 'toSite') { u.state = 'toSite'; u.timer = 3; w.siteGap = gap; w.detT = 0; }
+        if ((w.detT || 0) > 0) { w.detT! -= dt; this.moveTo(u, u.windX, u.windZ, dt, .5); return; }
+        u.timer -= dt; if (u.timer <= 0) { if (gap > (w.siteGap ?? 1e9) - 1) { const dx = b.pos.x - u.pos.x, dz = b.pos.z - u.pos.z, l = Math.hypot(dx, dz) || 1, sg = u.id % 2 ? 1 : -1; u.windX = u.pos.x - dz / l * 7 * sg - dx / l * 2; u.windZ = u.pos.z + dx / l * 7 * sg - dz / l * 2; w.detT = 1.6; } u.timer = 3; w.siteGap = gap; }
+        this.moveTo(u, b.pos.x, b.pos.z, dt); }
       else { u.state = b.built ? 'repair' : 'build'; u.yaw = Math.atan2(b.pos.x - u.pos.x, b.pos.z - u.pos.z); if (b.built) b.hp = Math.min(b.maxHp, b.hp + 16 * dt); else b.progress += dt / BLD[b.kind].time; if (u.think <= 0) { u.think = .2; this.debris(TMP.set(u.pos.x + Math.sin(u.yaw) * .9, 1, u.pos.z + Math.cos(u.yaw) * .9), 1, .06, side ? M.crys : M.spark, 3); } }
       return;
     }
     // A Tender is no fighter, and with two economies neither is a Rigger: one with enemy fighters close by runs the other way for a few seconds, pack and all.
-    if ((side || this.eco) && u.state !== 'flee' && u.think <= 0) { const th = this.units.find(e => e.alive && e.team !== side && isFighter(e) && Math.hypot(e.pos.x - u.pos.x, e.pos.z - u.pos.z) < 11); if (th) { const dx = u.pos.x - th.pos.x, dz = u.pos.z - th.pos.z, l = Math.hypot(dx, dz) || 1; u.windX = u.pos.x + dx / l * 18; u.windZ = u.pos.z + dz / l * 18; u.state = 'flee'; u.timer = 3; } }
+    // Only a fighter that is fighting counts: one standing still by the seam used to keep a whole bot economy running in circles, and called no guards.
+    if ((side || this.eco) && u.state !== 'flee' && u.think <= 0) { const th = this.units.find(e => e.alive && e.team !== side && isFighter(e) && (e.target || e.swing > .3 || e.flashT > 0) && Math.hypot(e.pos.x - u.pos.x, e.pos.z - u.pos.z) < 11); if (th) { const dx = u.pos.x - th.pos.x, dz = u.pos.z - th.pos.z, l = Math.hypot(dx, dz) || 1; u.windX = u.pos.x + dx / l * 18; u.windZ = u.pos.z + dz / l * 18; u.state = 'flee'; u.timer = 3; for (const c of this.units) if (c.alive && c.team === side && !c.pilot && c !== this.me && !c.target && c.order.type === 'guard' && isFighter(c) && c.pos.distanceTo(u.pos) < 45) c.target = th; } }
     if (u.state === 'flee') { u.timer -= dt; this.moveTo(u, u.windX, u.windZ, dt, 1); if (u.timer <= 0) u.state = u.carrying > 0 ? 'toHQ' : 'idle'; return; }
     // A seam right under the enemy's guns is not worth the walk.
     if (u.state === 'idle' || (u.node && u.node.amount <= 0 && u.state !== 'toHQ')) { let best: OreNode | null = null, bd = 1e9; for (const n of this.ores) { if (n.amount <= 0 || this.buildings.some(b => b.alive && b.team !== side && Math.hypot(b.pos.x - n.pos.x, b.pos.z - n.pos.z) < 30)) continue; const d = n.pos.distanceTo(u.pos) + (this.units.filter(o => o.node === n).length) * 6 + (hq ? (() => { const h = this.nearHQ(n.pos.x, n.pos.z, side)!; return Math.hypot(n.pos.x - h.pos.x, n.pos.z - h.pos.z) * .6; })() : 0); if (d < bd) { bd = d; best = n; } } u.node = best; u.state = best ? 'toOre' : 'wait'; }
@@ -974,7 +991,7 @@ export class Game {
         else if (heavy) { u.cd = 1.05 + R(0, .2); let dm = 0; for (let i = 0; i < 5; i++) { const hit = isB || Math.random() < .7; if (hit) dm += isB ? 4 : 6; if (i % 2 === 0) this.tracer(a, V3(t.pos.x + R(-1, 1), ty + R(-.6, .6), t.pos.z + R(-1, 1))); } sfx.blast(this.vol(u.pos) * .5); this.damage(t, dm * mul, u); }
         else if (long) { u.cd = 1.7 + R(0, .3); const hit = isB || Math.random() < (d < 12 ? .4 : .85), b = V3(t.pos.x, ty + .3, t.pos.z); if (!hit) b.add(TMP.set(R(-1.5, 1.5), R(0, 1.5), R(-1.5, 1.5))); this.tracer(a, b, tracerMat, .13); sfx.blast(this.vol(u.pos) * .5); if (hit) this.damage(t, (isB ? 18 : 52) * mul * (glass ? 1.15 : 1), u); }
         else if (doc) { u.cd = .55 + R(0, .1); const hit = isB || Math.random() < .6, b = V3(t.pos.x, ty, t.pos.z); this.tracer(a, b); sfx.shot(this.vol(u.pos) * .35); if (hit) this.damage(t, 5 * mul, u); }
-        else if (!isB && d > 9 && d < 24 && this.time > u.dashCd && this.units.filter(o => o.alive && o.team === 1 && Math.abs(o.pos.x - t.pos.x) < 4.5 && Math.abs(o.pos.z - t.pos.z) < 4.5).length >= 3) {
+        else if (!isB && d > 9 && d < 24 && this.time > u.dashCd && this.units.filter(o => o.alive && o.team !== u.team && Math.abs(o.pos.x - t.pos.x) < 4.5 && Math.abs(o.pos.z - t.pos.z) < 4.5).length >= 3) {
           // three or more bunched up: a Linesman lobs a grenade into the middle of them
           u.dashCd = this.time + (this.up.frag ? 9 : 15); u.cd = .7; const hs = Math.max(8, Math.min(19, d * 1.05)), v = V3((t.pos.x - u.pos.x) / d * hs, 4.5, (t.pos.z - u.pos.z) / d * hs); this.shoot(V3(u.pos.x, 1.5, u.pos.z).addScaledVector(v, .04), v, 0, 60, true, u); if (this.vol(u.pos) > .3) sfx.throw();
         }

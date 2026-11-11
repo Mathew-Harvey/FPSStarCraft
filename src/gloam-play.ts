@@ -48,10 +48,18 @@ function lash(g: Game, b: Building, t: Unit, dmg: number, y: number) {
 
 // ---------------------------------------------------------------- the bots
 export function aiGloam(g: Game, u: Unit, dt: number) {
+  // A swarm scatters from a grenade in the air: small legs, quick reflexes. Without it a Linesman's grenade every 15 s took a whole pack of
+  // Snappers with it, and the bot Gloam lost 29 matches in 30 once Linesmen started throwing at them.
+  if (u.kind !== 'mulcher' && dodge(g, u, dt)) return;
   if (u.kind === 'quillback') return aiQuill(g, u, dt);
   if (u.kind === 'blister') return aiBlister(g, u, dt);
   if (u.kind === 'mulcher') return aiMulcher(g, u, dt);
   return aiSnapper(g, u, dt);
+}
+function dodge(g: Game, u: Unit, dt: number) {
+  for (const p of g.projs) { if (!p.nade || p.team === u.team) continue; const dx = u.pos.x - p.pos.x, dz = u.pos.z - p.pos.z, d = Math.hypot(dx, dz); if (d > 7.5) continue;
+    const l = d || 1; g.moveTo(u, u.pos.x + dx / l * 6, u.pos.z + dz / l * 6, dt, .2, 2.2); return true; }
+  return false;
 }
 const raiding = (u: Unit) => u.order.type === 'raid' || u.order.type === 'amove';
 const pickTarget = (g: Game, u: Unit, r: number, br: number) => { const cur = u.target; if (!cur || !cur.alive || !isUnit(cur)) u.target = g.acquire(u, r, raiding(u) && !(u.order.path && u.order.path.length) ? br : 0); };

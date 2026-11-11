@@ -1,6 +1,7 @@
 // The heads-up display: plain HTML over the canvas, laid out in a 900-unit-tall space and scaled to fit.
 import * as THREE from 'three';
 import type { Game } from './game';
+import { RAID_CALL_AT } from './netgame';
 import { UNIT, BLD, BUILDABLE, Unit, Building, MAP, MAPS, OUTPOST, ROAD, NORTH_PATH, roadPt } from './data';
 const capW = (t: string) => t.charAt(0).toUpperCase() + t.slice(1);
 
@@ -21,7 +22,7 @@ export class Hud {
   private bars: HTMLElement[] = []; private barFill: HTMLElement[] = []; private labs: HTMLElement[] = [];
   private floats: Floater[] = []; private pingPos = new THREE.Vector3(); private pingT = 0;
   private hurtA = 0; private dirA = 0; private hitT = 0; private miniT = 0; private last = 0; private feedN = 0;
-  private mini: CanvasRenderingContext2D;
+  private mini: CanvasRenderingContext2D; private fogCv: HTMLCanvasElement | null = null; private fogImg: ImageData | null = null;
 
   constructor(private root: HTMLElement = document.getElementById('hud')!) {
     this.anchors = this.$('anchors'); this.mini = (this.$('mini') as HTMLCanvasElement).getContext('2d')!;
@@ -92,13 +93,13 @@ export class Hud {
     const m = Math.floor(g.time / 60), s = Math.floor(g.time % 60); this.set('clock', `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`);
     const D = g.dir, pb = D.playbook, ph = pb.idx; this.set('play', `<b>${pb.name}</b>` + pb.steps.map((n, i) => `<span class="${i === ph ? 'on' : i < ph ? 'dn' : ''}">${n}</span>`).join(''), true);
     const st = g.stones().length, sq = g.soldiers().length; this.vis('resOre', !g.myTeam); this.vis('play', !g.myTeam); this.set('whoSub', g.myTeam ? 'You · Veyl Chorus' : 'You · Ironhold Charter'); this.vis('resSup', !g.myTeam); if (g.myTeam) this.set('goal', `Break the Headframe · <em>${st} Stone${st === 1 ? '' : 's'} still singing</em>`, true); else if (g.mission) { const next = g.mission.objectives.find(o => !o.done(g)); this.set('goal', (next ? next.text(g) : 'Job done') + (sq ? ` · Squad ${sq}` : ''), true); } else this.set('goal', `Smash the Choir Stones · <em>${st} left</em>` + (sq ? ` · Squad ${sq}` : ''), true);
-    if (g.myTeam) this.set('qm', `<span class="k" style="font-size:13px">G</span> Call the raid <b>${g.raidCall > 0 ? Math.ceil(g.raidCall) + 's' : 'Ready'}</b> · <span class="k" style="font-size:13px">1 2 3</span> <b>${['Blades', 'Lances', 'Deep Voice'][g.verse]}</b>`, true); else this.set('qm', `<span class="k" style="font-size:13px">G</span> Quartermaster <b>${D.auto ? 'Auto' : 'Off'}</b>`, true); this.cls('qm', 'qm c out' + (D.auto ? '' : ' off'));
+    if (g.myTeam) this.set('qm', `<span class="k" style="font-size:13px">G</span> Call the raid <b>${Math.max(g.raidCall, RAID_CALL_AT - g.time) > 0 ? Math.ceil(Math.max(g.raidCall, RAID_CALL_AT - g.time)) + 's' : 'Ready'}</b> · <span class="k" style="font-size:13px">1 2 3</span> <b>${['Blades', 'Lances', 'Deep Voice'][g.verse]}</b>`, true); else this.set('qm', `<span class="k" style="font-size:13px">G</span> Quartermaster <b>${D.auto ? 'Auto' : 'Off'}</b>`, true); this.cls('qm', 'qm c out' + (D.auto ? '' : ' off'));
     // who
     this.set('whoName', UNIT[me.kind].name); this.img('whoImg', me.kind); this.set('whoHp', String(Math.max(0, Math.ceil(me.hp))));
     const hpw = Math.max(0, me.hp / me.maxHp * 100).toFixed(0); if (this.cache.get('hpw') !== hpw) { this.cache.set('hpw', hpw); const b = this.$('whoBar'); b.style.width = hpw + '%'; b.style.background = +hpw < 35 ? 'var(--red)' : 'var(--grn)'; }
     // tools
     const rig = me.kind === 'rigger'; this.vis('slots', rig); this.vis('ammo', !rig);
-    if (rig) this.set('slots', `<div class="${g.tool === 1 ? 'on' : ''}"><b>1</b><span>Drill${g.tool === 1 ? ' · RMB kick' : ''}</span></div><div class="${g.tool === 2 ? 'on' : ''}"><b>2</b><span>Build</span></div>`, true);
+    if (rig) this.set('slots', `<div class="${g.tool === 1 ? 'on' : ''}"><b>1</b><span>Drill${g.tool === 1 ? ' · RMB kick' : ''}</span></div><div class="${me.carrying >= g.packCap() ? 'on' : ''}"><b>${me.carrying}</b><span>/ ${g.packCap()} ore in the pack</span></div><div class="${g.tool === 2 ? 'on' : ''}"><b>2</b><span>Build</span></div>`, true);
     else if (me.team === 1) { this.set('ammoN', g.vWind > 0 ? '<small>Winding</small>' : g.fireCd > 0 ? '<small>...</small>' : '<small>Ready</small>', true); this.cls('ammoN', 'n d out'); this.set('ammoL', (me.kind === 'cantor' ? `Chorus Blades${g.combo ? ' · <b style="color:var(--yel)">Crescendo ' + g.combo + '</b>' : ''} · <span class="k">RMB</span> Whirl ` : me.kind === 'lancer' ? 'Long Note · <span class="k">RMB</span> Held Note ' : 'Ground slam · <span class="k">RMB</span> Low Note ') + (g.vCd > 0 ? Math.ceil(g.vCd) + 's' : 'ready'), true); }
     else { const w = g.weapon()!; this.set('ammoN', g.reloadT > 0 ? '<small>Reloading</small>' : `${g.ammo}<small> / ${w.mag}</small>`, true); this.cls('ammoN', 'n d out' + (g.ammo <= w.mag / 4 && g.reloadT <= 0 ? ' low' : '')); this.set('ammoL', me.kind === 'longshot' ? `Long Rifle · <span class="k">RMB</span> Scope` : me.kind === 'patch' ? `Rivet Pistol · shoot friends to mend · <span class="k">C</span> Patch-up ${g.nadeCd > 0 ? Math.ceil(g.nadeCd) + 's' : 'ready'}` : me.kind === 'gantry' ? `Autocannon · <span class="k">RMB</span> Salvo ${g.salvoCd > 0 ? Math.ceil(g.salvoCd) + 's' : 'ready'} · <span class="k">C</span> Stomp ${g.nadeCd > 0 ? Math.ceil(g.nadeCd) + 's' : 'ready'}` : me.kind === 'breacher' ? `Scattergun · <span class="k">RMB</span> Shield${g.brace ? ' up · click to bash' : ''}${g.payback > .3 ? ' · <b style="color:var(--yel)">Payback ' + Math.round(g.payback * 80) + '%</b>' : ''}` : `Rifle · <span class="k">C</span> Grenade ${g.nadeCd > 0 ? Math.ceil(g.nadeCd) + 's' : 'ready'}`, true); }
     this.cls('cross', 'cross' + (me.kind === 'breacher' || me.kind === 'gantry' ? ' ring' : (me.kind === 'linesman' || me.kind === 'patch') && g.ads > .6 ? ' dot' : me.kind === 'longshot' && g.ads > .6 ? ' scope' : ''));
@@ -106,7 +107,7 @@ export class Hud {
     const building = rig && g.tool === 2; this.vis('build', building);
     if (building) this.set('buildRows', BUILDABLE.map((k, i) => { const lock = !g.unlocked(k); return `<div class="${i === g.buildSel ? 'on' : ''}${lock ? ' lock' : g.ore < BLD[k].cost ? ' no' : ''}"><span>${BLD[k].name}<small>${lock ? (g.missing(k).length ? 'Needs ' + g.missing(k).map(n => BLD[n].name).join(' and ') : 'Not on this job') : BLD[k].blurb}</small></span><span>${lock ? 'locked' : BLD[k].cost + ' ore'}</span></div>`; }).join(''), true);
     this.vis('prompt', !!g.prompt && !building); if (g.prompt) this.set('prompt', g.prompt, true);
-    this.set('hint', `<span><span class="k">TAB</span> Jump${g.jumpCd > 0 ? ` <span class="cd">${g.jumpCd.toFixed(1)}s</span>` : ''}</span>` + (g.lastBody?.alive ? `<span><span class="k">Q</span> Last body</span>` : '') + (g.soldiers().some(u => u !== me) ? `<span><span class="k">V</span> ${D.following() ? 'Send squad home' : 'Squad on me'}</span><span><span class="k">MMB</span> Send</span>` : ''), true);
+    this.set('hint', `<span><span class="k">TAB</span> Jump${g.jumpCd > 0 ? ` <span class="cd">${g.jumpCd.toFixed(1)}s</span>` : ''}</span>` + (g.lastBody?.alive ? `<span><span class="k">Q</span> Last body</span>` : '') + (!g.myTeam && g.soldiers().some(u => u !== me) ? `<span><span class="k">V</span> ${D.following() ? 'Send squad home' : 'Squad on me'}</span><span><span class="k">MMB</span> Send</span>` : ''), true);
     // squad callout and countdown
     const co = D.callout; this.vis('callout', !!co && !tab);
     if (co) { this.set('callKeys', co.keys.map(k => `<span><b>${k[0]}</b>${k[1]}</span>`).join(''), true); this.set('callWho', co.who); this.set('callText', co.text, true); this.img('callImg', 'linesman'); this.$('callTm').style.width = Math.max(0, co.t / co.dur * 100) + '%'; }
@@ -141,7 +142,7 @@ export class Hud {
       if (!b.built) { bar(b.pos, BLD[b.kind].h + 1.2, b.progress, 'hb big p'); if (d < 60) lab(b.pos, BLD[b.kind].h + 1.6, `<div class="mark" style="color:var(--cyan)">${BLD[b.kind].name} ${Math.floor(b.progress * 100)}%</div>`); }
       else if (b.hp < b.maxHp && (d < 90 || tab)) bar(b.pos, b.h + 1.2, b.hp / b.maxHp, b.team !== g.myTeam ? 'hb big e' : 'hb big');
       if (b.kind === 'wardpylon' && d < 110 && !tab && !building) lab(b.pos, b.h + 1.6, `<div class="mark out" style="color:var(--cyan)">Ward Pylon · shielding the base</div>`);
-      if (b.kind === 'choir' && d > 45 && !tab && !building) lab(b.pos, b.h + 2, `<div class="mark out">${b === near ? 'Choir Stones · ' + Math.round(d) + 'm' : ''}</div>`);
+      if (b.kind === 'choir' && d > 45 && !tab && !building && (g.myTeam || g.fog.seen(b.pos.x, b.pos.z))) lab(b.pos, b.h + 2, `<div class="mark out">${b === near ? 'Choir Stones · ' + Math.round(d) + 'm' : ''}</div>`);
       if (b.kind === 'headframe' && b.team === 0 && g.time - b.lastHit < 6 && d > 30) lab(b.pos, b.h + 3, `<div class="mark out" style="color:var(--red)">Headframe under attack</div>`);
     }
     if (building) { const k = BUILDABLE[g.buildSel]; lab(g.placePos, BLD[k].h + 1.4, `<div class="tag${g.placeOK ? '' : ' bad'}"><span class="d" style="font-size:30px;color:${g.placeOK ? 'var(--cyan)' : 'var(--red)'}">${BLD[k].name}</span> <span class="d" style="font-size:24px;color:var(--ore);margin-left:14px">${BLD[k].cost} ore</span><div class="c" style="font-size:14px">${g.placeOK ? 'Click place · R rotate · Right-click cancel' : g.ore < BLD[k].cost ? 'Not enough ore' : 'Can\'t build there'}</div></div>`); }
@@ -165,16 +166,23 @@ export class Hud {
     if (this.cache.get('crew') !== html) { this.cache.set('crew', html); el.innerHTML = html; } el.hidden = false;
   }
   private drawMini(g: Game) {
-    const c = this.mini, S = 260, span = Math.max(200, Math.abs(OUTPOST.x) + 76, (Math.abs(OUTPOST.z) + 70) / .69), x0 = OUTPOST.x / 2 - span / 2 + (MAP === MAPS[0] ? -12 : 0), z0 = OUTPOST.z / 2 - span * .345 + (MAP === MAPS[0] ? .5 : 0), k = S / span, X = (x: number) => (x - x0) * k, Z = (z: number) => (z - z0) * k;
+    // framed on everything worth finding: the yard, the outpost, both routes and every ore field
+    const pts = [[0, 0], [OUTPOST.x, OUTPOST.z], ...NORTH_PATH, ...(MAP.sites || [])], bx0 = Math.min(...pts.map(p => p[0])) - 26, bx1 = Math.max(...pts.map(p => p[0])) + 26, bz0 = Math.min(...pts.map(p => p[1])) - 22, bz1 = Math.max(...pts.map(p => p[1])) + 22;
+    const c = this.mini, S = 260, span = Math.max(bx1 - bx0, (bz1 - bz0) / .69), x0 = (bx0 + bx1) / 2 - span / 2, z0 = (bz0 + bz1) / 2 - span * .345, k = S / span, X = (x: number) => (x - x0) * k, Z = (z: number) => (z - z0) * k;
+    const fog = g.fog; fog.update(g, .12);
     c.fillStyle = '#4a2f29'; c.fillRect(0, 0, S, 180);
     c.strokeStyle = '#6b4a3a'; c.lineWidth = 7; c.beginPath(); { const a = roadPt(4), b = roadPt(ROAD.len + 6); c.moveTo(X(a[0]), Z(a[1])); c.lineTo(X(b[0]), Z(b[1])); c.stroke(); }
     c.fillStyle = 'rgba(53,224,200,.16)'; c.beginPath(); c.arc(X(OUTPOST.x - 2 * ROAD.dx), Z(OUTPOST.z - 2 * ROAD.dz), 20 * k, 0, 7); c.fill();
     c.fillStyle = 'rgba(255,194,26,.13)'; c.beginPath(); c.arc(X(0), Z(0), 30 * k, 0, 7); c.fill();
     for (const s of g.spires) { c.fillStyle = '#2a1a18'; c.beginPath(); c.arc(X(s.x), Z(s.z), Math.max(1.5, s.r * k), 0, 7); c.fill(); }
-    for (const o of g.ores) { if (o.amount <= 0) continue; c.fillStyle = '#b8f58c'; c.fillRect(X(o.pos.x) - 2.5, Z(o.pos.z) - 2.5, 5, 5); }
+    // the fog: black where nobody has been, dimmed where nobody is looking now
+    { const n = fog.n, cv = this.fogCv || (this.fogCv = document.createElement('canvas')); if (cv.width !== n) { cv.width = cv.height = n; this.fogImg = null; } const cx = cv.getContext('2d')!, img = this.fogImg || (this.fogImg = cx.createImageData(n, n)), d = img.data;
+      for (let i = 0; i < fog.cells.length; i++) { const v = fog.cells[i]; d[i * 4] = 22; d[i * 4 + 1] = 15; d[i * 4 + 2] = 14; d[i * 4 + 3] = v === 2 ? 0 : v === 1 ? 105 : 236; }
+      cx.putImageData(img, 0, 0); c.imageSmoothingEnabled = true; c.drawImage(cv, X(fog.x0), Z(fog.z0), n * 4 * k, n * 4 * k); }
+    for (const o of g.ores) { if (o.amount <= 0 || !fog.seen(o.pos.x, o.pos.z)) continue; c.fillStyle = '#b8f58c'; c.fillRect(X(o.pos.x) - 2.5, Z(o.pos.z) - 2.5, 5, 5); }
     c.lineWidth = 1.5; c.strokeStyle = '#0e0d14';
-    for (const b of g.buildings) { if (!b.alive) continue; const w = Math.max(5, b.hx * 2 * k), h = Math.max(5, b.hz * 2 * k); c.fillStyle = b.kind === 'reedgate' ? '#c58bff' : b.team ? '#35e0c8' : b.built ? '#ffc21a' : '#7ef0ff'; c.fillRect(X(b.pos.x) - w / 2, Z(b.pos.z) - h / 2, w, h); c.strokeRect(X(b.pos.x) - w / 2, Z(b.pos.z) - h / 2, w, h); }
-    for (const u of g.units) { if (!u.alive || u === g.me) continue; c.fillStyle = u.team ? (this.cb ? '#ff9d1a' : '#ff4f9a') : u.kind === 'rigger' ? (this.cb ? '#4da3ff' : '#8be04e') : '#f4ead2'; c.beginPath(); c.arc(X(u.pos.x), Z(u.pos.z), u.kind === 'warden' ? 5 : u.team ? 2.6 : 2.2, 0, 7); c.fill(); }
+    for (const b of g.buildings) { if (!b.alive || (b.team !== g.myTeam && !fog.seen(b.pos.x, b.pos.z))) continue; const w = Math.max(5, b.hx * 2 * k), h = Math.max(5, b.hz * 2 * k); c.fillStyle = b.kind === 'reedgate' ? '#c58bff' : b.team ? '#35e0c8' : b.built ? '#ffc21a' : '#7ef0ff'; c.fillRect(X(b.pos.x) - w / 2, Z(b.pos.z) - h / 2, w, h); c.strokeRect(X(b.pos.x) - w / 2, Z(b.pos.z) - h / 2, w, h); }
+    for (const u of g.units) { if (!u.alive || u === g.me || (u.team !== g.myTeam && !fog.sees(u.pos.x, u.pos.z))) continue; c.fillStyle = u.team ? (this.cb ? '#ff9d1a' : '#ff4f9a') : u.kind === 'rigger' ? (this.cb ? '#4da3ff' : '#8be04e') : '#f4ead2'; c.beginPath(); c.arc(X(u.pos.x), Z(u.pos.z), u.kind === 'warden' ? 5 : u.team ? 2.6 : 2.2, 0, 7); c.fill(); }
     for (const p of g.pings) { c.strokeStyle = '#ffc21a'; c.lineWidth = 2.5; c.beginPath(); c.arc(X(p.x), Z(p.z), 4 + (8 - p.t) % 1 * 7, 0, 7); c.stroke(); }
     for (const u of g.units) if (u.alive && u.pilot && u !== g.me && u.team === g.myTeam) { c.fillStyle = '#ffc21a'; c.strokeStyle = '#0e0d14'; c.lineWidth = 1.5; c.beginPath(); c.arc(X(u.pos.x), Z(u.pos.z), 3.6, 0, 7); c.fill(); c.stroke(); }
     const D = g.dir; if ((D.raidIn < 15 || D.raidLive) && g.stones().length && Math.floor(performance.now() / 300) % 2) { c.fillStyle = '#ff4b3a'; c.strokeStyle = '#0e0d14'; c.lineWidth = 2; c.beginPath(); { const n = NORTH_PATH.length, p = D.raidDir === 'north' ? [(NORTH_PATH[n - 1][0] + NORTH_PATH[n - 2][0]) / 2, (NORTH_PATH[n - 1][1] + NORTH_PATH[n - 2][1]) / 2] : roadPt(62), a = Math.atan2(-p[1], -p[0]); c.moveTo(X(p[0]) + Math.cos(a) * 9, Z(p[1]) + Math.sin(a) * 9); c.lineTo(X(p[0]) + Math.cos(a + 2.4) * 8, Z(p[1]) + Math.sin(a + 2.4) * 8); c.lineTo(X(p[0]) + Math.cos(a - 2.4) * 8, Z(p[1]) + Math.sin(a - 2.4) * 8); } c.closePath(); c.fill(); c.stroke(); }

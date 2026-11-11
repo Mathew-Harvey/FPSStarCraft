@@ -27,7 +27,17 @@ export function buildSnap(g: Game) {
 }
 
 // ---------------------------------------------------------------- server: one player's actions
+/** Match time before a Veyl player may call the first raid. Without it, a raid called in the first seconds reaches the yard before it has a single rifle.
+ *  A test server can lower it with ORE_RAID_CALL_AT. */
+export const RAID_CALL_AT = +((globalThis as any).process?.env?.ORE_RAID_CALL_AT ?? 120);
 const BUDGET = new WeakMap<Unit, { left: number; t: number }>(), MOVED = new WeakMap<Unit, number>();
+/** A refilling allowance per body and per kind of claim: ore drilled, seconds of welding, damage to scenery, and the Patch's pulse.
+ *  An honest client never comes near these. They stop a doctored one from claiming a thousand ore or a finished Foundry in one message. */
+const ALLOW = new WeakMap<Unit, Record<string, { left: number; t: number }>>();
+function allow(g: Game, u: Unit, key: string, want: number, cap: number, perSec: number) {
+  let all = ALLOW.get(u); if (!all) ALLOW.set(u, all = {}); const a = all[key] || (all[key] = { left: cap, t: g.time });
+  a.left = Math.min(cap, a.left + Math.max(0, g.time - a.t) * perSec); a.t = g.time; const got = Math.max(0, Math.min(want, a.left)); a.left -= got; return got;
+}
 export function serverCmd(g: Game, pid: number, unit: Unit | null, c: any[]) {
   const k = c[0], num = (i: number) => (typeof c[i] === 'number' && isFinite(c[i]) ? c[i] : 0);
   if (g.teams[pid] === 1 && ['tn', 'up', 'pl', 'mn', 'wd', 'fx', 'pt', 'or', 'hl'].includes(k)) return;   // Ironhold business
@@ -41,7 +51,7 @@ export function serverCmd(g: Game, pid: number, unit: Unit | null, c: any[]) {
   }
   else if (k === 'vs') { if (unit && unit.kind === 'warden' && unit.team === 1 && g.time >= ((unit as any).noteT || 0)) { (unit as any).noteT = g.time + 19; for (const o of g.units) if (o.alive && o.team === 1 && Math.hypot(o.pos.x - unit.pos.x, o.pos.z - unit.pos.z) < 16) { o.shield = Math.min(o.maxShield, o.shield + 60); o.pop = .6; } } }
   else if (k === 'hl') { const o = g.units.find(x => x.id === num(1)); if (unit && unit.kind === 'patch' && o && o.alive && o.team === unit.team && Math.hypot(o.pos.x - unit.pos.x, o.pos.z - unit.pos.z) < 70) { const bk = BUDGET.get(unit) || { left: 900, t: g.time }; BUDGET.set(unit, bk); bk.left = Math.min(900, bk.left + (g.time - bk.t) * 450); bk.t = g.time; if (bk.left >= 80) { bk.left -= 80; o.hp = Math.min(o.maxHp, o.hp + 10); } } }
-  else if (k === 'dp') { if (!unit) return; const p = g.props[num(1)]; if (p) g.damageProp(p, Math.min(900, num(2)), unit); }
+  else if (k === 'dp') { if (!unit) return; const p = g.props[num(1)]; if (p && p.alive && Math.hypot(p.x - unit.pos.x, p.z - unit.pos.z) < 175 + p.r) { const a = allow(g, unit, 'dp', Math.min(900, num(2)), 2400, 1200); if (a > 0) g.damageProp(p, a, unit); } }
   else if (k === 'tr') { if (c.length === 9) g.evq!.push(['tr', ...c.slice(1).map(Number), pid]); }
   else if (k === 'pj') { if (c.length === 9) g.evq!.push(['pj', ...c.slice(1).map(Number), 2, pid]); }
   else if (k === 'tn') {
@@ -55,14 +65,14 @@ export function serverCmd(g: Game, pid: number, unit: Unit | null, c: any[]) {
     if (g.unlocked(kind) && g.canPlace(kind, x, z, rot) && g.ore >= BLD[kind].cost) { g.place(kind, x, z, rot); if (g.score[pid]) g.score[pid][2]++; g.feedTo = pid; g.feed('Quartermaster', `${BLD[kind].name} staked out. Hold the drill on it to speed things up.`, ''); g.feedTo = 0; }
     else { g.feedTo = pid; g.feed('Quartermaster', `Could not stake out that ${BLD[kind].name}. Somebody beat you to the spot or the ore.`, 'al'); g.feedTo = 0; }
   }
-  else if (k === 'mn') { const n = g.ores[num(1)]; if (!n || !unit || unit.kind !== 'rigger') return; const a = Math.max(0, Math.min(3, num(2), n.amount)); n.amount -= a; g.ore += a; g.stats.mined += a; if (g.score[pid]) g.score[pid][1] += a; }
-  else if (k === 'wd') { const b = g.buildings.find(x => x.id === num(1)); if (b && b.alive && b.team === 0 && !b.built) b.progress += Math.min(.6, Math.max(0, num(2))) / BLD[b.kind].time * 1.6; }
-  else if (k === 'fx') { const b = g.buildings.find(x => x.id === num(1)); if (b && b.alive && b.team === 0 && b.built) b.hp = Math.min(b.maxHp, b.hp + 40 * Math.min(.6, Math.max(0, num(2)))); }
+  else if (k === 'mn') { const n = g.ores[num(1)]; if (!n || !unit || unit.kind !== 'rigger' || Math.hypot(n.pos.x - unit.pos.x, n.pos.z - unit.pos.z) > 8) return; const a = allow(g, unit, 'mn', Math.max(0, Math.min(3, num(2), n.amount, g.packCap() - unit.carrying)), 12, 12); n.amount -= a; unit.carrying += a; g.oreCheck(n); }   // banked when the body reaches the Headframe
+  else if (k === 'wd') { const b = g.buildings.find(x => x.id === num(1)); if (unit && unit.kind === 'rigger' && b && b.alive && b.team === 0 && !b.built && g.distToBox(b, unit.pos.x, unit.pos.z) < 8) b.progress += allow(g, unit, 'wd', Math.min(.6, Math.max(0, num(2))), 1, 1.25) / BLD[b.kind].time * 1.6; }
+  else if (k === 'fx') { const b = g.buildings.find(x => x.id === num(1)); if (unit && unit.kind === 'rigger' && b && b.alive && b.team === 0 && b.built && g.distToBox(b, unit.pos.x, unit.pos.z) < 8) b.hp = Math.min(b.maxHp, b.hp + 40 * allow(g, unit, 'wd', Math.min(.6, Math.max(0, num(2))), 1, 1.25)); }
   else if (k === 'xx') { g.evq!.push(['ex', num(1), 0, num(2), Math.min(8, Math.max(1, num(3))), 1, pid]); }
-  else if (k === 'rd') { if (g.teams[pid] !== 1) return; const now = g.time; if (now < (g as any).raidLock) return; (g as any).raidLock = now + 85; g.dir.raidIn = Math.min(g.dir.raidIn, 6); g.dir.verse = Math.max(0, Math.min(2, Math.floor(num(1)) || 0)); g.feed('Lookout', 'The singing just changed key. They are coming early.', 'al'); }
+  else if (k === 'rd') { if (g.teams[pid] !== 1) return; const now = g.time; if (now < RAID_CALL_AT) { g.feedTo = pid; g.feed('Chorus', `The Chorus is still waking. The first raid can be called in ${Math.ceil(RAID_CALL_AT - now)} seconds.`, 'al'); g.feedTo = 0; return; } if (now < (g as any).raidLock) return; (g as any).raidLock = now + 85; g.dir.raidIn = Math.min(g.dir.raidIn, 6); g.dir.verse = Math.max(0, Math.min(2, Math.floor(num(1)) || 0)); g.feed('Lookout', 'The singing just changed key. They are coming early.', 'al'); }
   else if (k === 'pg') { const x = Math.max(-400, Math.min(400, num(1))), z = Math.max(-400, Math.min(400, num(2))); g.evq!.push(['pg', pid, x, z]); }
   else if (k === 'ch') { const t = String(c[1] || '').replace(/[<>&]/g, '').trim().slice(0, 120); if (t) g.evq!.push(['fd', g.names[pid] || 'Crew', t, 'ch']); }
-  else if (k === 'pt') { if (unit && unit.kind === 'patch') g.patchUp(unit); }
+  else if (k === 'pt') { if (unit && unit.kind === 'patch' && allow(g, unit, 'pt', 1, 1, 1 / 6.5) >= 1) g.patchUp(unit); }
   else if (k === 'or') { const o = String(c[1]); if ('GVMXZC'.includes(o) && o.length === 1) g.dir.order(o, num(2), num(3), unit); }
 }
 /** The player's own body, as their browser last reported it. */

@@ -20,7 +20,7 @@ One skirmish as the Ironhold Charter against a Veyl outpost. Smash the three Cho
 
 **Your side, the Ironhold Charter**
 
-- **Rigger**: drill ore by hand, place buildings, weld them up faster, patch damage. Right-click with the drill out is a jackhammer kick that throws a raider back and cracks scenery.
+- **Rigger**: drill ore by hand into a 15-ore pack (21 with Deep Buckets) and walk it to the Headframe to bank it, place buildings, weld them up faster, patch damage. A drilled-out seam settles and comes back at a third of its ore after a couple of minutes. Right-click with the drill out is a jackhammer kick that throws a raider back and cracks scenery.
 - **Linesman**: rifle with a 24-round magazine, aim-down-sights, headshot crits and a grenade on a cooldown. Every gun opens its crosshair under sustained fire, so short bursts hit harder at range, and every hit you land shoves the target and costs it a beat.
 - **Breacher**: scattergun and a riot shield. Hold right-click to brace behind the shield, click while braced to bash. Damage soaked on the shield charges Payback, which comes out with the next blast for up to 80% more.
 - **Gantry**: a two-legged walker from the Foundry with a cannon on each side. Click fires explosive shells, Right-click lobs a two-shell salvo that bursts where it lands, `C` stomps and throws everything nearby off its feet.
@@ -28,7 +28,7 @@ One skirmish as the Ironhold Charter against a Veyl outpost. Smash the three Cho
 - **Patch**: medic from the Bunkhouse once a Machine Shop stands. Mends the most hurt ally nearby on their own; as the Patch, `C` tops up everyone around you and rivets fired at a hurt friend mend them instead.
 - **Everything breaks**: all 339 pieces of scenery inside the map take damage, from fuel drums (which explode and set each other off) and crates to rock spires, the road arch, buttes and the enemy brood domes. Big rocks crumble in stages. Rubble is simulated: chunks fall, bounce, tumble, pile up against walls, get thrown by blasts and kicked when you walk through them. The Rigger's drill works on rock too. Building health follows classic RTS proportions (a production building takes a rifleman about 100 seconds).
 - **Buildings and tech tree**:
-  1. Headframe trains Riggers. Bunkhouse trains Linesmen. Depot adds beds. Watchpost is a gun tower.
+  1. Headframe trains Riggers, and more can be built on far ore fields as new bases. Bunkhouse trains Linesmen. Depot adds beds. Watchpost is a gun tower.
   2. Machine Shop (needs a Bunkhouse) unlocks Breachers and Patches and sells Hollow Points and Plating.
   3. Foundry (needs a Machine Shop) unlocks Longshots, builds Gantry walkers and sells Tungsten Core and Reactive Plating.
 
@@ -43,7 +43,7 @@ One skirmish as the Ironhold Charter against a Veyl outpost. Smash the three Cho
 
 - **Jump**: hold `Tab` for the slowed-down overview and pick a body, press `F` on a unit you are looking at, or `Q` to go back to your last body. If your body dies you drop into the nearest one.
 - **Quartermaster**: an AI that runs the economy for you (build order, supply, upgrades, training). `G` turns it off if you want to do it yourself.
-- **Squad plans**: Alpha squad pitches a plan when it has the numbers: Yard Push down the road, Back Door round the north ridge, or Last Shift when one Stone is left. `Z` agrees, `C` picks the other route, `X` holds, `V` makes them follow you, middle click sends them somewhere.
+- **Squad plans**: Alpha squad pitches a plan when it has the numbers: Yard Push down the road, Back Door round the north ridge, or Last Shift when one Stone is left. `Z` agrees, `C` picks the other route, `X` holds, `V` makes them follow you, middle click sends them somewhere. A push that breaks nothing makes the squad wait for two more bodies before it pitches the next one, up to six more, so the army builds up instead of trickling into the outpost.
 - **Raids**: the Veyl hit your base in growing waves from the east road or the north ridge, with a fifteen second warning.
 - Three difficulty levels, an adaptive synthesised soundtrack, and mouse and volume settings on the pause screen.
 
@@ -102,6 +102,11 @@ Veyl Lancers use the scenery. Between shots a Lancer ducks behind the nearest ro
 
 Pick one on the menu. **Needle's Eye** is the original road east. **Switchback** is a tight canyon at sunset with a long flank. **Glass Flats** is open salt pan with almost no cover.
 
+Each map comes in three sizes, picked on the Skirmish tab or by the lobby host: **Small** (three ore fields out on the map), **Medium** (four) and **Large** (seven, with the outpost about 170 m away). A map number carries its size in the tens: 0 to 2 are Medium, 10 to 12 Small, 20 to 22 Large.
+
+- **The map starts undiscovered.** The minimap is black until one of your bodies or buildings has seen the ground, dims what nobody is looking at now, and only shows enemy bodies in sight. Ore fields and the Veyl outpost appear once somebody has walked there.
+- **New bases.** A Headframe can be built (400 ore) on any open ground short of the Veyl. Riggers bank at the nearest one, each extra one adds eight beds and lets you build around it, and the shift is only lost when the last Headframe falls. The Quartermaster stakes one on the nearest free field once the home seams thin out or the shift runs long, then puts a Watchpost beside it. The raids go for whatever is softest, which is usually the new base.
+
 ![Switchback](docs/screenshots/switchback.jpg)
 ![Glass Flats](docs/screenshots/glassflats.jpg)
 
@@ -134,7 +139,7 @@ In a match, press B to ping the spot you are looking at and Enter to type to the
 
 **How each side wins.** Ironhold is few, expensive and long-armed: it wins by out-digging the raids and pushing with a mixed squad (shield in front, rifles in the middle, a Longshot behind). The Veyl are many, free and close-in: they win by never letting the crew settle. Cantors tie up Breachers, Lancers wear down a Gantry, a Warden walks through shields and walkers, and Longshots or a mixed squad answer all three. `node tools/duel.cjs 4` prints the squad against squad table those lines come from.
 
-**Versus.** In the lobby, up to two players can press Play as the Veyl. They wake up inside Veyl bodies at the outpost: the Cantor fights with blades, the Lancer fires one long beam, and the Warden slams the ground. Each body has a second move on right click: the Cantor's Whirl hits everything in reach (and its cuts build a Crescendo while they keep landing), the Lancer's Held Note winds up and goes through a whole line, and the Warden's Low Note gives every Veyl in earshot its shield back. Veyl players jump between Veyl bodies the same way, pick the next raid's verse with 1, 2 and 3 (Blades, Lances or the Deep Voice, which brings a Warden from the fourth raid on), press G to call it early, and win by breaking the Headframe. The Chorus still breeds and marches on its own, so the Veyl players are its champions, not its whole army. `node test/versus.mjs` plays one of each side against the other.
+**Versus.** In the lobby, up to two players can press Play as the Veyl. They wake up inside Veyl bodies at the outpost: the Cantor fights with blades, the Lancer fires one long beam, and the Warden slams the ground. Each body has a second move on right click: the Cantor's Whirl hits everything in reach (and its cuts build a Crescendo while they keep landing), the Lancer's Held Note winds up and goes through a whole line, and the Warden's Low Note gives every Veyl in earshot its shield back. Veyl players jump between Veyl bodies the same way, pick the next raid's verse with 1, 2 and 3 (Blades, Lances or the Deep Voice, which brings a Warden from the fourth raid on), press G to call it early (from the two-minute mark, so the yard has a chance to hire its first rifles), and win by breaking the Headframe. The Chorus still breeds and marches on its own, so the Veyl players are its champions, not its whole army. `node test/versus.mjs` plays one of each side against the other.
 
 Multiplayer needs the game server, because the server runs the match and every player's browser is a window onto it. The server also serves the game page, so there is only one thing to host.
 
@@ -146,7 +151,7 @@ npm start          # http://localhost:8080
 
 To put it on the internet, deploy the `Dockerfile` to any host that supports WebSockets. `render.yaml` is a ready blueprint for Render. The server listens on `PORT` (default 8080) and answers `/healthz`. Players open the server's address and the lobby connects on its own.
 
-`npm test` starts a local server, joins two headless browsers to one lobby and checks that both see the same match (needs Playwright with Chromium).
+`npm test` starts a local server, joins two headless browsers to one lobby and checks that both see the same match (needs Playwright with Chromium). It also runs `test/server.mjs` (lobbies, sides, reconnecting and junk input, with plain WebSocket clients) and `test/sweep.mjs` (checks for the bugs fixed in the November bug sweep).
 
 How it works: the server runs the same game code as single player at 30 ticks a second and sends every client a snapshot 15 times a second, about 1 KB each. Each client moves and aims its own body, reports its hits, and the server decides health, ore, building, training and the enemy.
 
@@ -156,7 +161,7 @@ The Ironhold tree has five tiers. Each building needs the one above it standing,
 
 | Tier | Building | Needs | Trains | Research |
 | --- | --- | --- | --- | --- |
-| 0 | Headframe | | Rigger | Diamond Bits, Bunk Stacks |
+| 0 | Headframe (more cost 400) | | Rigger | Diamond Bits, Bunk Stacks |
 | 1 | Bunkhouse | | Linesman, Breacher (Machine Shop), Patch (Machine Shop), Longshot (Assay Office) | |
 | 1 | Depot | | | |
 | 2 | Watchpost | Bunkhouse | | |
@@ -172,6 +177,7 @@ The tables live in `src/data.ts` (`BLD`, `TRAINS`, `UNIT_NEEDS`, `UPGRADES`). Th
 Two scripts play whole matches in a headless browser at many times real speed, with drawing switched off.
 
 - `node tools/soak.cjs '[[0,1],[1,1]]'` plays hands-off matches (pairs of map and difficulty) and reports errors, bodies that stop moving, and who won.
+- `node tools/monkey.cjs [seconds] [scenario]` mashes every control at random in single player on every map and shift, each campaign job, and split screen co-op and versus, and reports crashes and broken state (NaN positions, bodies off the map, health over the maximum, halves of a split screen that disagree).
 - `node tools/bot.cjs <mode> <difficulty> [map]` plays as a scripted first-person player with perfect aim. Modes: `linesman` (walk in alone and shoot), `rigger` (drill rush), `longshot`, `squad` (defend, say yes to pushes, go with them) and `afk`. It exists to find one-trick wins.
 
 The Veyl base answers an attack: guards walk out to whoever is shooting, however far away, and the Reed Gate sends help. It sends much more against one or two attackers than against a full push. Rifles and pistols do little to buildings, so cracking the base takes Breachers, grenades, the Gantry or numbers.

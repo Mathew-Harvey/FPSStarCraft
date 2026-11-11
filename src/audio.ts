@@ -14,6 +14,12 @@ let level = 1, seat = 0; const drills: [OscillatorNode | null, GainNode | null][
 /** Sets who the next sounds belong to. `gain` 0 is silent. `who` is 0 for player one and 1 for player two. */
 export function audioSeat(gain: number, who = 0) { drills[seat] = [drillOsc, drillGain]; level = gain; seat = who; drillOsc = drills[who][0]; drillGain = drills[who][1]; }
 
+/** Stops every drill and lets the music settle. For leaving a match, pausing, or anything else that stops the players mid-action. */
+export function hush() {
+  drills[seat] = [drillOsc, drillGain]; moods[0] = moods[1] = 0; mood = 0;
+  if (ctx) for (const d of drills) if (d[1]) d[1].gain.setTargetAtTime(.0001, ctx.currentTime, .04);
+}
+
 export function initAudio() {
   if (ctx) { ctx.resume(); return; }
   try {

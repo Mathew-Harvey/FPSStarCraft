@@ -16,7 +16,7 @@ jobs:
       - run: npm run build
   multiplayer:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 35
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -27,5 +27,5 @@ jobs:
       - run: npm run build
       - run: npm install --no-save playwright@1.48.2
       - run: npx playwright install --with-deps chromium
-      - name: Two browsers play co-op and versus against a local server
+      - name: Server, co-op, versus, split screen and bug sweep checks
         run: npm test

@@ -4,15 +4,21 @@ import * as THREE from 'three';
 import { V3, R, M } from './gfx';
 import { sfx } from './audio';
 import type { Game } from './game';
-import { Kind, BKind, UNIT, BLD, UPGRADES, Unit, Building, Callout, OUTPOST, GATE, RALLY, RALLY_N, NORTH_PATH, MAP, ROAD, veylPt, roadPt, isSoldier } from './data';
+import { Kind, BKind, UNIT, BLD, UPGRADES, Unit, Building, Callout, OUTPOST, GATE, RALLY, RALLY_N, NORTH_PATH, MAP, MAPS, ROAD, veylPt, roadPt, isSoldier } from './data';
 
 const DEPOT_SLOTS = [[-13, 9], [-13, -9], [-19, 0], [-22, 12], [-26, -6], [-20, 22]];
-const POST_SLOTS = [[31, 20], [9, -31], [33, 5], [-8, 26]];
+const POST_SLOTS_0 = [[31, 20], [9, -31], [33, 5], [-8, 26]];
+/** Watchpost spots covering the road the raids walk down and the flank. Worked out from the map, so they face the Veyl on every map. */
+function postSlots(): number[][] {
+  if (MAP.base === 0 && MAP.size === 0) return POST_SLOTS_0;
+  const e = MAP.flank[MAP.flank.length - 1], el = Math.hypot(e[0], e[1]) || 1, r = (p: [number, number]) => [Math.round(p[0]), Math.round(p[1])];
+  return [r(roadPt(31, 6)), [Math.round(e[0] / el * 30), Math.round(e[1] / el * 30)], r(roadPt(33, -9)), r(roadPt(-8, 12))];
+}
 const HINTS: [number, string, string][] = [
-  [1.5, 'Quartermaster', 'Welcome to Dustbowl 7. Hold click on the green ore to drill. I\'ll handle the paperwork.'],
+  [1.5, 'Quartermaster', 'Welcome to Dustbowl 7. Hold click on the green ore to drill, then walk the pack back to the Headframe. I\'ll handle the paperwork.'],
   [16, 'Quartermaster', 'Press 2 if you want to place buildings yourself. Press G to make me stop.'],
   [70, 'Lookout', 'Veyl outpost is at the end of the road. Three Choir Stones. They will come for us first.'],
-  [125, 'Quartermaster', 'There\'s a fat ore seam marked green on your map. Worth the walk.'],
+  [125, 'Quartermaster', 'The map is dark until somebody walks it. There are more ore fields out there: find them, then stake a Headframe next to one (press 2) and it becomes a new base.'],
 ];
 const BOOKS = [
   { name: 'Yard Push', steps: ['Open', 'Muster', 'Push'], go: 'Pushing the east yard. Shoot the glowy bits.', label: 'Alpha pushes the east yard' },
@@ -33,7 +39,7 @@ interface Wave { units: Unit[]; sx: number; sz: number; t: number; go: boolean; 
 export class Director {
   auto = true; qmT = 0; hintI = 0; chatT = 55; barkT = 0;
   plan: { phase: 'ask' | 'count' | 'go'; t: number; target: Building | null; book: number; label: string } | null = null;
-  nextPlan = 60; callout: Callout | null = null; pushes = 0; lastFailed = false;
+  nextPlan = 60; callout: Callout | null = null; pushes = 0; lastFailed = false; /** Pushes in a row that broke nothing. */ fails = 0;
   playbook = { name: 'Yard Push', steps: BOOKS[0].steps, idx: 0 };
   raidIn: number; raidDir: 'east' | 'north' = 'east'; raidN = 0; /** The verse a Veyl player picked for the next raid: 0 all blades, 1 mostly lances, 2 the deep voice. -1 leaves it to the Conductor. */ verse = -1; /** When the Veyl last answered a failed push with a raid of their own. Rationed, so a bad start does not snowball. */ lastCounter = -999; raidLive = false; warned = false; raidAge = 0; raidSeen = false; reinT = 50;
   flags: Record<string, boolean> = {};
@@ -78,6 +84,7 @@ export class Director {
   }
   buildingLost(b: Building) {
     const g = this.g;
+    if (b.team === 1) this.fails = 0;
     if (b.kind === 'reedgate') { this.say('Lookout', 'Reed Gate is down! Their reinforcements just got a lot slower.', 'in'); sfx.callout(); return; }
     if (b.kind === 'broodpit') { const n = g.pits().length; this.say('Lookout', n ? 'Brood Pit caved in! Their raids just got thinner.' : 'Both Brood Pits are gone. Whatever raids are left will be scraps.', 'in'); sfx.callout(); return; }
     if (b.kind === 'thornspire') { this.say('Alpha', 'Thorn Spire down. That one owed me a helmet.', ''); return; }
@@ -124,11 +131,26 @@ export class Director {
     this.say('Alpha', byPlayer ? (p.book === 1 ? 'Back door it is. Sneaky. I like it.' : 'That\'s the spirit. Moving out.') : 'No answer. Taking that as a yes.', ''); sfx.blip();
   }
 
+  /** True if a building here would stand between the Headframe and a seam the Riggers walk to. */
+  onOreRoute(k: BKind, x: number, z: number) {
+    const m = Math.max(BLD[k].hx, BLD[k].hz) + 2.5;
+    for (const n of this.g.ores) { const ox = n.pos.x, oz = n.pos.z, L = ox * ox + oz * oz; if (n.amount <= 0 || L > 45 * 45) continue; const t = Math.max(0, Math.min(1, (x * ox + z * oz) / L)); if (Math.hypot(x - ox * t, z - oz * t) < m) return true; }
+    return false;
+  }
+  /** The planned spot if it is free, otherwise the nearest free ground around it, still inside the yard. */
+  freeSpot(k: BKind, x: number, z: number): [number, number] | null {
+    const g = this.g, yard = Math.hypot(x, z) < 60; if (g.canPlace(k, x, z, false)) return [x, z];
+    for (let r = 3; r <= 24; r += 3) for (let i = 0; i < 12; i++) { const a = i / 12 * Math.PI * 2 + r, px = Math.round(x + Math.cos(a) * r), pz = Math.round(z + Math.sin(a) * r); if ((yard && (Math.hypot(px, pz) < 12 || Math.hypot(px, pz) > 60)) || this.onOreRoute(k, px, pz)) continue; if (g.canPlace(k, px, pz, false)) return [px, pz]; }
+    return null;
+  }
+
   // ------------------------------------------------------------ every frame
   update(dt: number) {
     // A crew with no Riggers and no money is not out of the game: the Charter fronts enough for one more.
     if (this.g.ore < 50 && !this.g.own('rigger').length && this.g.ownB('headframe').length) this.g.ore = Math.min(50, this.g.ore + dt * 2.5);
     const g = this.g, now = g.time;
+    // A drilled-out seam settles and the ore creeps back, a third of it, so a long shift never runs the yard dry for good.
+    for (const n of g.ores) { if (n.amount > 0) { n.dryT = 0; continue; } n.dryT = (n.dryT || 0) + dt; if (n.dryT > 150) { n.amount = Math.round(n.max * .35); n.dryT = 0; g.oreCheck(n); if (!g.mission) this.say('Quartermaster', 'An old seam has settled and the green is showing again. Worth another dig.', ''); } }
     if (!g.mission) while (this.hintI < HINTS.length && now >= HINTS[this.hintI][0]) { const h = HINTS[this.hintI++]; this.say(h[1], h[2], 'in'); }
     if (this.callout) this.callout.t -= dt;
     this.quartermaster(dt); this.enemy(dt); this.squad(dt);
@@ -142,21 +164,28 @@ export class Director {
     const hq = g.ownB('headframe', true)[0], bunk = g.ownB('bunkhouse'), bunkUp = bunk.filter(b => b.built), sites = g.ownB().filter(b => !b.built), shop = g.ownB('machineshop'), shopUp = shop.some(b => b.built);
     const free = g.supplyCap() - g.supplyUsed(), army = g.soldiers().length, posts = g.ownB('watchpost').length, building = sites.length > 0;
     const wantDepot = bunk.length > 0 && free <= 3 && !sites.some(b => b.kind === 'depot') && g.ownB('depot').length < 6;
-    const put = (k: BKind, x: number, z: number, line: string) => { if (g.ore < BLD[k].cost || (g.mission && !g.mission.allow.includes(k)) || !g.canPlace(k, x, z, false)) return false; g.place(k, x, z, false); this.say('Quartermaster', line, ''); return true; };
+    // The planned spot can be taken: the player may have built there, or a fallen tower left rubble. Then the nearest free ground will do.
+    const put = (k: BKind, x: number, z: number, line: string) => { if (g.ore < BLD[k].cost || (g.mission && !g.mission.allow.includes(k))) return false; const at = this.freeSpot(k, x, z); if (!at) return false; g.place(k, at[0], at[1], false); this.say('Quartermaster', line, ''); return true; };
     const wantPosts = army >= 3 ? 1 + (this.raidN >= 2 ? 1 : 0) + (this.raidN >= 4 ? 1 : 0) : 0;
     // One goal at a time, in priority order. While a goal is unpaid, training holds back a reserve so the goal gets bought.
-    let saving = true, hold = 95; const fdy = g.ownB('foundry'), fdyB = fdy.find(b => b.built), lab = g.ownB('assay'), labUp = lab.some(b => b.built), mast = g.ownB('mast'), mastUp = mast.some(b => b.built);
-    const spot = (k: BKind, slots: number[][], line: string) => { const sl = slots.find(([x, z]) => g.canPlace(k, x, z, false)); return !!sl && put(k, sl[0], sl[1], line); };
+    let saving = true, hold = 95;
+    const hfs = g.ownB('headframe'), exp = this.expansion(hfs);
+    const homeLeft = g.ores.filter(n => Math.hypot(n.pos.x, n.pos.z) < 40).reduce((a, n) => [a[0] + n.amount, a[1] + n.max], [0, 0]);
+    const wantHF = Math.min((MAP.sites || []).length + 1, 1 + (g.time > 480 || homeLeft[0] < homeLeft[1] * .5 ? 1 : 0) + (g.time > 960 ? 1 : 0) + (g.time > 1440 ? 1 : 0)); const fdy = g.ownB('foundry'), fdyB = fdy.find(b => b.built), lab = g.ownB('assay'), labUp = lab.some(b => b.built), mast = g.ownB('mast'), mastUp = mast.some(b => b.built);
+    const spot = (k: BKind, slots: number[][], line: string) => { const sl = slots.find(([x, z]) => g.canPlace(k, x, z, false)) || slots[0]; return put(k, sl[0], sl[1], line); };
     // research the yard can afford without starving the big purchases: bought when there is ore to spare
     const spare = (keys: string[]) => { for (const k of keys) { const u = UPGRADES.find(x => x.key === k)!; if (!g.up[u.key] && g.ownB(u.at, true).length && (!u.needs || g.up[u.needs]) && g.ore >= u.cost + 120) return g.buyUpgrade(u.key); } return false; };
     if (!bunk.length) put('bunkhouse', 15, 8, 'Staking out a Bunkhouse. Then we get rich.');
-    else if (wantDepot) { const s = DEPOT_SLOTS.find(([x, z]) => g.canPlace('depot', x, z, false)); if (s) put('depot', s[0], s[1], 'Running out of beds. Stacking another Depot.'); }
+    else if (wantDepot) spot('depot', DEPOT_SLOTS, 'Running out of beds. Stacking another Depot.');
     else if (building) saving = false;
-    else if (bunkUp.length && posts < Math.min(1, wantPosts)) { const s = POST_SLOTS.find(([x, z]) => g.canPlace('watchpost', x, z, false)); if (s) put('watchpost', s[0], s[1], 'Putting a Watchpost on the east road. For my nerves.'); }
+    else if (bunkUp.length && posts < Math.min(1, wantPosts)) spot('watchpost', postSlots(), `Putting a Watchpost on the ${MAP.road}. For my nerves.`);
     else if (bunkUp.length && !shop.length && army >= 4) put('machineshop', 0, -15, 'Machine Shop going in out back. Bigger guns, thicker hats.');
-    else if (bunkUp.length && posts < wantPosts) { const s = POST_SLOTS.find(([x, z]) => g.canPlace('watchpost', x, z, false)); if (s) put('watchpost', s[0], s[1], 'Another Watchpost. I sleep better with crossfire.'); }
+    else if (bunkUp.length && posts < wantPosts) spot('watchpost', postSlots(), 'Another Watchpost. I sleep better with crossfire.');
     else if (shopUp && !g.up.dmg && army >= 5) g.buyUpgrade('dmg');
-    else if (shopUp && g.up.dmg && !fdy.length && army >= 7) { hold = 150; const sl = [[-14, -14], [-15, 6], [15, -17], [-4, -28]].find(([x, z]) => g.canPlace('foundry', x, z, false)); if (sl) put('foundry', sl[0], sl[1], 'Foundry going up. Walkers, and the good plating.'); }
+    // Expanding: a new Headframe on the nearest free ore field once the home seams thin out or the shift runs long, and a Watchpost to mind it.
+    else if (bunkUp.length && army >= 6 && exp.site && hfs.length < wantHF) { hold = BLD.headframe.cost; const [sx, sz] = exp.site, l = Math.hypot(sx, sz) || 1; put('headframe', Math.round(sx - sx / l * 11), Math.round(sz - sz / l * 11), 'Staking a new Headframe out on the far seam. Somebody walk the Riggers over.'); }
+    else if (exp.bare) { const [bx, bz] = exp.bare, l = Math.hypot(bx, bz) || 1; spot('watchpost', [[Math.round(bx - bz / l * 9), Math.round(bz + bx / l * 9)], [Math.round(bx + bz / l * 9), Math.round(bz - bx / l * 9)]], 'Watchpost by the new Headframe. Out there it gets lonely.'); }
+    else if (shopUp && g.up.dmg && !fdy.length && army >= 7) { hold = 150; spot('foundry', [[-14, -14], [-15, 6], [15, -17], [-4, -28]], 'Foundry going up. Walkers, and the good plating.'); }
     else if (fdyB && army >= 6 && free >= 4 && g.own('gantry').length + fdyB.queue.length < (g.time > 660 ? 2 : 1)) { hold = UNIT.gantry.cost; if (g.ore >= hold) g.train(fdyB, 'gantry'); }
     else if (fdyB && !lab.length && army >= 6 && (!g.mission || g.mission.allow.includes('assay'))) spot('assay', [[-15, 6], [15, -17], [-16, 18], [14, 22]], 'Assay Office going up. Longshots, and people who read.');
     else if (bunkUp.length === 1 && bunk.length === 1 && g.time > 230) put('bunkhouse', 4, 23, 'Second Bunkhouse. Twice the complaints.');
@@ -168,7 +197,12 @@ export class Director {
     else if (mastUp && !g.up.armor3 && army >= 11) { hold = 200; g.buyUpgrade('armor3'); }
     else if (spare(['drill', 'post', 'pay', 'stitch', 'glass', 'beds', 'servo', 'weld', 'buckets', 'frag'])) saving = true;
     else saving = false;
-    if (hq && !hq.queue.length && g.own('rigger').length < 8 && free > 0 && g.ore >= 50 && (bunk.length || g.own('rigger').length < 6)) g.train(hq, 'rigger');
+    // Riggers: eight for the home yard and six more for each new base, trained at whichever Headframe is shortest of hands.
+    const rigs = g.own('rigger'), hqs = g.ownB('headframe', true);
+    if (rigs.length < 8 + 6 * (hqs.length - 1) && free > 0 && g.ore >= 50 && (bunk.length || rigs.length < 6)) {
+      const crew = (h: Building) => rigs.filter(u => g.nearHQ((u.node || u).pos.x, (u.node || u).pos.z) === h).length + h.queue.length;
+      const h = hqs.filter(b => !b.queue.length && crew(b) < (b === hq ? 8 : 6)).sort((a, b) => crew(a) - crew(b))[0]; if (h) g.train(h, 'rigger');
+    }
     const heavy = g.own('breacher').length, light = g.own('linesman').length;
     const docs = g.own('patch').length, longs = g.own('longshot').length;
     for (const b of bunkUp) if (b.queue.length < 2) {
@@ -178,6 +212,13 @@ export class Director {
     }
   }
 
+  /** The next ore field worth a Headframe (nearest the yard, nobody's there yet, and not under the Veyl's nose), and a new base still without a Watchpost. */
+  expansion(hfs: Building[]): { site: number[] | null; bare: number[] | null } {
+    const g = this.g, near = (x: number, z: number, r: number, f: (b: Building) => boolean) => g.buildings.some(b => b.alive && f(b) && Math.hypot(b.pos.x - x, b.pos.z - z) < r);
+    const sites = MAP.sites || [], free = sites.filter(([x, z]) => !near(x, z, 30, b => b.team === 0 && b.kind === 'headframe') && !near(x, z, 50, b => b.team === 1) && g.ores.some(n => n.amount > 0 && Math.hypot(n.pos.x - x, n.pos.z - z) < 16)).sort((a, b) => Math.hypot(a[0], a[1]) - Math.hypot(b[0], b[1]));
+    const bare = hfs.find(h => h.built && Math.hypot(h.pos.x, h.pos.z) > 30 && !near(h.pos.x, h.pos.z, 24, b => b.team === 0 && b.kind === 'watchpost'));
+    return { site: free[0] || null, bare: bare ? [bare.pos.x, bare.pos.z] : null };
+  }
   waves: Wave[] = []; private remnant: Unit[] = []; private spireHome: number[][] | null = null; private growT = 110;
   /** Counts down while the Veyl base is under fire, and where the shooting is coming from. */
   alarmT = 0; alarmX = 0; alarmZ = 0; private alarmCd = 0; private alarmN = 0;
@@ -261,7 +302,8 @@ export class Director {
   squad(dt: number) {
     const g = this.g, now = g.time, all = g.soldiers(), idle = all.filter(u => u.order.type === 'guard' && u !== g.me && !u.pilot), stones = g.stones();
     if (!this.plan && now > this.nextPlan && (stones.length || (g.mission && this.targetFor(0))) && !this.raidLive && !this.warned) {
-      const last = stones.length === 1, need = last ? 5 : 6;
+      // Every push that dies on their doorstep makes the next muster bigger, so the yard stops feeding the Chorus six at a time.
+      const last = stones.length === 1, need = (last ? 5 : 6) + 2 * Math.min(this.fails, 3);
       if (idle.length >= need) {
         const book = last ? 2 : this.lastFailed || this.pushes % 2 === 1 ? 1 : 0; this.plan = { phase: 'ask', t: 10, target: null, book, label: BOOKS[book].label };
         const text = book === 2 ? `One Stone left and ${idle.length} of us itching. <b>Everybody goes, both roads. Yes?</b>` : book === 1 ? `Front door ${this.lastFailed ? 'went badly' : 'is getting old'}. ${idle.length} of us go round by the <b>${MAP.flankName}</b> and hit them from behind. <b>You in?</b>` : `${idle.length} of us are standing around. We hit their east yard in twenty. <b>You in, or what?</b>`;
@@ -269,7 +311,8 @@ export class Director {
       }
     }
     const p = this.plan; if (!p) return; p.t -= dt;
-    if (p.phase === 'ask') { if (p.t <= 0) this.accept(false); }
+    // On Day shift a pitch nobody answers goes ahead. From Night shift up the squad waits for the word, so the army is the player's to spend.
+    if (p.phase === 'ask') { if (p.t <= 0) { if (g.diff.enemy < 1) this.accept(false); else { this.plan = null; this.callout = null; this.nextPlan = now + 45; this.say('Alpha', 'No word from you. We hold the yard until you say go.', ''); } } }
     else if (p.phase === 'count') {
       if (p.t <= 0) {
         p.phase = 'go'; p.target = this.targetFor(p.book); this.pushes++;
@@ -278,7 +321,7 @@ export class Director {
       }
     } else {
       const pushing = all.filter(u => u.order.type === 'amove');
-      if (!pushing.length || (pushing.length < 2 && all.length < 3)) { this.plan = null; this.nextPlan = now + 40; this.lastFailed = true; this.regroup(); this.say('Alpha', 'Push is spent. Pulling back to regroup.', 'al'); if (g.diff.enemy >= 1 && stones.length && !(g.mission && !g.mission.raids) && g.time > 300 && now - this.lastCounter > 150) { this.lastCounter = now; this.raidIn = Math.min(this.raidIn, 22); } }
+      if (!pushing.length || (pushing.length < 2 && all.length < 3)) { this.plan = null; this.nextPlan = now + 40; this.lastFailed = true; this.fails++; this.regroup(); this.say('Alpha', 'Push is spent. Pulling back to regroup.', 'al'); if (g.diff.enemy >= 1 && stones.length && !(g.mission && !g.mission.raids) && g.time > 300 && now - this.lastCounter > 150) { this.lastCounter = now; this.raidIn = Math.min(this.raidIn, 22); } }
     }
   }
 
@@ -294,9 +337,9 @@ export class Director {
     if (g.mission) return g.mission.objectives.map(x => ({ text: x.text(g), done: !!x.done(g) }));
     if (g.myTeam) return [
       { text: 'Jump between Veyl bodies (Tab or F)', done: o.jumped },
-      { text: 'Call a raid and march with it (G)', done: g.raidCall > 0 },
+      { text: 'Call a raid and march with it (G)', done: g.raidCall > 0 || !!o.called },
       { text: `Keep a Choir Stone singing (${left} left)`, done: false },
-      { text: 'Break the Headframe', done: !g.ownB('headframe').length },
+      { text: g.ownB('headframe').length > 1 ? `Break every Headframe (${g.ownB('headframe').length} standing)` : 'Break the Headframe', done: !g.ownB('headframe').length },
     ];
     return [
       { text: 'Drill 30 ore', done: o.drilled >= 30 },

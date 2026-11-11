@@ -19,7 +19,7 @@ export const UNIT: Record<Kind, UnitDef> = {
 };
 export interface BldDef { name: string; hp: number; hx: number; hz: number; h: number; cost: number; time: number; blurb: string; needs?: BKind[] }
 export const BLD: Record<BKind, BldDef> = {
-  headframe: { name: 'Headframe', hp: 2400, hx: 6.6, hz: 4.6, h: 5, cost: 0, time: 0, blurb: '' },
+  headframe: { name: 'Headframe', hp: 2400, hx: 6.6, hz: 4.6, h: 5, cost: 400, time: 50, blurb: 'A new base: Riggers bank ore here' },
   bunkhouse: { name: 'Bunkhouse', hp: 1500, hx: 3.9, hz: 3.0, h: 2.8, cost: 150, time: 14, blurb: 'Trains your soldiers' },
   depot: { name: 'Depot', hp: 800, hx: 2.8, hz: 2.6, h: 4.6, cost: 100, time: 9, blurb: 'Eight more beds' },
   watchpost: { name: 'Watchpost', hp: 550, hx: 1.6, hz: 1.6, h: 8, cost: 125, time: 11, blurb: 'Gun tower', needs: ['bunkhouse'] },
@@ -33,7 +33,7 @@ export const BLD: Record<BKind, BldDef> = {
   assay: { name: 'Assay Office', hp: 1400, hx: 3.6, hz: 3.2, h: 4.2, cost: 125, time: 14, blurb: 'Longshots, infantry research', needs: ['bunkhouse'] },
   mast: { name: 'Signal Mast', hp: 1100, hx: 2.3, hz: 2.3, h: 12, cost: 250, time: 22, blurb: 'Third upgrades, top research', needs: ['foundry', 'assay'] },
 };
-export const BUILDABLE: BKind[] = ['bunkhouse', 'depot', 'watchpost', 'machineshop', 'assay', 'foundry', 'mast'];
+export const BUILDABLE: BKind[] = ['bunkhouse', 'depot', 'watchpost', 'machineshop', 'assay', 'foundry', 'mast', 'headframe'];
 /** What each building trains, and the extra building a unit needs standing before it can be trained. */
 export const TRAINS: Partial<Record<BKind, Kind[]>> = { headframe: ['rigger'], bunkhouse: ['linesman', 'breacher', 'patch', 'longshot'], foundry: ['gantry'] };
 export const UNIT_NEEDS: Partial<Record<Kind, BKind>> = { breacher: 'machineshop', patch: 'machineshop', longshot: 'assay' };
@@ -82,7 +82,7 @@ export interface Prop {
   hp: number; maxHp: number; alive: boolean; solid: boolean; stage: number; stages: number;
   ranges: { attr: THREE.BufferAttribute; start: number; count: number }[]; obj?: THREE.Object3D; owner?: Prop; link: Prop[];
 }
-export interface OreNode { pos: THREE.Vector3; amount: number; max: number; obj: THREE.Group }
+export interface OreNode { pos: THREE.Vector3; amount: number; max: number; obj: THREE.Group; /** Seconds the seam has been empty. */ dryT?: number }
 export interface Callout { who: string; text: string; t: number; dur: number; keys: [string, string][] }
 export interface Difficulty { name: string; enemy: number; raid: number; blurb: string }
 export const DIFFS: Difficulty[] = [
@@ -93,6 +93,10 @@ export const DIFFS: Difficulty[] = [
 
 /** One battlefield. The Ironhold yard always sits at the origin; everything else hangs off these numbers. */
 export interface MapDef {
+  /** Which of the three maps, and the size it was scaled to (see SIZES). */
+  base?: number; size?: number; k?: number;
+  /** Ore fields away from the yard, for new bases. Worked out by setMap; the first is the rich seam. */
+  sites?: number[][];
   name: string; blurb: string; out: [number, number]; flank: number[][]; road: string; flankName: string; exp: [number, number]; arch: number; wreck: [number, number] | null;
   rocks: number; spireEvery: number; buttes: number; crystals: number; ground: number[]; mesa: number[]; rock: number[]; dusk: number;
 }
@@ -104,7 +108,12 @@ export const MAPS: MapDef[] = [
   { name: 'Glass Flats', blurb: 'Wide open, nowhere to hide', out: [-136, 62], flank: [[-96, 104], [-30, 92], [4, 40]], road: 'west causeway', flankName: 'salt shelf', exp: [-58, -30], arch: 76, wreck: null,
     rocks: 110, spireEvery: 14, buttes: 4, crystals: 60, ground: [.78, 1.2, 1.85], mesa: [.8, .92, 1.6], rock: [.8, 1, 1.5], dusk: .1 },
 ];
-export let MAP = MAPS[0];
+export let MAP: MapDef = MAPS[0];
+/** Map sizes. A map number carries its size in the tens: 0 to 2 are Medium, 10 to 12 Small, 20 to 22 Large. */
+export const SIZES = [{ name: 'Medium', k: 1, sites: 4, blurb: 'Four ore fields to take' }, { name: 'Small', k: .75, sites: 3, blurb: 'Close quarters, three fields' }, { name: 'Large', k: 1.4, sites: 7, blurb: 'A long way out, seven fields' }];
+export const mapCode = (base: number, size: number) => base + 10 * size;
+export const validMap = (code: number) => Number.isInteger(code) && code % 10 >= 0 && code % 10 < MAPS.length && Math.floor(code / 10) < SIZES.length;
+const segD = (x: number, z: number, ax: number, az: number, bx: number, bz: number) => { const dx = bx - ax, dz = bz - az, t = Math.max(0, Math.min(1, ((x - ax) * dx + (z - az) * dz) / (dx * dx + dz * dz || 1))); return Math.hypot(x - ax - dx * t, z - az - dz * t); };
 export const OUTPOST = { x: 124, z: 13 };
 export const GATE = { x: 138, z: 12 };
 export const RALLY = { x: 25, z: 11 };
@@ -116,16 +125,26 @@ export const ROAD = { x: 0, z: 14, dx: 1, dz: 0, len: 124 };
 export const roadPt = (s: number, off = 0): [number, number] => [ROAD.x + ROAD.dx * s - ROAD.dz * off, ROAD.z + ROAD.dz * s + ROAD.dx * off];
 /** A point in the outpost's own frame: +x is deeper in, away from the yard. */
 export const veylPt = (lx: number, lz: number): [number, number] => [OUTPOST.x + ROAD.dx * lx - ROAD.dz * lz, OUTPOST.z + ROAD.dz * lx + ROAD.dx * lz];
-export function setMap(i: number) {
-  MAP = MAPS[i] || MAPS[0]; const [ox, oz] = MAP.out;
+export function setMap(code: number) {
+  if (!validMap(code)) code = 0; const base = code % 10, size = Math.floor(code / 10), S = SIZES[size], k = S.k, B = MAPS[base], sc = (p: number[]) => [Math.round(p[0] * k), Math.round(p[1] * k)];
+  MAP = { ...B, base, size, k, out: sc(B.out) as [number, number], flank: B.flank.map(sc), exp: sc(B.exp) as [number, number], arch: Math.round(B.arch * k), wreck: B.wreck ? sc(B.wreck) as [number, number] : null, rocks: Math.round(B.rocks * k * k), buttes: Math.round(B.buttes * k), crystals: B.crystals };
+  if (base === 0) MAP.out[1] = 13;
+  const [ox, oz] = MAP.out;
   const ol = Math.hypot(ox, oz), px = -oz / ol, pz = ox / ol;
-  if (MAP === MAPS[0]) { ROAD.x = 0; ROAD.z = 14; } else { ROAD.x = px * 12; ROAD.z = pz * 12; }
-  const ax = MAP === MAPS[0] ? ox : ox + px, az = MAP === MAPS[0] ? 14 : oz + pz, dx = ax - ROAD.x, dz = az - ROAD.z, l = Math.hypot(dx, dz);
+  if (base === 0) { ROAD.x = 0; ROAD.z = 14; } else { ROAD.x = px * 12; ROAD.z = pz * 12; }
+  const ax = base === 0 ? ox : ox + px, az = base === 0 ? 14 : oz + pz, dx = ax - ROAD.x, dz = az - ROAD.z, l = Math.hypot(dx, dz);
   ROAD.dx = dx / l; ROAD.dz = dz / l; ROAD.len = l; OUTPOST.x = ox; OUTPOST.z = oz;
   const g = veylPt(14, -1); GATE.x = g[0]; GATE.z = g[1];
   const r = roadPt(25, -3); RALLY.x = r[0]; RALLY.z = r[1];
   NORTH_PATH.length = 0; for (const p of MAP.flank) NORTH_PATH.push([p[0], p[1]]);
   const e = MAP.flank[MAP.flank.length - 1], el = Math.hypot(e[0], e[1]) || 1; RALLY_N.x = e[0] - e[0] / el * 7; RALLY_N.z = e[1] - e[1] / el * 7;
+  // Ore fields for new bases: the old rich seam first, then spots spread around the map, clear of the yard, the outpost and both routes.
+  const sites: number[][] = [[MAP.exp[0], MAP.exp[1]]], cx = ox / 2, cz = oz / 2, end = roadPt(ROAD.len + 6);
+  const ok = (x: number, z: number) => { if (Math.hypot(x, z) < 52 * k || Math.hypot(x - ox, z - oz) < 58 * k || Math.hypot(x - cx, z - cz) > 168 * k) return false; if (segD(x, z, ROAD.x, ROAD.z, end[0], end[1]) < 20) return false;
+    let qx = ox, qz = oz; for (const [fx, fz] of MAP.flank) { if (segD(x, z, qx, qz, fx, fz) < 16) return false; qx = fx; qz = fz; } return segD(x, z, qx, qz, 0, 0) >= 16; };
+  const cand: number[][] = []; for (let a = 0; a < 32; a++) for (const f of [.5, .72, .95]) { const x = Math.round(cx + Math.cos(a / 32 * 6.2832) * f * 150 * k), z = Math.round(cz + Math.sin(a / 32 * 6.2832) * f * 120 * k); if (ok(x, z)) cand.push([x, z]); }
+  while (sites.length < S.sites && cand.length) { let best = -1, bd = -1; cand.forEach(([x, z], i) => { const d = Math.min(Math.hypot(x, z) * .8, ...sites.map(s => Math.hypot(x - s[0], z - s[1]))); if (d > bd) { bd = d; best = i; } }); if (bd < 34) break; sites.push(cand.splice(best, 1)[0]); }
+  MAP.sites = sites;
 }
 export const isUnit = (t: any): t is Unit => !!t && t.rig !== undefined;
 export const isSoldier = (u: Unit) => u.kind === 'linesman' || u.kind === 'breacher' || u.kind === 'gantry' || u.kind === 'longshot' || u.kind === 'patch';

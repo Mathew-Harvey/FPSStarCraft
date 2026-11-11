@@ -85,6 +85,11 @@
             <button type="button">Switchback<small>Tight canyon at sunset</small></button>
             <button type="button">Glass Flats<small>Wide open, nowhere to hide</small></button>
           </div>
+          <div class="diff" id="sizes" role="group" aria-label="Map size">
+            <button type="button" data-s="1">Small<small>Close quarters, three fields</small></button>
+            <button type="button" data-s="0">Medium<small>Four ore fields to take</small></button>
+            <button type="button" data-s="2">Large<small>A long way out, seven fields</small></button>
+          </div>
         </div>
         <div class="row">
           <button type="button" class="go alt" id="startSplit">Split screen co-op</button>
@@ -135,6 +140,7 @@
           <div class="row">
             <div class="diff" id="mDiff" role="group" aria-label="Difficulty"><button type="button">Day shift</button><button type="button">Night shift</button><button type="button">Double shift</button></div>
             <div class="diff" id="mMaps" role="group" aria-label="Map"><button type="button">Needle's Eye</button><button type="button">Switchback</button><button type="button">Glass Flats</button></div>
+            <div class="diff" id="mSizes" role="group" aria-label="Map size"><button type="button" data-s="1">Small</button><button type="button" data-s="0">Medium</button><button type="button" data-s="2">Large</button></div>
           </div>
           <div class="row form">
             <button class="go" id="mStart">Clock in</button>
@@ -183,6 +189,7 @@
         <label>Volume <input type="range" id="vol" min="0" max="1" step="0.05" value="0.5"></label>
         <label><input type="checkbox" id="mus" checked> Music</label>
         <button type="button" class="mini-btn" id="full">Fullscreen</button>
+        <button type="button" class="mini-btn" id="quit">Quit to the menu</button>
       </div>
       <h3 class="treeh">Tech tree</h3>
       <div class="tree" id="tree"></div>

@@ -21,13 +21,15 @@ export class Net {
       ws.onclose = () => { const was = this.open; this.open = false; if (was) this.onClose(); };
       ws.onmessage = e => {
         let m: any; try { m = JSON.parse(String(e.data)); } catch (x) { return; }
-        if (m.t === 's' || m.t === 'yo' || m.t === 'over') { if (m.t === 's') this.lastSnap = performance.now(); this.inbox.push(m); }
+        if (m.t === 's' || m.t === 'yo' || m.t === 'over') { if (m.t === 's') this.lastSnap = performance.now(); this.inbox.push(m); if (this.inbox.length > 600) this.squash(); }
         else if (m.t === 'lobby') { this.lobby = m; this.id = m.you; this.onLobby(m); }
         else if (m.t === 'begin') { this.unit = m.unit; this.inbox = []; this.out = []; this.onBegin(m); }
         else if (m.t === 'err') this.onError(m.msg);
       };
     });
   }
+  /** Nobody is reading the mail (a hidden tab, say). Fold the oldest world picture into the next one, keeping its events, so the pile stays small. */
+  squash() { const i = this.inbox.findIndex(x => x.t === 's'), j = this.inbox.findIndex((x, k) => k > i && x.t === 's'); if (i < 0 || j < 0) return; this.inbox[j].e = this.inbox[i].e.concat(this.inbox[j].e); this.inbox.splice(i, 1); }
   send(o: any) { if (this.ws && this.ws.readyState === 1) this.ws.send(JSON.stringify(o)); }
   /** Queues one action for the server. It goes out with the next position update. */
   cmd(...a: any[]) { this.out.push(a); }

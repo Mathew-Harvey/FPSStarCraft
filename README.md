@@ -112,6 +112,34 @@ The Choir Stone also teaches **Low Hum** (Tenders gather 30% faster) and **Wide 
 
 `node test/veyl.mjs` plays a solo Veyl run in a browser, and `node tools/eco.cjs '[[0,1]]' 30` sets Ironhold bots against Veyl bots, both with full economies, for balancing.
 
+## The Gloam
+
+A third side: a fungal swarm that grows out of the ground. On the Skirmish tab, pick **The Gloam** to lead them against Ironhold bots, or pick Ironhold and **Against the Gloam** to fight them. In an online lobby the host picks who holds the outpost (the Veyl or the Gloam), and split screen uses whichever side is picked on the Skirmish tab. A match has two sides, so the Gloam and the Veyl never share a map.
+
+The Gloam are cheap, fast and always more of them, with three rules of their own:
+
+- **Buds.** Every unit ripens from a Bud on a **Mother Cap**, the Gloam HQ. A Cap holds three Buds and grows a new one every seven seconds. Everything a Cap is ripening hatches at once instead of waiting in a queue. Snappers hatch two to a Bud.
+- **Bloom.** Every Gloam building spreads a living carpet around it. Gloam buildings only grow on Bloom (a Mother Cap can seed bare ground). Gloam fighters run 25% faster on Bloom and heal while standing on it. Kill the building and its Bloom withers.
+- **Rooting.** A building is a Grazer that put down roots. Placing one uses up the nearest free Grazer, and the building then grows by itself with no builder. With no Grazer to spare, the player's own Grazer roots and they jump to a new body.
+
+| Ironhold | The Gloam | What it does |
+|---|---|---|
+| Rigger | Grazer | Chews ore and carries it home in its belly. Right click snaps. |
+| Linesman | Snapper | Two to a Bud, 25 ore each. Click bites, right click pounces. |
+| Longshot | Quillback | Spits quills from range. Right click throws a fan of five. |
+| Breacher | Blister | Runs into a crowd and bursts. Driving one, click to burst and jump to a new body. |
+| Gantry | Mulcher | A walking tusk-beast. Click sweeps the tusks, right click charges through a line. Grown at the Tusk Hollow. |
+| Headframe | Mother Cap | HQ, ripens Buds, banks ore. Its gill fronds lash anything close. |
+| Depot | Spore Sac | Eight more beds. |
+| Bunkhouse | Warren | Unlocks Snappers. Sells Fat Buds, Long Tongues and Quick Legs. |
+| Watchpost | Stinger Stalk | A whip on a stalk for anything that comes close. |
+| Machine Shop | Quill Garden | Unlocks Quillbacks. Sells mandibles, hide and Barbed Quills. |
+| | Blister Bed | Unlocks Blisters. Sells Volatile Sap. |
+| Foundry | Tusk Hollow | Grows Mulchers. Sells the second tier and Bull Charge. |
+| Signal Mast | Old Growth | Top research, Deep Bloom and Fat Gut. |
+
+The Overgrowth runs the Gloam economy when nobody tells it otherwise (press G to take over), and the Swarm Lead pitches pushes the way Alpha does. `node test/gloam.mjs` plays a solo Gloam run, an Ironhold skirmish against Gloam bots, and an online versus. `node tools/geco.cjs '[[0,1]]' 20` sets Ironhold bots against Gloam bots for balancing; the last runs split one win each with an eighteen-minute draw.
+
 ## The Veyl base
 
 The outpost is a working base, not a row of targets. Two **Brood Pits** hatch every raid, so caving one in thins the raids and losing both leaves scraps. **Thorn Spires** shoot anything that walks up the road. A **Ward Pylon** cuts damage to every Veyl building near it until you knock it down. Buildings crack and sag at two damage states, then tall ones topple over and crush whatever is under them while wide ones cave in. Rubble piles up and blasts leave craters.

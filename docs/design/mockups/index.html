@@ -1,0 +1,849 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Ore Else Mockups</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Anton&family=Bangers&family=Barlow+Condensed:wght@500;600;700&family=Barlow:wght@400;600&display=swap">
+<style>
+[hidden]{display:none!important}
+/* Layout: one live 16:9 stage (WebGL scene + HUD drawn at a fixed 1600x900 and scaled), shot tabs under it, notes below. */
+:root{
+  --bg:#15131c; --panel:#201d2a; --line:#3a3548; --ink:#0e0d14; --paper:#f4ead2; --muted:#a59fb3;
+  --yel:#ffc21a; --teal:#35e0c8; --mag:#ff4f9a; --red:#ff4b3a; --grn:#8be04e; --cyan:#7ef0ff;
+  --display:"Anton","Impact","Arial Narrow",sans-serif;
+  --cond:"Barlow Condensed","Arial Narrow",sans-serif;
+  --comic:"Bangers","Impact",sans-serif;
+  --body:"Barlow",system-ui,sans-serif;
+  color-scheme:dark;
+}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--paper);font-family:var(--body);font-size:16px;line-height:1.55;margin:0}
+.wrap{max-width:1240px;margin:0 auto;padding-block:36px 72px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));display:flex;flex-direction:column;gap:28px}
+header{display:flex;flex-direction:column;gap:10px}
+.eyebrow{font-family:var(--cond);font-weight:700;font-size:14px;letter-spacing:.14em;text-transform:uppercase;color:var(--yel)}
+h1{font-family:var(--display);font-weight:400;font-size:clamp(44px,9vw,96px);line-height:.92;margin:0;text-transform:uppercase;letter-spacing:.01em;color:var(--yel);text-shadow:4px 4px 0 var(--ink),-2px -2px 0 var(--ink),2px -2px 0 var(--ink),-2px 2px 0 var(--ink),7px 7px 0 var(--mag)}
+h2{font-family:var(--display);font-weight:400;font-size:clamp(22px,3.2vw,30px);line-height:1.1;margin:0;text-transform:uppercase;letter-spacing:.02em;text-wrap:balance}
+h3{font-family:var(--cond);font-weight:700;font-size:14px;letter-spacing:.12em;text-transform:uppercase;color:var(--yel);margin:0 0 4px}
+p{margin:0;max-width:68ch}
+.lede{font-size:19px}
+.muted{color:var(--muted)}
+.stage{position:relative;width:100%;aspect-ratio:16/9;max-width:100%;overflow:hidden;border:5px solid var(--ink);box-shadow:8px 8px 0 var(--yel);background:#000}
+.stage canvas{display:block;width:100%;height:100%}
+.hud{position:absolute;left:0;top:0;width:1600px;height:900px;transform-origin:0 0;pointer-events:none;font-family:var(--cond);color:var(--paper)}
+.layer{position:absolute;inset:0}
+.shots{display:flex;flex-wrap:wrap;gap:10px}
+.shots button{font-family:var(--display);font-size:17px;letter-spacing:.04em;text-transform:uppercase;color:var(--paper);background:var(--panel);border:3px solid var(--ink);padding:9px 16px;cursor:pointer;transform:skewX(-8deg);box-shadow:4px 4px 0 var(--ink)}
+.shots button[aria-pressed="true"]{background:var(--yel);color:var(--ink)}
+.shots button:focus-visible{outline:3px solid var(--teal);outline-offset:3px}
+.note{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:18px 32px}
+.note div{min-width:0}.note p{color:var(--muted);font-size:15px}
+section{display:flex;flex-direction:column;gap:14px}
+ul.plain,ol.plain{margin:0;padding-left:20px;display:flex;flex-direction:column;gap:8px;max-width:72ch;color:var(--muted)}
+ul.plain strong,ol.plain strong{color:var(--paper)}
+.two{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:32px}.two>div{min-width:0;display:flex;flex-direction:column;gap:12px}
+footer{color:var(--muted);font-size:14px;border-top:1px solid var(--line);padding-top:18px}
+kbd{font-family:var(--cond);font-weight:700;background:var(--paper);color:var(--ink);padding:0 6px;border:2px solid var(--ink)}
+
+/* ---------- HUD kit (1600x900 space) ---------- */
+.pan{position:absolute;background:rgba(14,13,20,.86);border:4px solid var(--ink);box-shadow:5px 5px 0 var(--ink);transform:skewX(-7deg)}
+.pan.lite{background:var(--paper);color:var(--ink)}
+.pan.y{box-shadow:5px 5px 0 var(--yel)}
+.pan.t{box-shadow:5px 5px 0 var(--teal)}
+.ht{background-image:radial-gradient(rgba(255,255,255,.09) 1.3px,transparent 1.6px);background-size:8px 8px}
+.d{font-family:var(--display);text-transform:uppercase;letter-spacing:.02em;line-height:1}
+.c{font-family:var(--cond);font-weight:700;text-transform:uppercase;letter-spacing:.08em}
+.k{display:inline-block;font-family:var(--display);background:var(--paper);color:var(--ink);border:3px solid var(--ink);padding:1px 8px 2px;font-size:18px;line-height:1.2;box-shadow:2px 2px 0 var(--ink)}
+.out{text-shadow:2px 2px 0 var(--ink),-2px -2px 0 var(--ink),2px -2px 0 var(--ink),-2px 2px 0 var(--ink),0 3px 0 var(--ink),3px 0 0 var(--ink),4px 4px 0 var(--ink)}
+.bar{position:absolute;height:22px;background:var(--ink);border:3px solid var(--ink);transform:skewX(-20deg);overflow:hidden}
+.bar i{display:block;height:100%}
+.anc{position:absolute;transform:translate(-50%,-100%);white-space:nowrap}
+.pt{display:block;width:100%;height:100%;object-fit:cover;background:#2b2740}
+.frame{position:absolute;border:4px solid var(--ink);background:#2b2740;overflow:hidden;box-shadow:4px 4px 0 var(--yel)}
+.frame::after{content:"";position:absolute;inset:0;background:repeating-linear-gradient(0deg,rgba(0,0,0,.22) 0 2px,transparent 2px 4px)}
+.feed{position:absolute;left:28px;display:flex;flex-direction:column;gap:8px}
+.feed div{background:rgba(14,13,20,.84);border-left:8px solid var(--yel);padding:5px 14px 6px 10px;transform:skewX(-7deg);font-size:21px;font-weight:600;line-height:1.15;max-width:430px}
+.feed b{display:block;font-size:14px;letter-spacing:.12em;text-transform:uppercase;color:var(--yel)}
+.feed .al{border-color:var(--red)}.feed .al b{color:var(--red)}
+.feed .in{border-color:var(--cyan)}.feed .in b{color:var(--cyan)}
+.cross{position:absolute;left:800px;top:450px;width:0;height:0}
+.cross::before,.cross::after{content:"";position:absolute;background:#fff;border:2px solid var(--ink)}
+.cross::before{left:-16px;top:-3px;width:32px;height:6px;clip-path:polygon(0 0,34% 0,34% 100%,66% 100%,66% 0,100% 0,100% 100%,0 100%)}
+.cross::after{left:-3px;top:-16px;width:6px;height:32px;clip-path:polygon(0 0,100% 0,100% 34%,0 34%,0 66%,100% 66%,100% 100%,0 100%)}
+.res{position:absolute;right:28px;top:24px;display:flex;gap:10px}
+.res span{display:flex;align-items:center;gap:8px;background:rgba(14,13,20,.86);border:4px solid var(--ink);padding:2px 16px 4px 12px;transform:skewX(-7deg);font-family:var(--display);font-size:30px;box-shadow:4px 4px 0 var(--ink)}
+.res i{display:inline-block;width:20px;height:20px;border:3px solid var(--ink)}
+.play{position:absolute;left:50%;top:22px;transform:translateX(-50%) skewX(-7deg);display:flex;align-items:stretch;border:4px solid var(--ink);box-shadow:5px 5px 0 var(--ink);background:rgba(14,13,20,.86)}
+.play b{font-family:var(--display);font-weight:400;font-size:26px;padding:4px 18px 6px;background:var(--yel);color:var(--ink);text-transform:uppercase}
+.play span{font-family:var(--cond);font-weight:700;font-size:17px;letter-spacing:.1em;padding:9px 14px 0;color:var(--muted);border-left:3px solid var(--ink);text-transform:uppercase}
+.play span.on{color:var(--ink);background:var(--paper)}
+.play span.dn{color:var(--paper)}
+.slots{position:absolute;right:28px;bottom:26px;display:flex;gap:10px}
+.slots div{width:104px;height:92px;background:rgba(14,13,20,.86);border:4px solid var(--ink);transform:skewX(-7deg);box-shadow:4px 4px 0 var(--ink);padding:4px 8px;display:flex;flex-direction:column;justify-content:space-between}
+.slots div.on{background:var(--yel);color:var(--ink)}
+.slots b{font-family:var(--display);font-weight:400;font-size:24px;line-height:1}.slots span{font-weight:700;font-size:17px;letter-spacing:.1em;text-transform:uppercase}
+.who{position:absolute;left:28px;bottom:26px;width:520px;height:116px}
+.who .frame{left:0;top:0;width:116px;height:116px}
+.who .nm{position:absolute;left:134px;top:-4px;font-size:44px}
+.who .sub{position:absolute;left:136px;top:46px;font-size:15px;color:var(--yel)}
+.who .bar{left:138px;top:74px;width:330px}
+.who .hp{position:absolute;left:482px;top:68px;font-family:var(--display);font-size:28px}
+.hint{position:absolute;left:50%;bottom:28px;transform:translateX(-50%);display:flex;gap:18px;align-items:center;font-weight:700;font-size:17px;letter-spacing:.1em;text-transform:uppercase}
+.tag{background:rgba(14,13,20,.88);border:3px solid var(--cyan);padding:4px 14px 6px;transform:skewX(-7deg)}
+.mini{position:absolute;left:28px;top:24px;width:220px;height:220px;border:4px solid var(--ink);box-shadow:5px 5px 0 var(--ink);background:#2a1d1c;transform:skewX(-4deg);overflow:hidden}
+.mini svg{display:block;width:100%;height:100%}
+.veyl .pan,.veyl .res span{border-radius:22px;border-color:var(--teal);border-width:2px;transform:none;box-shadow:0 0 18px rgba(53,224,200,.35);background:rgba(20,16,56,.72)}
+.veyl .feed div{border-radius:14px;border:2px solid var(--teal);border-left:2px solid var(--teal);transform:none;background:rgba(20,16,56,.72)}
+.veyl .feed b{color:var(--teal)}
+.burst{font-family:var(--comic);letter-spacing:.03em}
+.card{position:absolute;right:26px;width:500px;height:112px;background:rgba(14,13,20,.9);border:4px solid var(--ink);transform:skewX(-7deg);box-shadow:5px 5px 0 var(--ink)}
+.card.on{background:var(--yel);color:var(--ink);box-shadow:5px 5px 0 var(--paper)}
+.card .frame{left:8px;top:8px;width:88px;height:88px;box-shadow:none}
+.card .n{position:absolute;left:112px;top:6px;font-size:28px}
+.card .t{position:absolute;left:112px;top:42px;font-size:19px;font-weight:600}
+.card .bar{left:116px;top:74px;width:230px;height:18px}
+.card .k{position:absolute;right:10px;top:8px}
+.card .s{position:absolute;right:12px;bottom:8px;font-size:14px}
+@media (prefers-reduced-motion:reduce){*{animation:none!important}}
+</style>
+
+<div class="wrap">
+<header>
+<div class="eyebrow">Look test · Second pass · Running live in your browser</div>
+<h1>Ore Else</h1>
+<p class="lede">A first-person RTS. Start as one worker with a drill, build an army that tells you its plans, and jump into any unit you own.</p>
+<p class="muted">The picture below is a real-time 3D scene, not a drawing. It uses the shading the game would ship with: inked outlines, flat comic colour, hatched shadows, hand-painted surfaces and chunky cartoon proportions. Pick a shot.</p>
+</header>
+
+<div class="stage" id="stage">
+<canvas id="c" width="1600" height="900" aria-label="Live 3D mockup of the game"></canvas>
+<div class="hud" id="hud">
+
+<!-- ============ SHOT 0: RIGGER ============ -->
+<div class="layer" data-shot="0">
+  <div class="mini"><svg viewBox="0 0 100 100"><rect width="100" height="100" fill="#3a2623"/><path d="M0 62h34l8 10v28H0z" fill="#6b4033" stroke="#0e0d14" stroke-width="1.5"/><path d="M52 0h48v46H70L52 30z" fill="#0e0d14" opacity=".55"/><path d="M40 40l16-3 7 12-9 11-13-3z" fill="#1c1210" stroke="#0e0d14"/><rect x="12" y="74" width="9" height="9" fill="#ffc21a" stroke="#0e0d14" stroke-width="1.5"/><g fill="#b8f58c"><rect x="30" y="80" width="3" height="3"/><rect x="34" y="84" width="3" height="3"/><rect x="28" y="86" width="3" height="3"/></g><g fill="#8be04e"><circle cx="25" cy="82" r="1.8"/><circle cx="22" cy="88" r="1.8"/><circle cx="29" cy="76" r="1.8"/></g><path d="M22 70l-9-16h18z" fill="#fff" opacity=".22"/><circle cx="22" cy="70" r="2.6" fill="#fff" stroke="#0e0d14"/><text x="82" y="22" font-family="Anton" font-size="16" fill="#ff4b3a" text-anchor="middle">?</text></svg></div>
+  <div class="play"><b>Yard Push</b><span class="on">Open</span><span>Scout</span><span>Commit</span><span>Switch</span></div>
+  <div class="res"><span><i style="background:#b8f58c;transform:rotate(45deg) scale(.8)"></i>215</span><span><i style="background:#b58cff;border-radius:50%"></i>0</span><span><i style="background:var(--yel);border-radius:10px 10px 0 0"></i>7/10</span></div>
+  <div class="d out" style="position:absolute;right:34px;top:84px;font-size:24px">01:42</div>
+  <div class="anc" data-w="3,6.6,-14"><div class="tag"><span class="d" style="font-size:30px;color:var(--cyan)">Bunkhouse</span> <span class="d" style="font-size:24px;color:#b8f58c;margin-left:14px">150 ore</span><div class="c" style="font-size:14px">Click place · R rotate · Right-click cancel</div></div></div>
+  <div class="pan y ht" style="right:34px;top:300px;width:330px;padding:10px 16px 14px">
+    <div class="d" style="font-size:28px;color:var(--yel)">Build <span class="c" style="font-size:13px;color:var(--muted);float:right;margin-top:10px">ore / flux</span></div>
+    <div style="font-size:23px;font-weight:600;display:flex;flex-direction:column;gap:3px;margin-top:6px">
+      <div style="background:var(--yel);color:var(--ink);padding:1px 8px;display:flex;justify-content:space-between"><span>Bunkhouse</span><span>150 / 0</span></div>
+      <div style="padding:1px 8px;display:flex;justify-content:space-between"><span>Depot</span><span>100 / 0</span></div>
+      <div style="padding:1px 8px;display:flex;justify-content:space-between"><span>Watchpost</span><span>125 / 0</span></div>
+      <div style="padding:1px 8px;display:flex;justify-content:space-between"><span>Flux Rig</span><span>75 / 0</span></div>
+      <div style="padding:1px 8px;display:flex;justify-content:space-between;color:var(--muted)"><span>Machine Shop</span><span style="font-size:17px;padding-top:4px">needs Bunkhouse</span></div>
+    </div>
+  </div>
+  <div class="feed" style="top:560px"><div><b>Quartermaster</b>Bunkhouse first. Then a Depot. Then we get rich.</div><div class="in"><b>Rigger 3</b>Ore line's full, boss. Sending the new guy to Flux.</div></div>
+  <div class="cross"></div>
+  <div class="who"><div class="frame"><img class="pt" data-p="rigger" alt=""></div><div class="nm d out">Rigger</div><div class="sub c">You · Ironhold Charter</div><div class="bar"><i style="width:100%;background:var(--grn)"></i></div><div class="hp out">45</div></div>
+  <div class="hint"><span><span class="k">TAB</span> Jump</span><span><span class="k">Q</span> Last body</span></div>
+  <div class="slots"><div><b>1</b><span>Drill</span></div><div class="on"><b>2</b><span>Build</span></div><div><b>3</b><span>Patch</span></div></div>
+</div>
+
+<!-- ============ SHOT 1: JUMP ============ -->
+<div class="layer" data-shot="1" hidden>
+  <div style="position:absolute;inset:0;background:linear-gradient(90deg,rgba(14,13,20,0) 55%,rgba(14,13,20,.82) 70%)"></div>
+  <div style="position:absolute;left:0;top:0;width:1040px;height:900px;box-shadow:inset 0 0 0 10px var(--ink),inset 0 0 0 14px var(--yel)"></div>
+  <div class="d out" style="position:absolute;left:40px;top:28px;font-size:84px;color:var(--yel)">Jump</div>
+  <div class="c out" style="position:absolute;left:236px;top:44px;font-size:20px">Hold Tab · let go on a unit<br><span style="color:var(--muted)">Solo play: time slows to 30%</span></div>
+  <div class="anc" data-w="9.5,2.6,-15.5"><div class="k" style="font-size:22px">YOU</div></div>
+  <div class="anc" data-w="30,3.4,8"><div class="pan lite" style="position:static;padding:2px 14px 4px"><span class="d" style="font-size:24px">Alpha · Linesman ×4</span><div style="font-size:18px;font-weight:600">Forming up on the east road</div></div></div>
+  <div class="anc" data-w="32,3.6,-18"><div class="d out" style="font-size:22px;color:var(--red)">Badger · under fire!</div></div>
+  <div class="anc" data-w="-14,7,-21"><div class="c out" style="font-size:17px">Headframe</div></div>
+  <div class="anc" data-w="3,5,-14"><div class="c out" style="font-size:17px">Bunkhouse</div></div>
+  <div style="position:absolute;left:770px;top:70px;width:250px;height:150px;background:repeating-linear-gradient(45deg,rgba(14,13,20,.75) 0 8px,rgba(14,13,20,.35) 8px 16px);border:3px dashed var(--red);transform:skewX(-7deg)"></div>
+  <div class="c out" style="position:absolute;left:800px;top:120px;font-size:17px;color:var(--red)">Unscouted<br>last contact 0:48 ago</div>
+  <div class="d" style="position:absolute;right:30px;top:26px;font-size:34px;color:var(--yel)" class="out">Your crew <span class="c" style="font-size:16px;color:var(--muted)">17 / 22 supply</span></div>
+  <div class="card" style="top:84px"><div class="frame"><img class="pt" data-p="rigger" alt=""></div><div class="n d">Rigger ×6</div><div class="t">Mining · one's building a Depot</div><div class="bar"><i style="width:100%;background:var(--grn)"></i></div><span class="k">1</span><span class="s c">You are here</span></div>
+  <div class="card on" style="top:210px"><div class="frame"><img class="pt" data-p="linesman" alt=""></div><div class="n d">Alpha · Linesman ×4</div><div class="t">Forming up on the east road</div><div class="bar"><i style="width:92%;background:#3d8f1d"></i></div><span class="k">2</span><span class="s c">Let go to jump</span></div>
+  <div class="card" style="top:336px"><div class="frame"><img class="pt" data-p="linesman" alt=""></div><div class="n d">Bravo · Linesman ×4</div><div class="t">Scouting east · contact in 0:15</div><div class="bar"><i style="width:100%;background:var(--grn)"></i></div><span class="k">3</span></div>
+  <div class="card" style="top:462px"><div class="frame"><img class="pt" data-p="breacher" alt=""></div><div class="n d">Breacher ×2</div><div class="t">Escorting Alpha</div><div class="bar"><i style="width:80%;background:var(--grn)"></i></div><span class="k">4</span></div>
+  <div class="card" style="top:588px"><div class="frame"><img class="pt" data-p="badger" alt=""></div><div class="n d">Badger ×1</div><div class="t">Raiding their ore line</div><div class="bar"><i style="width:28%;background:var(--red)"></i></div><span class="k">5</span><span class="s c" style="color:var(--red)">Under fire</span></div>
+  <div style="position:absolute;right:30px;top:722px;width:500px;font-size:20px;font-weight:600;line-height:1.5"><span class="k">F</span> Jump into whoever you're looking at<br><span class="k">Q</span> Back to your last body<br><span class="k">RMB</span> Order a squad from the map</div>
+  <div class="c out" style="position:absolute;left:40px;bottom:30px;font-size:20px">Your Rigger keeps working when you leave. Die, and you get 5 seconds of static.</div>
+</div>
+
+<!-- ============ SHOT 2: CALLOUT ============ -->
+<div class="layer" data-shot="2" hidden>
+  <div class="mini"><svg viewBox="0 0 100 100"><rect width="100" height="100" fill="#3a2623"/><path d="M0 62h34l8 10v28H0z" fill="#6b4033" stroke="#0e0d14" stroke-width="1.5"/><path d="M60 0h40v40H76L60 26z" fill="#0e0d14" opacity=".55"/><path d="M40 40l16-3 7 12-9 11-13-3z" fill="#1c1210" stroke="#0e0d14"/><rect x="12" y="74" width="9" height="9" fill="#ffc21a" stroke="#0e0d14" stroke-width="1.5"/><rect x="24" y="66" width="7" height="7" fill="#ffc21a" stroke="#0e0d14" stroke-width="1.5"/><g fill="#8be04e"><circle cx="25" cy="82" r="1.8"/><circle cx="22" cy="88" r="1.8"/><circle cx="54" cy="70" r="1.8"/><circle cx="58" cy="72" r="1.8"/><circle cx="56" cy="67" r="1.8"/><circle cx="61" cy="68" r="1.8"/></g><circle cx="70" cy="34" r="5" fill="none" stroke="#ff4b3a" stroke-width="1.5"/><rect x="68" y="32" width="4" height="4" fill="#8be04e"/><path d="M46 70l16-9v18z" fill="#fff" opacity=".22"/><circle cx="46" cy="70" r="2.6" fill="#fff" stroke="#0e0d14"/><path d="M84 52l5 6-5 6-5-6z" fill="#ffc21a" stroke="#0e0d14"/></svg></div>
+  <div class="play"><b>Yard Push</b><span class="dn">Open</span><span class="dn">Scout</span><span class="on">Commit</span><span>Switch</span></div>
+  <div class="res"><span><i style="background:#b8f58c;transform:rotate(45deg) scale(.8)"></i>310</span><span><i style="background:#b58cff;border-radius:50%"></i>75</span><span><i style="background:var(--yel);border-radius:10px 10px 0 0"></i>17/22</span></div>
+  <div class="d out" style="position:absolute;right:34px;top:84px;font-size:24px">06:48</div>
+  <div class="pan lite" style="left:330px;top:104px;width:880px;height:168px;box-shadow:7px 7px 0 var(--yel)">
+    <div class="frame" style="left:12px;top:12px;width:136px;height:136px;box-shadow:none"><img class="pt" data-p="linesman" alt=""></div>
+    <div class="d" style="position:absolute;left:166px;top:8px;font-size:38px">Alpha Lead <span class="c" style="font-size:15px;color:#7a5a00;margin-left:10px">Linesman squad · plan</span></div>
+    <div style="position:absolute;left:168px;top:56px;font-size:27px;font-weight:600;line-height:1.2;width:690px">We hit their east yard in twenty. Breachers first.<br>Need a Watchpost on this choke before we go. <b>You building it, or what?</b></div>
+  </div>
+  <div style="position:absolute;left:520px;top:268px;width:0;height:0;border-left:22px solid transparent;border-right:22px solid transparent;border-top:44px solid var(--paper);transform:skewX(20deg)"></div>
+  <div style="position:absolute;left:330px;top:296px;display:flex;gap:14px;font-weight:700;font-size:20px;letter-spacing:.08em;text-transform:uppercase">
+    <span class="pan y" style="position:static;padding:5px 16px 7px 10px;background:var(--yel);color:var(--ink)"><span class="k">Z</span> Do it</span>
+    <span class="pan" style="position:static;padding:5px 16px 7px 10px"><span class="k">X</span> Hold 30s</span>
+    <span class="pan" style="position:static;padding:5px 16px 7px 10px"><span class="k">C</span> Change play</span>
+    <span class="pan" style="position:static;padding:5px 16px 7px 10px"><span class="k">V</span> On me</span>
+  </div>
+  <div class="c out" style="position:absolute;left:336px;top:352px;font-size:15px">No answer = yes in 3s</div>
+  <div class="anc" data-w="100,8.5,33"><div style="text-align:center"><div style="width:44px;height:44px;background:var(--yel);border:5px solid var(--ink);transform:rotate(45deg);margin:0 auto 12px"></div><div class="d out" style="font-size:34px;color:var(--yel)">East Yard</div><div class="c out" style="font-size:19px">240 m · push in 0:20</div></div></div>
+  <div class="anc" data-w="25,3.6,2.2"><div class="tag"><span class="c" style="font-size:15px;color:var(--cyan)">Alpha wants a</span><div class="d" style="font-size:28px;color:var(--cyan)">Watchpost <span style="color:#b8f58c;font-size:22px">125 ore</span></div></div></div>
+  <div class="feed" style="top:548px"><div class="in"><b>Bravo</b>Two Cantors at their east yard. They look bored.</div><div><b>Quartermaster</b>Supply cap in two. Building a Depot.</div><div class="al"><b>Badger</b>Taking fire! Pulling back! Ow!</div></div>
+  <div class="cross"></div>
+  <div class="who"><div class="frame"><img class="pt" data-p="rigger" alt=""></div><div class="nm d out">Rigger</div><div class="sub c">You · Ironhold Charter</div><div class="bar"><i style="width:100%;background:var(--grn)"></i></div><div class="hp out">45</div></div>
+  <div class="hint"><span><span class="k">TAB</span> Jump</span><span><span class="k">Q</span> Last body</span></div>
+  <div class="slots"><div class="on"><b>1</b><span>Drill</span></div><div><b>2</b><span>Build</span></div><div><b>3</b><span>Patch</span></div></div>
+</div>
+
+<!-- ============ SHOT 3: TITLE CARD ============ -->
+<div class="layer" data-shot="3" hidden>
+  <div style="position:absolute;left:0;top:0;width:1600px;height:84px;background:var(--ink)"></div>
+  <div style="position:absolute;left:0;bottom:0;width:1600px;height:84px;background:var(--ink)"></div>
+  <div style="position:absolute;left:-40px;top:520px;width:980px;height:214px;background:var(--yel);border:6px solid var(--ink);transform:skewX(-12deg) rotate(-3deg);box-shadow:10px 10px 0 var(--ink)" class="ht"></div>
+  <div class="d" style="position:absolute;left:60px;top:508px;font-size:170px;color:var(--ink);transform:rotate(-3deg);text-shadow:6px 6px 0 var(--paper)">Linesman</div>
+  <div class="burst out" style="position:absolute;left:76px;top:700px;font-size:50px;color:var(--paper);transform:rotate(-3deg)">"Paid by the bullet. Tips welcome."</div>
+  <div class="c" style="position:absolute;left:40px;top:28px;font-size:22px;color:var(--yel)">Jumped into Alpha Lead · squad now follows you</div>
+  <div class="c" style="position:absolute;right:40px;bottom:28px;font-size:20px;color:var(--muted)">Every unit gets a half-second title card the first time you jump in</div>
+</div>
+
+<!-- ============ SHOT 4: VEYL ============ -->
+<div class="layer veyl" data-shot="4" hidden>
+  <div style="position:absolute;left:28px;top:24px;width:220px;height:220px;border-radius:50%;border:3px solid var(--teal);background:rgba(20,16,56,.75);box-shadow:0 0 22px rgba(53,224,200,.45);overflow:hidden"><svg viewBox="0 0 100 100" style="display:block"><path d="M50 50L22 12h56z" fill="#fff" opacity=".16"/><g fill="#35e0c8"><circle cx="42" cy="56" r="2.4"/><circle cx="58" cy="60" r="2.4"/><circle cx="36" cy="66" r="2.4"/><circle cx="30" cy="78" r="2.4"/></g><g fill="#ff4b3a"><rect x="52" y="24" width="5" height="5"/><rect x="60" y="28" width="5" height="5"/><rect x="46" y="20" width="5" height="5"/><rect x="62" y="16" width="7" height="7"/></g><circle cx="50" cy="50" r="3" fill="#fff"/><circle cx="50" cy="50" r="46" fill="none" stroke="#35e0c8" stroke-width=".8" opacity=".5"/></svg></div>
+  <div class="pan" style="left:50%;top:22px;transform:translateX(-50%);padding:4px 26px 8px;display:flex;gap:26px;align-items:center"><span class="d" style="font-size:26px;color:var(--teal)">Back Door</span><span class="c" style="font-size:16px;color:var(--muted)">Open · Scout · <span style="color:#fff">Commit</span> · Switch</span></div>
+  <div class="res"><span><i style="background:#b8f58c;border-radius:50%;border:0"></i>340</span><span><i style="background:#b58cff;border-radius:50%;border:0"></i>125</span><span><i style="background:var(--teal);border-radius:50%;border:0"></i>22/30</span></div>
+  <div class="d out" style="position:absolute;right:34px;top:84px;font-size:24px">09:15</div>
+  <div class="feed" style="top:270px"><div><b>Warden</b>The dome holds for six more breaths.</div><div><b>Veil</b>Their second yard is unguarded. Just saying.</div></div>
+  <div class="anc" data-w="14,2.75,152"><div style="width:120px;height:14px;background:var(--ink);border:3px solid var(--ink)"><div style="width:42%;height:100%;background:var(--red)"></div></div></div>
+  <div class="anc" data-w="17.5,2.75,149"><div style="width:70px;height:12px;background:var(--ink);border:3px solid var(--ink)"><div style="width:100%;height:100%;background:var(--red)"></div></div></div>
+  <div class="anc" data-w="19.5,2.75,154.5"><div style="width:70px;height:12px;background:var(--ink);border:3px solid var(--ink)"><div style="width:100%;height:100%;background:var(--red)"></div></div></div>
+  <div class="anc" data-w="15.3,2.5,152.2"><div class="burst out" style="font-size:76px;color:#fff;transform:rotate(-8deg)">-18 <span style="font-size:34px;color:var(--red)">CRIT!</span></div></div>
+  <div class="cross"></div>
+  <div class="c out" style="position:absolute;left:800px;top:494px;transform:translateX(-50%);font-size:15px;color:var(--teal)">Mid-click · send your triad here</div>
+  <div style="position:absolute;left:330px;bottom:28px;width:560px;height:110px">
+    <div style="position:absolute;left:0;top:0;width:108px;height:108px;border-radius:50%;border:3px solid var(--teal);overflow:hidden;box-shadow:0 0 18px rgba(53,224,200,.5);background:#1b1650"><img class="pt" data-p="cantor" alt=""></div>
+    <div class="d out" style="position:absolute;left:126px;top:0;font-size:40px">Cantor <span class="c" style="font-size:15px;color:var(--teal)">You · Veyl Chorus</span></div>
+    <div style="position:absolute;left:128px;top:54px;width:400px;height:18px;border-radius:9px;background:var(--ink);border:2px solid var(--teal);overflow:hidden"><div style="width:70%;height:100%;background:var(--teal)"></div></div>
+    <div style="position:absolute;left:128px;top:80px;width:400px;height:12px;border-radius:6px;background:var(--ink);border:2px solid var(--mag);overflow:hidden"><div style="width:100%;height:100%;background:var(--mag)"></div></div>
+    <div class="c out" style="position:absolute;left:540px;top:52px;font-size:15px;color:var(--teal);white-space:nowrap">Hush 42/60</div>
+    <div class="c out" style="position:absolute;left:540px;top:76px;font-size:15px;color:var(--mag);white-space:nowrap">Form 80/80</div>
+  </div>
+  <div style="position:absolute;right:250px;bottom:30px;display:flex;gap:26px;text-align:center" class="c">
+    <div><div style="width:80px;height:80px;border-radius:50%;border:4px solid var(--teal);background:rgba(20,16,56,.8);box-shadow:0 0 16px rgba(53,224,200,.5);font-family:var(--display);font-size:40px;line-height:68px;color:var(--teal)">»</div><div class="out" style="font-size:14px;margin-top:4px">Glide-step</div></div>
+    <div><div style="width:80px;height:80px;border-radius:50%;border:4px solid var(--mag);background:rgba(20,16,56,.8);font-family:var(--display);font-size:40px;line-height:68px;color:#fff;opacity:.85">4</div><div class="out" style="font-size:14px;margin-top:4px;color:var(--muted)">Shatter Chord</div></div>
+    <div><div style="width:80px;height:80px;border-radius:50%;border:4px solid var(--teal);background:rgba(20,16,56,.8);box-shadow:0 0 16px rgba(53,224,200,.5);font-family:var(--display);font-size:40px;line-height:68px;color:var(--teal)">◠</div><div class="out" style="font-size:14px;margin-top:4px">Call Dome</div></div>
+  </div>
+</div>
+
+<div id="glfail" hidden style="position:absolute;left:0;top:0;width:1600px;height:900px;display:flex;align-items:center;justify-content:center;font-size:40px;background:var(--bg);text-align:center;padding:80px">This mockup needs WebGL, which this browser or device has switched off. Stills of every shot are in the pull request.</div>
+</div>
+</div>
+
+<nav class="shots" id="shots" aria-label="Mockup shots">
+<button type="button" aria-pressed="true">1 · Start as a worker</button>
+<button type="button" aria-pressed="false">2 · Jump</button>
+<button type="button" aria-pressed="false">3 · The army talks</button>
+<button type="button" aria-pressed="false">4 · Jump-in card</button>
+<button type="button" aria-pressed="false">5 · The other side</button>
+</nav>
+
+<div class="note" id="note"></div>
+
+<section>
+<h2>What makes the look</h2>
+<div class="two">
+<div><ul class="plain">
+<li><strong>Ink outlines on everything,</strong> drawn from the scene's depth and surface angles, thicker up close, with a slight hand wobble.</li>
+<li><strong>Flat comic colour in three steps:</strong> highlight, base, and a cool purple shadow with a ragged edge.</li>
+<li><strong>Cross-hatching in the shadows,</strong> the way a comic artist would shade with a pen.</li>
+<li><strong>Hand-painted surfaces:</strong> panel lines, chipped paint, scratches, rivets and stencils inked onto every material.</li>
+</ul></div>
+<div><ul class="plain">
+<li><strong>Chunky cartoon proportions:</strong> big helmets, big boots, big shoulders, so a unit reads from across the map.</li>
+<li><strong>A rust desert under a teal sky,</strong> so yellow Ironhold steel and glowing Veyl teal both jump off the background.</li>
+<li><strong>A comic-book HUD:</strong> slanted ink panels, hard drop shadows, speech-bubble callouts, title cards, and a classic RTS overhead view when you hold Tab.</li>
+</ul></div>
+</div>
+<p class="muted">The characters and buildings here are stand-ins assembled from simple shapes in code, so judge the shading, colour, proportions and HUD rather than the modelling detail. Final models would be sculpted properly and dropped into this same shader.</p>
+</section>
+
+<footer>Ore Else is a working title for an original game. Its factions, the Ironhold Charter and the Veyl Chorus, and all units and art are original. Full rules are in the design document in the repository under docs/design.</footer>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+(function () {
+'use strict';
+const W = 1600, H = 900;
+const canvas = document.getElementById('c');
+const hud = document.getElementById('hud');
+const stage = document.getElementById('stage');
+function fit() { hud.style.transform = 'scale(' + stage.clientWidth / W + ')'; }
+fit(); new ResizeObserver(fit).observe(stage);
+
+let renderer;
+try {
+  renderer = new THREE.WebGLRenderer({ canvas, antialias: false, preserveDrawingBuffer: true });
+  if (!renderer.capabilities.isWebGL2 && !renderer.extensions.get('WEBGL_depth_texture')) throw 0;
+} catch (e) { document.getElementById('glfail').hidden = false; return; }
+renderer.setPixelRatio(1); renderer.setSize(W, H, false);
+
+// ------------------------------------------------------------ utilities
+let seed = 11;
+const rnd = () => { seed |= 0; seed = seed + 0x6D2B79F5 | 0; let t = Math.imul(seed ^ seed >>> 15, 1 | seed); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; };
+const R = (a, b) => a + rnd() * (b - a);
+const INK = '#0e0d14';
+const V3 = (x, y, z) => new THREE.Vector3(x, y, z);
+function tone(hex, k) { const c = new THREE.Color(hex); if (k >= 1) c.lerp(new THREE.Color('#ffffff'), k - 1); else c.multiplyScalar(k); return '#' + c.getHexString(); }
+
+// ------------------------------------------------------------ hand-painted textures
+function wob(g, pts, w, col) {
+  g.strokeStyle = col || INK; g.lineCap = 'round'; g.lineJoin = 'round';
+  for (let pass = 0; pass < 2; pass++) {
+    g.lineWidth = w * (pass ? .55 : 1); g.beginPath();
+    pts.forEach((p, i) => { const x = p[0] + R(-1.4, 1.4), y = p[1] + R(-1.4, 1.4); i ? g.lineTo(x, y) : g.moveTo(x, y); });
+    g.stroke();
+  }
+}
+function paint(base, draw, o) {
+  o = o || {}; const s = o.size || 512;
+  const c = document.createElement('canvas'); c.width = c.height = s; const g = c.getContext('2d');
+  g.fillStyle = base; g.fillRect(0, 0, s, s);
+  const n = o.blot === undefined ? 150 : o.blot;
+  for (let i = 0; i < n; i++) {
+    g.globalAlpha = R(.05, .15); g.fillStyle = tone(base, rnd() < .5 ? R(.68, .92) : R(1.1, 1.35));
+    g.save(); g.translate(R(0, s), R(0, s)); g.rotate(R(-.6, .6)); g.beginPath(); g.ellipse(0, 0, R(20, 110) * s / 512, R(5, 26) * s / 512, 0, 0, 7); g.fill(); g.restore();
+  }
+  g.globalAlpha = 1; if (draw) draw(g, s);
+  const t = new THREE.CanvasTexture(c); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.anisotropy = 8; return t;
+}
+function scratches(g, s, n, col, len) {
+  for (let i = 0; i < n; i++) { g.globalAlpha = R(.3, .8); const x = R(0, s), y = R(0, s), a = R(0, 6.3), l = R(6, len || 46); wob(g, [[x, y], [x + Math.cos(a) * l, y + Math.sin(a) * l]], R(1, 2.4), col); }
+  g.globalAlpha = 1;
+}
+function chips(g, s, n, col, rmax) {
+  for (let i = 0; i < n; i++) {
+    const x = R(0, s), y = R(0, s), r = R(4, rmax || 20); g.beginPath();
+    for (let k = 0; k < 8; k++) { const a = k / 8 * 6.283, rr = r * R(.45, 1.15); k ? g.lineTo(x + Math.cos(a) * rr, y + Math.sin(a) * rr) : g.moveTo(x + Math.cos(a) * rr, y + Math.sin(a) * rr); }
+    g.closePath(); g.fillStyle = col; g.fill(); g.strokeStyle = INK; g.lineWidth = 2.2; g.stroke();
+  }
+}
+function panels(g, s, nx, ny, w) {
+  for (let i = 0; i <= nx; i++) { const x = Math.min(s - 3, Math.max(3, i * s / nx)); wob(g, [[x, 0], [x, s / 2], [x, s]], w || 5); }
+  for (let j = 0; j <= ny; j++) { const y = Math.min(s - 3, Math.max(3, j * s / ny)); wob(g, [[0, y], [s / 2, y], [s, y]], w || 5); }
+  for (let i = 0; i < nx; i++) for (let j = 0; j < ny; j++) for (const [dx, dy] of [[.1, .1], [.9, .1], [.1, .9], [.9, .9]]) {
+    const x = (i + dx) * s / nx, y = (j + dy) * s / ny; g.fillStyle = INK; g.beginPath(); g.arc(x, y, 5, 0, 7); g.fill(); g.fillStyle = 'rgba(255,255,255,.55)'; g.beginPath(); g.arc(x - 1.5, y - 1.5, 1.8, 0, 7); g.fill();
+  }
+}
+function grime(g, s, n) {
+  for (let i = 0; i < n; i++) { const x = R(0, s), y = R(0, s * .5), l = R(30, 160); const gr = g.createLinearGradient(0, y, 0, y + l); gr.addColorStop(0, 'rgba(30,18,24,.42)'); gr.addColorStop(1, 'rgba(30,18,24,0)'); g.fillStyle = gr; g.fillRect(x, y, R(3, 10), l); }
+}
+function hatchPatch(g, s, n) {
+  for (let i = 0; i < n; i++) { const x = R(0, s), y = R(0, s), w = R(20, 70); g.globalAlpha = .7; for (let k = 0; k < 6; k++) wob(g, [[x + k * 7, y], [x + k * 7 - w * .4, y + w * .5]], 1.8); }
+  g.globalAlpha = 1;
+}
+function stencil(g, txt, x, y, px, col, rot) { g.save(); g.translate(x, y); g.rotate(rot || 0); g.font = '900 ' + px + 'px Impact, "Arial Narrow", sans-serif'; g.fillStyle = col; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(txt, 0, 0); g.restore(); }
+
+const TX = {
+  steel: paint('#b4bac2', (g, s) => { grime(g, s, 26); panels(g, s, 2, 2); scratches(g, s, 60, '#eef2f5'); scratches(g, s, 30, INK, 20); hatchPatch(g, s, 5); }),
+  steelD: paint('#5d6474', (g, s) => { panels(g, s, 2, 2, 4); scratches(g, s, 50, '#aab2c4'); grime(g, s, 14); }),
+  yellow: paint('#ffc21a', (g, s) => { grime(g, s, 16); chips(g, s, 26, '#9aa0aa'); panels(g, s, 1, 1, 7); scratches(g, s, 50, '#fff3c0'); scratches(g, s, 26, INK, 22); stencil(g, '07', s * .5, s * .52, 190, 'rgba(14,13,20,.85)', -.06); hatchPatch(g, s, 4); }),
+  yellowP: paint('#ffc21a', (g, s) => { chips(g, s, 18, '#9aa0aa', 14); scratches(g, s, 40, '#fff3c0'); scratches(g, s, 20, INK, 18); wob(g, [[0, s * .5], [s, s * .5]], 6); }),
+  hazard: paint('#ffc21a', (g, s) => { g.fillStyle = INK; for (let i = -2; i < 8; i++) { g.beginPath(); g.moveTo(i * 128, 0); g.lineTo(i * 128 + 64, 0); g.lineTo(i * 128 - 64, s); g.lineTo(i * 128 - 128, s); g.fill(); } chips(g, s, 16, '#9aa0aa', 16); scratches(g, s, 40, '#fff3c0'); }, { blot: 60 }),
+  rubber: paint('#2b2933', (g, s) => { scratches(g, s, 50, '#6c6a7c', 30); for (let i = 0; i < 9; i++) wob(g, [[0, i * 60 + 20], [s, i * 60 + 20]], 4, '#15141b'); }),
+  cloth: paint('#8a5a3c', (g, s) => { for (let i = 0; i < 6; i++) { const y = R(0, s); g.setLineDash([10, 9]); wob(g, [[0, y], [s, y + R(-20, 20)]], 3, '#e0b890'); g.setLineDash([]); } chips(g, s, 5, '#6d7a52', 34); scratches(g, s, 30, INK, 30); hatchPatch(g, s, 8); }),
+  vest: paint('#ff7d1a', (g, s) => { g.fillStyle = '#f6f0d4'; g.fillRect(0, s * .3, s, s * .1); g.fillRect(0, s * .62, s, s * .1); wob(g, [[0, s * .3], [s, s * .3]], 5); wob(g, [[0, s * .4], [s, s * .4]], 5); wob(g, [[0, s * .62], [s, s * .62]], 5); wob(g, [[0, s * .72], [s, s * .72]], 5); grime(g, s, 20); scratches(g, s, 30, INK, 24); }),
+  gun: paint('#40434f', (g, s) => { panels(g, s, 3, 1, 4); scratches(g, s, 60, '#aab2c4', 30); }),
+  helmet: paint('#e4dcc6', (g, s) => { for (const u of [.25, .75]) { g.fillStyle = '#ffc21a'; g.fillRect(s * u - 40, 0, 80, s); wob(g, [[s * u - 40, 0], [s * u - 40, s]], 5); wob(g, [[s * u + 40, 0], [s * u + 40, s]], 5); } chips(g, s, 22, '#8d939c', 14); scratches(g, s, 60, INK, 22); grime(g, s, 12); stencil(g, 'A1', s * .52, s * .36, 60, INK); }),
+  hardhat: paint('#ffc21a', (g, s) => { for (const u of [.25, .75]) { wob(g, [[s * u - 26, 0], [s * u - 26, s]], 5); wob(g, [[s * u + 26, 0], [s * u + 26, s]], 5); } chips(g, s, 16, '#f6f0d4', 12); scratches(g, s, 40, INK, 22); grime(g, s, 10); }),
+  skin: paint('#e2a678', (g, s) => { scratches(g, s, 24, '#9a5a3c', 16); }),
+  corr: paint('#7d9a72', (g, s) => { for (let i = 0; i < 16; i++) { const x = i * s / 16; g.fillStyle = 'rgba(20,30,20,.25)'; g.fillRect(x, 0, s / 32, s); wob(g, [[x, 0], [x, s]], 3.5); } grime(g, s, 30); chips(g, s, 14, '#b8492e', 18); scratches(g, s, 30, '#d9eccc'); stencil(g, 'B-01', s * .5, s * .5, 110, 'rgba(244,234,210,.9)'); }),
+  rust: paint('#c04a2c', (g, s) => { for (let i = 0; i < 12; i++) wob(g, [[i * s / 12, 0], [i * s / 12, s]], 3.5); grime(g, s, 30); chips(g, s, 16, '#6a2a1c', 22); scratches(g, s, 40, '#f4b090'); stencil(g, 'IHC', s * .5, s * .5, 150, 'rgba(244,234,210,.9)'); }),
+  tealC: paint('#2f9a94', (g, s) => { for (let i = 0; i < 12; i++) wob(g, [[i * s / 12, 0], [i * s / 12, s]], 3.5); grime(g, s, 30); chips(g, s, 16, '#b8492e', 20); scratches(g, s, 40, '#bff5ee'); stencil(g, '22', s * .5, s * .5, 200, 'rgba(244,234,210,.9)'); }),
+  door: paint('#33313d', (g, s) => { for (let i = 0; i < 10; i++) wob(g, [[0, i * s / 10], [s, i * s / 10]], 5, '#121118'); scratches(g, s, 40, '#8088a0'); stencil(g, '▲', s * .5, s * .5, 120, '#ffc21a'); }),
+  concrete: paint('#9a8f86', (g, s) => { scratches(g, s, 40, INK, 60); grime(g, s, 20); chips(g, s, 10, '#6f655e', 24); }),
+  rock: paint('#b0553a', (g, s) => { for (let i = 0; i < 9; i++) { const y = R(0, s); wob(g, [[0, y], [s * .3, y + R(-14, 14)], [s * .7, y + R(-14, 14)], [s, y]], R(2, 5)); } for (let i = 0; i < 14; i++) { const x = R(0, s), y = R(0, s); wob(g, [[x, y], [x + R(-20, 20), y + R(20, 60)], [x + R(-30, 30), y + R(60, 120)]], R(2, 4)); } hatchPatch(g, s, 14); scratches(g, s, 30, '#f0a078'); }),
+  mesa: paint('#c8653c', (g, s) => { const cols = ['#d97a48', '#a94a30', '#e09058', '#8e3d2c']; for (let i = 0; i < 9; i++) { g.globalAlpha = .55; g.fillStyle = cols[i % 4]; const y = i * s / 9 + R(-8, 8); g.fillRect(0, y, s, R(14, 40)); g.globalAlpha = 1; wob(g, [[0, y], [s * .25, y + R(-6, 6)], [s * .5, y + R(-6, 6)], [s * .75, y + R(-6, 6)], [s, y]], R(2.5, 5)); } for (let i = 0; i < 12; i++) { const x = R(0, s); wob(g, [[x, R(0, s * .3)], [x + R(-12, 12), R(s * .4, s)]], R(2, 4)); } hatchPatch(g, s, 10); }),
+  ground: paint('#c9743f', (g, s) => {
+    for (let i = 0; i < 46; i++) { let x = R(0, s), y = R(0, s); const pts = [[x, y]]; for (let k = 0; k < 5; k++) { x += R(-50, 50); y += R(-50, 50); pts.push([x, y]); } g.globalAlpha = R(.35, .8); wob(g, pts, R(1.6, 3.6), '#4a2218'); }
+    g.globalAlpha = 1;
+    for (let i = 0; i < 160; i++) { const x = R(0, s), y = R(0, s), r = R(2, 7); g.fillStyle = rnd() < .5 ? '#8f4a2c' : '#e39a62'; g.beginPath(); g.ellipse(x, y, r * 1.4, r, R(0, 3), 0, 7); g.fill(); g.strokeStyle = '#4a2218'; g.lineWidth = 1.4; g.stroke(); }
+    hatchPatch(g, s, 26);
+  }, { size: 1024, blot: 420 }),
+  road: paint('#8f5a3c', (g, s) => { for (const y of [.2, .36, .64, .8]) { for (let i = 0; i < 26; i++) { const x = i * s / 26; wob(g, [[x, s * y - 16], [x + 8, s * y + 16]], 5, '#4a2218'); } } scratches(g, s, 40, '#4a2218', 60); }, { blot: 200 }),
+  ore: paint('#b8f58c', (g, s) => { for (let i = 0; i < 12; i++) { const x = R(0, s); g.globalAlpha = .6; g.fillStyle = '#f2ffe0'; g.beginPath(); g.moveTo(x, 0); g.lineTo(x + R(20, 60), 0); g.lineTo(x + R(-40, 40), s); g.fill(); g.globalAlpha = 1; wob(g, [[x, 0], [x + R(-40, 40), s]], 3, '#3c7a3a'); } }, { blot: 60 }),
+  indigo: paint('#4433b8', (g, s) => { for (let i = 0; i < 14; i++) { let x = R(0, s), y = 0; const pts = [[x, y]]; while (y < s) { y += R(30, 70); x += R(-36, 36); pts.push([x, y]); } wob(g, pts, R(2, 4), '#35e0c8'); } scratches(g, s, 30, INK, 26); hatchPatch(g, s, 8); }),
+  indigoD: paint('#2a1f78', (g, s) => { scratches(g, s, 40, '#6a5ae0', 30); hatchPatch(g, s, 10); }),
+  smoke: paint('#f2e9d8', (g, s) => { scratches(g, s, 30, '#b8ae9c', 60); }, { blot: 80 }),
+  planet: paint('#f3d9b0', (g, s) => { const cols = ['#e8b98a', '#f8e8c8', '#d99a78', '#f0c8a0']; for (let i = 0; i < 12; i++) { g.fillStyle = cols[i % 4]; g.globalAlpha = .8; const y = i * s / 12 + R(-6, 6); g.fillRect(0, y, s, R(10, 36)); g.globalAlpha = 1; wob(g, [[0, y], [s / 2, y + R(-5, 5)], [s, y]], R(2, 4), '#8a5a48'); } }, { blot: 40 }),
+  sign: paint('#f4ead2', (g, s) => { g.fillStyle = INK; g.fillRect(0, 0, s, 30); g.fillRect(0, s - 30, s, 30); stencil(g, 'IRONHOLD', s * .5, s * .5, 104, INK); chips(g, s, 12, '#b8492e', 14); scratches(g, s, 30, INK, 20); grime(g, s, 12); }, { blot: 30 }),
+  hex: (() => { const c = document.createElement('canvas'); c.width = 256; c.height = 222; const g = c.getContext('2d'); g.fillStyle = 'rgba(53,224,200,.2)'; g.fillRect(0, 0, 256, 222); g.strokeStyle = '#c8fff6'; g.lineWidth = 7; const r = 74; for (const [cx, cy] of [[0, 0], [256, 0], [0, 222], [256, 222], [128, 111]]) { g.beginPath(); for (let k = 0; k < 7; k++) { const a = k * Math.PI / 3; g.lineTo(cx + Math.cos(a) * r, cy + Math.sin(a) * r); } g.stroke(); } const t = new THREE.CanvasTexture(c); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(9, 4); return t; })(),
+};
+
+// ------------------------------------------------------------ toon material
+const LIGHT = V3(-0.55, 0.62, 0.56).normalize();
+const FOG = new THREE.Color('#f3c9a0');
+const NOISE = `float hash(vec2 p){return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453);}
+float vnoise(vec2 p){vec2 i=floor(p),f=fract(p);f=f*f*(3.-2.*f);return mix(mix(hash(i),hash(i+vec2(1,0)),f.x),mix(hash(i+vec2(0,1)),hash(i+vec2(1,1)),f.x),f.y);}`;
+const TOON_VS = `uniform vec3 uL; uniform vec2 uRep; varying vec3 vN,vL,vP,vW; varying vec2 vUv;
+void main(){ vUv=uv*uRep; vec4 w=modelMatrix*vec4(position,1.); vW=w.xyz; vec4 mv=viewMatrix*w; vP=mv.xyz; vN=normalize(normalMatrix*normal); vL=(viewMatrix*vec4(uL,0.)).xyz; gl_Position=projectionMatrix*mv; }`;
+const TOON_FS = `precision highp float;
+uniform vec3 uColor,uFog; uniform sampler2D uMap; uniform float uEmis,uOpacity,uHatch,uFogK,uFlat;
+varying vec3 vN,vL,vP,vW; varying vec2 vUv;
+${NOISE}
+void main(){
+  vec3 n=normalize(vN); if(!gl_FrontFacing) n=-n;
+  vec3 base=uColor*texture2D(uMap,vUv).rgb;
+  float nz=vnoise(vW.xz*2.3+vW.y*1.9)-.5;
+  float t=dot(n,normalize(vL))+nz*.24; t=mix(t,1.,uFlat*.6);
+  float lit=smoothstep(-.03,.03,t), hi=smoothstep(.74,.78,t), deep=1.-smoothstep(-.6,-.54,t);
+  vec3 sh=base*vec3(.44,.38,.66)+vec3(.03,.01,.07);
+  vec3 col=mix(sh,base,lit);
+  col=mix(col,min(base*1.2+vec3(.08,.07,.03),vec3(1.)),hi*.75);
+  vec2 fc=gl_FragCoord.xy+(vnoise(gl_FragCoord.xy*.045)-.5)*7.;
+  float l1=smoothstep(.56,.74,abs(fract((fc.x+fc.y)/10.)-.5)*2.);
+  float l2=smoothstep(.56,.74,abs(fract((fc.x-fc.y)/10.)-.5)*2.);
+  float mid=lit*(1.-smoothstep(.03,.34,t));
+  float hatch=(1.-lit)*l1*.6+deep*l2*.6+mid*l1*.16;
+  col=mix(col,col*.38,clamp(hatch,0.,1.)*uHatch);
+  float rim=pow(1.-max(dot(n,normalize(-vP)),0.),3.)*(1.-lit)*.4; col+=rim*vec3(.45,.6,.95);
+  col=mix(col,base*1.08,uEmis);
+  float d=length(vP); col=mix(col,uFog,(1.-exp(-d*uFogK))*.92*(1.-uEmis*.6));
+  gl_FragColor=vec4(col,uOpacity);
+}`;
+const WHITE = new THREE.DataTexture(new Uint8Array([255, 255, 255, 255]), 1, 1, THREE.RGBAFormat); WHITE.needsUpdate = true;
+function T(map, o) {
+  o = o || {};
+  return new THREE.ShaderMaterial({
+    uniforms: { uColor: { value: new THREE.Color(o.color || '#ffffff') }, uMap: { value: map || WHITE }, uEmis: { value: o.emis || 0 }, uOpacity: { value: 1 }, uHatch: { value: o.hatch === undefined ? 1 : o.hatch }, uFog: { value: FOG }, uFogK: { value: o.fog === undefined ? .0026 : o.fog }, uFlat: { value: o.flat || 0 }, uL: { value: LIGHT }, uRep: { value: new THREE.Vector2(o.rx || 1, o.ry || 1) } },
+    vertexShader: TOON_VS, fragmentShader: TOON_FS, side: o.side || THREE.FrontSide,
+  });
+}
+const M = {
+  steel: T(TX.steel), steelD: T(TX.steelD), yellow: T(TX.yellow), yellowP: T(TX.yellowP), hazard: T(TX.hazard, { rx: 3 }), hazard1: T(TX.hazard),
+  rubber: T(TX.rubber), cloth: T(TX.cloth), vest: T(TX.vest), gun: T(TX.gun), helmet: T(TX.helmet), hardhat: T(TX.hardhat), skin: T(TX.skin),
+  corr: T(TX.corr, { rx: 2 }), rust: T(TX.rust), tealC: T(TX.tealC), door: T(TX.door), concrete: T(TX.concrete, { rx: 2, ry: 2 }),
+  rock: T(TX.rock), mesa: T(TX.mesa, { rx: 3, ry: 1 }), ground: T(TX.ground, { rx: 70, ry: 70, hatch: 0, flat: 1 }), ore: T(TX.ore, { emis: .35 }),
+  indigo: T(TX.indigo), indigoL: T(TX.indigo, { color: '#c9c2ff' }), indigoD: T(TX.indigoD), smoke: T(TX.smoke, { hatch: .5 }),
+  visor: T(null, { color: '#ffe27a', emis: 1 }), cyan: T(null, { color: '#8ff2ff', emis: 1 }), teal: T(null, { color: '#35e0c8', emis: .9 }), mag: T(null, { color: '#ff4f9a', emis: .9 }), red: T(null, { color: '#ff4b3a', emis: 1 }),
+  tracer: T(null, { color: '#fff3a8', emis: 1 }), planet: T(TX.planet, { fog: 0, hatch: .4 }), ring: T(null, { color: '#ffe9c4', emis: .8, fog: 0, side: THREE.DoubleSide }),
+  sign: T(TX.sign), violet: T(null, { color: '#b58cff', emis: .9 }), white: T(null, { color: '#f4ead2' }),
+};
+const holoMat = new THREE.MeshBasicMaterial({ color: 0x35d6ff, transparent: true, opacity: .3, depthWrite: false, side: THREE.DoubleSide });
+const holoLine = new THREE.LineBasicMaterial({ color: 0xc8fbff, transparent: true, opacity: 1, depthWrite: false });
+const shadowMat = new THREE.MeshBasicMaterial({ color: 0x3a1436, transparent: true, opacity: .46, depthWrite: false });
+const ringMat = new THREE.MeshBasicMaterial({ color: 0x8be04e, transparent: true, opacity: .95, depthWrite: false, side: THREE.DoubleSide });
+
+// ------------------------------------------------------------ geometry kit
+const G = {
+  box: new THREE.BoxGeometry(1, 1, 1), sph: new THREE.SphereGeometry(.5, 22, 14), cyl: new THREE.CylinderGeometry(.5, .5, 1, 18), cyl8: new THREE.CylinderGeometry(.5, .5, 1, 8),
+  taper: new THREE.CylinderGeometry(.32, .5, 1, 14), hexT: new THREE.CylinderGeometry(.4, .5, 1, 6), cone: new THREE.ConeGeometry(.5, 1, 16), cone4: new THREE.ConeGeometry(.5, 1, 4), cone6: new THREE.ConeGeometry(.5, 1, 6),
+  hemi: new THREE.SphereGeometry(.5, 22, 10, 0, Math.PI * 2, 0, Math.PI / 2), torus: new THREE.TorusGeometry(.5, .06, 8, 28), torusF: new THREE.TorusGeometry(.5, .12, 8, 28), arc: new THREE.TorusGeometry(.5, .1, 8, 16, Math.PI),
+  oct: new THREE.OctahedronGeometry(.5), dod: new THREE.DodecahedronGeometry(.5), half: new THREE.CylinderGeometry(.5, .5, 1, 18, 1, false, 0, Math.PI), disc: new THREE.CircleGeometry(.5, 24), ringG: new THREE.RingGeometry(.42, .5, 28),
+};
+const scene = new THREE.Scene();
+function mk(geo, mat, p, s, r, parent) { const m = new THREE.Mesh(geo, mat); if (p) m.position.set(p[0], p[1], p[2]); if (s) m.scale.set(s[0], s[1], s[2]); if (r) m.rotation.set(r[0], r[1], r[2]); (parent || scene).add(m); return m; }
+function beam(a, b, r, mat, parent) { const A = V3(a[0], a[1], a[2]), B = V3(b[0], b[1], b[2]), d = B.clone().sub(A); const m = new THREE.Mesh(G.cyl8, mat); m.scale.set(r * 2, d.length(), r * 2); m.position.copy(A).add(B).multiplyScalar(.5); m.quaternion.setFromUnitVectors(V3(0, 1, 0), d.normalize()); (parent || scene).add(m); return m; }
+function L1(o) { o.traverse(x => x.layers.set(1)); return o; }
+function blob(x, z, r, st, parent) { const sx = -LIGHT.x, sz = -LIGHT.z, l = Math.hypot(sx, sz); const m = mk(G.disc, shadowMat, [x + sx / l * r * (st || 1) * .55, .03, z + sz / l * r * (st || 1) * .55], [r * (st || 1.6) * 1.3, r, 1], null, parent); m.rotation.set(-Math.PI / 2, 0, Math.atan2(-sz, sx)); m.layers.set(1); m.renderOrder = 1; return m; }
+const rings = [];
+function ring(u, r) { const m = mk(G.ringG, ringMat, [0, .08, 0], [r || 2.4, r || 2.4, 1], [-Math.PI / 2, 0, 0], u); m.layers.set(1); m.visible = false; rings.push(m); }
+const anim = [];
+
+// ------------------------------------------------------------ units
+function trooper(o) {
+  o = o || {}; const g = new THREE.Group();
+  for (const sx of [-1, 1]) {
+    mk(G.box, M.rubber, [sx * .2, .13, .05], [.32, .26, .5], 0, g);
+    mk(G.cyl, M.steelD, [sx * .19, .42, 0], [.28, .36, .28], 0, g);
+    mk(G.sph, M.yellowP, [sx * .5, 1.1, 0], [.5, .42, .5], 0, g);
+    mk(G.cyl, M.steel, [sx * .48, .82, .1], [.2, .42, .2], [-.6, 0, 0], g);
+    mk(G.sph, M.rubber, [sx * .4, .68, .32], [.24, .24, .24], 0, g);
+  }
+  mk(G.box, M.rubber, [0, .62, 0], [.6, .16, .4], 0, g);
+  mk(G.box, M.steel, [0, .92, 0], [.7, .5, .46], 0, g);
+  mk(G.box, M.yellow, [0, .96, .21], [.52, .32, .1], 0, g);
+  mk(G.box, M.steelD, [0, .94, -.32], [.48, .5, .24], 0, g);
+  mk(G.cyl, M.rust, [.14, 1.0, -.48], [.16, .5, .16], 0, g);
+  mk(G.sph, M.helmet, [0, 1.56, 0], [.84, .78, .84], 0, g);
+  mk(G.box, M.rubber, [0, 1.57, .31], [.7, .27, .26], 0, g);
+  mk(G.box, M.visor, [0, 1.57, .41], [.54, .11, .1], 0, g);
+  mk(G.cyl, M.yellowP, [-.43, 1.52, 0], [.26, .1, .26], [0, 0, Math.PI / 2], g); mk(G.cyl, M.yellowP, [.43, 1.52, 0], [.26, .1, .26], [0, 0, Math.PI / 2], g);
+  mk(G.box, M.steelD, [0, 1.3, .27], [.34, .16, .24], 0, g);
+  mk(G.cyl, M.rubber, [.34, 2.0, -.1], [.035, .6, .035], 0, g);
+  mk(G.sph, M.red, [.34, 2.32, -.1], [.09, .09, .09], 0, g);
+  if (o.shield) {
+    mk(G.box, M.steel, [-.5, .95, .5], [.95, 1.45, .1], [0, .25, 0], g); mk(G.box, M.hazard1, [-.5, 1.3, .56], [.9, .3, .06], [0, .25, 0], g); mk(G.box, M.visor, [-.5, 1.52, .57], [.4, .09, .05], [0, .25, 0], g);
+  } else {
+    const rf = new THREE.Group(); mk(G.box, M.gun, [0, 0, 0], [.13, .2, .8], 0, rf); mk(G.cyl, M.gun, [0, .03, .58], [.07, .45, .07], [Math.PI / 2, 0, 0], rf); mk(G.box, M.yellowP, [0, -.02, .2], [.15, .1, .26], 0, rf); mk(G.box, M.gun, [0, -.2, -.05], [.1, .26, .14], [.3, 0, 0], rf); mk(G.box, M.rubber, [0, -.02, -.5], [.11, .2, .3], 0, rf);
+    rf.position.set(.06, .76, .4); rf.rotation.set(-.25, -1.0, 0); g.add(rf);
+  }
+  blob(0, 0, .75, 1.5, g);
+  if (o.scale) g.scale.setScalar(o.scale);
+  return g;
+}
+function rigger(o) {
+  o = o || {}; const g = new THREE.Group();
+  for (const sx of [-1, 1]) {
+    mk(G.box, M.rubber, [sx * .2, .13, .05], [.32, .26, .5], 0, g);
+    mk(G.cyl, M.cloth, [sx * .19, .42, 0], [.3, .38, .3], 0, g);
+    mk(G.cyl, M.cloth, [sx * .46, .86, .08], [.2, .46, .2], [-.5, 0, sx * -.15], g);
+    mk(G.sph, M.yellowP, [sx * .42, .68, .3], [.28, .28, .28], 0, g);
+  }
+  mk(G.box, M.vest, [0, .9, 0], [.68, .58, .46], 0, g);
+  mk(G.box, M.rubber, [0, .62, 0], [.62, .14, .42], 0, g);
+  mk(G.sph, M.skin, [0, 1.5, 0], [.7, .68, .7], 0, g);
+  mk(G.cyl, M.cyan, [-.15, 1.52, .3], [.2, .1, .2], [Math.PI / 2, 0, 0], g); mk(G.cyl, M.cyan, [.15, 1.52, .3], [.2, .1, .2], [Math.PI / 2, 0, 0], g);
+  mk(G.torusF, M.rubber, [-.15, 1.52, .34], [.24, .24, .2], 0, g); mk(G.torusF, M.rubber, [.15, 1.52, .34], [.24, .24, .2], 0, g);
+  mk(G.box, M.steelD, [0, 1.32, .3], [.26, .16, .18], 0, g);
+  mk(G.hemi, M.hardhat, [0, 1.62, 0], [.86, .8, .86], 0, g);
+  mk(G.cyl, M.hardhat, [0, 1.64, .06], [1.0, .05, 1.0], 0, g);
+  mk(G.cyl, M.visor, [0, 1.86, .36], [.16, .1, .16], [Math.PI / 2.4, 0, 0], g);
+  if (o.pack) { mk(G.box, M.steelD, [0, 1.0, -.38], [.56, .56, .3], 0, g); for (let i = 0; i < 3; i++) mk(G.oct, M.ore, [-.16 + i * .16, 1.42, -.38], [.2, .5, .2], [R(-.3, .3), 0, R(-.3, .3)], g); }
+  else { mk(G.box, M.yellow, [.44, .7, .5], [.18, .2, .4], 0, g); mk(G.cone, M.steel, [.44, .7, .86], [.2, .4, .2], [Math.PI / 2, 0, 0], g); }
+  blob(0, 0, .75, 1.5, g);
+  return g;
+}
+function badger() {
+  const g = new THREE.Group();
+  mk(G.box, M.yellow, [0, 1.0, 0], [2.2, .6, 3.8], 0, g); mk(G.box, M.yellowP, [0, 1.3, 1.3], [1.9, .4, 1.3], [.12, 0, 0], g); mk(G.box, M.steelD, [0, .72, 0], [1.8, .3, 3.4], 0, g);
+  mk(G.box, M.hazard1, [0, .95, 2.0], [2.5, .34, .2], 0, g); mk(G.box, M.visor, [-.7, 1.25, 1.96], [.36, .22, .1], 0, g); mk(G.box, M.visor, [.7, 1.25, 1.96], [.36, .22, .1], 0, g);
+  for (const sx of [-1, 1]) for (const sz of [-1, 1]) { mk(G.cyl, M.rubber, [sx * 1.25, .68, sz * 1.25], [1.36, .56, 1.36], [0, 0, Math.PI / 2], g); mk(G.cyl, M.yellowP, [sx * 1.54, .68, sz * 1.25], [.6, .08, .6], [0, 0, Math.PI / 2], g); }
+  for (const sx of [-1, 1]) { beam([sx * .95, 1.3, .5], [sx * .85, 2.4, .1], .07, M.steelD, g); beam([sx * .95, 1.3, -1.6], [sx * .85, 2.4, -1.0], .07, M.steelD, g); beam([sx * .85, 2.4, .1], [sx * .85, 2.4, -1.0], .07, M.steelD, g); }
+  beam([-.85, 2.4, .1], [.85, 2.4, .1], .07, M.steelD, g); beam([-.85, 2.4, -1.0], [.85, 2.4, -1.0], .07, M.steelD, g);
+  mk(G.box, M.gun, [0, 2.62, -.3], [.3, .3, .9], 0, g); mk(G.cyl, M.gun, [0, 2.64, .5], [.12, 1.0, .12], [Math.PI / 2, 0, 0], g);
+  mk(G.sph, M.helmet, [0, 1.75, -.35], [.7, .66, .7], 0, g); mk(G.box, M.visor, [0, 1.75, -.06], [.46, .14, .16], 0, g);
+  mk(G.cyl, M.rust, [.9, 1.5, -1.9], [.16, 1.0, .16], [.3, 0, 0], g);
+  blob(0, 0, 2.3, 1.4, g);
+  return g;
+}
+function cantor() {
+  const g = new THREE.Group();
+  for (const sx of [-1, 1]) {
+    mk(G.cone, M.indigoD, [sx * .17, .46, 0], [.22, .92, .22], [Math.PI, 0, 0], g);
+    mk(G.arc, M.teal, [sx * .62, 1.98, 0], [.8, .8, .8], [0, Math.PI / 2, 0], g);
+    beam([sx * .4, 1.85, 0], [sx * .56, 1.25, .34], .06, M.indigoD, g); mk(G.sph, M.indigoL, [sx * .56, 1.2, .36], [.2, .2, .2], 0, g);
+  }
+  mk(G.taper, M.indigo, [0, 1.1, 0], [.95, 1.0, .8], 0, g);
+  mk(G.sph, M.indigo, [0, 1.7, 0], [.66, .72, .54], 0, g);
+  mk(G.oct, M.mag, [0, 1.72, .27], [.22, .3, .14], 0, g);
+  mk(G.sph, M.indigoL, [0, 2.42, .02], [.62, .86, .66], 0, g);
+  mk(G.box, M.teal, [0, 2.46, .3], [.44, .08, .14], 0, g);
+  mk(G.cone, M.teal, [0, 2.98, -.14], [.18, .6, .18], [-.4, 0, 0], g);
+  mk(G.torus, M.mag, [0, 2.5, -.3], [1.25, 1.25, 1.25], 0, g);
+  beam([.56, .35, .38], [.56, 2.6, .38], .04, M.steelD, g); beam([.4, 2.6, .38], [.72, 2.6, .38], .05, M.mag, g); beam([.4, 2.6, .38], [.4, 3.3, .38], .05, M.mag, g); beam([.72, 2.6, .38], [.72, 3.3, .38], .05, M.mag, g);
+  blob(0, 0, .8, 1.6, g);
+  return g;
+}
+function warden() {
+  const g = new THREE.Group();
+  mk(G.hemi, M.indigoL, [0, 0, 0], [1.7, 1.2, 1.7], 0, g); mk(G.torusF, M.teal, [0, -.02, 0], [1.75, 1.75, 1.2], [Math.PI / 2, 0, 0], g); mk(G.sph, M.mag, [0, -.2, 0], [.5, .5, .5], 0, g);
+  for (let i = 0; i < 6; i++) { const a = i / 6 * 6.283; mk(G.box, M.teal, [Math.cos(a) * .6, -.8, Math.sin(a) * .6], [.07, 1.2 + (i % 2) * .5, .07], [Math.sin(a) * .2, 0, Math.cos(a) * -.2], g); }
+  anim.push(t => { g.position.y = 3.1 + Math.sin(t * 1.3) * .15; g.rotation.y = t * .3; });
+  return g;
+}
+
+// ------------------------------------------------------------ structures
+function headframe() {
+  const g = new THREE.Group();
+  mk(G.box, M.concrete, [0, .12, 0], [13, .24, 9], 0, g);
+  mk(G.box, M.steel, [0, 2.3, 0], [10, 4.4, 7], 0, g);
+  mk(G.box, M.hazard, [0, 4.1, 0], [10.2, .7, 7.2], 0, g);
+  mk(G.box, M.steelD, [0, 4.7, 0], [10.5, .4, 7.5], 0, g);
+  mk(G.box, M.door, [1.6, 1.6, 3.52], [3.2, 3, .14], 0, g);
+  mk(G.box, M.yellowP, [1.6, 3.3, 3.58], [3.7, .34, .2], 0, g);
+  mk(G.box, M.visor, [-2.7, 2.7, 3.52], [1.7, .8, .12], 0, g); mk(G.box, M.visor, [-2.7, 1.3, 3.52], [1.7, .8, .12], 0, g);
+  mk(G.box, M.steelD, [-2.7, 2.0, 3.56], [2.0, .16, .14], 0, g);
+  mk(G.box, M.yellow, [6.9, 1.6, 1], [3.6, 3, 4.4], 0, g); mk(G.box, M.steelD, [6.9, 3.2, 1], [3.9, .26, 4.7], 0, g); mk(G.box, M.visor, [6.9, 1.9, 3.22], [1.6, .7, .1], 0, g);
+  for (let i = 0; i < 2; i++) { const z = -1.7 + i * 3.4; mk(G.cyl, M.steel, [-7, 2.7, z], [2.8, 5.2, 2.8], 0, g); mk(G.hemi, M.yellowP, [-7, 5.3, z], [2.8, 2.2, 2.8], 0, g); mk(G.torusF, M.steelD, [-7, 3.6, z], [2.95, 2.95, 1.6], [Math.PI / 2, 0, 0], g); mk(G.torusF, M.steelD, [-7, 1.6, z], [2.95, 2.95, 1.6], [Math.PI / 2, 0, 0], g); }
+  const top = 14.2;
+  for (const sx of [-1, 1]) for (const sz of [-1, 1]) beam([sx * 2.6, 4.8, sz * 2.2], [sx * .6, top, sz * .6], .16, M.yellowP, g);
+  for (const h of [.3, .6]) { const y = 4.8 + (top - 4.8) * h, w = 2.6 - 2 * h, d = 2.2 - 1.6 * h; beam([-w, y, d], [w, y, d], .1, M.steelD, g); beam([-w, y, -d], [w, y, -d], .1, M.steelD, g); beam([-w, y, d], [-w, y, -d], .1, M.steelD, g); beam([w, y, d], [w, y, -d], .1, M.steelD, g); }
+  beam([-2.6, 4.8, 2.2], [1.6, 4.8 + (top - 4.8) * .3, 1.72], .08, M.steelD, g); beam([2.0, 7.62, 1.72], [-1.4, 10.44, 1.24], .08, M.steelD, g);
+  mk(G.box, M.yellow, [0, top + .3, 0], [1.8, .9, 1.8], 0, g);
+  const wheel = new THREE.Group(); mk(G.torusF, M.steelD, [0, 0, 0], [3.6, 3.6, 2.4], 0, wheel); for (let i = 0; i < 4; i++) mk(G.box, M.steelD, [0, 0, 0], [3.3, .14, .14], [0, 0, i * Math.PI / 4], wheel); mk(G.cyl, M.yellowP, [0, 0, 0], [.6, .5, .6], [Math.PI / 2, 0, 0], wheel);
+  wheel.position.set(0, top + 1.4, 1.1); g.add(wheel); anim.push(t => { wheel.rotation.z = t * .5; });
+  mk(G.sph, M.red, [0, top + 3.5, 0], [.3, .3, .3], 0, g); beam([0, top + .7, 0], [0, top + 3.4, 0], .05, M.steelD, g);
+  mk(G.box, M.steelD, [8.3, 2.4, -1.5], [6.4, .5, 1.3], [0, 0, -.55], g); beam([10.2, 0, -1.5], [10.2, 1.3, -1.5], .12, M.steelD, g);
+  mk(G.cyl, M.rust, [3.4, 6.4, -2], [.9, 3.4, .9], 0, g); mk(G.torusF, M.steelD, [3.4, 8.0, -2], [1.0, 1.0, 1.2], [Math.PI / 2, 0, 0], g);
+  for (let i = 0; i < 5; i++) { const p = mk(G.sph, M.smoke, [3.4, 9, -2], [1, 1, 1], 0, g); anim.push(t => { const k = ((t * .16 + i / 5) % 1); p.position.set(3.4 + k * 3.2 + Math.sin(i * 2.1) * .5, 8.6 + k * 7, -2 - k * 2); const s = .9 + k * 2.6; p.scale.set(s, s * .85, s); }); }
+  mk(G.box, M.sign, [-1.4, 5.8, 3.3], [5.2, 1.4, .2], 0, g); beam([-3.4, 4.9, 3.3], [-3.4, 5.2, 3.3], .08, M.steelD, g); beam([.6, 4.9, 3.3], [.6, 5.2, 3.3], .08, M.steelD, g);
+  beam([5.6, 0, 4.2], [5.6, 6, 4.2], .1, M.steelD, g); mk(G.box, M.visor, [5.6, 6.1, 4.3], [.9, .5, .3], [.4, 0, 0], g);
+  blob(1, 1, 7.5, 1.2, g);
+  return g;
+}
+function bunkhouse() {
+  const g = new THREE.Group();
+  mk(G.box, M.concrete, [0, .1, 0], [7.6, .2, 5.8], 0, g);
+  mk(G.half, M.corr, [0, .2, 0], [5.2, 7, 5.2], [0, 0, Math.PI / 2], g);
+  for (const sx of [-1, 1]) { mk(G.box, M.steelD, [sx * 3.52, .5, 0], [.14, .8, 5.2], 0, g); }
+  mk(G.box, M.door, [3.56, 1.25, 0], [.12, 2.1, 1.5], 0, g); mk(G.box, M.yellowP, [3.6, 2.4, 0], [.14, .22, 1.9], 0, g); mk(G.box, M.visor, [3.62, 2.72, 0], [.12, .24, .7], 0, g);
+  mk(G.box, M.steelD, [1, 2.0, 2.2], [1.5, .9, .9], 0, g); mk(G.cyl, M.rubber, [1, 2.0, 2.68], [.6, .08, .6], [Math.PI / 2, 0, 0], g);
+  beam([-2.2, 2.5, 0], [-2.2, 5.6, 0], .05, M.steelD, g); mk(G.sph, M.red, [-2.2, 5.7, 0], [.2, .2, .2], 0, g); beam([-2.8, 4.6, 0], [-1.6, 4.6, 0], .04, M.steelD, g);
+  for (let i = 0; i < 5; i++) mk(G.sph, M.cloth, [4.6, .22, 1.3 + i * .62], [.7, .42, .58], 0, g);
+  for (let i = 0; i < 4; i++) mk(G.sph, M.cloth, [4.6, .58, 1.6 + i * .62], [.7, .42, .58], 0, g);
+  mk(G.box, M.rust, [4.4, .5, -1.9], [1.0, 1.0, 1.0], [0, .3, 0], g); mk(G.box, M.yellow, [4.5, 1.3, -1.8], [.7, .6, .7], [0, -.2, 0], g);
+  return g;
+}
+function depot() {
+  const g = new THREE.Group();
+  mk(G.box, M.rust, [0, 1.15, 0], [5, 2.3, 2.3], 0, g); mk(G.box, M.tealC, [.4, 1.15, 2.6], [5, 2.3, 2.3], [0, .12, 0], g); mk(G.box, M.yellow, [.2, 3.45, 1.2], [5, 2.3, 2.3], [0, -.2, 0], g);
+  mk(G.cyl, M.steel, [3.6, .6, -.4], [.8, 1.2, .8], 0, g); mk(G.cyl, M.rust, [4.3, .6, .6], [.8, 1.2, .8], 0, g);
+  blob(0, 1.2, 4, 1.2, g);
+  return g;
+}
+function watchpost() {
+  const g = new THREE.Group();
+  for (const sx of [-1, 1]) for (const sz of [-1, 1]) beam([sx * 1.2, 0, sz * 1.2], [sx * .9, 4.5, sz * .9], .1, M.steelD, g);
+  for (const sz of [-1, 1]) { beam([-1.15, .8, sz * 1.15], [1.0, 3.6, sz * .95], .06, M.steelD, g); beam([1.15, .8, sz * 1.15], [-1.0, 3.6, sz * .95], .06, M.steelD, g); }
+  for (const sx of [-1, 1]) { beam([sx * 1.15, .8, -1.15], [sx * .95, 3.6, .95], .06, M.steelD, g); }
+  mk(G.box, M.steel, [0, 4.6, 0], [2.9, .3, 2.9], 0, g);
+  for (const [x, z, w, d] of [[0, 1.4, 2.9, .14], [0, -1.4, 2.9, .14], [1.4, 0, .14, 2.9], [-1.4, 0, .14, 2.9]]) mk(G.box, M.yellow, [x, 5.2, z], [w, .9, d], 0, g);
+  for (const sx of [-1, 1]) for (const sz of [-1, 1]) beam([sx * 1.3, 5.6, sz * 1.3], [sx * 1.3, 6.9, sz * 1.3], .06, M.steelD, g);
+  mk(G.cone4, M.rust, [0, 7.5, 0], [4.6, 1.3, 4.6], [0, Math.PI / 4, 0], g);
+  mk(G.box, M.gun, [0, 5.95, 1.2], [.5, .44, 1.0], 0, g); mk(G.cyl, M.gun, [0, 5.98, 2.1], [.16, 1.4, .16], [Math.PI / 2, 0, 0], g);
+  mk(G.cyl, M.steelD, [1.0, 7.0, 1.3], [.5, .4, .5], [Math.PI / 2, 0, 0], g); mk(G.cyl, M.visor, [1.0, 7.0, 1.52], [.42, .06, .42], [Math.PI / 2, 0, 0], g);
+  mk(G.sph, M.red, [0, 8.3, 0], [.24, .24, .24], 0, g);
+  blob(0, 0, 2.2, 1.6, g);
+  return g;
+}
+function hologram(src) {
+  const g = new THREE.Group(); src.updateMatrixWorld(true);
+  src.traverse(m => { if (!m.isMesh || m.material === shadowMat) return; const c = new THREE.Mesh(m.geometry, holoMat); c.applyMatrix4(m.matrixWorld); g.add(c); const e = new THREE.LineSegments(new THREE.EdgesGeometry(m.geometry, 30), holoLine); e.applyMatrix4(m.matrixWorld); g.add(e); });
+  L1(g); return g;
+}
+function oreField(x, z, n, sc) {
+  const g = new THREE.Group(); g.position.set(x, 0, z);
+  for (let i = 0; i < n; i++) { const a = R(0, 6.3), d = R(0, 1.5) * sc, h = R(1.4, 3.6) * sc; mk(G.oct, M.ore, [Math.cos(a) * d, h * .32, Math.sin(a) * d], [h * .34, h, h * .34], [R(-.45, .45), R(0, 3), R(-.45, .45)], g); }
+  for (let i = 0; i < 4; i++) { const a = R(0, 6.3); mk(G.dod, M.rock, [Math.cos(a) * 1.8 * sc, .2, Math.sin(a) * 1.8 * sc], [R(.6, 1.2), R(.4, .8), R(.6, 1.2)], [R(0, 3), R(0, 3), 0], g); }
+  blob(0, 0, 2 * sc, 1.3, g); scene.add(g); return g;
+}
+function choir(x, z, sc) {
+  const g = new THREE.Group(); g.position.set(x, 0, z); g.scale.setScalar(sc || 1);
+  let y = 0; for (let i = 0; i < 6; i++) { const w = 1.9 - i * .27, h = 1.7; mk(G.hexT, i % 2 ? M.indigoL : M.indigo, [Math.sin(i * .9) * .12, y + h / 2, 0], [w, h, w], [0, i * .55, 0], g); y += h * .94; }
+  mk(G.cone6, M.teal, [0, y + 1.1, 0], [.5, 2.4, .5], 0, g);
+  for (const [ry, s, tx] of [[4.2, 3.4, .25], [7.4, 2.4, -.3]]) { const r = mk(G.torus, M.mag, [0, ry, 0], [s, s, s], [Math.PI / 2 + tx, 0, 0], g); anim.push(t => { r.rotation.z = t * (tx > 0 ? .7 : -.9); r.position.y = ry + Math.sin(t * 1.4 + ry) * .18; }); }
+  for (let i = 0; i < 5; i++) { const a = i / 5 * 6.283; mk(G.oct, M.teal, [Math.cos(a) * 1.6, .3, Math.sin(a) * 1.6], [.3, .8, .3], [R(-.4, .4), 0, R(-.4, .4)], g); }
+  blob(0, 0, 1.6, 2.2, g); scene.add(g); return g;
+}
+
+// ------------------------------------------------------------ world
+const ground = mk(new THREE.PlaneGeometry(3000, 3000), M.ground, [0, 0, 0], null, [-Math.PI / 2, 0, 0]);
+const roadM = T(TX.road, { rx: 18, ry: 1, hatch: 0, flat: 1 }); roadM.polygonOffset = true; roadM.polygonOffsetFactor = -2; roadM.polygonOffsetUnits = -2;
+mk(new THREE.PlaneGeometry(150, 5.5), roadM, [55, .02, 8], null, [-Math.PI / 2, 0, 0]);
+mk(new THREE.PlaneGeometry(30, 5.5), roadM, [3, .02, -3], null, [-Math.PI / 2, 0, 1.1]);
+// mesas
+for (let i = 0; i < 34; i++) {
+  const a = i / 34 * 6.283 + R(-.06, .06), d = R(230, 420), r = R(34, 80), h = R(24, 90);
+  const m = mk(new THREE.CylinderGeometry(r * R(.55, .8), r, h, 7 + (i % 3)), M.mesa, [30 + Math.cos(a) * d, h / 2 - 1, 60 + Math.sin(a) * d], null, [0, R(0, 3), 0]);
+  if (i % 3 === 0) mk(new THREE.CylinderGeometry(r * .3, r * .42, h * .5, 6), M.mesa, [m.position.x + R(-10, 10), h + h * .22, m.position.z + R(-10, 10)], null, [0, R(0, 3), 0]);
+}
+// rocks and spires
+const keepOut = (x, z) => (x > -30 && x < 125 && z > -34 && z < 18) || (x > -14 && x < 40 && z > 136 && z < 170) || (x > -75 && x < -45 && z > 45 && z < 75);
+for (let i = 0; i < 150; i++) {
+  const x = R(-150, 220), z = R(-150, 260); if (keepOut(x, z)) continue;
+  if (i % 9 === 0) { const h = R(8, 22); mk(G.hexT, M.rock, [x, h / 2 - .5, z], [h * .34, h, h * .34], [R(-.08, .08), R(0, 3), R(-.08, .08)]); mk(G.dod, M.rock, [x + 1, h + .6, z], [h * .3, h * .22, h * .3], [R(0, 3), R(0, 3), 0]); blob(x, z, h * .3, 2.4); }
+  else { const s = R(.4, 2.6); mk(G.dod, M.rock, [x, s * .25, z], [s, s * R(.5, .9), s * R(.7, 1.2)], [R(0, 3), R(0, 3), R(0, 3)]); blob(x, z, s * .6, 1.5); }
+}
+// small rocks allowed near play areas
+for (const [x, z, s] of [[-2, -8, .6], [8, -6, .5], [14, 2, .8], [22, 12, 1.1], [33, 3, .7], [27, 13, .5], [44, 12, 1.4], [52, 3, .9], [18, 0, .4], [6, 146, .7], [12, 158, 1.0], [24, 146, .8], [1, 157, .5]]) { mk(G.dod, M.rock, [x, s * .25, z], [s, s * .7, s], [R(0, 3), R(0, 3), R(0, 3)]); blob(x, z, s * .6, 1.5); }
+// sky
+const skyMat = new THREE.ShaderMaterial({
+  uniforms: { uL: { value: LIGHT } }, side: THREE.BackSide, depthWrite: false,
+  vertexShader: `varying vec3 vD; void main(){ vD=position; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.); }`,
+  fragmentShader: `precision highp float; varying vec3 vD; uniform vec3 uL; ${NOISE}
+  void main(){ vec3 d=normalize(vD); float h=d.y;
+    float t=h+(vnoise(d.xz*5.+d.y*3.)-.5)*.05; t=floor(t*14.)/14.;
+    vec3 hor=vec3(1.,.86,.58), mid=vec3(.36,.78,.76), top=vec3(.07,.33,.50);
+    vec3 col=t<.14?mix(hor,mid,clamp(t/.14,0.,1.)):mix(mid,top,clamp((t-.14)/.55,0.,1.));
+    vec2 p=vec2(d.x*4.+d.z*2.7,h*24.); float c=vnoise(p)*.65+vnoise(p*2.3+7.)*.35;
+    float cloud=smoothstep(.56,.58,c)*smoothstep(.03,.1,h)*(1.-smoothstep(.34,.5,h));
+    float cl2=smoothstep(.62,.64,c)*smoothstep(.03,.1,h)*(1.-smoothstep(.34,.5,h));
+    col=mix(col,vec3(1.,.9,.72),cloud*.85); col=mix(col,vec3(1.,.98,.9),cl2);
+    float sd=dot(d,normalize(uL)); col=mix(col,vec3(1.,.95,.7),smoothstep(.9965,.9972,sd)); col=mix(col,vec3(1.,.9,.6),smoothstep(.985,.9855,sd)*.35);
+    vec2 q=gl_FragCoord.xy/8.; q.x+=mod(floor(q.y),2.)*.5; float dt=length(fract(q)-.5);
+    col=mix(col,col*.84,step(dt,.36*(1.-clamp(h*3.2,0.,1.))));
+    if(h<0.) col=hor;
+    gl_FragColor=vec4(col,1.); }`,
+});
+L1(mk(new THREE.SphereGeometry(2600, 32, 20), skyMat));
+const pdir = V3(.5, .3, -1).normalize().multiplyScalar(1500);
+mk(G.sph, M.planet, [pdir.x, pdir.y, pdir.z], [470, 470, 470], [.3, 0, .35]);
+mk(new THREE.RingGeometry(300, 430, 48), M.ring, [pdir.x, pdir.y, pdir.z], null, [Math.PI / 2 - .32, .35, 0]);
+const mdir = V3(1, .2, .12).normalize().multiplyScalar(1500);
+mk(G.sph, M.planet, [mdir.x, mdir.y, mdir.z], [150, 150, 150], [1, 0, .2]);
+
+// ------------------------------------------------------------ the Ironhold base
+const HQ = headframe(); HQ.position.set(-14, 0, -21); HQ.rotation.y = .6; scene.add(HQ);
+const bunkProto = bunkhouse(); bunkProto.position.set(3, 0, -14); bunkProto.rotation.y = -Math.PI / 2 + .12;
+const gHolo = hologram(bunkProto); scene.add(gHolo);
+const gBuilt = new THREE.Group(); scene.add(gBuilt); gBuilt.add(bunkProto); blob(3, -14, 4.4, 1.2, gBuilt);
+const d2 = depot(); d2.position.set(-6, 0, -1); d2.rotation.y = .9; scene.add(d2);
+oreField(10.5, -19, 9, 1.2); oreField(14, -16, 7, 1.0); oreField(12.5, -23.5, 8, 1.3); oreField(16.5, -21, 6, .9);
+mk(G.torusF, M.rock, [20, .15, -9], [3, 3, 4], [Math.PI / 2, 0, 0]); mk(G.disc, M.violet, [20, .22, -9], [2.6, 2.6, 1], [-Math.PI / 2, 0, 0]);
+for (let i = 0; i < 4; i++) { const p = mk(G.sph, M.violet, [20, 1, -9], [.5, .5, .5]); anim.push(t => { const k = (t * .25 + i / 4) % 1; p.position.set(20 + Math.sin(i * 3 + k * 4) * .4, .3 + k * 4.5, -9); const s = .7 * (1 - k); p.scale.set(s, s, s); }); }
+const friendly = [];
+function place(u, x, z, face, bob) { u.position.set(x, 0, z); u.rotation.y = face; scene.add(u); ring(u); if (bob) { const ph = R(0, 6); anim.push(t => { u.position.y = Math.abs(Math.sin(t * bob + ph)) * .07; }); } friendly.push(u); return u; }
+place(rigger(), 9.5, -15.5, .5); place(rigger({ pack: 1 }), 5.6, -8.2, -2.0, 6); place(rigger(), 13.2, -13.2, 0.9); place(rigger({ pack: 1 }), -3.5, -9.5, -1.9, 6); place(rigger(), -4.2, 2.2, 2.4); place(rigger({ pack: 1 }), 1.2, -4.5, -1.2, 6);
+// later-match forces
+const gArmy = new THREE.Group(); scene.add(gArmy);
+function placeA(u, x, z, face, bob) { place(u, x, z, face, bob); gArmy.add(u); return u; }
+const lead = placeA(trooper(), 24.2, 6.4, Math.atan2(-4.2, 1.6));
+placeA(trooper(), 29, 9.2, Math.PI / 2, 5); placeA(trooper(), 32, 7.4, Math.PI / 2, 5); placeA(trooper(), 35.2, 9.6, Math.PI / 2, 5);
+placeA(trooper({ shield: 1, scale: 1.15 }), 38.4, 7.0, Math.PI / 2, 4); placeA(trooper({ shield: 1, scale: 1.15 }), 40.6, 9.4, Math.PI / 2, 4);
+placeA(badger(), 32, -18, 2.2);
+const d3 = depot(); d3.position.set(12, 0, -3); d3.rotation.y = -.5; gBuilt.add(d3);
+const wp0 = watchpost(); wp0.position.set(25, 0, 2.2); wp0.rotation.y = Math.PI / 2;
+const gGhost = hologram(wp0); scene.add(gGhost);
+// Veyl outpost on the horizon
+choir(95, -2, 1.5); choir(102, 6, 1.2); choir(99, -11, 1.0);
+
+// ------------------------------------------------------------ arena for the Veyl shot
+const AZ = 152;
+const e1 = trooper(); e1.position.set(14, 0, AZ); e1.rotation.y = -Math.PI / 2 + .25; scene.add(e1);
+const e2 = trooper(); e2.position.set(17.5, 0, AZ - 3); e2.rotation.y = -Math.PI / 2 - .3; scene.add(e2);
+const e3 = trooper(); e3.position.set(19.5, 0, AZ + 2.5); e3.rotation.y = -Math.PI / 2 + .2; scene.add(e3);
+const wp1 = watchpost(); wp1.position.set(24, 0, AZ - 1); wp1.rotation.y = -Math.PI / 2; scene.add(wp1);
+for (let i = 0; i < 6; i++) mk(G.sph, M.cloth, [16.2, .22, AZ - 1.6 + i * .64], [.6, .44, .74]); for (let i = 0; i < 5; i++) mk(G.sph, M.cloth, [16.2, .6, AZ - 1.3 + i * .64], [.6, .44, .74]);
+mk(G.box, M.rust, [21, 1.15, AZ + 5.5], [2.3, 2.3, 5], [0, .2, 0]); blob(21, AZ + 5.5, 2.6, 1.3);
+const c1 = cantor(); c1.position.set(11.6, 0, AZ - 3.0); c1.rotation.y = Math.PI / 2 - .2; scene.add(c1);
+const c2 = cantor(); c2.position.set(12.2, 0, AZ + 3.8); c2.rotation.y = Math.PI / 2 + .3; scene.add(c2);
+const wd = warden(); wd.position.set(11.4, 3.1, AZ - 5.2); scene.add(wd);
+const dome = mk(G.hemi, new THREE.MeshBasicMaterial({ map: TX.hex, transparent: true, opacity: .9, side: THREE.DoubleSide, depthWrite: false }), [11.4, 0, AZ - 5.2], [9, 9, 9]); dome.layers.set(1);
+L1(mk(G.ringG, new THREE.MeshBasicMaterial({ color: 0x35e0c8, side: THREE.DoubleSide, depthWrite: false }), [11.4, .06, AZ - 5.2], [9.4, 9.4, 1], [-Math.PI / 2, 0, 0]));
+choir(1, AZ - 14, 1.1); choir(-6, AZ + 8, .9);
+const trc = new THREE.MeshBasicMaterial({ color: 0xfff3a8, depthWrite: false });
+L1(beam([13.6, 1.0, AZ - .3], [14.4, 1.6, AZ - 2.3], .05, trc)); L1(beam([17.0, 1.0, AZ - 3.3], [15.6, 1.8, AZ - 4.0], .05, trc)); L1(beam([24, 6, AZ + .4], [15.0, 3.0, AZ - 3.4], .06, trc));
+for (const [x, y, z, s] of [[14.4, 1.6, AZ - 2.3, .7], [15.6, 1.8, AZ - 4.0, .9], [15.0, 3.0, AZ - 3.4, 1.1]]) { const r = mk(G.torus, M.teal, [x, y, z], [s, s, s], [0, Math.PI / 2 - .5, 0]); r.layers.set(1); }
+// portrait studio
+const studio = [rigger(), trooper(), trooper({ shield: 1 }), badger(), cantor()];
+studio.forEach((u, i) => { u.position.set(-60, 0, 54 + i * 8); u.rotation.y = .35; scene.add(u); });
+
+// ------------------------------------------------------------ cameras and view-models
+const cam = new THREE.PerspectiveCamera(62, W / H, .06, 4000); scene.add(cam);
+const ortho = new THREE.OrthographicCamera(-50, 50, 50 * H / W, -50 * H / W, 1, 600);
+const vmDrill = new THREE.Group(); cam.add(vmDrill);
+(function () {
+  const g = vmDrill;
+  mk(G.box, M.yellow, [0, 0, 0], [.2, .22, .44], 0, g); mk(G.box, M.hazard1, [0, .12, -.05], [.21, .03, .3], 0, g);
+  const bit = new THREE.Group(); mk(G.cone, M.steel, [0, 0, 0], [.2, .46, .2], [-Math.PI / 2, 0, 0], bit); for (let i = 0; i < 4; i++) mk(G.torus, M.steelD, [0, 0, .16 - i * .1], [.21 - i * .045, .21 - i * .045, .12], [0, 0, i], bit);
+  bit.position.set(0, 0, -.44); g.add(bit); anim.push(t => { bit.rotation.z = t * 9; });
+  mk(G.cyl, M.steelD, [0, 0, -.24], [.18, .06, .18], [Math.PI / 2, 0, 0], g);
+  mk(G.cyl, M.rubber, [-.11, .04, .05], [.09, .03, .09], [0, 0, Math.PI / 2], g); mk(G.cyl, M.visor, [-.128, .04, .05], [.07, .01, .07], [0, 0, Math.PI / 2], g);
+  mk(G.box, M.rubber, [0, -.2, .12], [.08, .22, .1], [.25, 0, 0], g);
+  mk(G.sph, M.yellowP, [.02, -.19, .12], [.17, .15, .19], 0, g); mk(G.cyl, M.cloth, [.14, -.36, .42], [.15, .7, .15], [1.05, 0, -.35], g);
+  mk(G.cyl, M.rubber, [.07, .0, .26], [.03, .3, .03], [.9, 0, .2], g);
+  g.scale.setScalar(.62); g.position.set(.3, -.25, -.56); g.rotation.set(.14, .5, .06);
+})();
+const vmFork = new THREE.Group(); cam.add(vmFork);
+(function () {
+  const g = vmFork;
+  beam([0, -.7, 0], [0, .55, 0], .022, M.steelD, g); beam([-.09, .55, 0], [.09, .55, 0], .028, M.mag, g); beam([-.09, .55, 0], [-.09, 1.0, 0], .028, M.mag, g); beam([.09, .55, 0], [.09, 1.0, 0], .028, M.mag, g);
+  mk(G.sph, M.indigoL, [0, -.12, .01], [.13, .15, .13], 0, g); mk(G.cyl, M.indigo, [.12, -.34, .22], [.12, .6, .12], [1.0, 0, -.45], g); mk(G.arc, M.teal, [.08, -.26, .14], [.24, .24, .24], [1.0, 0, -.45], g);
+  g.scale.setScalar(.6); g.position.set(.66, -.3, -.95); g.rotation.set(-.12, 0, .16);
+  const h = new THREE.Group(); mk(G.sph, M.indigoL, [0, 0, 0], [.15, .1, .18], 0, h); for (let i = 0; i < 4; i++) mk(G.cyl, M.indigoL, [-.06 + i * .04, .02, -.13], [.03, .14, .03], [1.2, 0, 0], h); mk(G.cyl, M.indigo, [-.1, -.12, .3], [.12, .6, .12], [1.2, 0, .3], h); mk(G.sph, M.teal, [0, .09, -.02], [.08, .08, .08], 0, h);
+  h.scale.setScalar(.7); h.position.set(-.5, -.4, -.8); h.rotation.set(.3, 0, -.2); cam.add(h); vmFork.userData.hand = h;
+})();
+
+const SHOTS = [
+  { p: [7, 1.55, 0.5], t: [2.4, 2.5, -14], fov: 62, vm: 'drill', holo: 1 },
+  { ortho: 1, t: [24, 0, -9], built: 1, army: 1, rings: 1 },
+  { p: [19.6, 1.55, 8.2], t: [60, 3.2, 5.2], fov: 60, vm: 'drill', built: 1, army: 1, ghost: 1 },
+  { p: [21.3, 1.0, 9.3], t: [23.55, 1.32, 6.3], fov: 36, built: 1, army: 1 },
+  { p: [5, 2.15, AZ + .6], t: [15, 1.7, AZ - .1], fov: 62, vm: 'fork', built: 1, army: 1 },
+];
+const NOTES = [
+  [['What is happening', 'You are a Rigger, 1:42 into a match. Build mode is open and a Bunkhouse blueprint follows your crosshair. Other Riggers haul ore to the Headframe on the left.'], ['Build from eye level', '<kbd>2</kbd> opens the build list. The hologram snaps to the ground where you look. Place it, then hold the drill on it to weld it up.'], ['The Quartermaster', 'The macro AI runs the chosen playbook and says what it wants next. Follow its lead, overrule it, or switch it off.']],
+  [['Hold Tab', 'The camera lifts to the classic RTS angle and every squad shows what it is doing. Let go on one and you are inside it. This is the same live scene, seen from above.'], ['Nothing stops when you leave', 'The body you leave carries on with its job. The squad you join follows you as its new lead.'], ['Fast paths', '<kbd>F</kbd> jumps into the friendly you are looking at. <kbd>Q</kbd> returns to your last body. A three second cooldown stops jump-dodging.']],
+  [['What is happening', 'You are a Rigger on the east road. Alpha squad is about to attack and its lead asks you for a Watchpost, which appears as a ghost blueprint. The target glows on the horizon.'], ['One-key answers', '<kbd>Z</kbd> do it, <kbd>X</kbd> hold, <kbd>C</kbd> change play, <kbd>V</kbd> on me. Silence counts as yes, so the army never stalls waiting for you.'], ['Playbooks', 'Squads run standard RTS strategies: rush, fast expand, timing push, harassment, contain. The bar at the top shows the phase of the current play.']],
+  [['A beat of swagger', 'The first time you jump into a unit type, the game freezes for half a second on a comic title card with a one-liner. After that it is instant.'], ['Chunky and readable', 'Big helmet, big shoulders, big boots. Team colour on the shoulders and chest. You can tell what a unit is from its silhouette alone.'], ['Same scene, different lens', 'This is the squad lead from the previous shot, viewed from knee height. Nothing was re-posed or re-lit.']],
+  [['A different game in your hands', 'Veyl units are few, tough and ability-driven. The Cantor fights up close with a resonance fork, a dash and a shockwave. Its Hush barrier recharges out of combat.'], ['A different HUD', 'Ironhold gets slanted ink panels. Veyl gets round glass and glow. Swapping faction changes how the whole screen feels.'], ['Skill is the bonus', 'The unit you control has the same stats as an AI one. You make it better by aiming, flanking and timing, like striking while the Warden\'s dome soaks up the Watchpost.']],
+];
+
+// ------------------------------------------------------------ render pipeline
+const rtC = new THREE.WebGLRenderTarget(W, H, { minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter });
+rtC.depthTexture = new THREE.DepthTexture(W, H); rtC.depthTexture.type = THREE.UnsignedIntType;
+const rtN = new THREE.WebGLRenderTarget(W, H, { minFilter: THREE.NearestFilter, magFilter: THREE.NearestFilter });
+const normalMat = new THREE.MeshNormalMaterial({ side: THREE.DoubleSide });
+const postMat = new THREE.ShaderMaterial({
+  uniforms: { tC: { value: rtC.texture }, tD: { value: rtC.depthTexture }, tN: { value: rtN.texture }, uRes: { value: new THREE.Vector2(W, H) }, uNear: { value: .06 }, uFar: { value: 4000 }, uOrtho: { value: 0 } },
+  vertexShader: `varying vec2 vUv; void main(){ vUv=uv; gl_Position=vec4(position.xy,0.,1.); }`,
+  fragmentShader: `precision highp float; varying vec2 vUv; uniform sampler2D tC,tD,tN; uniform vec2 uRes; uniform float uNear,uFar,uOrtho; ${NOISE}
+  float lin(vec2 uv){ float d=texture2D(tD,uv).x; if(uOrtho>.5) return uNear+d*(uFar-uNear); float z=d*2.-1.; return 2.*uNear*uFar/(uFar+uNear-z*(uFar-uNear)); }
+  vec3 nrm(vec2 uv){ return texture2D(tN,uv).xyz*2.-1.; }
+  void main(){
+    vec2 wobv=(vec2(vnoise(vUv*uRes/9.),vnoise(vUv*uRes/9.+31.))-.5)*2.2/uRes;
+    vec2 u=vUv+wobv; float d0=lin(u);
+    float th=uOrtho>.5?1.5:mix(2.6,1.15,clamp(d0/45.,0.,1.));
+    th*=.8+.5*vnoise(vUv*uRes/60.);
+    vec2 px=th/uRes;
+    float dA=lin(u+px),dB=lin(u-px),dC=lin(u+px*vec2(-1.,1.)),dD=lin(u+px*vec2(1.,-1.));
+    vec3 n0=nrm(u),nA=nrm(u+px),nB=nrm(u-px),nC=nrm(u+px*vec2(-1.,1.)),nD=nrm(u+px*vec2(1.,-1.));
+    float de;
+    if(uOrtho>.5){ de=smoothstep(.5,1.,(abs(dA-dB)+abs(dC-dD))); }
+    else { float dmin=min(min(dA,dB),min(dC,dD)); float dd=(abs(dA-dB)+abs(dC-dD))/max(dmin,.01); de=smoothstep(.05,.09,dd*clamp(abs(n0.z),.08,1.)); }
+    float nd=length(nA-nB)+length(nC-nD); float ne=smoothstep(.7,1.05,nd)*(1.-smoothstep(140.,320.,d0));
+    float edge=max(de,ne);
+    vec3 col=texture2D(tC,vUv).rgb;
+    col=mix(col,vec3(.055,.05,.08),edge*.97);
+    col=mix(vec3(dot(col,vec3(.3,.59,.11))),col,1.18);
+    col*=.95+.08*vnoise(vUv*uRes*.5);
+    float v=smoothstep(1.3,.5,length((vUv-.5)*vec2(1.25,1.))); col*=mix(.7,1.,v);
+    gl_FragColor=vec4(col,1.);
+  }`,
+  depthTest: false, depthWrite: false,
+});
+const postScene = new THREE.Scene(); const postCam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1); postScene.add(new THREE.Mesh(new THREE.PlaneGeometry(2, 2), postMat));
+function draw(c) {
+  c.layers.enableAll(); renderer.setRenderTarget(rtC); renderer.setClearColor(0xffdc94, 1); renderer.clear(); renderer.render(scene, c);
+  c.layers.set(0); scene.overrideMaterial = normalMat; renderer.setRenderTarget(rtN); renderer.setClearColor(0x8080ff, 1); renderer.clear(); renderer.render(scene, c); scene.overrideMaterial = null; c.layers.enableAll();
+  postMat.uniforms.uOrtho.value = c.isOrthographicCamera ? 1 : 0; postMat.uniforms.uNear.value = c.near; postMat.uniforms.uFar.value = c.far;
+  renderer.setRenderTarget(null); renderer.render(postScene, postCam);
+}
+
+// ------------------------------------------------------------ portraits
+function portraits() {
+  vmDrill.visible = vmFork.visible = vmFork.userData.hand.visible = false; gHolo.visible = gGhost.visible = false;
+  const spec = { rigger: [0, 1.55, 3.0, 26], linesman: [1, 1.5, 3.0, 26], breacher: [2, 1.35, 3.6, 30], badger: [3, 1.5, 9, 30], cantor: [4, 2.35, 3.4, 26] };
+  const c2 = document.createElement('canvas'); c2.width = c2.height = 200; const g = c2.getContext('2d');
+  for (const k in spec) {
+    const [i, y, dist, fov] = spec[k]; const u = studio[i];
+    cam.fov = fov; cam.updateProjectionMatrix(); cam.position.set(u.position.x + dist * .25, y + .15, u.position.z + dist); cam.lookAt(u.position.x, y, u.position.z); cam.updateMatrixWorld();
+    draw(cam); g.drawImage(canvas, 350, 0, 900, 900, 0, 0, 200, 200); const url = c2.toDataURL('image/jpeg', .9);
+    document.querySelectorAll('img[data-p="' + k + '"]').forEach(im => { im.src = url; });
+  }
+  studio.forEach(u => { u.visible = false; });
+}
+
+// ------------------------------------------------------------ shots
+let shot = 0; const layers = [...hud.querySelectorAll('.layer')]; const btns = [...document.querySelectorAll('#shots button')]; const noteEl = document.getElementById('note');
+function setShot(i) {
+  shot = i; const s = SHOTS[i];
+  layers.forEach(l => { l.hidden = +l.dataset.shot !== i; }); btns.forEach((b, k) => b.setAttribute('aria-pressed', k === i));
+  noteEl.innerHTML = NOTES[i].map(n => '<div><h3>' + n[0] + '</h3><p>' + n[1] + '</p></div>').join('');
+  gHolo.visible = !!s.holo; gBuilt.visible = !!s.built; gArmy.visible = !!s.army; gGhost.visible = !!s.ghost; rings.forEach(r => { r.visible = !!s.rings; });
+  vmDrill.visible = s.vm === 'drill'; vmFork.visible = vmFork.userData.hand.visible = s.vm === 'fork';
+  try { history.replaceState(null, '', '#shot-' + (i + 1)); } catch (e) {}
+}
+btns.forEach((b, i) => b.addEventListener('click', () => setShot(i)));
+window.setShot = setShot;
+
+const anchors = [...hud.querySelectorAll('.anc')].map(el => ({ el, w: V3(...el.dataset.w.split(',').map(Number)), layer: +el.closest('.layer').dataset.shot }));
+const tmp = V3(0, 0, 0);
+const still = matchMedia('(prefers-reduced-motion: reduce)').matches;
+function frame(ms) {
+  const t = still ? 2 : ms / 1000; anim.forEach(f => f(t));
+  const s = SHOTS[shot]; let c;
+  if (s.ortho) { c = ortho; c.position.set(s.t[0], 150, s.t[2] + 120); c.lookAt(s.t[0], s.t[1], s.t[2]); }
+  else { c = cam; cam.fov = s.fov; cam.updateProjectionMatrix(); cam.position.set(s.p[0], s.p[1] + Math.sin(t * 1.1) * .012, s.p[2]); cam.lookAt(s.t[0] + Math.sin(t * .5) * .12, s.t[1] + Math.cos(t * .4) * .06, s.t[2]); }
+  holoMat.opacity = .3 + Math.sin(t * 3) * .07;
+  c.updateMatrixWorld(); draw(c);
+  for (const a of anchors) { if (a.layer !== shot) continue; tmp.copy(a.w).project(c); a.el.style.left = ((tmp.x * .5 + .5) * W) + 'px'; a.el.style.top = ((1 - (tmp.y * .5 + .5)) * H) + 'px'; a.el.style.visibility = tmp.z < 1 ? 'visible' : 'hidden'; }
+  requestAnimationFrame(frame);
+}
+portraits();
+const m = /^#shot-(\d)$/.exec(location.hash); setShot(m ? Math.min(4, Math.max(0, m[1] - 1)) : 0);
+requestAnimationFrame(frame);
+window.sceneReady = true;
+})();
+
+</script>
+</html>

@@ -70,7 +70,7 @@ One skirmish as the Ironhold Charter against a Veyl outpost. Smash the three Cho
 
 ## How it is built
 
-TypeScript and three.js, bundled by esbuild into one HTML file. No art or sound assets: models are sculpted in code, textures are inked and painted on canvases at boot, and sound is synthesised.
+TypeScript and three.js, bundled by esbuild into one HTML file. No art assets: models are sculpted in code and textures are inked and painted on canvases at boot. Sound effects are CC0 recordings and designed samples in `assets/sfx` (sources and licences in `assets/sfx/CREDITS.md`, rebuilt by `python3 tools/sfx/make.py`), inlined into the page by the build and layered with synthesised bass; the music is synthesised. `node tools/sfx/board.mjs` builds `dist/sound-board.html`, which plays every effect old against new.
 
 - `src/gfx.ts`: the comic-ink renderer. Three flat tones with hatching only where a pen would put it, a real shadow map, and a post pass that inks outlines from depth and normals: heavy on silhouettes, lighter on creases, with pen pressure along the line.
 - `src/sculpt.ts`: the sculpting kit. Lathed, swept, pressed and bevelled forms with smooth shading, so the only hard lines are deliberate creases.
@@ -81,7 +81,7 @@ TypeScript and three.js, bundled by esbuild into one HTML file. No art or sound 
 - `src/game.ts`: the simulation and the player. Entities, combat, effects, the first-person bodies and jumping between them.
 - `src/director.ts`: the strategy layer. The Quartermaster, the Veyl raid planner, squad playbooks, callouts and chatter.
 - `src/hud.ts`, `src/style.css`, `src/page.html`: the HUD and menus.
-- `src/audio.ts`: sound effects, voices and the step-sequenced music.
+- `src/audio.ts`: sound effects (sampled, with the old synthesised set as a fallback), voices and the step-sequenced music.
 
 ## Design
 

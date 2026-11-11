@@ -2,12 +2,12 @@
 // laid down with a loaded brush, a dark pen line where the form turns away, a dry light stroke on
 // the edge that catches the sun, a few bunches of hatching, then chips, seams and stencils.
 import * as THREE from 'three';
-import { INK, R, rnd, T, M, TX, EXTRA, paint, tone, stencil } from './gfx';
+import { INK, INK_W, R, rnd, T, M, TX, EXTRA, paint, tone, stencil } from './gfx';
 import type { Ctx, ToonOpts } from './gfx';
 
 /** A pen stroke with pressure: it swells in the middle and tapers to nothing at the ends. */
 export function pen(g: Ctx, pts: number[][], w: number, col: string = INK, taper = 1) {
-  w *= 1.9;
+  w *= 1.9 * INK_W(col);
   const P: number[][] = [];
   for (let i = 0; i < pts.length - 1; i++) {
     const a = pts[i], b = pts[i + 1], n = Math.max(2, Math.ceil(Math.hypot(b[0] - a[0], b[1] - a[1]) / 16));

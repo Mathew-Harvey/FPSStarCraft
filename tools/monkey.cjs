@@ -1,10 +1,12 @@
 // Mashes every control at random in each mode and watches for crashes and broken game state.
 // Usage: node tools/monkey.cjs [seconds of game time per run, default 240] [only one scenario name]
-// Scenarios: sp-<map>-<diff>, job-<n>, split-coop, split-vs. Exits non-zero if anything went wrong.
+// Scenarios: sp-<map>-<diff> (map 0 to 2, or 10 to 12 Small and 20 to 22 Large), job-<n>, split-coop, split-vs. Exits non-zero if anything went wrong.
 const { chromium } = require('playwright');
 const SECS = +(process.argv[2] || 240), ONLY = process.argv[3] || '';
 const SCEN = [];
 for (const m of [0, 1, 2]) for (const d of [0, 1, 2]) SCEN.push({ name: `sp-${m}-${d}`, kind: 'sp', map: m, diff: d });
+// the bigger and smaller sizes (map numbers 10 to 12 are Small, 20 to 22 Large)
+for (const [m, d] of [[10, 1], [11, 2], [20, 1], [21, 0], [22, 1]]) SCEN.push({ name: `sp-${m}-${d}`, kind: 'sp', map: m, diff: d });
 for (let j = 0; j < 5; j++) SCEN.push({ name: `job-${j + 1}`, kind: 'job', job: j });
 SCEN.push({ name: 'split-coop', kind: 'split', vs: false }, { name: 'split-vs', kind: 'split', vs: true });
 (async () => {
@@ -17,7 +19,7 @@ SCEN.push({ name: 'split-coop', kind: 'split', vs: false }, { name: 'split-vs', 
     await p.goto(require('url').pathToFileURL(require('path').join(__dirname, '..', 'dist', 'index.html')).href); await p.waitForFunction('window.__ore && __ore.game');
     await p.evaluate(sc => {
       __ore.setFree(true);
-      if (sc.kind === 'sp') { __ore.pickMap(sc.map); document.querySelectorAll('#diff button')[sc.diff].click(); __ore.start(); }
+      if (sc.kind === 'sp') { __ore.pickMap(sc.map % 10); __ore.pickSize(Math.floor(sc.map / 10)); document.querySelectorAll('#diff button')[sc.diff].click(); __ore.start(); }
       else if (sc.kind === 'job') { __ore.pickJob(sc.job); __ore.start(); }
       else { document.querySelectorAll('#diff button')[1].click(); __ore.startSplit(sc.vs); }
       const KEYS = ['KeyW', 'KeyS', 'KeyA', 'KeyD', 'ShiftLeft', 'Space', 'KeyF', 'KeyQ', 'KeyE', 'KeyR', 'KeyC', 'Digit1', 'Digit2', 'Digit3', 'KeyG', 'KeyZ', 'KeyX', 'KeyV', 'KeyB', 'KeyT', 'KeyY', 'KeyU', 'Mouse0', 'Mouse1', 'Mouse2'];
@@ -37,7 +39,7 @@ SCEN.push({ name: 'split-coop', kind: 'split', vs: false }, { name: 'split-vs', 
       };
       const check = (g, tag) => {
         if (!g) return;
-        for (const u of g.units) { if (!u.alive) continue; if (!isFinite(u.pos.x + u.pos.z + u.hp + u.yaw + u.pitch)) note(tag + 'nan ' + u.kind); if (Math.hypot(u.pos.x - MID[0], u.pos.z - MID[1]) > 212) note(tag + 'oob ' + u.kind); if (u.hp > u.maxHp + .01) note(tag + 'hp>max ' + u.kind); if (u.shield > u.maxShield + .01 || u.shield < -.01) note(tag + 'shield ' + u.kind); }
+        for (const u of g.units) { if (!u.alive) continue; if (!isFinite(u.pos.x + u.pos.z + u.hp + u.yaw + u.pitch)) note(tag + 'nan ' + u.kind); if (Math.hypot(u.pos.x - MID[0], u.pos.z - MID[1]) > 212 * [1, .75, 1.4][Math.floor((__ore.split() ? __ore.split().host : __ore.game).mapI / 10)]) note(tag + 'oob ' + u.kind); if (u.hp > u.maxHp + .01) note(tag + 'hp>max ' + u.kind); if (u.shield > u.maxShield + .01 || u.shield < -.01) note(tag + 'shield ' + u.kind); }
         for (const x of g.buildings) { if (!x.alive) continue; if (!isFinite(x.hp)) note(tag + 'nan bld'); if (x.hp > x.maxHp + .01) note(tag + 'bld hp>max ' + x.kind); }
         if (!isFinite(g.ore) || g.ore < -.01) note(tag + 'ore ' + g.ore);
         if (g.me && !g.units.includes(g.me) && g.staticT <= 0 && g.phase === 'play') note(tag + 'me missing');

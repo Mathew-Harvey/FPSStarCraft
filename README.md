@@ -28,7 +28,7 @@ One skirmish as the Ironhold Charter against a Veyl outpost. Smash the three Cho
 - **Patch**: medic from the Bunkhouse once a Machine Shop stands. Mends the most hurt ally nearby on their own; as the Patch, `C` tops up everyone around you and rivets fired at a hurt friend mend them instead.
 - **Everything breaks**: all 339 pieces of scenery inside the map take damage, from fuel drums (which explode and set each other off) and crates to rock spires, the road arch, buttes and the enemy brood domes. Big rocks crumble in stages. Rubble is simulated: chunks fall, bounce, tumble, pile up against walls, get thrown by blasts and kicked when you walk through them. The Rigger's drill works on rock too. Building health follows classic RTS proportions (a production building takes a rifleman about 100 seconds).
 - **Buildings and tech tree**:
-  1. Headframe trains Riggers. Bunkhouse trains Linesmen. Depot adds beds. Watchpost is a gun tower.
+  1. Headframe trains Riggers, and more can be built on far ore fields as new bases. Bunkhouse trains Linesmen. Depot adds beds. Watchpost is a gun tower.
   2. Machine Shop (needs a Bunkhouse) unlocks Breachers and Patches and sells Hollow Points and Plating.
   3. Foundry (needs a Machine Shop) unlocks Longshots, builds Gantry walkers and sells Tungsten Core and Reactive Plating.
 
@@ -102,6 +102,11 @@ Veyl Lancers use the scenery. Between shots a Lancer ducks behind the nearest ro
 
 Pick one on the menu. **Needle's Eye** is the original road east. **Switchback** is a tight canyon at sunset with a long flank. **Glass Flats** is open salt pan with almost no cover.
 
+Each map comes in three sizes, picked on the Skirmish tab or by the lobby host: **Small** (three ore fields out on the map), **Medium** (four) and **Large** (seven, with the outpost about 170 m away). A map number carries its size in the tens: 0 to 2 are Medium, 10 to 12 Small, 20 to 22 Large.
+
+- **The map starts undiscovered.** The minimap is black until one of your bodies or buildings has seen the ground, dims what nobody is looking at now, and only shows enemy bodies in sight. Ore fields and the Veyl outpost appear once somebody has walked there.
+- **New bases.** A Headframe can be built (400 ore) on any open ground short of the Veyl. Riggers bank at the nearest one, each extra one adds eight beds and lets you build around it, and the shift is only lost when the last Headframe falls. The Quartermaster stakes one on the nearest free field once the home seams thin out or the shift runs long, then puts a Watchpost beside it. The raids go for whatever is softest, which is usually the new base.
+
 ![Switchback](docs/screenshots/switchback.jpg)
 ![Glass Flats](docs/screenshots/glassflats.jpg)
 
@@ -156,7 +161,7 @@ The Ironhold tree has five tiers. Each building needs the one above it standing,
 
 | Tier | Building | Needs | Trains | Research |
 | --- | --- | --- | --- | --- |
-| 0 | Headframe | | Rigger | Diamond Bits, Bunk Stacks |
+| 0 | Headframe (more cost 400) | | Rigger | Diamond Bits, Bunk Stacks |
 | 1 | Bunkhouse | | Linesman, Breacher (Machine Shop), Patch (Machine Shop), Longshot (Assay Office) | |
 | 1 | Depot | | | |
 | 2 | Watchpost | Bunkhouse | | |

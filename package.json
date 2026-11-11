@@ -1,0 +1,24 @@
+{
+  "name": "ore-else",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "node build.mjs --serve",
+    "build": "tsc --noEmit && node build.mjs",
+    "typecheck": "tsc --noEmit",
+    "start": "node dist/server.mjs",
+    "test": "node test/coop.mjs && node test/versus.mjs && node test/split.mjs"
+  },
+  "dependencies": {
+    "three": "0.160.0",
+    "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.5",
+    "@types/three": "0.160.0",
+    "@types/ws": "^8.5.12",
+    "esbuild": "0.21.5",
+    "typescript": "5.4.5"
+  }
+}

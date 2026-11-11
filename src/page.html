@@ -57,6 +57,7 @@
         <button type="button" role="tab" data-m="camp">Campaign<small>Five jobs. Learn the trade.</small></button>
         <button type="button" role="tab" data-m="skirm">Skirmish<small>One full match against the Veyl</small></button>
         <button type="button" role="tab" data-m="multi" id="multiBtn">Multiplayer<small id="multiNote">Locked. Finish the campaign.</small></button>
+        <button type="button" role="tab" data-m="opts" id="optsBtn">Options<small>Keys, picture, colours</small></button>
       </div>
       <div class="panel" id="pCamp">
         <div class="jobs" id="jobs"></div>
@@ -83,6 +84,18 @@
             <button type="button">Glass Flats<small>Wide open, nowhere to hide</small></button>
           </div>
         </div>
+      </div>
+      <div class="panel" id="pOpts" hidden>
+        <div class="opts">
+          <label>Mouse speed <input type="range" id="sens2" min="0.3" max="2.5" step="0.1" value="1"></label>
+          <label>Volume <input type="range" id="vol2" min="0" max="1" step="0.05" value="0.5"></label>
+          <label><input type="checkbox" id="mus2" checked> Music</label>
+          <label><input type="checkbox" id="cb"> Colour-blind friendly team colours</label>
+        </div>
+        <div class="row"><span class="lbl">Picture</span><div class="diff" id="gfx" role="group" aria-label="Graphics quality"><button type="button">Auto<small>Adjusts to your machine</small></button><button type="button">Low<small>Fastest</small></button><button type="button">Medium<small>Balanced</small></button><button type="button">High<small>Sharpest</small></button></div></div>
+        <p class="teach">Keys. Click one, then press the key you want. Mouse buttons stay as they are.</p>
+        <div class="keys" id="keys"></div>
+        <div class="row"><button type="button" class="mini-btn" id="keysReset">Put the keys back</button></div>
       </div>
       <div class="panel" id="pMulti" hidden>
         <div class="brief" id="mLocked">

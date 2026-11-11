@@ -256,3 +256,12 @@ body{background:var(--bg);color:var(--paper);font-family:var(--cond);font-size:1
 .feed .ch{border-color:var(--teal)}.feed .ch b{color:var(--teal)}
 .crew div.v{border-color:var(--teal)}.crew div.v b{color:var(--teal)}
 #mPlayers button.v{border-color:var(--teal)}#mPlayers button.v b{color:var(--teal)}
+
+body.cb{--grn:#4da3ff;--mag:#ff9d1a}
+.keys{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:6px 14px;max-width:940px}
+.keys button{display:flex;justify-content:space-between;align-items:center;gap:10px;font-family:var(--cond);font-weight:700;font-size:15px;letter-spacing:.06em;text-transform:uppercase;color:var(--paper);background:rgba(14,13,20,.86);border:3px solid var(--ink);padding:5px 10px;cursor:pointer;min-width:0}
+.keys button b{background:var(--paper);color:var(--ink);padding:1px 8px;min-width:30px;text-align:center}
+.keys button.on{border-color:var(--yel)}.keys button.on b{background:var(--yel)}
+.keys button:focus-visible{outline:4px solid var(--teal);outline-offset:2px}
+#pOpts .lbl{font-family:var(--cond);font-weight:700;letter-spacing:.1em;text-transform:uppercase;align-self:center}
+#pOpts{display:flex;flex-direction:column;gap:14px}#pOpts[hidden]{display:none}

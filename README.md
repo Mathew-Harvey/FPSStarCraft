@@ -123,7 +123,7 @@ Co-op for up to four players. Everyone shares one Ironhold base and fights the V
 
 Finish campaign job two to unlock the Multiplayer tab. One player creates a lobby and reads out the five-letter code, the others join with it, the crew readies up and the host clocks everyone in.
 
-In a match, press T to ping the spot you are looking at and Enter to type to the crew. A panel on the right shows who is driving what, with kills and ore mined. If someone drops, or turns up late, they join the running match with the same code.
+In a match, press B to ping the spot you are looking at and Enter to type to the crew. A panel on the right shows who is driving what, with kills and ore mined. If someone drops, or turns up late, they join the running match with the same code.
 
 ![Versus](docs/screenshots/versus.jpg)
 
@@ -142,3 +142,7 @@ To put it on the internet, deploy the `Dockerfile` to any host that supports Web
 `npm test` starts a local server, joins two headless browsers to one lobby and checks that both see the same match (needs Playwright with Chromium).
 
 How it works: the server runs the same game code as single player at 30 ticks a second and sends every client a snapshot 15 times a second, about 1 KB each. Each client moves and aims its own body, reports its hits, and the server decides health, ore, building, training and the enemy.
+
+## Options
+
+The Options tab on the menu has mouse speed, volume and music, four picture settings (Auto adjusts the resolution to keep the frame rate up, Low also redraws shadows less often), colour-blind friendly team colours (blue for your side and orange for the other on health bars and the minimap), and key rebinding for every keyboard action. Prompts in the game show the keys you chose. Everything is saved in the browser.

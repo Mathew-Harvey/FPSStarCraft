@@ -273,6 +273,8 @@ export class Pipeline {
   private postMat: THREE.ShaderMaterial; private postScene = new THREE.Scene(); private postCam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
   private sun = new THREE.OrthographicCamera(-50, 50, 50, -50, 1, 500);
   sat = 1; static = 0; time = 0; flash = 0;
+  /** Redraw the shadow map every Nth frame. Low picture quality uses 3. */
+  shadowEvery = 1; private frameN = 0;
 
   constructor(canvas: HTMLCanvasElement) {
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: false, preserveDrawingBuffer: true, powerPreference: 'high-performance' });
@@ -309,11 +311,13 @@ export class Pipeline {
   /** Renders the scene with shadows centred on `focus`, covering `span` metres. */
   draw(scene: THREE.Scene, cam: THREE.PerspectiveCamera | THREE.OrthographicCamera, focus: THREE.Vector3, span: number) {
     const r = this.renderer, sun = this.sun;
-    sun.left = sun.bottom = -span / 2; sun.right = sun.top = span / 2; sun.updateProjectionMatrix();
-    sun.position.copy(focus).addScaledVector(LIGHT, 220); sun.lookAt(focus); sun.updateMatrixWorld();
-    SHARED.uShadowMat.value.multiplyMatrices(sun.projectionMatrix, sun.matrixWorldInverse);
-    sun.layers.set(0); sun.layers.enable(L_SELF);
-    scene.overrideMaterial = this.depthMat; r.setRenderTarget(this.rtS); r.clear(); r.render(scene, sun); scene.overrideMaterial = null;
+    if (this.frameN++ % this.shadowEvery === 0) {
+      sun.left = sun.bottom = -span / 2; sun.right = sun.top = span / 2; sun.updateProjectionMatrix();
+      sun.position.copy(focus).addScaledVector(LIGHT, 220); sun.lookAt(focus); sun.updateMatrixWorld();
+      SHARED.uShadowMat.value.multiplyMatrices(sun.projectionMatrix, sun.matrixWorldInverse);
+      sun.layers.set(0); sun.layers.enable(L_SELF);
+      scene.overrideMaterial = this.depthMat; r.setRenderTarget(this.rtS); r.clear(); r.render(scene, sun); scene.overrideMaterial = null;
+    }
 
     cam.layers.set(0); cam.layers.enable(L_FX); cam.layers.enable(L_VM);
     r.setRenderTarget(this.rtC); r.setClearColor(0xffdc94, 1); r.clear(); r.render(scene, cam);

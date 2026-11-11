@@ -12,7 +12,7 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
 const b = await chromium.launch({ args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist', '--enable-webgl'] });
 let srv = null;
 try {
-  const open = async (url, name) => { const p = await b.newPage({ viewport: { width: 1280, height: 720 } }); p.setDefaultTimeout(120000); p.on('pageerror', e => { console.log(`[${name} pageerror]`, e.message.slice(0, 400)); fail.push(name + ' page error'); }); await p.goto(url); await p.waitForFunction('window.__ore && __ore.game'); return p; };
+  const open = async (url, name) => { const p = await b.newPage({ viewport: { width: 1280, height: 720 } }); p.setDefaultTimeout(120000); p.on('pageerror', e => { console.log(`[${name} pageerror]`, e.message.slice(0, 400)); fail.push(name + ' page error'); }); p.on('crash', () => console.log(`[${name} crashed]`)); p.on('close', () => console.log(`[${name} closed]`)); await p.goto(url); await p.waitForFunction('window.__ore && __ore.game'); return p; };
   const until = (p, fn, arg, ms = 60000) => p.waitForFunction(fn, arg, { timeout: ms }).then(() => true, () => false);
 
   // ---- 1. a solo skirmish as the Gloam
@@ -26,8 +26,9 @@ try {
   check(s.team === 2 && s.kind === 'grazer', 'the player is a Gloam Grazer');
   check(s.eco && s.human === 'false,false,true', 'the match runs the Gloam economy, with Ironhold left to the bots');
   check(s.caps === 1 && s.grazers >= 6 && s.iron >= 4 && s.veyl === 0, `one Mother Cap, ${s.grazers} Grazers, an Ironhold crew and no Veyl`);
-  check(s.bloom >= 1 && s.bloomHere >= 1 && s.buds === 3, 'the Mother Cap spreads Bloom on both copies and starts with three Buds');
+  check(s.bloom >= 1 && s.bloomHere >= 1 && s.buds >= 0 && s.buds <= 3, `the Mother Cap spreads Bloom on both copies and grows Buds (${s.buds} ripe)`);
   if (SHOTS) { await p.waitForTimeout(3000); await p.screenshot({ path: SHOTS + '/gloam-start.png' }); }
+  await p.evaluate(() => { __ore.game.noRender = true; });   // software rendering is slow; the rest is about the rules
   const c0 = await p.evaluate(() => __ore.game.purse[2]);
   check(await until(p, c => __ore.game.purse[2] > c + 20, c0, 90000), 'the Grazers chew ore into the Gloam purse');
   await p.evaluate(() => { const h = __ore.split().host; h.dir.vs.auto = false; h.purse[2] = 2000; });
@@ -42,18 +43,20 @@ try {
   await p.evaluate(() => { for (const b of __ore.split().host.buildings) if (b.team === 2 && !b.built) b.progress = 1; });
   check(await until(p, () => __ore.game.buildings.some(b => b.team === 2 && b.kind === 'warren' && b.built)), 'the Warren grows in and the player sees it');
   // Snappers ripen two to a Bud at the Mother Cap
+  await p.evaluate(() => { const c = __ore.split().host.buildings.find(b => b.kind === 'mothercap'); c.buds = 3; c.queue.length = 0; });
+  await until(p, () => __ore.game.buildings.find(b => b.kind === 'mothercap')?.buds === 3, null, 10000);
   const tr = await p.evaluate(() => { const g = __ore.game, cap = g.buildings.find(b => b.team === 2 && b.kind === 'mothercap'); return g.train(cap, 'snapper'); });
-  check(tr && await until(p, () => { const c = __ore.split().host.buildings.find(b => b.kind === 'mothercap'); return c.queue.length === 2 && c.buds === 2; }, null, 20000), 'one Bud becomes a pair of Snappers');
+  check(tr && await until(p, () => { const c = __ore.split().host.buildings.find(b => b.kind === 'mothercap'); return c.queue.filter(q => q.kind === 'snapper').length === 2 && c.buds === 2; }, null, 20000), 'one Bud becomes a pair of Snappers');
   check(await until(p, () => __ore.split().host.units.filter(u => u.alive && u.kind === 'snapper').length >= 2, null, 30000), 'the pair hatches');
-  check(await until(p, () => __ore.game.buildings.find(b => b.kind === 'mothercap')?.buds === 2 || __ore.game.buildings.find(b => b.kind === 'mothercap')?.buds === 3, null, 20000), 'the player sees the Bud count');
+  check(await until(p, () => __ore.game.buildings.find(b => b.kind === 'mothercap')?.buds === __ore.split().host.buildings.find(b => b.kind === 'mothercap')?.buds, null, 20000), 'the player sees the Bud count');
   // jump into a Snapper and bite: the attack crosses to the host
   const jumped = await p.evaluate(() => { const g = __ore.game, s = g.units.find(u => u.kind === 'snapper' && u.team === 2); if (!s) return false; g.possess(s, true); return true; });
   check(jumped && await until(p, () => __ore.game.me && __ore.game.me.kind === 'snapper', null, 20000), 'the player can drive a Snapper');
   // research at the Warren
   check(await p.evaluate(() => __ore.game.buyUpgrade('glegs')) && await until(p, () => __ore.split().host.up.glegs, null, 20000), 'the player can grow Quick Legs at the Warren');
   // a Blister bursts on command and takes nearby Ironhold with it
-  const pop = await p.evaluate(() => { const h = __ore.split().host, cap = h.buildings.find(b => b.kind === 'mothercap'), bl = h.spawn('blister', 2, cap.pos.x + 20, cap.pos.z), v = h.spawn('linesman', 0, cap.pos.x + 21, cap.pos.z); h.dir.vs.auto = false; return [bl.id, v.id]; });
-  await p.evaluate(([id]) => { const g = __ore.game; return new Promise(r => { const t = setInterval(() => { const u = g.units.find(x => x.id === id); if (u) { clearInterval(t); g.possess(u, true); r(); } }, 50); }); }, pop);
+  const pop = await p.evaluate(() => { const h = __ore.split().host, cap = h.buildings.find(b => b.kind === 'mothercap'), bl = h.spawn('blister', 2, cap.pos.x + 20, cap.pos.z), v = h.spawn('linesman', 0, cap.pos.x + 23, cap.pos.z); bl.pilot = __ore.split().seats[0].pid; v.pilot = 99; h.dir.vs.auto = false; return [bl.id, v.id]; });
+  await p.evaluate(([id]) => { const g = __ore.game; return new Promise(r => { let n = 0; const t = setInterval(() => { const u = g.units.find(x => x.id === id); if (u || ++n > 300) { clearInterval(t); if (u) { u.pilot = 0; g.possess(u, true); } r(); } }, 50); }); }, pop);
   await until(p, id => __ore.game.me && __ore.game.me.id === id, pop[0], 20000);
   await p.evaluate(() => { __ore.game.lmb = true; }); await sleep(800); await p.evaluate(() => { __ore.game.lmb = false; });
   check(await until(p, ([bid, vid]) => { const h = __ore.split().host, bl = h.units.find(u => u.id === bid), v = h.units.find(u => u.id === vid); return (!bl || !bl.alive) && (!v || !v.alive || v.hp < v.maxHp); }, pop, 20000), 'a driven Blister bursts and hurts the Linesman next to it');

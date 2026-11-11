@@ -639,7 +639,7 @@ export class Game {
     if (veyl && !drilling) this.vm.veyl.userData.flash.visible = false;
     if (!this.prompt && this.tool === 1 && look && look.dist < 4.2) { if (look.ore) this.prompt = gl ? '<b>Hold click</b> Chew the ore loose' : veyl ? '<b>Hold click</b> Hum the ore loose' : '<b>Hold click</b> Drill ore'; else if (look.prop) this.prompt = `<b>Hold click</b> ${gl ? 'Chew' : veyl ? 'Hum' : 'Drill'} the ${(look.prop.owner || look.prop).name.toLowerCase()} apart`; else if (look.b && look.b.team === side && !look.b.built) this.prompt = gl ? '<b>Hold click</b> Feed it, it grows faster' : veyl ? '<b>Hold click</b> Sing it up faster' : '<b>Hold click</b> Weld it up faster'; else if (look.b && look.b.team === side && look.b.hp < look.b.maxHp) this.prompt = gl ? '<b>Hold click</b> Lick it whole' : veyl ? '<b>Hold click</b> Sing it whole' : '<b>Hold click</b> Patch it up'; }
     if (me.carrying > 0 && !this.prompt && me.carrying >= this.packCap(side) * .5) this.prompt = `${me.carrying} ore in the ${gl ? 'belly' : 'pack'} · bring it to ${side ? 'a' : 'the'} ${home}`;
-    drillSound(drilling, biting);
+    drillSound(drilling && !gl, biting && !gl);   // a Grazer chews; it has no drill to whine
   }
   oreCheck(n: OreNode) { if (n.amount <= 0) { n.obj.traverse((m: any) => { if (m.isMesh && m.material === M.ore) m.material = M.oreDead; }); n.obj.scale.setScalar(.6); } else { n.obj.traverse((m: any) => { if (m.isMesh && m.material === M.oreDead) m.material = M.ore; }); n.obj.scale.setScalar(.75 + .25 * n.amount / n.max); } }
 

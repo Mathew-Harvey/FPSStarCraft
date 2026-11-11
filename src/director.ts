@@ -28,6 +28,8 @@ const CHATTER = [
 const KILL = ['Purple down!', 'That one\'s done singing.', 'Put it on my tab.', 'Got one. Counting it twice.', 'Scratch one choirboy.'];
 const DOWN = ['Man down! Not me. Yet.', 'We lost one. Deduct it from somebody else.', 'They got Kowalski. Again.', 'Medic! We don\'t have one! Medic anyway!'];
 
+/** One group of raiders: where it gathers, where it is going, and whether it has been let off the leash. */
+interface Wave { units: Unit[]; sx: number; sz: number; t: number; go: boolean; n0: number; north: boolean; tx: number; tz: number; hunt?: boolean }
 export class Director {
   auto = true; qmT = 0; hintI = 0; chatT = 55; barkT = 0;
   plan: { phase: 'ask' | 'count' | 'go'; t: number; target: Building | null; book: number; label: string } | null = null;
@@ -174,6 +176,7 @@ export class Director {
     }
   }
 
+  waves: Wave[] = []; private remnant: Unit[] = []; private spireHome: number[][] | null = null; private growT = 110;
   /** Counts down while the Veyl base is under fire, and where the shooting is coming from. */
   alarmT = 0; alarmX = 0; alarmZ = 0; private alarmCd = 0; private alarmN = 0;
   /** A Veyl building was hit. The garrison goes looking for whoever did it, and the Reed Gate starts sending help. */
@@ -192,13 +195,46 @@ export class Director {
     }
     if (this.raidIn <= 0) {
       const n = this.raidN++; this.raidIn = 92 * g.diff.raid; this.warned = false; this.raidLive = true; this.raidAge = 0; this.raidSeen = false;
-      let budget = Math.min(16 + 4 * (g.coop - 1), (2.5 + n * 1.2) * g.diff.enemy * (1 + .4 * (g.coop - 1))) * (gate ? 1 : .6) * (pits.length ? .6 + .2 * pits.length : .35); const north = this.raidDir === 'north'; let count = 0;
-      const send = (k: Kind) => { const pit = pits.length ? pits[count % pits.length] : null; const u = pit ? g.spawn(k, 1, pit.pos.x - ROAD.dx * 5.5 + R(-2, 2), pit.pos.z - ROAD.dz * 5.5 + R(-2, 2)) : g.spawn(k, 1, src.x - 8 + R(-4, 4), src.z + R(-7, 7)); if (pit) g.puff(V3(u.pos.x, 1, u.pos.z), 5, 1, M.violet, .8); const tg = north ? [RALLY_N.x * .3 + R(-3, 3), RALLY_N.z * .3 + R(-2, 2)] : roadPt(R(-3, 6), R(-10, -5)); u.order = { type: 'raid', x: tg[0], z: tg[1], path: north ? NORTH_PATH.map(p => [p[0] + R(-3, 3), p[1] + R(-3, 3)]) : undefined }; count++; };
-      if (n >= 4 && n % 3 === 1 && budget >= 6) { send('warden'); budget -= 5; }
-      const lancers = n >= 1 ? Math.floor(budget * .3) : 0; for (let i = 0; i < lancers; i++) send('lancer');
-      for (let i = 0; i < Math.max(1, Math.round(budget - lancers)); i++) send('cantor');
-      this.say('Lookout', `${count} Veyl ${north ? 'coming over the ' + MAP.flankName : 'coming down the ' + MAP.road}. They look annoyed.`, 'al');
+      let budget = Math.min(14 + 4 * (g.coop - 1), (2.2 + n * 1.0) * g.diff.enemy * (1 + .4 * (g.coop - 1))) * (gate ? 1 : .6) * (pits.length ? .6 + .2 * pits.length : .35); const north = this.raidDir === 'north'; let count = 0;
+      // The Conductor reads the yard before it writes the raid: what is standing guard, and what would hurt most to lose.
+      const posts = g.ownB('watchpost', true), longs = g.own('longshot').length, heavies = g.own('breacher').length + 2 * g.own('gantry').length, riggers = g.own('rigger').filter(u => !u.pilot && u.node);
+      let share = n >= 1 ? .3 : 0; if (posts.length >= 2 || heavies >= 3) share += .2; if (longs >= 2) share -= .15; share = n >= 1 ? Math.max(.1, Math.min(.55, share)) : 0;
+      // Day shift gets the plain version: one group, straight down the road, no tricks.
+      const smart = g.diff.enemy >= 1, pincer = smart && n >= 3 && budget >= 6 && (n % 3 === 0 || posts.length >= 3), harass = smart && n >= 2 && n % 2 === 1 && budget >= 5 && riggers.length > 0;
+      // the softest building: the one furthest from any Watchpost, with the Headframe as the default
+      const soft = g.ownB().filter(b => b.built && b.kind !== 'watchpost').map(b => ({ b, d: posts.reduce((m, p) => Math.min(m, Math.hypot(p.pos.x - b.pos.x, p.pos.z - b.pos.z)), 60) + (b.kind === 'depot' ? 6 : b.kind === 'headframe' ? -8 : 0) })).sort((a, c) => c.d - a.d)[0];
+      const aim = (): [number, number] => soft && smart && n >= 2 && soft.d > 30 ? [soft.b.pos.x + R(-3, 3), soft.b.pos.z + soft.b.hz + R(2, 4)] : roadPt(R(-3, 6), R(-10, -5));
+      const mk = (viaNorth: boolean): Wave => { const st = viaNorth ? NORTH_PATH[Math.max(0, NORTH_PATH.length - 2)] : roadPt(Math.min(ROAD.len * .45, 56), 0), w: Wave = { units: [], sx: st[0], sz: st[1], t: 0, go: false, n0: 0, north: viaNorth, tx: 0, tz: 0 }; const a = viaNorth ? [RALLY_N.x * .3 + R(-3, 3), RALLY_N.z * .3 + R(-2, 2)] : aim(); w.tx = a[0]; w.tz = a[1]; if (!smart) { w.go = true; w.sx = w.tx; w.sz = w.tz; } this.waves.push(w); return w; };
+      const main = mk(north), side = pincer ? mk(!north) : null, raiders = harass ? mk(!north && NORTH_PATH.length > 1) : null;
+      if (raiders) { const r = riggers[Math.floor(Math.random() * riggers.length)]; raiders.tx = r.node!.pos.x; raiders.tz = r.node!.pos.z; raiders.hunt = true; }
+      const send = (k: Kind, w: Wave) => {
+        const pit = pits.length ? pits[count % pits.length] : null; const u = pit ? g.spawn(k, 1, pit.pos.x - ROAD.dx * 5.5 + R(-2, 2), pit.pos.z - ROAD.dz * 5.5 + R(-2, 2)) : g.spawn(k, 1, src.x - 8 + R(-4, 4), src.z + R(-7, 7)); if (pit) g.puff(V3(u.pos.x, 1, u.pos.z), 5, 1, M.violet, .8);
+        const stop = w.north ? (w.go ? NORTH_PATH.length : Math.max(0, NORTH_PATH.length - 2)) : -1; u.order = { type: 'raid', x: w.sx + R(-4, 4), z: w.sz + R(-4, 4), path: w.north ? NORTH_PATH.slice(0, stop).map(p => [p[0] + R(-3, 3), p[1] + R(-3, 3)]) : undefined }; w.units.push(u); w.n0++; count++;
+      };
+      for (const u of this.remnant) if (u.alive) { main.units.push(u); main.n0++; u.order = { type: 'raid', x: main.sx + R(-4, 4), z: main.sz + R(-4, 4) }; } this.remnant = [];
+      if (n >= 4 && n % 3 === 1 && budget >= 6) { send('warden', main); budget -= 5; }
+      if (raiders) { send('cantor', raiders); send('cantor', raiders); budget -= 2; }
+      const lancers = Math.floor(budget * share), cantors = Math.max(1, Math.round(budget - lancers));
+      for (let i = 0; i < lancers; i++) send('lancer', side && i % 3 === 2 ? side : main);
+      for (let i = 0; i < cantors; i++) send('cantor', side && i % 3 === 1 ? side : main);
+      this.say('Lookout', pincer ? `${count} Veyl, and they have split up. Some on the ${MAP.road}, some over the ${MAP.flankName}.` : `${count} Veyl ${north ? 'coming over the ' + MAP.flankName : 'coming down the ' + MAP.road}. ${raiders ? 'A couple peeled off toward the diggers.' : 'They look annoyed.'}`, 'al');
     }
+    // Raiders gather out of gun range and go in together. A beaten raid pulls its survivors back to join the next one.
+    for (let i = this.waves.length - 1; i >= 0; i--) {
+      const w = this.waves[i]; w.units = w.units.filter(u => u.alive); if (!w.units.length) { this.waves.splice(i, 1); continue; }
+      if (!w.go) {
+        const there = w.units.filter(u => Math.hypot(u.pos.x - w.sx, u.pos.z - w.sz) < 11).length; if (there) w.t += dt;
+        if (there >= w.units.length * .8 || w.t > 30 || w.units.some(u => u.target && g.time - u.lastHit < 2)) { w.go = true; w.t = 0; const rest = w.north ? NORTH_PATH.slice(Math.max(0, NORTH_PATH.length - 2)) : []; for (const u of w.units) u.order = { type: 'raid', x: w.tx + R(-3, 3), z: w.tz + R(-3, 3), path: rest.length ? rest.map(p => [p[0] + R(-3, 3), p[1] + R(-3, 3)]) : undefined }; }
+      } else {
+        w.t += dt;
+        if (g.diff.enemy >= 1 && w.n0 >= 4 && w.units.length <= Math.max(1, Math.floor(w.n0 * .25)) && !w.units.some(u => u.kind === 'warden') && stones.length) { for (const u of w.units) { u.order = { type: 'raid', x: roadPt(ROAD.len * .75, 0)[0] + R(-4, 4), z: roadPt(ROAD.len * .75, 0)[1] + R(-4, 4) }; u.target = null; this.remnant.push(u); } this.waves.splice(i, 1); this.say('Lookout', 'They are pulling back. That will not be the last of them.', ''); continue; }
+        // Nothing left to hit where they stand: move on to the nearest thing that is still up.
+        if (w.t > 2) { w.t = 0; for (const u of w.units) { if (u.target || (u.order.path && u.order.path.length) || Math.hypot(u.pos.x - u.order.x, u.pos.z - u.order.z) > 7) continue; let bd = 1e9, nb: Building | null = null; for (const b of g.buildings) if (b.alive && b.team === 0) { const d = Math.hypot(b.pos.x - u.pos.x, b.pos.z - u.pos.z); if (d < bd) { bd = d; nb = b; } } if (nb) { u.order.x = nb.pos.x + R(-2, 2); u.order.z = nb.pos.z + nb.hz + R(1, 3); } } }
+      }
+    }
+    // Broken Thorn Spires grow back while the Stones still sing and nobody is near to stop them.
+    if (!this.spireHome) this.spireHome = g.buildings.filter(b => b.kind === 'thornspire').map(b => [b.pos.x, b.pos.z]);
+    this.growT -= dt; if (this.growT <= 0) { this.growT = 110 / g.diff.enemy; const gone = g.diff.enemy < 1 ? undefined : this.spireHome.find(([x, z]) => !g.buildings.some(b => b.alive && b.kind === 'thornspire' && Math.abs(b.pos.x - x) < 1 && Math.abs(b.pos.z - z) < 1)); if (gone && !g.units.some(u => u.alive && u.team === 0 && Math.hypot(u.pos.x - gone[0], u.pos.z - gone[1]) < 55)) { g.addBuilding('thornspire', 1, gone[0], gone[1], true); g.puff(V3(gone[0], 2, gone[1]), 8, 1.6, M.violet, 1); } }
     if (this.alarmT > 0) {
       this.alarmT -= dt; this.alarmCd -= dt; const def = g.units.filter(u => u.alive && u.team === 1 && u.order.type === 'guard' && u.kind !== 'warden' && !u.pilot);
       // Guards with nothing to fight walk out to the shooter, however far away the shooter thinks is safe.
@@ -239,7 +275,7 @@ export class Director {
       }
     } else {
       const pushing = all.filter(u => u.order.type === 'amove');
-      if (!pushing.length || (pushing.length < 2 && all.length < 3)) { this.plan = null; this.nextPlan = now + 40; this.lastFailed = true; this.regroup(); this.say('Alpha', 'Push is spent. Pulling back to regroup.', 'al'); }
+      if (!pushing.length || (pushing.length < 2 && all.length < 3)) { this.plan = null; this.nextPlan = now + 40; this.lastFailed = true; this.regroup(); this.say('Alpha', 'Push is spent. Pulling back to regroup.', 'al'); if (g.diff.enemy >= 1 && stones.length && !(g.mission && !g.mission.raids)) this.raidIn = Math.min(this.raidIn, 22); }
     }
   }
 

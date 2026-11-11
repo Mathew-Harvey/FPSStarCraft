@@ -204,11 +204,13 @@ export class Game {
     const u = isUnit(t) ? t : null, me = this.me;
     // A unit sheltering behind scenery: shots from the far side by anything but a player mostly chew up the scenery instead.
     if (u && u.cover && u.cover.alive && from && from !== me && isUnit(from) && !from.pilot) { const c = u.cover, cx = c.x - u.pos.x, cz = c.z - u.pos.z; if (Math.hypot(cx, cz) < c.r + 2.4 && cx * (from.pos.x - u.pos.x) + cz * (from.pos.z - u.pos.z) > 0 && Math.random() < .55) { this.damageProp(c, amt, from); return; } }
-    if (u && u.kind === 'breacher' && from) { const dx = from.pos.x - u.pos.x, dz = from.pos.z - u.pos.z, d = Math.hypot(dx, dz) || 1; if ((dx * Math.sin(u.yaw) + dz * Math.cos(u.yaw)) / d > .25) { if (u.pilot) { if (u.brace) amt *= .25; } else if (u !== me) amt *= .55; else if (this.brace) { amt *= .25; sfx.clang(); } } }
+    if (u && u.kind === 'breacher' && from) { const dx = from.pos.x - u.pos.x, dz = from.pos.z - u.pos.z, d = Math.hypot(dx, dz) || 1; if ((dx * Math.sin(u.yaw) + dz * Math.cos(u.yaw)) / d > .25) { if (u.pilot) { if (u.brace) amt *= .25; } else if (u !== me) amt *= .55; else if (this.brace) { this.payback = Math.min(1, this.payback + amt * .75 / 50); amt *= .25; sfx.clang(); } } }
     let warded = false;
     if (!u && t.team === 1 && (t as Building).kind !== 'wardpylon') { const w = this.ward(t.pos); if (w) { amt *= .7; warded = true; if (this.time > this.wardFx) { this.wardFx = this.time + .35; this.tracer(V3(w.pos.x, 4.6, w.pos.z), V3(t.pos.x, (t as Building).h * .6, t.pos.z), beamMat, .22); this.puff(TMP.set(t.pos.x, (t as Building).h * .6, t.pos.z), 3, .7, M.cyan, .5); } } }
     const dealt = amt, shielded = (!!u && u.shield > 0) || warded;
     if (u) { u.pop = 1; if (u.shield > 0) { const a = Math.min(u.shield, amt); u.shield -= a; amt -= a; this.bubble(u); } }
+    // A hit from a body somebody is driving lands with weight: the target is shoved back and loses a beat.
+    if (u && u.team === 1 && u.kind !== 'warden' && from && isUnit(from) && (from === me || from.pilot) && dealt >= 5) { const sx = u.pos.x - from.pos.x, sz = u.pos.z - from.pos.z, sd = Math.hypot(sx, sz) || 1, k = Math.min(10, dealt * .16); u.kx += sx / sd * k; u.kz += sz / sd * k; u.cd = Math.max(u.cd, Math.min(.5, dealt * .012)); }
     t.hp -= amt;
     if (this.evq && u && u.pilot && from) this.evq.push(['ht', u.id, r1(from.pos.x), r1(from.pos.z)]);
     const head = V3(t.pos.x, u ? UNIT[u.kind].headY + .4 : (t as Building).h * .7, t.pos.z);
@@ -224,6 +226,10 @@ export class Game {
   quiet = false;
   /** Counts down while a freshly taken body brings its weapon up into view. */
   drawT = 0;
+  /** How far sustained fire has opened the crosshair, 0 to 1. The first shot after a pause is the accurate one. */
+  bloom = 0;
+  /** Damage a Breacher has soaked on the shield, 0 to 1. It comes back out with the next blast. */
+  payback = 0; salvoCd = 0;
   killUnit(u: Unit, from: Unit | Building | null) {
     if (this.evq) { this.evq.push(['ku', u.id, from ? from.id : 0]); const kp = from && (from as Unit).pilot; if (kp && u.team === 1 && this.score[kp]) this.score[kp][0]++; }
     if (u.kind === 'gantry' && u.alive && !this.net) { u.alive = false; this.explode(V3(u.pos.x, 0, u.pos.z), 0, 40, 6, null); u.alive = true; }
@@ -233,7 +239,7 @@ export class Game {
     u.ring.visible = false; if (u.rig.flash) u.rig.flash.visible = false; this.bodyLayer(u, false);
     let ax = R(-1, 1), az = R(-1, 1); if (from) { ax = u.pos.x - from.pos.x; az = u.pos.z - from.pos.z; } const al = Math.hypot(ax, az) || 1;
     this.corpses.push({ obj: u.obj, t: 0, veyl, ax: ax / al, az: az / al, s: u.obj.scale.x });
-    if (veyl && from === this.me && this.me) { sfx.kill(); this.hitStop = u.kind === 'warden' ? .25 : .06; this.streak = this.time < this.streakT ? this.streak + 1 : 1; this.streakT = this.time + 4; if (this.streak >= 2) { this.hud.streak(['', '', 'DOUBLE KO!', 'TRIPLE!', 'OVERTIME!', 'RAMPAGE!'][Math.min(5, this.streak)]); sfx.streak(this.streak); } }
+    if (veyl && from === this.me && this.me) { sfx.kill(); this.hitStop = u.kind === 'warden' ? .25 : this.me.kind === 'longshot' ? .12 : .06; this.streak = this.time < this.streakT ? this.streak + 1 : 1; this.streakT = this.time + 4; if (this.streak >= 2) { this.hud.streak(['', '', 'DOUBLE KO!', 'TRIPLE!', 'OVERTIME!', 'RAMPAGE!'][Math.min(5, this.streak)]); sfx.streak(this.streak); } }
     if (veyl) { this.stats.kills++; if (u.kind === 'warden') { this.shake = Math.max(this.shake, v); this.feed('Alpha', 'Warden down! Did everybody see that? I did that.', ''); } else if (from && isUnit(from) && from.team === 0 && from !== this.me && Math.random() < .12) this.dir.bark(from, 'kill'); }
     else { this.stats.lost++; if (u !== this.me && isSoldier(u) && Math.random() < .35) this.dir.bark(u, 'down'); }
     if (u.site) u.site.builder = null;
@@ -403,6 +409,7 @@ export class Game {
     if (P.has('Space') && this.hopCd <= 0 && !this.brace) { const s = Math.sin(this.yaw), c = Math.cos(this.yaw), l = Math.hypot(fx, fz); let dx = s, dz = c; if (l) { dx = (s * fz - c * fx) / l; dz = (c * fz + s * fx) / l; } this.hopX = dx; this.hopZ = dz; this.hopT = .17; this.hopCd = 1.4; sfx.dash(.8); this.puff(TMP.set(me.pos.x, .15, me.pos.z), 3, .5, M.dust, .3, 1); }
     if (this.hopT > 0) { this.hopT -= dt; const v = (me.kind === 'gantry' ? 11 : me.kind === 'breacher' ? 15 : 19) * dt; me.pos.x += this.hopX * v; me.pos.z += this.hopZ * v; me.moving = true; this.collide(me, me.pos.x, me.pos.z); }
     me.yaw = this.yaw; me.pitch = this.pitch;
+    this.bloom = Math.max(0, this.bloom - dt * 2.6); this.salvoCd = Math.max(0, this.salvoCd - dt);
     this.fireCd -= dt; this.recoil = Math.max(0, this.recoil - dt * 6); this.nadeCd = Math.max(0, this.nadeCd - dt); this.bashCd = Math.max(0, this.bashCd - dt); this.bashT = Math.max(0, this.bashT - dt);
     const eye = V3(me.pos.x, UNIT[me.kind].eye, me.pos.z), dir = this.lookDir(V3());
     this.prompt = '';
@@ -498,6 +505,13 @@ export class Game {
     if (this.tool === 2 && this.wheel) { this.buildSel = (this.buildSel + (this.wheel > 0 ? 1 : BUILDABLE.length - 1)) % BUILDABLE.length; sfx.blip(); }
     if (this.tool === 2 && P.has('KeyR')) { this.buildRot = !this.buildRot; sfx.blip(); }
     if (this.tool === 2 && P.has('Mouse2')) { this.tool = 1; sfx.blip(); }
+    else if (this.tool === 1 && P.has('Mouse2') && this.bashCd <= 0) {
+      // Right click: the drill kicks like a jackhammer. Short reach, big shove, and it cracks scenery.
+      this.bashCd = 1.1; this.bashT = .25; this.recoil = 1; this.shake = Math.max(this.shake, .4); sfx.clang(); sfx.dash(.6); let any = false;
+      for (const u of this.units) { if (!u.alive || u.team !== 1) continue; const dx = u.pos.x - me.pos.x, dz = u.pos.z - me.pos.z, d = Math.hypot(dx, dz); if (d > 3.2 + UNIT[u.kind].rad || (dx * dir.x + dz * dir.z) / (d || 1) < .45) continue; this.damage(u, 22, me); const k = u.kind === 'warden' ? 2 : 14; u.kx += dx / (d || 1) * k; u.kz += dz / (d || 1) * k; any = true; }
+      if (look?.prop && look.dist < 3.6) { this.damageProp(look.prop, 60, me, V3().copy(eye).addScaledVector(dir, look.dist)); any = true; } else if (look?.b && look.b.team === 1 && look.dist < 3.6) { this.damage(look.b, 40, me); any = true; }
+      if (any) { this.hud.hitmark(false); sfx.hit(); this.hud.damage(V3().copy(eye).addScaledVector(dir, 2), 'CLONK!', 'ko'); }
+    }
     let biting = false; const drilling = this.tool === 1 && this.lmb;
     if (this.tool === 2) {
       const k = BUILDABLE[this.buildSel], g = this.placePos;
@@ -538,22 +552,32 @@ export class Game {
       this.fireCd = gun.cd; this.ammo--; flash.visible = true; flash.rotation.z = R(0, 3); const mul = this.gunMul();
       const muzzle = V3(); flash.getWorldPosition(muzzle);
       if (heavy) {
-        this.recoil = 1; this.pitch = Math.min(1.45, this.pitch + .03); this.kick += .024; this.shake = Math.min(1, this.shake + .35); sfx.scatter(); let hits = 0, total = 0, last: Unit | Building | null = null, crit = false;
+        this.recoil = 1; this.pitch = Math.min(1.45, this.pitch + .03); this.kick += .024; this.shake = Math.min(1, this.shake + .35); sfx.scatter(); const pay = this.payback; this.payback = 0; this.bloom = 1; if (pay > .3) { this.shake = 1; sfx.clang(); this.hud.damage(V3().copy(eye).addScaledVector(dir, 3), 'PAYBACK!', 'crit'); } let hits = 0, total = 0, last: Unit | Building | null = null, crit = false;
         this.quiet = true;
         for (let i = 0; i < 9; i++) {
           const d = V3().copy(dir); d.x += R(-.075, .075); d.y += R(-.05, .05); d.z += R(-.075, .075); d.normalize();
           let hit = this.ray(eye, d, 34, -1, me); if (hit && ((hit.unit && hit.unit.team === 0) || (hit.b && hit.b.team === 0 && hit.dist < 3))) hit = this.ray(eye, d, 34, 1, me);
           const dist = hit ? hit.dist : 34, end = V3().copy(eye).addScaledVector(d, dist); if (i % 2 === 0) this.tracer(muzzle, end);
           const fall = dist < 10 ? 1 : Math.max(.3, 1 - (dist - 10) / 24), tgt = hit && (hit.unit && hit.unit.team === 1 ? hit.unit : hit.b && hit.b.team === 1 ? hit.b : null);
-          if (tgt) { const dm = (hit!.head ? 9 : 6) * fall * mul; total += dm; hits++; last = tgt; crit = crit || !!hit!.head; this.damage(tgt, dm, me); if (i % 3 === 0) this.puff(end, 1, .4, M.teal, .6); } else this.impact(eye, d, hit, end, 6 * fall * mul);
+          if (tgt) { const dm = (hit!.head ? 9 : 6) * fall * mul * (1 + pay * .8); total += dm; hits++; last = tgt; crit = crit || !!hit!.head; this.damage(tgt, dm, me); if (i % 3 === 0) this.puff(end, 1, .4, M.teal, .6); } else this.impact(eye, d, hit, end, 6 * fall * mul);
         }
         this.quiet = false;
         if (last) { this.hud.hitmark(crit); sfx.hit(); this.hud.damage(V3(last.pos.x, (isUnit(last) ? UNIT[last.kind].headY : last.h * .6) + .4, last.pos.z), String(Math.round(total)), hits >= 7 ? 'crit' : ''); }
       } else {
         const long = me.kind === 'longshot'; this.recoil = Math.min(1, this.recoil + (long ? 1 : .35)); { const k = S.kick * (1 - this.ads * .5); this.pitch = Math.min(1.45, this.pitch + k); this.kick += k * .8; this.yaw += R(-.0025, .0025); } this.shake = Math.min(1, this.shake + (long ? .4 : .1)); { const low = Math.max(0, 1 - this.ammo / Math.max(1, gun.mag / 4)); long ? sfx.sniper() : me.kind === 'patch' ? sfx.pistol(low) : sfx.rifle(low); }
-        const sp = S.sp * (1 - this.ads * S.adsK) * (me.moving ? 1.6 : 1), d = V3().copy(dir); d.x += R(-sp, sp); d.y += R(-sp, sp); d.z += R(-sp, sp); d.normalize();
-        let hit = this.ray(eye, d, 150, -1, me); if (hit && ((hit.unit && hit.unit.team === 0) || (hit.b && hit.b.team === 0 && hit.dist < 3))) hit = this.ray(eye, d, 150, 1, me);
-        const dist = hit ? hit.dist : 150, end = V3().copy(eye).addScaledVector(d, dist); this.tracer(muzzle, end, tracerMat, long ? .14 : .07);
+        const sp = S.sp * (1 - this.ads * S.adsK) * (me.moving ? 1.6 : 1) * (1 + this.bloom * (long ? 0 : 2.4)), d = V3().copy(dir); this.bloom = Math.min(1, this.bloom + (long ? 1 : me.kind === 'patch' ? .2 : .13)); d.x += R(-sp, sp); d.y += R(-sp, sp); d.z += R(-sp, sp); d.normalize();
+        let hit = this.ray(eye, d, 150, -1, me);
+        // A Patch's rivets mend whoever they hit on their own side.
+        if (me.kind === 'patch' && hit?.unit && hit.unit.team === 0 && hit.dist < 60) {
+          const o = hit.unit, end = V3().copy(eye).addScaledVector(d, hit.dist); this.tracer(muzzle, end, ringMat, .08);
+          if (o.hp < o.maxHp) { if (this.net) this.net.cmd('hl', o.id); else o.hp = Math.min(o.maxHp, o.hp + 10); o.pop = .6; this.puff(end, 3, .35, M.teal, 1.6, .4); this.hud.damage(V3(o.pos.x, UNIT[o.kind].headY + .4, o.pos.z), '+10', 'shield'); this.hud.hitmark(false); sfx.ore(); }
+          return;
+        }
+        if (hit && ((hit.unit && hit.unit.team === 0) || (hit.b && hit.b.team === 0 && hit.dist < 3))) hit = this.ray(eye, d, 150, 1, me);
+        const dist = hit ? hit.dist : 150, end = V3().copy(eye).addScaledVector(d, dist);
+        // The Long Rifle goes through: up to two more bodies behind the first, each for a little less.
+        if (long && hit?.unit && hit.unit.team === 1) { let from = hit.unit, at = dist, n = 1, fall = .7; for (let i = 0; i < 2; i++) { const h2 = this.ray(V3().copy(eye).addScaledVector(d, at + .4), d, 60, 1, from); if (!h2?.unit || h2.unit.team !== 1) break; this.damage(h2.unit, S.body * mul * fall, me); at += .4 + h2.dist; from = h2.unit; fall *= .7; n++; this.puff(V3().copy(eye).addScaledVector(d, at), 2, .35, M.teal, .6); } if (n > 1) { end.copy(eye).addScaledVector(d, at); this.hud.streak(n > 2 ? 'TRIPLE THREAD!' : 'THREADED!'); sfx.crit(); } }
+        this.tracer(muzzle, end, tracerMat, long ? .14 : .07);
         if (hit?.unit && hit.unit.team === 1) { const sh = hit.unit.shield > 0; this.damage(hit.unit, (hit.head ? S.head : S.body) * mul, me, !!hit.head); hit.head ? sfx.crit() : sfx.hit(); this.hud.hitmark(!!hit.head); this.puff(end, 2, .35, sh ? M.cyan : M.teal, .6); this.debris(end, 1, .07, M.crys, 3); }
         else if (hit?.b && hit.b.team === 1) { this.damage(hit.b, S.bld * mul, me); this.hud.hitmark(false); this.puff(end, 1, .5, M.teal, .6); this.debris(end, 2, .1, M.indigo, 4); }
         else this.impact(eye, d, hit, end, S.bld * mul);
@@ -682,12 +706,17 @@ export class Game {
   updateCannon(dt: number, P: Set<string>, eye: THREE.Vector3, dir: THREE.Vector3, gun: Weapon) {
     const me = this.me!, vm = this.vm.cannon; vm.userData.flash.visible = vm.userData.flashL.visible = false;
     if (P.has('KeyC')) { if (this.nadeCd <= 0) { this.nadeCd = this.up.servo ? 6 : 10; this.stomp(me); } else sfx.deny(); }
+    if (P.has('Mouse2')) {
+      // Right click: both barrels lob a shell that bursts where it lands.
+      if (this.salvoCd <= 0) { this.salvoCd = 7; this.recoil = 1; this.kick += .03; this.shake = 1; this.bloom = 1; sfx.cannon(); sfx.boom(.35); const rx = Math.cos(this.yaw), rz = -Math.sin(this.yaw); for (const sd of [-1, 1]) { const v = V3().copy(dir).multiplyScalar(30); v.x += rx * sd * 1.3; v.z += rz * sd * 1.3; v.y += 3.2; this.shoot(V3(eye.x + dir.x * 1.6 + rx * sd * .9, eye.y - .5, eye.z + dir.z * 1.6 + rz * sd * .9), v, 0, 70, true, me); } vm.userData.flash.visible = vm.userData.flashL.visible = true; }
+      else sfx.deny();
+    }
     if (this.reloadT > 0) { this.reloadT -= dt; if (this.reloadT <= 0) this.ammo = gun.mag; return; }
     if ((P.has('KeyR') && this.ammo < gun.mag) || (this.ammo <= 0 && this.lmb)) { if (this.ammo <= 0) sfx.dry(); this.reloadT = gun.reload; sfx.reload(gun.reload); return; }
     if (this.lmb && this.fireCd <= 0 && this.ammo > 0) {
       this.fireCd = gun.cd; this.ammo--; this.side = -this.side; const flash = this.side > 0 ? vm.userData.flash : vm.userData.flashL; flash.visible = true; flash.rotation.z = R(0, 3);
       const mul = this.gunMul(), muzzle = V3(); flash.getWorldPosition(muzzle);
-      this.recoil = 1; this.pitch = Math.min(1.45, this.pitch + .012); this.kick += .01; this.shake = Math.min(1, this.shake + .22); sfx.cannon();
+      this.recoil = 1; this.pitch = Math.min(1.45, this.pitch + .012); this.kick += .01; this.shake = Math.min(1, this.shake + .22); this.bloom = Math.min(1, this.bloom + .3); sfx.cannon();
       const sp = .012, d = V3().copy(dir); d.x += R(-sp, sp); d.y += R(-sp, sp); d.z += R(-sp, sp); d.normalize();
       let hit = this.ray(eye, d, 140, -1, me); if (hit && ((hit.unit && hit.unit.team === 0) || (hit.b && hit.b.team === 0 && hit.dist < 4))) hit = this.ray(eye, d, 140, 1, me);
       let dist = hit ? hit.dist : 140; if (!hit && d.y < 0) dist = Math.min(dist, -eye.y / d.y);
@@ -778,7 +807,13 @@ export class Game {
   }
   acquire(u: Unit, range: number, bRange: number) {
     let best: Unit | Building | null = null, bd = range;
-    for (const o of this.units) { if (!o.alive || o.team === u.team) continue; const dx = o.pos.x - u.pos.x, dz = o.pos.z - u.pos.z; if (dx > bd || dx < -bd || dz > bd || dz < -bd) continue; const d = Math.hypot(dx, dz); if (d < bd) { bd = d; best = o; } }
+    // Not simply the nearest: fighters go for healers, marksmen and the wounded first, and think twice about a raised shield.
+    let bs = 1e9;
+    for (const o of this.units) {
+      if (!o.alive || o.team === u.team) continue; const dx = o.pos.x - u.pos.x, dz = o.pos.z - u.pos.z; if (dx > range || dx < -range || dz > range || dz < -range) continue; const d = Math.hypot(dx, dz); if (d >= range) continue;
+      const k = o.kind, w = (u.team ? (k === 'patch' ? .6 : k === 'longshot' ? .7 : k === 'breacher' ? 1.25 : k === 'rigger' ? 1.15 : 1) : (k === 'lancer' ? .8 : k === 'warden' ? 1.1 : 1)) * (o.hp < o.maxHp * .4 ? .75 : 1) * (o === u.target ? .85 : 1);
+      const sc = (d + 4) * w; if (sc < bs) { bs = sc; bd = d; best = o; }
+    }
     if (!best && bRange > 0) { bd = bRange; for (const b of this.buildings) { if (!b.alive || b.team === u.team) continue; const d = this.distToBox(b, u.pos.x, u.pos.z); if (d < bd) { bd = d; best = b; } } }
     return best;
   }
@@ -793,6 +828,12 @@ export class Game {
   aiSoldier(u: Unit, dt: number) {
     const heavy = u.kind === 'breacher', big = u.kind === 'gantry', long = u.kind === 'longshot', doc = u.kind === 'patch', glass = long && this.up.glass, range = big ? 24 : long ? (glass ? 44 : 36) : doc ? 15 : heavy ? 10 : 19;
     if (doc) this.aiMend(u, dt);
+    // Badly hurt and not on a push: walk to the nearest Patch, Depot or the Headframe and come back when mended.
+    if (u.state === 'heal' || (u.hp < u.maxHp * .35 && u.order.type === 'guard' && !big && !doc)) {
+      if (u.hp > u.maxHp * .75 || u.order.type !== 'guard') u.state = 'idle';
+      else { let hx = 0, hz = 0, bd = 1e9; for (const o of this.own('patch')) { const dd = Math.hypot(o.pos.x - u.pos.x, o.pos.z - u.pos.z); if (dd < bd) { bd = dd; hx = o.pos.x; hz = o.pos.z; } } if (bd > 40) for (const b of this.buildings) if (b.alive && b.team === 0 && b.built && (b.kind === 'depot' || b.kind === 'headframe')) { const dd = Math.hypot(b.pos.x - u.pos.x, b.pos.z - u.pos.z); if (dd < bd) { bd = dd; hx = b.pos.x; hz = b.pos.z + b.hz + 2; } }
+        if (bd < 1e9) { u.state = 'heal'; if (bd > 5) { u.target = null; this.moveTo(u, hx, hz, dt, 4, 1.1); return; } } }
+    }
     if (u.think <= 0) { u.think = .3; u.target = this.acquire(u, long ? (glass ? 52 : 44) : 30, u.order.type === 'guard' ? 0 : 28); }
     const t = u.target;
     if (t && t.alive) {
@@ -804,6 +845,10 @@ export class Game {
         else if (heavy) { u.cd = 1.05 + R(0, .2); let dm = 0; for (let i = 0; i < 5; i++) { const hit = isB || Math.random() < .7; if (hit) dm += isB ? 4 : 6; if (i % 2 === 0) this.tracer(a, V3(t.pos.x + R(-1, 1), ty + R(-.6, .6), t.pos.z + R(-1, 1))); } sfx.blast(this.vol(u.pos) * .5); this.damage(t, dm * mul, u); }
         else if (long) { u.cd = 1.7 + R(0, .3); const hit = isB || Math.random() < .85, b = V3(t.pos.x, ty + .3, t.pos.z); if (!hit) b.add(TMP.set(R(-1.5, 1.5), R(0, 1.5), R(-1.5, 1.5))); this.tracer(a, b, tracerMat, .13); sfx.blast(this.vol(u.pos) * .5); if (hit) this.damage(t, (isB ? 18 : 52) * mul * (glass ? 1.15 : 1), u); }
         else if (doc) { u.cd = .55 + R(0, .1); const hit = isB || Math.random() < .6, b = V3(t.pos.x, ty, t.pos.z); this.tracer(a, b); sfx.shot(this.vol(u.pos) * .35); if (hit) this.damage(t, 5 * mul, u); }
+        else if (!isB && d > 9 && d < 24 && this.time > u.dashCd && this.units.filter(o => o.alive && o.team === 1 && Math.abs(o.pos.x - t.pos.x) < 4.5 && Math.abs(o.pos.z - t.pos.z) < 4.5).length >= 3) {
+          // three or more bunched up: a Linesman lobs a grenade into the middle of them
+          u.dashCd = this.time + (this.up.frag ? 9 : 15); u.cd = .7; const hs = Math.max(8, Math.min(19, d * 1.05)), v = V3((t.pos.x - u.pos.x) / d * hs, 4.5, (t.pos.z - u.pos.z) / d * hs); this.shoot(V3(u.pos.x, 1.5, u.pos.z).addScaledVector(v, .04), v, 0, 60, true, u); if (this.vol(u.pos) > .3) sfx.throw();
+        }
         else { u.cd = .38 + R(0, .08); const hit = isB || Math.random() < .7, b = V3(t.pos.x, ty, t.pos.z); if (!hit) b.add(TMP.set(R(-1.5, 1.5), R(-.5, 1.5), R(-1.5, 1.5))); this.tracer(a, b); sfx.shot(this.vol(u.pos) * .5); if (hit) this.damage(t, (isB ? 5 : 8) * mul, u); }
       }
       return;
@@ -813,20 +858,30 @@ export class Game {
     if (o.type === 'follow' && lead?.alive) { const a = u.slot * 2.4, r = 2.8 + (u.slot % 3) * 1.0, tx = lead.pos.x + Math.cos(a) * r, tz = lead.pos.z + Math.sin(a) * r; if (Math.hypot(tx - u.pos.x, tz - u.pos.z) > 1.6) this.moveTo(u, tx, tz, dt, .5, 1.3); }
     else if (o.type !== 'follow') this.advance(u, dt, o.type === 'amove' ? 5 : .7);
   }
+  /** A guard whose shield is gone and whose health is low breaks off, once, and comes back when the shield has regrown. */
+  aiFallBack(u: Unit, dt: number) {
+    if (u.state === 'flee') { u.timer -= dt; const st = this.stones()[0]; if (u.timer <= 0 || !st || u.shield > u.maxShield * .7) { u.state = 'idle'; return false; } u.target = null; this.moveTo(u, st.pos.x + ((u.id % 5) - 2) * 2, st.pos.z + ((u.id % 3) - 1) * 3, dt, 3, 1.15); return true; }
+    if (u.order.type === 'guard' && this.dir.alarmT <= 0 && u.maxShield && u.shield <= 0 && u.hp < u.maxHp * .4 && !u.fled && this.stones().length) { u.fled = true; u.state = 'flee'; u.timer = 7; return true; }
+    return false;
+  }
   aiCantor(u: Unit, dt: number) {
-    u.dashCd -= dt; u.dashT -= dt;
+    u.dashCd -= dt; u.dashT -= dt; if (this.aiFallBack(u, dt)) return;
     if (u.think <= 0) { u.think = .3; const raid = u.order.type === 'raid', cur = u.target; if (!cur || !cur.alive || !isUnit(cur)) u.target = this.acquire(u, raid ? 22 : 28, raid && !(u.order.path && u.order.path.length) ? 14 : 0); }
     const t = u.target;
     if (t && t.alive) {
       const isB = !isUnit(t), d = isB ? this.distToBox(t as Building, u.pos.x, u.pos.z) : t.pos.distanceTo(u.pos);
       if (!isB && d > 45) { u.target = null; return; }
-      if (d > (isB ? 1.3 : 1.7 + UNIT[(t as Unit).kind].rad * .5)) { if (d > 6 && d < 13 && u.dashCd <= 0) { u.dashT = .4; u.dashCd = 5; this.puff(TMP.copy(u.pos).setY(.5), 3, .7, M.teal, .4); sfx.dash(this.vol(u.pos)); } this.moveTo(u, t.pos.x, t.pos.z, dt, .5, u.dashT > 0 ? 2.6 : 1); }
+      if (d > (isB ? 1.3 : 1.7 + UNIT[(t as Unit).kind].rad * .5)) { if (d > 6 && d < 13 && u.dashCd <= 0) { u.dashT = .4; u.dashCd = 5; this.puff(TMP.copy(u.pos).setY(.5), 3, .7, M.teal, .4); sfx.dash(this.vol(u.pos)); } 
+        // closing on someone with a gun, a Cantor weaves instead of running down the barrel
+        let wx = 0, wz = 0; if (!isB && d > 7 && u.dashT <= 0) { const k = Math.sin(this.time * 3.1 + u.id * 1.7) * Math.min(4.5, d * .3), nx = -(t.pos.z - u.pos.z) / d, nz = (t.pos.x - u.pos.x) / d; wx = nx * k; wz = nz * k; }
+        this.moveTo(u, t.pos.x + wx, t.pos.z + wz, dt, .5, u.dashT > 0 ? 2.6 : 1); }
       else { u.yaw = Math.atan2(t.pos.x - u.pos.x, t.pos.z - u.pos.z); if (u.cd <= 0) { u.cd = .95; u.swing = 1; sfx.slash(this.vol(u.pos)); this.damage(t, (isB ? 10 : 13) * this.diff.enemy, u); } }
       return;
     }
     this.advance(u, dt, u.order.type === 'raid' ? 3 : 1.5, u.order.type === 'raid' || this.dir.alarmT > 0 ? 1 : .6);
   }
   aiLancer(u: Unit, dt: number) {
+    if (u.wind <= 0 && this.aiFallBack(u, dt)) return;
     if (u.wind > 0) {
       u.wind -= dt; const t = u.target; if (t && t.alive) this.aimAt(u, t, 1.5);
       if (u.wind <= 0) { u.cd = 2.3 + R(0, .5); if (t && t.alive) { const from = V3(u.pos.x + Math.sin(u.yaw) * 2, 1.5, u.pos.z + Math.cos(u.yaw) * 2), ty = isUnit(t) ? UNIT[t.kind].bodyY : Math.min(t.h * .5, 3), v = V3(t.pos.x - from.x, ty - from.y, t.pos.z - from.z).normalize().multiplyScalar(30); this.shoot(from, v, 1, 14 * this.diff.enemy, false, u); sfx.zap(this.vol(u.pos)); u.swing = 1; } }
@@ -914,7 +969,7 @@ export class Game {
     }
     if (me) {
       if (me.alive) this.bodyLayer(me, true);
-      const sprint = this.keys.has('ShiftLeft') && me.moving && this.ads < .3, fovT = (this.hopT > 0 ? 82 : sprint ? 75 : 68) - this.ads * (SHOT[me.kind]?.zoom ?? 6); cam.fov += (this.fitFov(fovT) - cam.fov) * Math.min(1, dt * 10);
+      const sprint = this.keys.has('ShiftLeft') && me.moving && this.ads < .3, fovT = (this.hopT > 0 ? 82 : sprint ? 75 : 68) - this.ads * (SHOT[me.kind]?.zoom ?? 6) + this.recoil * 1.5 * (1 - this.ads); cam.fov += (this.fitFov(fovT) - cam.fov) * Math.min(1, dt * 10);
       const bobY = me.moving ? Math.sin(this.bob) * .035 * (1 - this.ads * .7) : 0, sh = this.shake * .03;
       cam.position.set(me.pos.x + R(-sh, sh), UNIT[me.kind].eye + bobY + R(-sh, sh), me.pos.z + R(-sh, sh)); cam.rotation.set(this.pitch + this.recoil * .012, this.yaw + Math.PI, Math.sin(this.bob * .5) * (me.moving ? .004 : 0) - this.swayX * .6, 'YXZ');
       const intro = this.introT > 0 ? 1 - this.introT / 1.8 : 1;
@@ -927,7 +982,7 @@ export class Game {
         };
         const gun = GUNS[me.kind], rl = this.reloadT > 0 && gun ? Math.sin(Math.min(1, this.reloadT / gun.reload) * Math.PI) : 0;
         if (me.team === 1) pose(vm.veyl, 0, this.recoil * (me.kind === 'cantor' ? -.3 : .1), this.vWind > 0 ? -.12 : 0);
-        else if (me.kind === 'rigger') pose(vm.drill, 0, this.lmb && this.tool === 1 ? -.03 + R(-.004, .004) : 0, this.tool === 2 ? .12 : 0);
+        else if (me.kind === 'rigger') pose(vm.drill, 0, (this.lmb && this.tool === 1 ? -.03 + R(-.004, .004) : 0) - this.bashT * 1.1, this.tool === 2 ? .12 : 0);
         else if (SHOT[me.kind]) { const v = vm[SHOT[me.kind].vm], m = v.userData.mag; if (v.userData.magY === undefined) v.userData.magY = m.position.y; pose(v, this.ads, this.recoil * (me.kind === 'longshot' ? .11 : .05), rl * .14 + (me.kind === 'longshot' && this.fireCd > 0 && gun ? Math.sin(Math.min(1, 1 - this.fireCd / gun.cd) * Math.PI) * .05 * (1 - this.ads * .6) : 0)); m.position.y = v.userData.magY - (rl > .5 ? (rl - .5) * .5 : 0); }
         else if (me.kind === 'gantry') { pose(vm.cannon, 0, 0, rl * .1); const k = this.recoil * .09; vm.cannon.userData.gunR.position.z = this.side > 0 ? k : 0; vm.cannon.userData.gunL.position.z = this.side < 0 ? k : 0; }
         else { const pump = this.fireCd > 0 ? Math.sin(Math.min(1, (gun.cd - this.fireCd) / (gun.cd * .8)) * Math.PI) : 0; pose(vm.scatter, 0, this.recoil * .12, rl * .12 + this.ads * .16); vm.scatter.userData.mag.position.z = -.42 + pump * .12 + (rl > 0 ? Math.abs(Math.sin(this.reloadT * 9)) * .1 : 0); pose(vm.shield, this.ads, -this.bashT * 1.2, 0); }

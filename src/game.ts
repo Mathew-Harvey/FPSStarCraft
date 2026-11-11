@@ -24,9 +24,9 @@ interface Weapon { name: string; mag: number; cd: number; reload: number }
 const GUNS: Record<string, Weapon> = { linesman: { name: 'Rifle', mag: 24, cd: .12, reload: 1.5 }, breacher: { name: 'Scattergun', mag: 6, cd: .78, reload: 2.1 }, gantry: { name: 'Autocannon', mag: 12, cd: .36, reload: 2.4 }, longshot: { name: 'Long Rifle', mag: 5, cd: 1.15, reload: 2.4 }, patch: { name: 'Rivet Pistol', mag: 14, cd: .2, reload: 1.3 } };
 /** Tuning for the aimed, single-bullet guns. */
 const SHOT: Record<string, { vm: string; body: number; head: number; bld: number; sp: number; adsK: number; zoom: number; sens: number; kick: number }> = {
-  linesman: { vm: 'rifle', body: 7, head: 15, bld: 7, sp: .011, adsK: .75, zoom: 24, sens: .45, kick: .007 },
-  longshot: { vm: 'long', body: 58, head: 150, bld: 26, sp: .05, adsK: .995, zoom: 50, sens: .78, kick: .03 },
-  patch: { vm: 'pistol', body: 6, head: 12, bld: 5, sp: .014, adsK: .6, zoom: 10, sens: .25, kick: .006 },
+  linesman: { vm: 'rifle', body: 7, head: 15, bld: 4, sp: .011, adsK: .75, zoom: 24, sens: .45, kick: .007 },
+  longshot: { vm: 'long', body: 58, head: 150, bld: 14, sp: .05, adsK: .995, zoom: 50, sens: .78, kick: .03 },
+  patch: { vm: 'pistol', body: 6, head: 12, bld: 3, sp: .014, adsK: .6, zoom: 10, sens: .25, kick: .006 },
 };
 
 export class Game {
@@ -141,7 +141,10 @@ export class Game {
       if (!b.alive) continue; const ex = b.hx + r, ez = b.hz + r, dx = p.x - b.pos.x, dz = p.z - b.pos.z;
       if (Math.abs(dx) < ex && Math.abs(dz) < ez) {
         const px = ex - Math.abs(dx), pz = ez - Math.abs(dz);
-        if (px < pz) { p.x += Math.sign(dx || 1) * px; if (ai) p.z += Math.sign(gz - p.z || 1) * .07; } else { p.z += Math.sign(dz || 1) * pz; if (ai) p.x += Math.sign(gx - p.x || 1) * .07; }
+        // Pushed back out of the wall, an AI body slides along it toward its goal. When the goal is straight through the building
+        // that slide goes nowhere, so it heads for the nearer corner instead and walks round.
+        if (px < pz) { p.x += Math.sign(dx || 1) * px; if (ai) p.z += (Math.abs(gz - b.pos.z) < ez && (gx - b.pos.x) * dx < 0 ? Math.sign(dz || 1) : Math.sign(gz - p.z || 1)) * .07; }
+        else { p.z += Math.sign(dz || 1) * pz; if (ai) p.x += (Math.abs(gx - b.pos.x) < ex && (gz - b.pos.z) * dz < 0 ? Math.sign(dx || 1) : Math.sign(gx - p.x || 1)) * .07; }
       }
     }
     for (const s of this.spires) { const dx = p.x - s.x, dz = p.z - s.z, m = s.r + r; if (Math.abs(dx) > m || Math.abs(dz) > m) continue; const d = Math.hypot(dx, dz); if (d < m && d > .001) { p.x += dx / d * (m - d); p.z += dz / d * (m - d); if (ai) { const tx = -dz / d, tz = dx / d, sg = Math.sign(tx * (gx - p.x) + tz * (gz - p.z)) || 1; p.x += tx * sg * .08; p.z += tz * sg * .08; } } }
@@ -212,12 +215,15 @@ export class Game {
     if (from === me && me && !this.quiet) this.hud.damage(head, (crit ? 'CRIT ' : '') + Math.max(1, Math.round(dealt)), crit ? 'crit' : shielded ? 'shield' : '');
     if (t === me && me) { this.shake = Math.min(1, this.shake + .45); let ang = 0; if (from) { const a = Math.atan2(from.pos.x - me.pos.x, from.pos.z - me.pos.z) - this.yaw; ang = Math.atan2(Math.sin(a), Math.cos(a)); } this.hud.hurt(from ? ang : null); sfx.hurt(); }
     if (u && from && isUnit(from) && u !== me && !u.target && u.kind !== 'rigger') u.target = from;
+    if (!u && from && isUnit(from) && t.team === 1) this.dir.alarm(from);
     if (!u && from && isUnit(from) && t.team === 1) for (const c of this.units) if (c.alive && c.team === 1 && !c.target && c.order.type === 'guard' && c.pos.distanceTo(t.pos) < 50) c.target = from;
     if (!u && t.team === 0 && from && this.time > this.alertT) { this.alertT = this.time + 20; this.feed('Lookout', `They're chewing on the ${BLD[(t as Building).kind].name}! Get back here.`, 'al'); sfx.alarm(); }
     if (!u && t.hp > 0) { const b = t as Building, st = b.hp < b.maxHp * .33 ? 2 : b.hp < b.maxHp * .66 ? 1 : 0; if (b.built && st > b.stage) this.crack(b, st); }
     if (t.hp <= 0) u ? this.killUnit(u, from) : this.killBuilding(t as Building);
   }
   quiet = false;
+  /** Counts down while a freshly taken body brings its weapon up into view. */
+  drawT = 0;
   killUnit(u: Unit, from: Unit | Building | null) {
     if (this.evq) { this.evq.push(['ku', u.id, from ? from.id : 0]); const kp = from && (from as Unit).pilot; if (kp && u.team === 1 && this.score[kp]) this.score[kp][0]++; }
     if (u.kind === 'gantry' && u.alive && !this.net) { u.alive = false; this.explode(V3(u.pos.x, 0, u.pos.z), 0, 40, 6, null); u.alive = true; }
@@ -227,7 +233,7 @@ export class Game {
     u.ring.visible = false; if (u.rig.flash) u.rig.flash.visible = false; this.bodyLayer(u, false);
     let ax = R(-1, 1), az = R(-1, 1); if (from) { ax = u.pos.x - from.pos.x; az = u.pos.z - from.pos.z; } const al = Math.hypot(ax, az) || 1;
     this.corpses.push({ obj: u.obj, t: 0, veyl, ax: ax / al, az: az / al, s: u.obj.scale.x });
-    if (veyl && from === this.me && this.me) { this.hitStop = u.kind === 'warden' ? .25 : .06; this.streak = this.time < this.streakT ? this.streak + 1 : 1; this.streakT = this.time + 4; if (this.streak >= 2) { this.hud.streak(['', '', 'DOUBLE KO!', 'TRIPLE!', 'OVERTIME!', 'RAMPAGE!'][Math.min(5, this.streak)]); sfx.streak(this.streak); } }
+    if (veyl && from === this.me && this.me) { sfx.kill(); this.hitStop = u.kind === 'warden' ? .25 : .06; this.streak = this.time < this.streakT ? this.streak + 1 : 1; this.streakT = this.time + 4; if (this.streak >= 2) { this.hud.streak(['', '', 'DOUBLE KO!', 'TRIPLE!', 'OVERTIME!', 'RAMPAGE!'][Math.min(5, this.streak)]); sfx.streak(this.streak); } }
     if (veyl) { this.stats.kills++; if (u.kind === 'warden') { this.shake = Math.max(this.shake, v); this.feed('Alpha', 'Warden down! Did everybody see that? I did that.', ''); } else if (from && isUnit(from) && from.team === 0 && from !== this.me && Math.random() < .12) this.dir.bark(from, 'kill'); }
     else { this.stats.lost++; if (u !== this.me && isSoldier(u) && Math.random() < .35) this.dir.bark(u, 'down'); }
     if (u.site) u.site.builder = null;
@@ -305,7 +311,7 @@ export class Game {
     this.ammo = GUNS[u.kind] ? GUNS[u.kind].mag : 0;
     if (u.site) { u.site.builder = null; u.site = null; } u.state = 'idle'; u.carrying = 0; if (u.rig.pack) u.rig.pack.visible = false; if (u.rig.flash) u.rig.flash.visible = false;
     drillSound(false, false);
-    this.vWind = 0; if (!force) { sfx.jump(); this.hud.feed(UNIT[u.kind].name, UNIT[u.kind].ack[Math.floor(Math.random() * UNIT[u.kind].ack.length)] || '...', 'in'); this.obj.jumped = true; this.pipe.flash = .35; }
+    this.drawT = .32; this.vWind = 0; if (!force) { sfx.jump(); this.hud.feed(UNIT[u.kind].name, UNIT[u.kind].ack[Math.floor(Math.random() * UNIT[u.kind].ack.length)] || '...', 'in'); this.obj.jumped = true; this.pipe.flash = .35; }
     if (!this.seenKinds.has(u.kind) && !force) { this.seenKinds.add(u.kind); this.phase = 'card'; this.cardT = 1.15; this.hud.titleCard(u.kind, UNIT[u.kind].name, UNIT[u.kind].quip); sfx.card(); } else this.seenKinds.add(u.kind);
   }
   refreshTab() {
@@ -527,12 +533,12 @@ export class Game {
       if (any) { this.hud.hitmark(false); sfx.hit(); this.hud.damage(V3().copy(eye).addScaledVector(dir, 2), 'WHAM!', 'ko'); }
     }
     if (this.reloadT > 0) { this.reloadT -= dt; if (this.reloadT <= 0) this.ammo = gun.mag; return; }
-    if ((P.has('KeyR') && this.ammo < gun.mag) || (this.ammo <= 0 && this.lmb)) { this.reloadT = gun.reload; sfx.reload(); return; }
+    if ((P.has('KeyR') && this.ammo < gun.mag) || (this.ammo <= 0 && this.lmb)) { if (this.ammo <= 0) sfx.dry(); this.reloadT = gun.reload; sfx.reload(gun.reload); return; }
     if (this.lmb && this.fireCd <= 0 && this.ammo > 0 && !this.brace) {
       this.fireCd = gun.cd; this.ammo--; flash.visible = true; flash.rotation.z = R(0, 3); const mul = this.gunMul();
       const muzzle = V3(); flash.getWorldPosition(muzzle);
       if (heavy) {
-        this.recoil = 1; this.pitch = Math.min(1.45, this.pitch + .03); this.kick += .024; this.shake = Math.min(1, this.shake + .35); sfx.blast(); let hits = 0, total = 0, last: Unit | Building | null = null, crit = false;
+        this.recoil = 1; this.pitch = Math.min(1.45, this.pitch + .03); this.kick += .024; this.shake = Math.min(1, this.shake + .35); sfx.scatter(); let hits = 0, total = 0, last: Unit | Building | null = null, crit = false;
         this.quiet = true;
         for (let i = 0; i < 9; i++) {
           const d = V3().copy(dir); d.x += R(-.075, .075); d.y += R(-.05, .05); d.z += R(-.075, .075); d.normalize();
@@ -544,7 +550,7 @@ export class Game {
         this.quiet = false;
         if (last) { this.hud.hitmark(crit); sfx.hit(); this.hud.damage(V3(last.pos.x, (isUnit(last) ? UNIT[last.kind].headY : last.h * .6) + .4, last.pos.z), String(Math.round(total)), hits >= 7 ? 'crit' : ''); }
       } else {
-        const long = me.kind === 'longshot'; this.recoil = Math.min(1, this.recoil + (long ? 1 : .35)); { const k = S.kick * (1 - this.ads * .5); this.pitch = Math.min(1.45, this.pitch + k); this.kick += k * .8; this.yaw += R(-.0025, .0025); } this.shake = Math.min(1, this.shake + (long ? .4 : .1)); long ? sfx.blast() : sfx.shot();
+        const long = me.kind === 'longshot'; this.recoil = Math.min(1, this.recoil + (long ? 1 : .35)); { const k = S.kick * (1 - this.ads * .5); this.pitch = Math.min(1.45, this.pitch + k); this.kick += k * .8; this.yaw += R(-.0025, .0025); } this.shake = Math.min(1, this.shake + (long ? .4 : .1)); { const low = Math.max(0, 1 - this.ammo / Math.max(1, gun.mag / 4)); long ? sfx.sniper() : me.kind === 'patch' ? sfx.pistol(low) : sfx.rifle(low); }
         const sp = S.sp * (1 - this.ads * S.adsK) * (me.moving ? 1.6 : 1), d = V3().copy(dir); d.x += R(-sp, sp); d.y += R(-sp, sp); d.z += R(-sp, sp); d.normalize();
         let hit = this.ray(eye, d, 150, -1, me); if (hit && ((hit.unit && hit.unit.team === 0) || (hit.b && hit.b.team === 0 && hit.dist < 3))) hit = this.ray(eye, d, 150, 1, me);
         const dist = hit ? hit.dist : 150, end = V3().copy(eye).addScaledVector(d, dist); this.tracer(muzzle, end, tracerMat, long ? .14 : .07);
@@ -677,11 +683,11 @@ export class Game {
     const me = this.me!, vm = this.vm.cannon; vm.userData.flash.visible = vm.userData.flashL.visible = false;
     if (P.has('KeyC')) { if (this.nadeCd <= 0) { this.nadeCd = this.up.servo ? 6 : 10; this.stomp(me); } else sfx.deny(); }
     if (this.reloadT > 0) { this.reloadT -= dt; if (this.reloadT <= 0) this.ammo = gun.mag; return; }
-    if ((P.has('KeyR') && this.ammo < gun.mag) || (this.ammo <= 0 && this.lmb)) { this.reloadT = gun.reload; sfx.reload(); return; }
+    if ((P.has('KeyR') && this.ammo < gun.mag) || (this.ammo <= 0 && this.lmb)) { if (this.ammo <= 0) sfx.dry(); this.reloadT = gun.reload; sfx.reload(gun.reload); return; }
     if (this.lmb && this.fireCd <= 0 && this.ammo > 0) {
       this.fireCd = gun.cd; this.ammo--; this.side = -this.side; const flash = this.side > 0 ? vm.userData.flash : vm.userData.flashL; flash.visible = true; flash.rotation.z = R(0, 3);
       const mul = this.gunMul(), muzzle = V3(); flash.getWorldPosition(muzzle);
-      this.recoil = 1; this.pitch = Math.min(1.45, this.pitch + .012); this.kick += .01; this.shake = Math.min(1, this.shake + .22); sfx.blast();
+      this.recoil = 1; this.pitch = Math.min(1.45, this.pitch + .012); this.kick += .01; this.shake = Math.min(1, this.shake + .22); sfx.cannon();
       const sp = .012, d = V3().copy(dir); d.x += R(-sp, sp); d.y += R(-sp, sp); d.z += R(-sp, sp); d.normalize();
       let hit = this.ray(eye, d, 140, -1, me); if (hit && ((hit.unit && hit.unit.team === 0) || (hit.b && hit.b.team === 0 && hit.dist < 4))) hit = this.ray(eye, d, 140, 1, me);
       let dist = hit ? hit.dist : 140; if (!hit && d.y < 0) dist = Math.min(dist, -eye.y / d.y);
@@ -818,7 +824,7 @@ export class Game {
       else { u.yaw = Math.atan2(t.pos.x - u.pos.x, t.pos.z - u.pos.z); if (u.cd <= 0) { u.cd = .95; u.swing = 1; sfx.slash(this.vol(u.pos)); this.damage(t, (isB ? 10 : 13) * this.diff.enemy, u); } }
       return;
     }
-    this.advance(u, dt, u.order.type === 'raid' ? 3 : 1.5, u.order.type === 'raid' ? 1 : .6);
+    this.advance(u, dt, u.order.type === 'raid' ? 3 : 1.5, u.order.type === 'raid' || this.dir.alarmT > 0 ? 1 : .6);
   }
   aiLancer(u: Unit, dt: number) {
     if (u.wind > 0) {
@@ -836,7 +842,7 @@ export class Game {
       else if (!isB) this.takeCover(u, t as Unit, dt);
       return;
     }
-    u.cover = null; u.pitch *= .9; this.advance(u, dt, u.order.type === 'raid' ? 6 : 1.5, u.order.type === 'raid' ? 1 : .6);
+    u.cover = null; u.pitch *= .9; this.advance(u, dt, u.order.type === 'raid' ? 6 : 1.5, u.order.type === 'raid' || this.dir.alarmT > 0 ? 1 : .6);
   }
   /** Between shots a Lancer ducks behind the nearest solid scenery, then leans out to fire. */
   takeCover(u: Unit, t: Unit, dt: number) {
@@ -875,8 +881,8 @@ export class Game {
         b.cd -= dt; let tgt: Unit | null = null, bd = b.team === 0 && this.up.post ? 42 : 34; for (const o of this.units) { if (!o.alive || o.team === b.team) continue; const d = o.pos.distanceTo(b.pos); if (d < bd) { bd = d; tgt = o; } }
         if (tgt) { const gun = b.obj.userData.gun; gun.rotation.y = Math.atan2(tgt.pos.x - b.pos.x, tgt.pos.z - b.pos.z) - b.obj.rotation.y; if (b.cd <= 0) { b.cd = this.up.post ? .3 : .45; const a = V3(b.pos.x, 6, b.pos.z), e = V3(tgt.pos.x, UNIT[tgt.kind].bodyY, tgt.pos.z); this.tracer(a, e, tracerMat, .1); sfx.turret(this.vol(b.pos) * .6); this.damage(tgt, 10 * this.gunMul(), b); } }
       } else if (b.kind === 'thornspire') {
-        b.cd -= dt; if (b.cd <= 0) { b.cd = 1.3; let tgt: Unit | null = null, bd = 22; for (const o of this.units) { if (!o.alive || o.team === b.team) continue; const d = o.pos.distanceTo(b.pos); if (d < bd) { bd = d; tgt = o; } }
-          if (tgt) { this.tracer(V3(b.pos.x, 6.9, b.pos.z), V3(tgt.pos.x, UNIT[tgt.kind].bodyY, tgt.pos.z), beamMat, .2); sfx.zap(this.vol(b.pos) * .7); this.damage(tgt, 7 * this.diff.enemy, b); this.puff(TMP.copy(tgt.pos).setY(1), 2, .5, M.mag, .5); } else b.cd = .3; }
+        b.cd -= dt; if (b.cd <= 0) { b.cd = 1; let tgt: Unit | null = null, bd = 26; for (const o of this.units) { if (!o.alive || o.team === b.team) continue; const d = o.pos.distanceTo(b.pos); if (d < bd) { bd = d; tgt = o; } }
+          if (tgt) { this.tracer(V3(b.pos.x, 6.9, b.pos.z), V3(tgt.pos.x, UNIT[tgt.kind].bodyY, tgt.pos.z), beamMat, .2); sfx.zap(this.vol(b.pos) * .7); this.damage(tgt, 10 * this.diff.enemy, b); this.puff(TMP.copy(tgt.pos).setY(1), 2, .5, M.mag, .5); } else b.cd = .3; }
       } else if (b.kind === 'choir') {
         b.cd -= dt; if (b.cd <= 0) { b.cd = 1.15; let tgt: Unit | null = null, bd = 21; for (const o of this.units) { if (!o.alive || o.team === b.team) continue; const d = o.pos.distanceTo(b.pos); if (d < bd) { bd = d; tgt = o; } }
           if (tgt) { this.tracer(V3(b.pos.x, 9.6, b.pos.z), V3(tgt.pos.x, 1.1, tgt.pos.z), beamMat, .16); sfx.zap(this.vol(b.pos) * .8); this.damage(tgt, 8 * this.diff.enemy, b); this.puff(TMP.copy(tgt.pos).setY(1), 2, .5, M.teal, .5); } }
@@ -887,7 +893,7 @@ export class Game {
 
   // ------------------------------------------------------------ render
   render(dt: number) {
-    const me = this.me, cam = this.cam, pipe = this.pipe, vm = this.vm;
+    const me = this.me, cam = this.cam, pipe = this.pipe, vm = this.vm; this.drawT = Math.max(0, this.drawT - dt);
     cam.aspect = pipe.w / pipe.h; pipe.setDusk(Math.min(1, MAP.dusk + Math.max(0, (this.time - 120) / 780)));
     const build = this.phase !== 'menu' && this.tool === 2 && me?.kind === 'rigger' && me.alive && !this.tab && this.staticT <= 0;
     for (const k of BUILDABLE) { const on = build && BUILDABLE[this.buildSel] === k; this.ghost[k].visible = on && this.placeOK; this.ghostBad[k].visible = on && !this.placeOK; if (on) { const g = this.placeOK ? this.ghost[k] : this.ghostBad[k]; g.position.copy(this.placePos); g.rotation.y = this.buildRot ? Math.PI / 2 : 0; } }
@@ -916,13 +922,13 @@ export class Game {
       if (me.alive && this.staticT <= 0 && intro > .92) {
         const pose = (g: THREE.Group, k: number, kick: number, dip: number) => {
           const a = g.userData.rest, b = g.userData.ads || a, mv = me.moving ? 1 - k * .8 : 0; g.visible = true;
-          g.position.set(a[0] + (b[0] - a[0]) * k + Math.cos(this.bob) * .008 * mv + this.swayX, a[1] + (b[1] - a[1]) * k + Math.sin(this.bob * 2) * .006 * mv - dip + this.swayY, a[2] + (b[2] - a[2]) * k + kick);
-          g.rotation.set(a[3] + (b[3] - a[3]) * k + kick * 1.6 - dip * 2.4 + this.swayY * 2, a[4] + (b[4] - a[4]) * k - this.swayX * 2, a[5] + (b[5] - a[5]) * k + dip * 1.2);
+          g.position.set(a[0] + (b[0] - a[0]) * k + Math.cos(this.bob) * .008 * mv + this.swayX, a[1] + (b[1] - a[1]) * k + Math.sin(this.bob * 2) * .006 * mv - dip - this.drawT * .9 + this.swayY, a[2] + (b[2] - a[2]) * k + kick);
+          g.rotation.set(a[3] + (b[3] - a[3]) * k + kick * 1.6 - dip * 2.4 - this.drawT * 1.6 + this.swayY * 2, a[4] + (b[4] - a[4]) * k - this.swayX * 2, a[5] + (b[5] - a[5]) * k + dip * 1.2);
         };
         const gun = GUNS[me.kind], rl = this.reloadT > 0 && gun ? Math.sin(Math.min(1, this.reloadT / gun.reload) * Math.PI) : 0;
         if (me.team === 1) pose(vm.veyl, 0, this.recoil * (me.kind === 'cantor' ? -.3 : .1), this.vWind > 0 ? -.12 : 0);
         else if (me.kind === 'rigger') pose(vm.drill, 0, this.lmb && this.tool === 1 ? -.03 + R(-.004, .004) : 0, this.tool === 2 ? .12 : 0);
-        else if (SHOT[me.kind]) { const v = vm[SHOT[me.kind].vm], m = v.userData.mag; if (v.userData.magY === undefined) v.userData.magY = m.position.y; pose(v, this.ads, this.recoil * (me.kind === 'longshot' ? .11 : .05), rl * .14); m.position.y = v.userData.magY - (rl > .5 ? (rl - .5) * .5 : 0); }
+        else if (SHOT[me.kind]) { const v = vm[SHOT[me.kind].vm], m = v.userData.mag; if (v.userData.magY === undefined) v.userData.magY = m.position.y; pose(v, this.ads, this.recoil * (me.kind === 'longshot' ? .11 : .05), rl * .14 + (me.kind === 'longshot' && this.fireCd > 0 && gun ? Math.sin(Math.min(1, 1 - this.fireCd / gun.cd) * Math.PI) * .05 * (1 - this.ads * .6) : 0)); m.position.y = v.userData.magY - (rl > .5 ? (rl - .5) * .5 : 0); }
         else if (me.kind === 'gantry') { pose(vm.cannon, 0, 0, rl * .1); const k = this.recoil * .09; vm.cannon.userData.gunR.position.z = this.side > 0 ? k : 0; vm.cannon.userData.gunL.position.z = this.side < 0 ? k : 0; }
         else { const pump = this.fireCd > 0 ? Math.sin(Math.min(1, (gun.cd - this.fireCd) / (gun.cd * .8)) * Math.PI) : 0; pose(vm.scatter, 0, this.recoil * .12, rl * .12 + this.ads * .16); vm.scatter.userData.mag.position.z = -.42 + pump * .12 + (rl > 0 ? Math.abs(Math.sin(this.reloadT * 9)) * .1 : 0); pose(vm.shield, this.ads, -this.bashT * 1.2, 0); }
       }

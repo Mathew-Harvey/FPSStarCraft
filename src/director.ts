@@ -174,6 +174,10 @@ export class Director {
     }
   }
 
+  /** Counts down while the Veyl base is under fire, and where the shooting is coming from. */
+  alarmT = 0; alarmX = 0; alarmZ = 0; private alarmCd = 0; private alarmN = 0;
+  /** A Veyl building was hit. The garrison goes looking for whoever did it, and the Reed Gate starts sending help. */
+  alarm(from: Unit) { if (from.team !== 0) return; if (this.alarmT <= 0) this.alarmCd = Math.min(this.alarmCd, 2); this.alarmT = 14; this.alarmX = from.pos.x; this.alarmZ = from.pos.z; }
   enemy(dt: number) {
     const g = this.g, stones = g.stones(); if (!stones.length) return;
     const gate = g.gate(), pits = g.pits(), src = gate ? { x: GATE.x - 6, z: GATE.z } : { x: OUTPOST.x, z: OUTPOST.z };
@@ -194,6 +198,19 @@ export class Director {
       const lancers = n >= 1 ? Math.floor(budget * .3) : 0; for (let i = 0; i < lancers; i++) send('lancer');
       for (let i = 0; i < Math.max(1, Math.round(budget - lancers)); i++) send('cantor');
       this.say('Lookout', `${count} Veyl ${north ? 'coming over the ' + MAP.flankName : 'coming down the ' + MAP.road}. They look annoyed.`, 'al');
+    }
+    if (this.alarmT > 0) {
+      this.alarmT -= dt; this.alarmCd -= dt; const def = g.units.filter(u => u.alive && u.team === 1 && u.order.type === 'guard' && u.kind !== 'warden' && !u.pilot);
+      // Guards with nothing to fight walk out to the shooter, however far away the shooter thinks is safe.
+      for (const u of def) if (!u.target) { u.order.x = this.alarmX + ((u.id * 7) % 9 - 4); u.order.z = this.alarmZ + ((u.id * 5) % 9 - 4); }
+      // The Chorus swarms anyone who comes alone. A proper push meets the usual garrison and a little extra.
+      const crowd = g.units.filter(u => u.alive && u.team === 0 && u.kind !== 'rigger' && Math.hypot(u.pos.x - this.alarmX, u.pos.z - this.alarmZ) < 45).length, lone = crowd <= 2 * g.coop;
+      const cap = Math.round((4 + stones.length + (lone ? 3 + Math.min(5, g.time / 150) : crowd <= 4 ? 2 : 1)) * g.diff.enemy * (1 + .4 * (g.coop - 1)));
+      if (this.alarmCd <= 0 && def.length < cap) {
+        this.alarmCd = (gate ? (lone ? 4.5 : 9) : 12) / g.diff.enemy; const k: Kind = this.alarmN++ % 3 === 2 ? 'lancer' : 'cantor', u = g.spawn(k, 1, src.x + R(-2, 2), src.z + R(-3, 3));
+        u.order = { type: 'guard', x: this.alarmX + R(-3, 3), z: this.alarmZ + R(-3, 3) }; g.puff(V3(u.pos.x, 1, u.pos.z), 5, 1, M.violet, .8);
+      }
+      if (this.alarmT <= 0) for (const u of def) { u.order.x = OUTPOST.x - 8 + R(-8, 4); u.order.z = OUTPOST.z + R(-9, 9); }
     }
     this.reinT -= dt;
     if (this.reinT <= 0) {

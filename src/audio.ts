@@ -69,7 +69,16 @@ export const sfx = {
   card: () => { noise(.2, 300, .5); tone(110, 55, .3, .35, 'sawtooth'); },
   alarm: () => { tone(520, 520, .18, .22); later(() => tone(390, 390, .22, .22), 200); },
   callout: () => { tone(520, 780, .08, .14, 'triangle'); },
-  reload: () => { noise(.05, 3000, .25, 'highpass'); later(() => noise(.06, 1800, .3, 'bandpass'), 260); },
+  /** Magazine out, magazine in, then the bolt, spread across however long this gun takes. */
+  reload: (dur = 1.5) => { noise(.05, 3000, .25, 'highpass'); tone(500, 300, .03, .08); later(() => { noise(.07, 1400, .32, 'bandpass'); tone(180, 120, .05, .16, 'square'); }, dur * 520); later(() => { noise(.04, 3600, .3, 'highpass'); tone(700, 900, .04, .1, 'triangle'); }, dur * 860); },
+  // Each gun the player fires has its own voice. `low` rises from 0 to 1 over the last quarter of the magazine, so the gun sounds emptier as it runs dry.
+  rifle: (low = 0) => { noise(.11, 2400, .5); tone(240 + low * 140, 60, .08, .26, 'sawtooth'); noise(.3, 520, .12); },
+  pistol: (low = 0) => { noise(.07, 3400, .42, 'bandpass'); tone(420 + low * 160, 120, .06, .22, 'square'); noise(.2, 700, .08); },
+  sniper: () => { noise(.08, 5000, .5, 'highpass'); noise(.5, 700, .7); tone(110, 30, .4, .5, 'sine'); tone(900, 200, .06, .2, 'sawtooth'); later(() => { noise(.05, 2800, .22, 'bandpass'); later(() => noise(.06, 1900, .26, 'bandpass'), 170); }, 420); },
+  scatter: () => { noise(.3, 1100, .85); tone(130, 36, .24, .5, 'sawtooth'); noise(.07, 4200, .3, 'highpass'); later(() => noise(.05, 2600, .22, 'bandpass'), 330); later(() => { noise(.06, 1500, .26, 'bandpass'); tone(160, 110, .04, .12, 'square'); }, 470); },
+  cannon: () => { noise(.22, 800, .8); tone(95, 30, .26, .6, 'sine'); tone(300, 80, .08, .3, 'square'); noise(.4, 300, .25); },
+  dry: () => { tone(1100, 900, .03, .12, 'square'); noise(.03, 5000, .15, 'highpass'); },
+  kill: () => { tone(660, 990, .07, .16, 'triangle'); later(() => tone(990, 1480, .1, .14, 'triangle'), 60); },
   win: () => { [523, 659, 784, 1046].forEach((f, i) => later(() => tone(f, f, .25, .2, 'triangle'), i * 140)); },
   lose: () => { [392, 330, 262, 196].forEach((f, i) => later(() => tone(f, f, .3, .2, 'sawtooth'), i * 180)); },
 };

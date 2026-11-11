@@ -48,7 +48,10 @@ try {
   await A.evaluate(id => { const g = __ore.game; for (let i = 0; i < 4; i++) g.net.cmd('dm', id, 600, 0); }, v.me);
   check(await until(V, was => { const g = __ore.game; return g.me && g.me.alive && g.me.id !== was && g.me.team === 1; }, v.me, 20000), 'when Vex dies, Vex wakes up in another Veyl body');
   // Vex finishes the Headframe: Vex wins, Ada loses
-  await V.evaluate(() => { const g = __ore.game, h = g.ownB('headframe')[0]; for (let i = 0; i < 8; i++) g.net.cmd('dm', h.id, 600, 0); });
+  // a burst no gun could deliver is cut down by the server
+  const hq0 = await V.evaluate(() => { const g = __ore.game, h = g.ownB('headframe')[0]; for (let i = 0; i < 8; i++) g.net.cmd('dm', h.id, 600, 0); return h.hp; }); await sleep(1500);
+  const hq1 = await V.evaluate(() => __ore.game.ownB('headframe')[0]?.hp ?? 0); check(hq0 - hq1 <= 1000 && hq1 > 0, `the server refuses impossible damage (${Math.round(hq0 - hq1)} of 4800 landed)`);
+  await V.evaluate(async () => { const g = __ore.game; for (let i = 0; i < 20 && g.phase !== 'over'; i++) { const h = g.ownB('headframe')[0]; if (h) g.net.cmd('dm', h.id, 440, 0); await new Promise(r => setTimeout(r, 1100)); } });
   await A.waitForFunction(() => __ore.game.phase === 'over', null, { timeout: 30000 }); await V.waitForFunction(() => __ore.game.phase === 'over', null, { timeout: 30000 });
   a = await st(A); v = await st(V); check(a.won === false && v.won === true, 'the Headframe falls: Vex sees a win and Ada sees a loss');
   if (SHOTS) { await V.evaluate(() => { __ore.game.noRender = false; }); await sleep(1500); await V.screenshot({ path: `${SHOTS}/versus-end.jpg`, type: 'jpeg', quality: 88 }); }

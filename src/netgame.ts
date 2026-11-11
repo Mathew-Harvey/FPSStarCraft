@@ -27,10 +27,18 @@ export function buildSnap(g: Game) {
 }
 
 // ---------------------------------------------------------------- server: one player's actions
+const BUDGET = new WeakMap<Unit, { left: number; t: number }>(), MOVED = new WeakMap<Unit, number>();
 export function serverCmd(g: Game, pid: number, unit: Unit | null, c: any[]) {
   const k = c[0], num = (i: number) => (typeof c[i] === 'number' && isFinite(c[i]) ? c[i] : 0);
   if (g.teams[pid] === 1 && ['tn', 'up', 'pl', 'mn', 'wd', 'fx', 'pt', 'or'].includes(k)) return;   // Ironhold business
-  if (k === 'dm') { if (!unit) return; const id = num(1), amt = Math.min(600, num(2)), t = g.units.find(x => x.id === id) || g.buildings.find(x => x.id === id); if (t && t.alive && t.team !== unit.team && amt > 0) g.damage(t, amt, unit, !!c[3]); }
+  if (k === 'dm') {
+    // A player reports their own hits, so the server checks them: the target has to be an enemy in reach, and no body can deal more
+    // in a second than the hardest-hitting gun and a grenade could together.
+    if (!unit) return; const id = num(1), t = g.units.find(x => x.id === id) || g.buildings.find(x => x.id === id); if (!t || !t.alive || t.team === unit.team) return;
+    if (Math.hypot(t.pos.x - unit.pos.x, t.pos.z - unit.pos.z) > 175) return;
+    const bk = BUDGET.get(unit) || { left: 900, t: g.time }; BUDGET.set(unit, bk); bk.left = Math.min(900, bk.left + (g.time - bk.t) * 450); bk.t = g.time;
+    const amt = Math.min(450, num(2), bk.left); if (amt <= 0) return; bk.left -= amt; g.damage(t, amt, unit, !!c[3]);
+  }
   else if (k === 'dp') { if (!unit) return; const p = g.props[num(1)]; if (p) g.damageProp(p, Math.min(900, num(2)), unit); }
   else if (k === 'tr') { if (c.length === 9) g.evq!.push(['tr', ...c.slice(1).map(Number), pid]); }
   else if (k === 'pj') { if (c.length === 9) g.evq!.push(['pj', ...c.slice(1).map(Number), 2, pid]); }
@@ -58,7 +66,9 @@ export function serverCmd(g: Game, pid: number, unit: Unit | null, c: any[]) {
 /** The player's own body, as their browser last reported it. */
 export function serverMove(g: Game, unit: Unit, m: any[]) {
   const x = +m[0], z = +m[1]; if (!isFinite(x) || !isFinite(z)) return;
-  const d = Math.hypot(x - unit.pos.x, z - unit.pos.z); if (d < 14) { unit.pos.x = x; unit.pos.z = z; }   // further than that in one update is not walking
+  // Nobody walks faster than a sprinting, dashing body. A report from further away than that is pulled back toward where the body could have got to.
+  const d = Math.hypot(x - unit.pos.x, z - unit.pos.z), was = MOVED.get(unit) ?? g.time - .1, reach = 4 + Math.max(0, g.time - was) * 11; MOVED.set(unit, g.time);
+  if (d <= reach) { unit.pos.x = x; unit.pos.z = z; } else if (d < 40) { unit.pos.x += (x - unit.pos.x) / d * reach; unit.pos.z += (z - unit.pos.z) / d * reach; }
   unit.yaw = +m[2] || 0; unit.pitch = Math.max(-1.5, Math.min(1.5, +m[3] || 0)); const f = m[4] | 0;
   unit.moving = !!(f & F_MOVE); unit.brace = !!(f & F_BRACE); if (f & F_FIRE) { unit.swing = 1; unit.flashT = .08; } unit.target = null;
 }

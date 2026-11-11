@@ -165,6 +165,15 @@ The Ironhold tree has five tiers. Each building needs the one above it standing,
 
 The tables live in `src/data.ts` (`BLD`, `TRAINS`, `UNIT_NEEDS`, `UPGRADES`). The pause screen draws the whole tree with what is standing and bought. The Quartermaster follows the same tree when it runs the yard.
 
+## Balance tools
+
+Two scripts play whole matches in a headless browser at many times real speed, with drawing switched off.
+
+- `node tools/soak.cjs '[[0,1],[1,1]]'` plays hands-off matches (pairs of map and difficulty) and reports errors, bodies that stop moving, and who won.
+- `node tools/bot.cjs <mode> <difficulty> [map]` plays as a scripted first-person player with perfect aim. Modes: `linesman` (walk in alone and shoot), `rigger` (drill rush), `longshot`, `squad` (defend, say yes to pushes, go with them) and `afk`. It exists to find one-trick wins.
+
+The Veyl base answers an attack: guards walk out to whoever is shooting, however far away, and the Reed Gate sends help. It sends much more against one or two attackers than against a full push. Rifles and pistols do little to buildings, so cracking the base takes Breachers, grenades, the Gantry or numbers.
+
 ## Split screen
 
 Two players on one machine share one Ironhold yard. Pick a map and a shift on the Skirmish tab, choose side by side or stacked, and press Split screen. No server is needed.

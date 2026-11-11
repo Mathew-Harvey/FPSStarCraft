@@ -9,7 +9,7 @@ import { Kind, BKind, UNIT, BLD, BUILDABLE, UPGRADES, TRAINS, UNIT_NEEDS, UpKey,
 import { Director } from './director';
 import type { Mission } from './campaign';
 import type { Net } from './net';
-import { applySnap, netTick } from './netgame';
+import { applySnap, netTick, RAID_CALL_AT } from './netgame';
 
 const TMP = V3(), TMP2 = V3(), UP = V3(0, 1, 0), QT = new THREE.Quaternion();
 export const beamMat = new THREE.MeshBasicMaterial({ color: 0x6dfff0, depthWrite: false });
@@ -47,7 +47,7 @@ export class Game {
   ammo = 24; reloadT = 0; fireCd = 0; recoil = 0; ads = 0; brace = false; nadeCd = 0; bashCd = 0; bashT = 0; mineT = 0; bob = 0; prompt = ''; swayX = 0; swayY = 0; sens = 1;
   tab = false; tabSel = 0; tabList: { label: string; task: string; unit: Unit; hp: number; alert: boolean }[] = [];
   keys = new Set<string>(); pressed = new Set<string>(); mdx = 0; mdy = 0; lmb = false; rmb = false; wheel = 0;
-  obj = { drilled: 0, jumped: false, answered: false, built: false };
+  obj = { drilled: 0, jumped: false, answered: false, built: false, called: false };
   stats = { kills: 0, lost: 0, mined: 0, built: 0, lostTo: {} as Record<string, number> };
   // effects
   vm: Record<string, THREE.Group> = {};
@@ -149,7 +149,8 @@ export class Game {
     }
     for (const s of this.spires) { const dx = p.x - s.x, dz = p.z - s.z, m = s.r + r; if (Math.abs(dx) > m || Math.abs(dz) > m) continue; const d = Math.hypot(dx, dz); if (d < m && d > .001) { p.x += dx / d * (m - d); p.z += dz / d * (m - d); if (ai) { const tx = -dz / d, tz = dx / d, sg = Math.sign(tx * (gx - p.x) + tz * (gz - p.z)) || 1; p.x += tx * sg * .08; p.z += tz * sg * .08; } } }
     for (const o of this.ores) { if (o.amount <= 0) continue; const dx = p.x - o.pos.x, dz = p.z - o.pos.z, d = Math.hypot(dx, dz), m = 1.7; if (d < m && d > .001) { p.x += dx / d * (m - d); p.z += dz / d * (m - d); } }
-    const cx = p.x - 60, cz = p.z - 10, cd = Math.hypot(cx, cz); if (cd > 200) { p.x = 60 + cx / cd * 200; p.z = 10 + cz / cd * 200; }
+    // The edge of the world: a circle around the middle of the map, inside the ring of mesas. It moves with the map, so the far end of Glass Flats stays reachable.
+    const ox = MAP.out[0] / 2, oz = MAP.out[1] / 2, cx = p.x - ox, cz = p.z - oz, cd = Math.hypot(cx, cz); if (cd > 200) { p.x = ox + cx / cd * 200; p.z = oz + cz / cd * 200; }
   }
   moveTo(u: Unit, x: number, z: number, dt: number, stop = .4, mul = 1) {
     const dx = x - u.pos.x, dz = z - u.pos.z, d = Math.hypot(dx, dz); if (d < stop) return true;
@@ -233,7 +234,7 @@ export class Game {
   /** Veyl player: cooldown on the body's second move, the verse picked for the next raid, and the Cantor's rising combo. */
   vCd = 0; verse = 0; combo = 0; comboT = 0;
   killUnit(u: Unit, from: Unit | Building | null) {
-    if (this.evq) { this.evq.push(['ku', u.id, from ? from.id : 0]); const kp = from && (from as Unit).pilot; if (kp && u.team === 1 && this.score[kp]) this.score[kp][0]++; }
+    if (this.evq) { this.evq.push(['ku', u.id, from ? from.id : 0]); const kp = from && (from as Unit).pilot; if (kp && u.team !== from!.team && this.score[kp]) this.score[kp][0]++; }
     if (u.kind === 'gantry' && u.alive && !this.net) { u.alive = false; this.explode(V3(u.pos.x, 0, u.pos.z), 0, 40, 6, null); u.alive = true; }
     u.alive = false; const veyl = u.team === 1, v = this.vol(u.pos), st = UNIT[u.kind], c = V3(u.pos.x, st.bodyY, u.pos.z);
     this.puff(c, veyl ? 6 : 4, st.rad * 1.4, veyl ? M.teal : M.dust); this.debris(c, veyl ? 7 : 3, .22, veyl ? M.crys : M.steelD, 5); sfx.ko(v, veyl);
@@ -449,7 +450,7 @@ export class Game {
     this.vCd = Math.max(0, this.vCd - dt); this.comboT -= dt; if (this.comboT <= 0) this.combo = 0;
     // 1, 2 and 3 pick the verse the next raid is written in: all blades, mostly lances, or the deep voice.
     for (let i = 0; i < 3; i++) if (P.has('Digit' + (i + 1)) && this.verse !== i) { this.verse = i; sfx.blip(); }
-    if (P.has('KeyG') || P.has('KeyE')) { if (this.raidCall <= 0) { this.raidCall = 90; this.net?.cmd('rd', this.verse); sfx.callout(); } else sfx.deny(); }
+    if (P.has('KeyG') || P.has('KeyE')) { if (this.time < RAID_CALL_AT) { sfx.deny(); this.hud.feed('Chorus', `The Chorus is still waking. The first raid can be called in ${Math.ceil(RAID_CALL_AT - this.time)} seconds.`, 'al'); } else if (this.raidCall <= 0) { this.raidCall = 90; this.obj.called = true; this.net?.cmd('rd', this.verse); sfx.callout(); } else sfx.deny(); }
     if (me.kind === 'warden') {
       // Right click: the Low Note. Every Veyl in earshot gets its shield back.
       if (P.has('Mouse2')) { if (this.vCd <= 0) { this.vCd = 20; this.net?.cmd('vs'); sfx.charge(1); sfx.boom(.3); this.shake = Math.max(this.shake, .5); this.warn(me.pos.x, me.pos.z, 16, .5); this.hud.damage(V3(me.pos.x, 4.6, me.pos.z), 'LOW NOTE', 'shield'); } else sfx.deny(); }
@@ -879,7 +880,9 @@ export class Game {
       return;
     }
     u.target = null; u.pitch *= .9; const o = u.order, me = this.me;
-    const lead = o.lead?.alive ? o.lead : me;
+    let lead = o.lead?.alive ? o.lead : me;
+    // Online, the player being followed may have lost that body. Follow whatever body that same player drives now.
+    if (o.type === 'follow' && o.lead && !o.lead.alive && o.lead.pilot) { const nb = this.units.find(x => x.alive && x.pilot === o.lead!.pilot && x.team === u.team); if (nb) { o.lead = nb; lead = nb; } }
     if (o.type === 'follow' && lead?.alive) { const a = u.slot * 2.4, r = 2.8 + (u.slot % 3) * 1.0, tx = lead.pos.x + Math.cos(a) * r, tz = lead.pos.z + Math.sin(a) * r; if (Math.hypot(tx - u.pos.x, tz - u.pos.z) > 1.6) this.moveTo(u, tx, tz, dt, .5, 1.3); }
     else if (o.type !== 'follow') this.advance(u, dt, o.type === 'amove' ? 5 : .7);
   }
@@ -959,10 +962,10 @@ export class Game {
       if (!b.built) {
         b.progress = Math.min(1, b.progress); b.hp = Math.max(b.hp, b.maxHp * (.1 + .9 * b.progress)); b.obj.scale.y = Math.max(.06, b.progress);
         if (b.progress >= 1) { b.built = true; b.hp = b.maxHp; b.obj.scale.y = 1; if (b.holo) { this.scene.remove(b.holo); b.holo = null; } if (b.builder) { b.builder.site = null; b.builder.state = 'idle'; b.builder = null; } sfx.built(); this.stats.built++; this.puff(TMP.copy(b.pos).setY(1.5), 8, 1.8, M.dust, .8, 2.5); this.dir.buildingDone(b); }
-        else if (b.team === 0 && (!b.builder || !b.builder.alive || b.builder === this.me)) this.assignRigger(b);
+        else if (b.team === 0 && this.needsBuilder(b)) this.assignRigger(b);
         continue;
       }
-      if (b.team === 0 && b.hp < b.maxHp * .7 && this.time - b.lastHit > 6 && (!b.builder || !b.builder.alive || b.builder === this.me)) this.assignRigger(b);
+      if (b.team === 0 && b.hp < b.maxHp * .7 && this.time - b.lastHit > 6 && this.needsBuilder(b)) this.assignRigger(b);
       if (b.hp < b.maxHp * .5 && b.team === 0) { b.smokeT -= dt; if (b.smokeT <= 0) { const bad = b.hp < b.maxHp * .25; b.smokeT = bad ? .18 : .4; const fire = bad && Math.random() < .5; this.puff(TMP.set(b.pos.x + R(-b.hx, b.hx) * .6, b.h * R(.6, 1), b.pos.z + R(-b.hz, b.hz) * .6), 1, fire ? 1.1 : 1.5, fire ? M.fire : M.smoke, 2.4, .5); } }
       if (b.queue.length) { const q = b.queue[0]; q.t -= dt; if (q.t <= 0) { b.queue.shift(); const side = b.kind === 'bunkhouse' && !b.rot; const u = this.spawn(q.kind, 0, b.pos.x + (side ? b.hx + 1.2 : R(-1, 3)), b.pos.z + (side ? R(-.5, .5) : b.hz + 1.2)); this.puff(TMP.copy(u.pos).setY(1), 4, .8, M.dust); if (this.vol(b.pos) > .2) sfx.blip(); this.dir.trained(u); } }
       if (b.kind === 'watchpost') {
@@ -981,7 +984,9 @@ export class Game {
       }
     }
   }
-  assignRigger(b: Building) { let best: Unit | null = null, bd = 1e9; for (const u of this.units) { if (!u.alive || u.team !== 0 || u.kind !== 'rigger' || u === this.me || u.site) continue; const d = u.pos.distanceTo(b.pos) + (u.carrying ? 15 : 0); if (d < bd) { bd = d; best = u; } } if (best && (bd < 90 || !b.built)) { best.site = b; b.builder = best; } }
+  /** A site with nobody on it: no builder, a dead one, one a player is driving, or one that has gone off to other work. */
+  needsBuilder(b: Building) { const u = b.builder; return !u || !u.alive || u === this.me || !!u.pilot || u.site !== b; }
+  assignRigger(b: Building) { let best: Unit | null = null, bd = 1e9; for (const u of this.units) { if (!u.alive || u.team !== 0 || u.kind !== 'rigger' || u === this.me || u.pilot || u.site) continue; const d = u.pos.distanceTo(b.pos) + (u.carrying ? 15 : 0); if (d < bd) { bd = d; best = u; } } if (best && (bd < 90 || !b.built)) { best.site = b; b.builder = best; } }
 
   // ------------------------------------------------------------ render
   render(dt: number) {

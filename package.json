@@ -8,7 +8,7 @@
     "build": "tsc --noEmit && node build.mjs",
     "typecheck": "tsc --noEmit",
     "start": "node dist/server.mjs",
-    "test": "node test/coop.mjs && node test/versus.mjs && node test/split.mjs"
+    "test": "node test/server.mjs && node test/coop.mjs && node test/versus.mjs && node test/split.mjs && node test/sweep.mjs"
   },
   "dependencies": {
     "three": "0.160.0",

@@ -4,7 +4,7 @@ import { spawn } from 'node:child_process';
 import { createRequire } from 'node:module';
 const require = createRequire(import.meta.url); const { chromium } = require('playwright');
 const PORT = 8139, URL = `http://localhost:${PORT}/`, SHOTS = process.env.SHOTS || '';
-const srv = spawn('node', ['dist/server.mjs'], { env: { ...process.env, PORT: String(PORT) }, stdio: ['ignore', 'pipe', 'pipe'] });
+const srv = spawn('node', ['dist/server.mjs'], { env: { ...process.env, PORT: String(PORT), ORE_RAID_CALL_AT: '0' }, stdio: ['ignore', 'pipe', 'pipe'] });
 let srvLog = ''; srv.stdout.on('data', d => { srvLog += d; }); srv.stderr.on('data', d => { srvLog += d; });
 const fail = []; const check = (ok, what) => { console.log((ok ? 'PASS ' : 'FAIL ') + what); if (!ok) fail.push(what); };
 const sleep = ms => new Promise(r => setTimeout(r, ms));

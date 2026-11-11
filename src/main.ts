@@ -122,6 +122,9 @@ $('again').addEventListener('click', () => { if (split) { startSplit(splitVs); r
 $('startJob').addEventListener('click', start);
 function toMenu() { $('end').hidden = true; $('pause').hidden = true; hud.show(false); if (document.pointerLockElement) document.exitPointerLock(); showMode(); fresh(); $('menu').hidden = false; }
 $('toMenu').addEventListener('click', toMenu);
+/** Walks out of a shift that is still running. Online, that means leaving the lobby too, so nobody is left holding an empty body. */
+function quit() { if (net && game.net === net) { net.send({ t: 'leave' }); net.inbox.length = 0; game.net = null; } toMenu(); }
+$('quit').addEventListener('click', quit);
 // ---- split screen
 /** Player two without a controller: the right-hand side of the keyboard. Values are the keys the game code listens for. */
 const P2KEYS: Record<string, string> = { ArrowUp: 'KeyW', ArrowDown: 'KeyS', ArrowLeft: 'KeyA', ArrowRight: 'KeyD', KeyI: 'LookU', KeyK: 'LookD', KeyJ: 'LookL', KeyL: 'LookR', KeyO: 'Mouse0', KeyP: 'Mouse2', KeyH: 'KeyE', KeyN: 'KeyR', KeyM: 'KeyC', Semicolon: 'KeyF', Quote: 'Tab', Comma: 'Wheel-', Period: 'Wheel+', Slash: 'Tool', ShiftRight: 'ShiftLeft', ControlRight: 'Space', Digit8: 'KeyT', Digit9: 'KeyY', Digit0: 'KeyU', Backspace: 'KeyQ', Backslash: 'Mouse1', Minus: 'KeyV', BracketLeft: 'KeyZ', BracketRight: 'KeyX' };
@@ -199,7 +202,7 @@ function showMode() {
   $('multiBtn').classList.toggle('locked', !mpOpen); $('multiNote').textContent = mpOpen ? 'Unlocked' : 'Locked. Finish the campaign.';
   $('mLocked').hidden = mpOpen; $('mJoin').hidden = !mpOpen || !!(net && net.lobby && net.lobby.code); $('mLobby').hidden = !mpOpen || !(net && net.lobby && net.lobby.code);
   $('mTitle').textContent = mpOpen ? 'Joint operations: cleared' : 'Joint operations: locked';
-  $('mText').textContent = mpOpen ? 'You are cleared for multiplayer. Lobbies open as soon as the game server is switched on, which is the next part of the build. Until then, Skirmish has all three maps.' : 'The Charter does not let strangers share a payroll. Finish the five campaign jobs to unlock multiplayer, or use the unlock button on the Campaign tab if you have done them before.';
+  $('mText').textContent = mpOpen ? 'You are cleared for multiplayer. Make a lobby and read its code out to your crew, or join one with theirs. Two players on one machine can play split screen from the Skirmish tab.' : 'The Charter does not let strangers share a payroll. Finish the five campaign jobs to unlock multiplayer, or use the unlock button on the Campaign tab if you have done them before.';
   showJobs();
 }
 modeBtns.forEach(b => b.addEventListener('click', () => { optsOpen = b.dataset.m === 'opts'; if (optsOpen) { showMode(); return; } mode = (b.dataset.m || 'camp') as typeof mode; save(); showMode(); if (mode !== 'multi') { const w = want(); if (game.mapI !== w.map || game.mission !== w.m) fresh(); } }));
@@ -226,7 +229,7 @@ async function mpConnect(then: (n: Net) => void) {
   if (net && net.open) { then(net); return; }
   mErr('Connecting...'); const n = new Net();
   n.onLobby = l => { showLobby(l); if (l.code) { mErr(''); lastCode = l.code; } }; n.onError = m => mErr(m);
-  n.onClose = () => { net = null; if (game.net) { game.net = null; toMenu(); } showMode(); if (lastCode) { mCode.value = lastCode; mErr('Lost the connection. Press Join to get back into lobby ' + lastCode + '.'); } else mErr('Lost the connection to the server.'); };
+  n.onClose = () => { net = null; if (game.net === n) { game.net = null; toMenu(); } showMode(); if (lastCode) { mCode.value = lastCode; mErr('Lost the connection. Press Join to get back into lobby ' + lastCode + '.'); } else mErr('Lost the connection to the server.'); };
   n.onBegin = m => {
     endSplit(); mode = 'multi'; hud.reset(); game = new Game(pipe, hud, DIFFS[m.diff], m.map, null, n); game.sens = sens; game.names = m.names; game.myTeam = m.team || 0; game.teams = m.teams || {}; if (m.ph) { game.applying = true; for (const r of m.ph) { const q = game.props[r[0]]; if (q && q.alive && q.hp > r[1]) game.damageProp(q, q.hp - r[1], null); } game.applying = false; } ended = false; (window as any).__ore.game = game;
     initAudio(); setVolume(vol); setMusic(mus); $('menu').hidden = true; $('pause').hidden = true; $('end').hidden = true; hud.show(true); game.phase = 'play'; game.introT = 1.8; lock();
@@ -297,5 +300,5 @@ function frame(now: number) {
   if (fast > 900 && quality < 1) { quality = Math.min(1, quality / .85); fast = 0; resize(); }
   requestAnimationFrame(frame);
 }
-(window as any).__ore = { atlasUsed: MD.atlasUsed, game, start, pipe, hud, hud2, startSplit, split: () => split, game2: () => game2, setFree: (v: boolean) => { freeMouse = v; }, pickMap, unlock: () => { camp = MISSIONS.length; mpOpen = true; mode = 'multi'; showMode(); }, net: () => net, pickJob: (i: number) => { mode = 'camp'; camp = Math.max(camp, i); jobI = i; showMode(); fresh(); } };
+(window as any).__ore = { quit, atlasUsed: MD.atlasUsed, game, start, pipe, hud, hud2, startSplit, split: () => split, game2: () => game2, setFree: (v: boolean) => { freeMouse = v; }, pickMap, unlock: () => { camp = MISSIONS.length; mpOpen = true; mode = 'multi'; showMode(); }, net: () => net, pickJob: (i: number) => { mode = 'camp'; camp = Math.max(camp, i); jobI = i; showMode(); fresh(); } };
 requestAnimationFrame(frame);

@@ -1,6 +1,7 @@
 // The heads-up display: plain HTML over the canvas, laid out in a 900-unit-tall space and scaled to fit.
 import * as THREE from 'three';
 import type { Game } from './game';
+import { RAID_CALL_AT } from './netgame';
 import { UNIT, BLD, BUILDABLE, Unit, Building, MAP, MAPS, OUTPOST, ROAD, NORTH_PATH, roadPt } from './data';
 const capW = (t: string) => t.charAt(0).toUpperCase() + t.slice(1);
 
@@ -92,7 +93,7 @@ export class Hud {
     const m = Math.floor(g.time / 60), s = Math.floor(g.time % 60); this.set('clock', `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`);
     const D = g.dir, pb = D.playbook, ph = pb.idx; this.set('play', `<b>${pb.name}</b>` + pb.steps.map((n, i) => `<span class="${i === ph ? 'on' : i < ph ? 'dn' : ''}">${n}</span>`).join(''), true);
     const st = g.stones().length, sq = g.soldiers().length; this.vis('resOre', !g.myTeam); this.vis('play', !g.myTeam); this.set('whoSub', g.myTeam ? 'You · Veyl Chorus' : 'You · Ironhold Charter'); this.vis('resSup', !g.myTeam); if (g.myTeam) this.set('goal', `Break the Headframe · <em>${st} Stone${st === 1 ? '' : 's'} still singing</em>`, true); else if (g.mission) { const next = g.mission.objectives.find(o => !o.done(g)); this.set('goal', (next ? next.text(g) : 'Job done') + (sq ? ` · Squad ${sq}` : ''), true); } else this.set('goal', `Smash the Choir Stones · <em>${st} left</em>` + (sq ? ` · Squad ${sq}` : ''), true);
-    if (g.myTeam) this.set('qm', `<span class="k" style="font-size:13px">G</span> Call the raid <b>${g.raidCall > 0 ? Math.ceil(g.raidCall) + 's' : 'Ready'}</b> · <span class="k" style="font-size:13px">1 2 3</span> <b>${['Blades', 'Lances', 'Deep Voice'][g.verse]}</b>`, true); else this.set('qm', `<span class="k" style="font-size:13px">G</span> Quartermaster <b>${D.auto ? 'Auto' : 'Off'}</b>`, true); this.cls('qm', 'qm c out' + (D.auto ? '' : ' off'));
+    if (g.myTeam) this.set('qm', `<span class="k" style="font-size:13px">G</span> Call the raid <b>${Math.max(g.raidCall, RAID_CALL_AT - g.time) > 0 ? Math.ceil(Math.max(g.raidCall, RAID_CALL_AT - g.time)) + 's' : 'Ready'}</b> · <span class="k" style="font-size:13px">1 2 3</span> <b>${['Blades', 'Lances', 'Deep Voice'][g.verse]}</b>`, true); else this.set('qm', `<span class="k" style="font-size:13px">G</span> Quartermaster <b>${D.auto ? 'Auto' : 'Off'}</b>`, true); this.cls('qm', 'qm c out' + (D.auto ? '' : ' off'));
     // who
     this.set('whoName', UNIT[me.kind].name); this.img('whoImg', me.kind); this.set('whoHp', String(Math.max(0, Math.ceil(me.hp))));
     const hpw = Math.max(0, me.hp / me.maxHp * 100).toFixed(0); if (this.cache.get('hpw') !== hpw) { this.cache.set('hpw', hpw); const b = this.$('whoBar'); b.style.width = hpw + '%'; b.style.background = +hpw < 35 ? 'var(--red)' : 'var(--grn)'; }
@@ -106,7 +107,7 @@ export class Hud {
     const building = rig && g.tool === 2; this.vis('build', building);
     if (building) this.set('buildRows', BUILDABLE.map((k, i) => { const lock = !g.unlocked(k); return `<div class="${i === g.buildSel ? 'on' : ''}${lock ? ' lock' : g.ore < BLD[k].cost ? ' no' : ''}"><span>${BLD[k].name}<small>${lock ? (g.missing(k).length ? 'Needs ' + g.missing(k).map(n => BLD[n].name).join(' and ') : 'Not on this job') : BLD[k].blurb}</small></span><span>${lock ? 'locked' : BLD[k].cost + ' ore'}</span></div>`; }).join(''), true);
     this.vis('prompt', !!g.prompt && !building); if (g.prompt) this.set('prompt', g.prompt, true);
-    this.set('hint', `<span><span class="k">TAB</span> Jump${g.jumpCd > 0 ? ` <span class="cd">${g.jumpCd.toFixed(1)}s</span>` : ''}</span>` + (g.lastBody?.alive ? `<span><span class="k">Q</span> Last body</span>` : '') + (g.soldiers().some(u => u !== me) ? `<span><span class="k">V</span> ${D.following() ? 'Send squad home' : 'Squad on me'}</span><span><span class="k">MMB</span> Send</span>` : ''), true);
+    this.set('hint', `<span><span class="k">TAB</span> Jump${g.jumpCd > 0 ? ` <span class="cd">${g.jumpCd.toFixed(1)}s</span>` : ''}</span>` + (g.lastBody?.alive ? `<span><span class="k">Q</span> Last body</span>` : '') + (!g.myTeam && g.soldiers().some(u => u !== me) ? `<span><span class="k">V</span> ${D.following() ? 'Send squad home' : 'Squad on me'}</span><span><span class="k">MMB</span> Send</span>` : ''), true);
     // squad callout and countdown
     const co = D.callout; this.vis('callout', !!co && !tab);
     if (co) { this.set('callKeys', co.keys.map(k => `<span><b>${k[0]}</b>${k[1]}</span>`).join(''), true); this.set('callWho', co.who); this.set('callText', co.text, true); this.img('callImg', 'linesman'); this.$('callTm').style.width = Math.max(0, co.t / co.dur * 100) + '%'; }

@@ -18,7 +18,7 @@ const pagePath = [join(here, 'index.html'), join(here, '..', 'dist', 'index.html
 let page = pagePath ? readFileSync(pagePath) : Buffer.from('Ore Else server is running, but the game page was not built. Run npm run build.');
 
 interface Player { id: number; name: string; ready: boolean; team: number; ws: WebSocket; lobby: Lobby | null; unit: Unit | null; inbox: any[]; alive: boolean }
-interface Lobby { code: string; host: number; map: number; diff: number; players: Player[]; game: Game | null; tick: number; idle: number; hp0: number[] }
+interface Lobby { code: string; host: number; map: number; diff: number; players: Player[]; game: Game | null; tick: number; idle: number; hp0: number[]; /** Sides of players who dropped out of the running match, by name, so a Veyl player who reconnects sings for the Veyl again. */ gone: Record<string, number> }
 const lobbies = new Map<string, Lobby>(); let nextPid = 1;
 const send = (p: Player, o: any) => { if (p.ws.readyState === 1) p.ws.send(JSON.stringify(o)); };
 const cleanName = (s: any) => String(s || '').replace(/[^\w \-'.]/g, '').trim().slice(0, 14) || 'Rigger';
@@ -28,7 +28,7 @@ function tell(l: Lobby) { for (const p of l.players) send(p, { t: 'lobby', code:
 function leave(p: Player) {
   const l = p.lobby; if (!l) return; p.lobby = null;
   if (p.unit && l.game) release(l.game, p);
-  l.players = l.players.filter(x => x !== p); if (l.game) { delete l.game.names[p.id]; delete l.game.teams[p.id]; l.game.evq!.push(['nm', l.game.names, l.game.teams]); l.game.coop = Math.max(1, l.players.length); }
+  l.players = l.players.filter(x => x !== p); if (l.game) { delete l.game.names[p.id]; delete l.game.teams[p.id]; l.game.evq!.push(['nm', l.game.names, l.game.teams]); l.game.coop = Math.max(1, l.players.filter(x => !x.team).length); if (p.team) l.gone[p.name] = p.team; }
   if (l.game && l.players.length) l.game.feed('Signal', `${p.name} clocked off. Their crew is back on the roster.`, 'al');
   if (!l.players.length) { lobbies.delete(l.code); return; }
   if (l.host === p.id) l.host = l.players[0].id;
@@ -42,7 +42,7 @@ function pilot(g: Game, p: Player, u: Unit) { if (p.unit && p.unit !== u) releas
 
 function begin(l: Lobby) {
   setMap(l.map); const g = new Game(noPipe(), noHud, DIFFS[l.diff], l.map); g.noRender = true; g.evq = []; g.coop = l.players.length; g.me = null; g.phase = 'play';
-  l.game = g; l.tick = 0; l.hp0 = g.props.map(q => q.hp); const names: Record<number, string> = {}; for (const p of l.players) { names[p.id] = p.name; g.score[p.id] = [0, 0, 0]; g.teams[p.id] = p.team; } g.names = names; g.coop = Math.max(1, l.players.filter(p => !p.team).length);
+  l.game = g; l.gone = {}; l.tick = 0; l.hp0 = g.props.map(q => q.hp); const names: Record<number, string> = {}; for (const p of l.players) { names[p.id] = p.name; g.score[p.id] = [0, 0, 0]; g.teams[p.id] = p.team; } g.names = names; g.coop = Math.max(1, l.players.filter(p => !p.team).length);
   const riggers = g.own('rigger'); let ri = 0; l.players.forEach(p => { p.inbox = []; p.unit = null; const u = p.team ? veylBody(g) : riggers[ri++ % riggers.length]; if (u) pilot(g, p, u); });
   for (const p of l.players) send(p, { t: 'begin', map: l.map, diff: l.diff, unit: p.unit ? p.unit.id : 0, names, team: p.team, teams: g.teams });
   if (l.players.some(p => p.team)) { for (const p of l.players) if (p.team) { g.feedTo = p.id; g.feed('Chorus', 'You sing for the Veyl tonight. Break their Headframe. Press G to call the raid and march with it.', 'in'); g.feedTo = 0; } }
@@ -100,12 +100,12 @@ wss.on('connection', ws => {
     if (m.t === 'in') { if (l && l.game && p.inbox.length < 30) p.inbox.push(m); return; }
     if (m.t === 'create') {
       if (l) leave(p); if (lobbies.size >= MAX_LOBBIES) { send(p, { t: 'err', msg: 'The server is full. Try again in a few minutes.' }); return; }
-      p.name = cleanName(m.name); p.ready = false; p.team = 0; const nl: Lobby = { code: newCode(), host: p.id, map: 0, diff: 1, players: [p], game: null, tick: 0, idle: 0, hp0: [] }; lobbies.set(nl.code, nl); p.lobby = nl; tell(nl);
+      p.name = cleanName(m.name); p.ready = false; p.team = 0; const nl: Lobby = { code: newCode(), host: p.id, map: 0, diff: 1, players: [p], game: null, tick: 0, idle: 0, hp0: [], gone: {} }; lobbies.set(nl.code, nl); p.lobby = nl; tell(nl);
     } else if (m.t === 'join') {
       if (l) leave(p); const jl = lobbies.get(String(m.code || '').toUpperCase().trim());
       if (!jl) { send(p, { t: 'err', msg: 'No lobby with that code. Check the five letters.' }); return; }
       if (jl.players.length >= MAX_PLAYERS) { send(p, { t: 'err', msg: 'That lobby is full.' }); return; }
-      p.name = cleanName(m.name); p.team = 0; if (jl.game) { joinLive(jl, p); return; }
+      p.name = cleanName(m.name); p.team = 0; if (jl.game) { if (jl.gone[p.name] && jl.players.filter(x => x.team).length < 2) p.team = 1; delete jl.gone[p.name]; joinLive(jl, p); return; }
       p.ready = false; jl.players.push(p); p.lobby = jl; tell(jl);
     } else if (!l) return;
     else if (m.t === 'leave') { leave(p); send(p, { t: 'lobby', code: '', you: p.id, host: 0, map: 0, diff: 1, state: 'lobby', players: [] }); }

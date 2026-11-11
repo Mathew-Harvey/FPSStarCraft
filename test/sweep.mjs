@@ -71,11 +71,11 @@ try {
   const cheat = await p.evaluate(() => {
     const h = __ore.split().host, g = __ore.game, me = h.units.find(u => u.id === g.me.id); if (me.kind !== 'rigger') { const r = h.units.find(u => u.alive && u.kind === 'rigger' && !u.pilot); g.jumpCd = 0; g.possess(g.units.find(u => u.id === r.id)); ff(1); }
     const body = h.units.find(u => u.alive && u.pilot === 1), n = h.ores.reduce((a, o, i) => (o.amount > 0 && (a < 0 || o.pos.distanceTo(body.pos) < h.ores[a].pos.distanceTo(body.pos)) ? i : a), -1), node = h.ores[n];
-    body.pos.x = node.pos.x + 3; body.pos.z = node.pos.z; const ore0 = h.ore; for (let i = 0; i < 60; i++) g.net.cmd('mn', n, 3); g.net.flush(null); ff(.05);
+    body.pos.x = node.pos.x + 3; body.pos.z = node.pos.z; const quiet = () => h.units.forEach(u => { if (u.kind === 'rigger' && !u.pilot) u.carrying = 0; }); quiet(); const ore0 = h.ore; for (let i = 0; i < 60; i++) g.net.cmd('mn', n, 3); g.net.flush(null); ff(.05);
     const mined = h.ore - ore0;
     const x = Math.round(body.pos.x) + 8, z = Math.round(body.pos.z) + 8; h.ore += 300; const b = h.addBuilding('depot', 0, x, z, false); body.pos.x = x - 5; body.pos.z = z;
     for (let i = 0; i < 60; i++) g.net.cmd('wd', b.id, .6); g.net.flush(null); h.units.forEach(u => { if (u.kind === 'rigger') u.site = null; }); b.builder = body; ff(.05);
-    return { mined, progress: b.progress, far: (() => { const o0 = h.ore, far = h.ores.findIndex(o => o.amount > 0 && o.pos.distanceTo(body.pos) > 30); for (let i = 0; i < 5; i++) g.net.cmd('mn', far, 3); g.net.flush(null); ff(.05); return h.ore - o0; })() };
+    return { mined, progress: b.progress, far: (() => { quiet(); const o0 = h.ore, far = h.ores.findIndex(o => o.amount > 0 && o.pos.distanceTo(body.pos) > 30); for (let i = 0; i < 5; i++) g.net.cmd('mn', far, 3); g.net.flush(null); ff(.05); return h.ore - o0; })() };
   });
   check(cheat.mined <= 13, `sixty drill claims in one go bank at most a few seconds of drilling (${cheat.mined} ore)`);
   check(cheat.far === 0, 'drilling a seam from across the map banks nothing');

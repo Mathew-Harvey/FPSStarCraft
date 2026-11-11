@@ -565,7 +565,7 @@ export class Game {
         if (last) { this.hud.hitmark(crit); sfx.hit(); this.hud.damage(V3(last.pos.x, (isUnit(last) ? UNIT[last.kind].headY : last.h * .6) + .4, last.pos.z), String(Math.round(total)), hits >= 7 ? 'crit' : ''); }
       } else {
         const long = me.kind === 'longshot'; this.recoil = Math.min(1, this.recoil + (long ? 1 : .35)); { const k = S.kick * (1 - this.ads * .5); this.pitch = Math.min(1.45, this.pitch + k); this.kick += k * .8; this.yaw += R(-.0025, .0025); } this.shake = Math.min(1, this.shake + (long ? .4 : .1)); { const low = Math.max(0, 1 - this.ammo / Math.max(1, gun.mag / 4)); long ? sfx.sniper() : me.kind === 'patch' ? sfx.pistol(low) : sfx.rifle(low); }
-        const sp = S.sp * (1 - this.ads * S.adsK) * (me.moving ? 1.6 : 1) * (1 + this.bloom * (long ? 0 : 1.8)), d = V3().copy(dir); this.bloom = Math.min(1, this.bloom + (long ? 1 : me.kind === 'patch' ? .2 : .1)); d.x += R(-sp, sp); d.y += R(-sp, sp); d.z += R(-sp, sp); d.normalize();
+        const sp = S.sp * (1 - this.ads * S.adsK) * (me.moving ? 1.6 : 1) * (1 + this.bloom * (long ? 0 : 1.2)), d = V3().copy(dir); this.bloom = Math.min(1, this.bloom + (long ? 1 : me.kind === 'patch' ? .2 : .1)); d.x += R(-sp, sp); d.y += R(-sp, sp); d.z += R(-sp, sp); d.normalize();
         let hit = this.ray(eye, d, 150, -1, me);
         // A Patch's rivets mend whoever they hit on their own side.
         if (me.kind === 'patch' && hit?.unit && hit.unit.team === 0 && hit.dist < 60) {

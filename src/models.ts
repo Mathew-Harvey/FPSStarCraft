@@ -7,6 +7,7 @@ import { G, M, R, rnd, reseed, mk, beam, setLayer, L_FX, L_VM, holoLine, V3, too
 import type { Prop } from './data';
 import { MAP, OUTPOST, ROAD, NORTH_PATH, roadPt, veylPt } from './data';
 import { NEW, grp, put, can, nv } from './units';
+import { GLOAM_UNITS, GLOAM_HEIGHT } from './gloam-art';
 import { lathe, hard, spl, capsule, rbox, blob, tube, plate, rrect, ring, shard, slab, warp, crag, boulder } from './sculpt';
 
 export interface Rig { body: THREE.Object3D; head?: THREE.Object3D; arms?: THREE.Object3D; armL?: THREE.Object3D; armR?: THREE.Object3D; legL?: THREE.Object3D; legR?: THREE.Object3D; flash?: THREE.Object3D; halo?: THREE.Object3D; pack?: THREE.Object3D; height: number }
@@ -55,8 +56,8 @@ export function atlasify<T extends THREE.Object3D>(root: T): T {
   return bake(root);
 }
 
-const MAKERS: Record<string, () => THREE.Group> = NEW;
-const HEIGHT: Record<string, number> = { tender: 1.9, rigger: 1.55, linesman: 1.6, breacher: 1.8, longshot: 1.6, patch: 1.6, gantry: 3.3, cantor: 2.3, lancer: 2.2, warden: 4.4 };
+const MAKERS: Record<string, () => THREE.Group> = { ...NEW, ...GLOAM_UNITS };
+const HEIGHT: Record<string, number> = { tender: 1.9, rigger: 1.55, linesman: 1.6, breacher: 1.8, longshot: 1.6, patch: 1.6, gantry: 3.3, cantor: 2.3, lancer: 2.2, warden: 4.4, ...GLOAM_HEIGHT };
 const protos: Record<string, THREE.Group> = {};
 /** A fresh copy of a unit model. Geometry is shared between copies. */
 export const atlasUsed = () => atlas ? atlas.cells.size : 0;

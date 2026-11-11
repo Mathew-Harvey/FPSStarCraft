@@ -1,5 +1,5 @@
 // The browser's side of a multiplayer match: one WebSocket to the match server.
-export interface LobbyPlayer { id: number; name: string; ready: boolean }
+export interface LobbyPlayer { id: number; name: string; ready: boolean; team: number }
 export interface Lobby { code: string; you: number; host: number; map: number; diff: number; players: LobbyPlayer[]; state: 'lobby' | 'play' }
 
 export class Net {
@@ -7,7 +7,7 @@ export class Net {
   /** Snapshots and other in-match messages wait here until the game loop is ready for them. */
   inbox: any[] = []; out: any[][] = []; sendT = 0; lastSnap = 0;
   onLobby: (l: Lobby) => void = () => { /* set by the menu */ };
-  onBegin: (m: { map: number; diff: number; unit: number; names: Record<number, string>; ph?: number[][] }) => void = () => { /* set by the menu */ };
+  onBegin: (m: { map: number; diff: number; unit: number; names: Record<number, string>; ph?: number[][]; team?: number; teams?: Record<number, number> }) => void = () => { /* set by the menu */ };
   onError: (msg: string) => void = () => { /* set by the menu */ };
   onClose: () => void = () => { /* set by the menu */ };
 

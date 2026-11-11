@@ -125,6 +125,10 @@ Finish campaign job two to unlock the Multiplayer tab. One player creates a lobb
 
 In a match, press T to ping the spot you are looking at and Enter to type to the crew. A panel on the right shows who is driving what, with kills and ore mined. If someone drops, or turns up late, they join the running match with the same code.
 
+![Versus](docs/screenshots/versus.jpg)
+
+**Versus.** In the lobby, up to two players can press Play as the Veyl. They wake up inside Veyl bodies at the outpost: the Cantor fights with blades, the Lancer fires one long beam, and the Warden slams the ground. Veyl players jump between Veyl bodies the same way, press G to call the next raid early, and win by breaking the Headframe. The Chorus still breeds and marches on its own, so the Veyl players are its champions, not its whole army. `node test/versus.mjs` plays one of each side against the other.
+
 Multiplayer needs the game server, because the server runs the match and every player's browser is a window onto it. The server also serves the game page, so there is only one thing to host.
 
 ```

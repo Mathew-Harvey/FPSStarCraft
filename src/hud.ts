@@ -54,6 +54,7 @@ export class Hud {
   showEnd(g: Game) {
     $('endTitle').textContent = g.won ? (g.mission ? 'Job done' : 'Paid in full') : 'Shift over'; $('endTitle').className = 'logo sm' + (g.won ? '' : ' bad');
     $('endLine').textContent = g.won && g.mission ? g.mission.outro : g.won ? 'Every Choir Stone is gravel. The Charter thanks you with a smaller invoice.' : 'The Headframe is scrap. The Charter will be billing your next of kin.';
+    if (g.myTeam) { $('endTitle').textContent = g.won ? 'The last verse' : 'Out of tune'; $('endLine').textContent = g.won ? 'The Headframe is scrap and the valley is quiet again. The Chorus holds the note.' : 'Every Choir Stone is gravel. The singing has stopped, for now.'; }
     const m = Math.floor(g.time / 60), s = Math.floor(g.time % 60);
     $('endStats').innerHTML = [[`${m}:${String(s).padStart(2, '0')}`, 'Shift length'], [Math.floor(g.stats.mined), 'Ore dug'], [g.stats.built, 'Buildings up'], [g.stats.kills, 'Veyl dropped'], [g.stats.lost, 'Crew lost']].map(([a, b]) => `<div><b>${a}</b><span>${b}</span></div>`).join('');
     $('end').hidden = false; this.show(false);
@@ -71,14 +72,15 @@ export class Hud {
     const used = g.supplyUsed(), cap = g.supplyCap(); this.set('sup', `${used}/${cap}`); this.cls('resSup', used >= cap ? 'low' : '');
     const m = Math.floor(g.time / 60), s = Math.floor(g.time % 60); this.set('clock', `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`);
     const D = g.dir, pb = D.playbook, ph = pb.idx; this.set('play', `<b>${pb.name}</b>` + pb.steps.map((n, i) => `<span class="${i === ph ? 'on' : i < ph ? 'dn' : ''}">${n}</span>`).join(''), true);
-    const st = g.stones().length, sq = g.soldiers().length; if (g.mission) { const next = g.mission.objectives.find(o => !o.done(g)); this.set('goal', (next ? next.text(g) : 'Job done') + (sq ? ` · Squad ${sq}` : ''), true); } else this.set('goal', `Smash the Choir Stones · <em>${st} left</em>` + (sq ? ` · Squad ${sq}` : ''), true);
-    this.set('qm', `<span class="k" style="font-size:13px">G</span> Quartermaster <b>${D.auto ? 'Auto' : 'Off'}</b>`, true); this.cls('qm', 'qm c out' + (D.auto ? '' : ' off'));
+    const st = g.stones().length, sq = g.soldiers().length; this.vis('resOre', !g.myTeam); this.vis('play', !g.myTeam); this.set('whoSub', g.myTeam ? 'You · Veyl Chorus' : 'You · Ironhold Charter'); this.vis('resSup', !g.myTeam); if (g.myTeam) this.set('goal', `Break the Headframe · <em>${st} Stone${st === 1 ? '' : 's'} still singing</em>`, true); else if (g.mission) { const next = g.mission.objectives.find(o => !o.done(g)); this.set('goal', (next ? next.text(g) : 'Job done') + (sq ? ` · Squad ${sq}` : ''), true); } else this.set('goal', `Smash the Choir Stones · <em>${st} left</em>` + (sq ? ` · Squad ${sq}` : ''), true);
+    if (g.myTeam) this.set('qm', `<span class="k" style="font-size:13px">G</span> Call the raid <b>${g.raidCall > 0 ? Math.ceil(g.raidCall) + 's' : 'Ready'}</b>`, true); else this.set('qm', `<span class="k" style="font-size:13px">G</span> Quartermaster <b>${D.auto ? 'Auto' : 'Off'}</b>`, true); this.cls('qm', 'qm c out' + (D.auto ? '' : ' off'));
     // who
     this.set('whoName', UNIT[me.kind].name); this.img('whoImg', me.kind); this.set('whoHp', String(Math.max(0, Math.ceil(me.hp))));
     const hpw = Math.max(0, me.hp / me.maxHp * 100).toFixed(0); if (this.cache.get('hpw') !== hpw) { this.cache.set('hpw', hpw); const b = $('whoBar'); b.style.width = hpw + '%'; b.style.background = +hpw < 35 ? 'var(--red)' : 'var(--grn)'; }
     // tools
     const rig = me.kind === 'rigger'; this.vis('slots', rig); this.vis('ammo', !rig);
     if (rig) this.set('slots', `<div class="${g.tool === 1 ? 'on' : ''}"><b>1</b><span>Drill</span></div><div class="${g.tool === 2 ? 'on' : ''}"><b>2</b><span>Build</span></div>`, true);
+    else if (me.team === 1) { this.set('ammoN', g.vWind > 0 ? '<small>Winding</small>' : g.fireCd > 0 ? '<small>...</small>' : '<small>Ready</small>', true); this.cls('ammoN', 'n d out'); this.set('ammoL', me.kind === 'cantor' ? 'Chorus Blades · <span class="k">Space</span> Dash' : me.kind === 'lancer' ? 'Long Note · aim for the head' : 'Low Note · ground slam', true); }
     else { const w = g.weapon()!; this.set('ammoN', g.reloadT > 0 ? '<small>Reloading</small>' : `${g.ammo}<small> / ${w.mag}</small>`, true); this.cls('ammoN', 'n d out' + (g.ammo <= w.mag / 4 && g.reloadT <= 0 ? ' low' : '')); this.set('ammoL', me.kind === 'longshot' ? `Long Rifle · <span class="k">RMB</span> Scope` : me.kind === 'patch' ? `Rivet Pistol · <span class="k">C</span> Patch-up ${g.nadeCd > 0 ? Math.ceil(g.nadeCd) + 's' : 'ready'}` : me.kind === 'gantry' ? `Autocannon · <span class="k">C</span> Stomp ${g.nadeCd > 0 ? Math.ceil(g.nadeCd) + 's' : 'ready'}` : me.kind === 'breacher' ? `Scattergun · <span class="k">RMB</span> Shield${g.brace ? ' up · click to bash' : ''}` : `Rifle · <span class="k">C</span> Grenade ${g.nadeCd > 0 ? Math.ceil(g.nadeCd) + 's' : 'ready'}`, true); }
     this.cls('cross', 'cross' + (me.kind === 'breacher' || me.kind === 'gantry' ? ' ring' : (me.kind === 'linesman' || me.kind === 'patch') && g.ads > .6 ? ' dot' : me.kind === 'longshot' && g.ads > .6 ? ' scope' : ''));
     const building = rig && g.tool === 2; this.vis('build', building);
@@ -91,7 +93,7 @@ export class Hud {
     const cnt = D.plan?.phase === 'count'; this.vis('count', !!cnt); if (cnt) { this.set('countN', 'GO IN ' + Math.ceil(D.plan!.t)); this.set('countL', D.plan!.label); }
     const raid = D.raidIn < 15 && g.stones().length > 0 && !co && !cnt; this.vis('raid', raid); if (raid) this.set('raid', `Raid in ${Math.max(0, Math.ceil(D.raidIn))} · ${D.raidDir === 'north' ? capW(MAP.flankName) : capW(MAP.road)}`);
     const objs = D.objectives(), teach = g.mission ? true : !(objs[0].done && objs[1].done && objs[2].done) && g.time < 600; this.vis('objs', teach && !building); if (teach) this.set('objs', `<h6>${g.mission ? g.mission.tag + ' · ' + g.mission.name : 'First shift'}</h6>` + objs.map(o => `<div class="${o.done ? 'dn' : ''}">${o.text}</div>`).join(''), true);
-    let boss: Unit | null = null; for (const u of g.units) if (u.alive && u.kind === 'warden' && u.team === 1 && u.pos.distanceTo(me.pos) < 70) { boss = u; break; }
+    let boss: Unit | null = null; for (const u of g.units) if (u.alive && u.kind === 'warden' && u.team === 1 && !g.myTeam && u.pos.distanceTo(me.pos) < 70) { boss = u; break; }
     this.vis('boss', !!boss && !co && !cnt && !raid); if (boss) { $('bossHp').style.width = (boss.hp / boss.maxHp * 100).toFixed(1) + '%'; $('bossSh').style.width = (boss.shield / boss.maxShield * 100).toFixed(1) + '%'; }
     // jump cards
     if (tab) this.set('cards', g.tabList.length ? g.tabList.map((e, i) => `<div class="card${i === g.tabSel ? ' on' : ''}${e.alert ? ' alert' : ''}"><div class="frame"><img src="${this.portraits[e.unit.kind] || ''}" alt=""></div><div class="n d">${e.label}</div><div class="t">${e.task}</div><div class="bar"><i style="width:${(e.hp * 100).toFixed(0)}%;background:${e.hp < .35 ? 'var(--red)' : 'var(--grn)'}"></i></div><span class="k">${i + 1}</span></div>`).join('') : '<div class="none">Nobody else to jump into yet. Train someone first.</div>', true);
@@ -106,18 +108,18 @@ export class Hud {
     for (const p of g.pings) lab(V.set(p.x, 0, p.z).clone(), 2.2, `<div class="mark ping out">${g.names[p.pid] || 'Ping'} · ${Math.round(Math.hypot(p.x - me.pos.x, p.z - me.pos.z))}m</div>`);
     for (const u of g.units as Unit[]) {
       if (!u.alive || u === me && !tab) continue; const d = u.pos.distanceTo(me.pos);
-      if (u.pilot && u !== me && g.names[u.pilot] && d < 120) lab(u.pos, UNIT[u.kind].headY + 1.25, `<div class="mark out" style="color:var(--yel)">${g.names[u.pilot]}</div>`);
+      if (u.pilot && u !== me && g.names[u.pilot] && d < (u.team === g.myTeam ? 120 : 30)) lab(u.pos, UNIT[u.kind].headY + 1.25, `<div class="mark out" style="color:var(--yel)">${g.names[u.pilot]}</div>`);
       if (!tab && d > 70) continue;
-      const hurtU = u.hp < u.maxHp || u.shield < u.maxShield; if (u.team === 0 && !hurtU && !tab) continue; if (u.team === 1 && !hurtU && d > 40) continue;
+      const hurtU = u.hp < u.maxHp || u.shield < u.maxShield; if (u.team === g.myTeam && !hurtU && !tab) continue; if (u.team !== g.myTeam && !hurtU && d > 40) continue;
       const y = UNIT[u.kind].headY + .75;
       if (u.maxShield && u.shield > 0) bar(u.pos, y + .22, u.shield / u.maxShield, 'hb s');
-      bar(u.pos, y, u.hp / u.maxHp, u.team ? 'hb e' : 'hb');
+      bar(u.pos, y, u.hp / u.maxHp, u.team !== g.myTeam ? 'hb e' : 'hb');
     }
     const near = g.nearestStone(me.pos);
     for (const b of g.buildings as Building[]) {
       if (!b.alive) continue; const d = b.pos.distanceTo(me.pos);
       if (!b.built) { bar(b.pos, BLD[b.kind].h + 1.2, b.progress, 'hb big p'); if (d < 60) lab(b.pos, BLD[b.kind].h + 1.6, `<div class="mark" style="color:var(--cyan)">${BLD[b.kind].name} ${Math.floor(b.progress * 100)}%</div>`); }
-      else if (b.hp < b.maxHp && (d < 90 || tab)) bar(b.pos, b.h + 1.2, b.hp / b.maxHp, b.team ? 'hb big e' : 'hb big');
+      else if (b.hp < b.maxHp && (d < 90 || tab)) bar(b.pos, b.h + 1.2, b.hp / b.maxHp, b.team !== g.myTeam ? 'hb big e' : 'hb big');
       if (b.kind === 'wardpylon' && d < 110 && !tab && !building) lab(b.pos, b.h + 1.6, `<div class="mark out" style="color:var(--cyan)">Ward Pylon · shielding the base</div>`);
       if (b.kind === 'choir' && d > 45 && !tab && !building) lab(b.pos, b.h + 2, `<div class="mark out">${b === near ? 'Choir Stones · ' + Math.round(d) + 'm' : ''}</div>`);
       if (b.kind === 'headframe' && b.team === 0 && g.time - b.lastHit < 6 && d > 30) lab(b.pos, b.h + 3, `<div class="mark out" style="color:var(--red)">Headframe under attack</div>`);
@@ -139,7 +141,7 @@ export class Hud {
 
   private crew(g: Game) {
     const el = $('crew'); if (!g.net) { if (!el.hidden) el.hidden = true; return; }
-    const html = Object.keys(g.names).map(k => { const id = +k, u = (g.units as Unit[]).find(x => x.alive && x.pilot === id), s = g.score[id] || [0, 0, 0]; return `<div class="${id === g.net!.id ? 'me' : ''}"><b>${g.names[id]}</b><span>${u ? UNIT[u.kind].name : 'Down'}</span><em>${s[0]} kills · ${s[1]} ore</em></div>`; }).join('');
+    const html = Object.keys(g.names).map(k => { const id = +k, u = (g.units as Unit[]).find(x => x.alive && x.pilot === id), s = g.score[id] || [0, 0, 0]; return `<div class="${id === g.net!.id ? 'me' : ''}${g.teams[id] ? ' v' : ''}"><b>${g.names[id]}</b><span>${u ? UNIT[u.kind].name : 'Down'}</span><em>${s[0]} kills${g.teams[id] ? '' : ` · ${s[1]} ore`}</em></div>`; }).join('');
     if (this.cache.get('crew') !== html) { this.cache.set('crew', html); el.innerHTML = html; } el.hidden = false;
   }
   private drawMini(g: Game) {
@@ -154,7 +156,7 @@ export class Hud {
     for (const b of g.buildings) { if (!b.alive) continue; const w = Math.max(5, b.hx * 2 * k), h = Math.max(5, b.hz * 2 * k); c.fillStyle = b.kind === 'reedgate' ? '#c58bff' : b.team ? '#35e0c8' : b.built ? '#ffc21a' : '#7ef0ff'; c.fillRect(X(b.pos.x) - w / 2, Z(b.pos.z) - h / 2, w, h); c.strokeRect(X(b.pos.x) - w / 2, Z(b.pos.z) - h / 2, w, h); }
     for (const u of g.units) { if (!u.alive || u === g.me) continue; c.fillStyle = u.team ? '#ff4f9a' : u.kind === 'rigger' ? '#8be04e' : '#f4ead2'; c.beginPath(); c.arc(X(u.pos.x), Z(u.pos.z), u.kind === 'warden' ? 5 : u.team ? 2.6 : 2.2, 0, 7); c.fill(); }
     for (const p of g.pings) { c.strokeStyle = '#ffc21a'; c.lineWidth = 2.5; c.beginPath(); c.arc(X(p.x), Z(p.z), 4 + (8 - p.t) % 1 * 7, 0, 7); c.stroke(); }
-    for (const u of g.units) if (u.alive && u.pilot && u !== g.me) { c.fillStyle = '#ffc21a'; c.strokeStyle = '#0e0d14'; c.lineWidth = 1.5; c.beginPath(); c.arc(X(u.pos.x), Z(u.pos.z), 3.6, 0, 7); c.fill(); c.stroke(); }
+    for (const u of g.units) if (u.alive && u.pilot && u !== g.me && u.team === g.myTeam) { c.fillStyle = '#ffc21a'; c.strokeStyle = '#0e0d14'; c.lineWidth = 1.5; c.beginPath(); c.arc(X(u.pos.x), Z(u.pos.z), 3.6, 0, 7); c.fill(); c.stroke(); }
     const D = g.dir; if ((D.raidIn < 15 || D.raidLive) && g.stones().length && Math.floor(performance.now() / 300) % 2) { c.fillStyle = '#ff4b3a'; c.strokeStyle = '#0e0d14'; c.lineWidth = 2; c.beginPath(); { const n = NORTH_PATH.length, p = D.raidDir === 'north' ? [(NORTH_PATH[n - 1][0] + NORTH_PATH[n - 2][0]) / 2, (NORTH_PATH[n - 1][1] + NORTH_PATH[n - 2][1]) / 2] : roadPt(62), a = Math.atan2(-p[1], -p[0]); c.moveTo(X(p[0]) + Math.cos(a) * 9, Z(p[1]) + Math.sin(a) * 9); c.lineTo(X(p[0]) + Math.cos(a + 2.4) * 8, Z(p[1]) + Math.sin(a + 2.4) * 8); c.lineTo(X(p[0]) + Math.cos(a - 2.4) * 8, Z(p[1]) + Math.sin(a - 2.4) * 8); } c.closePath(); c.fill(); c.stroke(); }
     if (this.pingT > 0) { c.strokeStyle = '#ffc21a'; c.lineWidth = 2; c.beginPath(); c.arc(X(this.pingPos.x), Z(this.pingPos.z), 5, 0, 7); c.stroke(); }
     const me = g.me; if (me) { c.save(); c.translate(X(me.pos.x), Z(me.pos.z)); c.rotate(-g.yaw); c.fillStyle = '#fff'; c.strokeStyle = '#0e0d14'; c.lineWidth = 1.5; c.beginPath(); c.moveTo(0, 8); c.lineTo(5, -5); c.lineTo(0, -2); c.lineTo(-5, -5); c.closePath(); c.fill(); c.stroke(); c.restore(); }

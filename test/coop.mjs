@@ -8,6 +8,8 @@ const srv = spawn('node', ['dist/server.mjs'], { env: { ...process.env, PORT: St
 let srvLog = ''; srv.stdout.on('data', d => { srvLog += d; }); srv.stderr.on('data', d => { srvLog += d; });
 const fail = []; const check = (ok, what) => { console.log((ok ? 'PASS ' : 'FAIL ') + what); if (!ok) fail.push(what); };
 const sleep = ms => new Promise(r => setTimeout(r, ms));
+/** Polls a condition in the page, because a headless browser on software rendering can take a while to catch up. */
+const until = (p, fn, arg, ms = 12000) => p.waitForFunction(fn, arg, { timeout: ms }).then(() => true, () => false);
 try {
   await sleep(1200);
   const b = await chromium.launch({ args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist', '--enable-webgl'] });
@@ -56,9 +58,9 @@ try {
   check(a.pilots.length === 1, 'when Bo leaves, his body goes back to the crew and the match carries on');
   // Bo comes back mid-match with the same code and gets a body and the same world
   const B2 = await open('Bo'); await B2.fill('#mCode', code); await B2.click('#mJoinBtn');
-  await B2.waitForFunction(() => __ore.game.net && __ore.game.me && __ore.game.units.length > 6); await B2.evaluate(() => { __ore.game.noRender = true; }); await sleep(1500);
+  await B2.waitForFunction(() => __ore.game.net && __ore.game.me && __ore.game.units.length > 6); await B2.evaluate(() => { __ore.game.noRender = true; }); c = await state(B2);
+  check(await until(A, id => __ore.game.units.filter(u => u.pilot).length === 2 && !!__ore.game.uById.get(id)?.pilot, c.me), 'Bo rejoins the running match with the code and gets a body'); await sleep(1500);
   a = await state(A); c = await state(B2);
-  check(c.me && a.pilots.length === 2 && a.pilots.includes(c.me), 'Bo rejoins the running match with the code and gets a body');
   check(a.units === c.units && a.bld === c.bld && a.propsAlive === c.propsAlive, `the rejoined world matches (${c.units} units, ${c.bld} buildings, ${c.propsAlive} props standing)`);
   await b.close();
 } catch (e) { console.log('ERROR', e); fail.push('exception'); }

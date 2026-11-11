@@ -228,6 +228,12 @@ export class Director {
   objectives(): { text: string; done: boolean }[] {
     const g = this.g, o = g.obj, left = g.stones().length;
     if (g.mission) return g.mission.objectives.map(x => ({ text: x.text(g), done: !!x.done(g) }));
+    if (g.myTeam) return [
+      { text: 'Jump between Veyl bodies (Tab or F)', done: o.jumped },
+      { text: 'Call a raid and march with it (G)', done: g.raidCall > 0 },
+      { text: `Keep a Choir Stone singing (${left} left)`, done: false },
+      { text: 'Break the Headframe', done: !g.ownB('headframe').length },
+    ];
     return [
       { text: 'Drill 30 ore', done: o.drilled >= 30 },
       { text: 'Jump into another body (Tab or F)', done: o.jumped },

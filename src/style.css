@@ -254,3 +254,5 @@ body{background:var(--bg);color:var(--paper);font-family:var(--cond);font-size:1
 .crew b{color:var(--yel);text-transform:uppercase;font-size:17px}.crew span{opacity:.8}.crew em{font-style:normal;color:var(--ore)}
 .chat{left:28px;bottom:150px;width:440px;font:600 20px inherit;font-family:inherit;color:var(--cream);background:rgba(14,13,20,.92);border:3px solid var(--yel);padding:8px 12px;outline:none;pointer-events:auto}
 .feed .ch{border-color:var(--teal)}.feed .ch b{color:var(--teal)}
+.crew div.v{border-color:var(--teal)}.crew div.v b{color:var(--teal)}
+#mPlayers button.v{border-color:var(--teal)}#mPlayers button.v b{color:var(--teal)}

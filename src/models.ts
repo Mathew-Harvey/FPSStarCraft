@@ -464,6 +464,16 @@ export function vmPistol() {
   bake(g); setLayer(g, L_VM); setLayer(flash, L_FX); g.userData.flash = flash; g.userData.mag = mag; g.userData.rest = [.24, -.22, -.52, .02, .06, 0]; g.userData.ads = [0, -.105, -.42, 0, 0, 0];
   return g;
 }
+/** What a player sees as a Veyl body: a long indigo arm ending in a singing crystal blade. */
+export function vmVeyl() {
+  const g = new THREE.Group();
+  beam([0, -.02, -.1], [.2, -.4, .62], .06, M.indigoD, g); mk(G.sph, M.indigo, [0, -.02, -.1], [.15, .13, .17], 0, g);
+  mk(G.cone4, M.teal, [0, .02, -.52], [.11, .8, .05], [-Math.PI / 2, 0, 0], g); mk(G.cone4, M.indigoL, [0, .02, -.3], [.16, .34, .08], [-Math.PI / 2, 0, 0], g);
+  for (const sx of [-1, 1]) mk(G.cone4, M.mag, [sx * .09, .02, -.2], [.05, .3, .04], [-Math.PI / 2, 0, sx * .5], g);
+  const flash = vmFlash(g, [0, .02, -.95], .9);
+  bake(g); setLayer(g, L_VM); setLayer(flash, L_FX); g.userData.flash = flash; g.userData.rest = [.26, -.24, -.5, .03, .1, -.2]; g.userData.ads = [.26, -.24, -.5, .03, .1, -.2];
+  return g;
+}
 /** The Gantry's cockpit view: a cannon on each side and a dashboard along the bottom. */
 export function vmCannon() {
   const g = new THREE.Group();

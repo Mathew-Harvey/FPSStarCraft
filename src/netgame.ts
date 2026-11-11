@@ -30,7 +30,8 @@ export function buildSnap(g: Game) {
 const TRAINS: Record<string, Kind[]> = { headframe: ['rigger'], bunkhouse: ['linesman', 'breacher', 'patch', 'longshot'], foundry: ['gantry'] };
 export function serverCmd(g: Game, pid: number, unit: Unit | null, c: any[]) {
   const k = c[0], num = (i: number) => (typeof c[i] === 'number' && isFinite(c[i]) ? c[i] : 0);
-  if (k === 'dm') { if (!unit) return; const id = num(1), amt = Math.min(600, num(2)), t = g.units.find(x => x.id === id) || g.buildings.find(x => x.id === id); if (t && t.alive && t.team === 1 && amt > 0) g.damage(t, amt, unit, !!c[3]); }
+  if (g.teams[pid] === 1 && ['tn', 'up', 'pl', 'mn', 'wd', 'fx', 'pt', 'or'].includes(k)) return;   // Ironhold business
+  if (k === 'dm') { if (!unit) return; const id = num(1), amt = Math.min(600, num(2)), t = g.units.find(x => x.id === id) || g.buildings.find(x => x.id === id); if (t && t.alive && t.team !== unit.team && amt > 0) g.damage(t, amt, unit, !!c[3]); }
   else if (k === 'dp') { if (!unit) return; const p = g.props[num(1)]; if (p) g.damageProp(p, Math.min(900, num(2)), unit); }
   else if (k === 'tr') { if (c.length === 9) g.evq!.push(['tr', ...c.slice(1).map(Number), pid]); }
   else if (k === 'pj') { if (c.length === 9) g.evq!.push(['pj', ...c.slice(1).map(Number), 2, pid]); }
@@ -48,6 +49,8 @@ export function serverCmd(g: Game, pid: number, unit: Unit | null, c: any[]) {
   else if (k === 'mn') { const n = g.ores[num(1)]; if (!n || !unit || unit.kind !== 'rigger') return; const a = Math.max(0, Math.min(3, num(2), n.amount)); n.amount -= a; g.ore += a; g.stats.mined += a; if (g.score[pid]) g.score[pid][1] += a; }
   else if (k === 'wd') { const b = g.buildings.find(x => x.id === num(1)); if (b && b.alive && b.team === 0 && !b.built) b.progress += Math.min(.6, Math.max(0, num(2))) / BLD[b.kind].time * 1.6; }
   else if (k === 'fx') { const b = g.buildings.find(x => x.id === num(1)); if (b && b.alive && b.team === 0 && b.built) b.hp = Math.min(b.maxHp, b.hp + 40 * Math.min(.6, Math.max(0, num(2)))); }
+  else if (k === 'xx') { g.evq!.push(['ex', num(1), 0, num(2), Math.min(8, Math.max(1, num(3))), 1, pid]); }
+  else if (k === 'rd') { if (g.teams[pid] !== 1) return; const now = g.time; if (now < (g as any).raidLock) return; (g as any).raidLock = now + 85; g.dir.raidIn = Math.min(g.dir.raidIn, 6); g.feed('Lookout', 'The singing just changed key. They are coming early.', 'al'); }
   else if (k === 'pg') { const x = Math.max(-400, Math.min(400, num(1))), z = Math.max(-400, Math.min(400, num(2))); g.evq!.push(['pg', pid, x, z]); }
   else if (k === 'ch') { const t = String(c[1] || '').replace(/[<>&]/g, '').trim().slice(0, 120); if (t) g.evq!.push(['fd', g.names[pid] || 'Crew', t, 'ch']); }
   else if (k === 'pt') { if (unit && unit.kind === 'patch') g.patchUp(unit); }
@@ -64,12 +67,12 @@ export function serverMove(g: Game, unit: Unit, m: any[]) {
 // ---------------------------------------------------------------- client: snapshot to world
 function event(g: Game, e: any[]) {
   const net = g.net!, k = e[0];
-  if (k === 'fd') { if (!e[4] || e[4] === net.id) { g.hud.feed(e[1], e[2], e[3]); if (e[3] === 'ch') sfx.blip(); else babble(e[1], String(e[2]).length); } }
-  else if (k === 'pg') { g.pings.push({ pid: e[1], x: e[2], z: e[3], t: 8 }); if (g.pings.length > 8) g.pings.shift(); sfx.callout(); }
-  else if (k === 'nm') { g.names = e[1]; }
+  if (k === 'fd') { if (e[4] ? e[4] === net.id : !g.myTeam || e[3] === 'ch' || e[1] === 'Signal' || e[1] === 'Chorus') { g.hud.feed(e[1], e[2], e[3]); if (e[3] === 'ch') sfx.blip(); else babble(e[1], String(e[2]).length); } }
+  else if (k === 'pg') { if ((g.teams[e[1]] || 0) !== g.myTeam) return; g.pings.push({ pid: e[1], x: e[2], z: e[3], t: 8 }); if (g.pings.length > 8) g.pings.shift(); sfx.callout(); }
+  else if (k === 'nm') { g.names = e[1]; if (e[2]) g.teams = e[2]; }
   else if (k === 'ph') { for (const r of e[1]) { const p = g.props[r[0]]; if (p && p.alive && p.hp > r[1]) g.damageProp(p, p.hp - r[1], null); } }
   else if (k === 'tr') { if (e[9] !== net.id) g.tracer(V3(e[1], e[2], e[3]), V3(e[4], e[5], e[6]), e[7] ? beamMat : tracerMat, e[8]); }
-  else if (k === 'ex') g.explode(V3(e[1], e[2], e[3]), -2, 0, e[4], null, !!e[5]);
+  else if (k === 'ex') { if (e[6] !== net.id) g.explode(V3(e[1], e[2], e[3]), -2, 0, e[4], null, !!e[5]); }
   else if (k === 'pj') { if (e[10] !== net.id) g.shoot(V3(e[1], e[2], e[3]), V3(e[4], e[5], e[6]), e[7], 0, !!e[8], null, e[9]); }
   else if (k === 'ku') { const u = g.uById.get(e[1]); if (u && u.alive) g.killUnit(u, g.uById.get(e[2]) || g.bById.get(e[2]) || null); }
   else if (k === 'kb') { const b = g.bById.get(e[1]); if (b && b.alive) { g.fallA = e[2]; g.killBuilding(b); } }
@@ -107,7 +110,7 @@ export function applySnap(g: Game, s: any) {
   for (const b of g.buildings) if (b.alive && !seenB.has(b.id)) { b.alive = false; g.scene.remove(b.obj); if (b.holo) g.scene.remove(b.holo); }
   const D = g.dir, d = s.d; D.raidIn = d[0]; D.raidDir = d[1] ? 'north' : 'east'; D.raidLive = !!d[2]; D.auto = !!d[3];
   D.plan = d[4] ? { phase: d[4][0], t: d[4][1], target: null, book: d[4][3], label: d[4][2] } : null;
-  if (d[5]) { if (!D.callout || D.callout.text !== d[5][1]) sfx.callout(); D.callout = { who: d[5][0], text: d[5][1], t: d[5][2], dur: d[5][3], keys: d[5][4] }; } else D.callout = null;
+  if (d[5] && !g.myTeam) { if (!D.callout || D.callout.text !== d[5][1]) sfx.callout(); D.callout = { who: d[5][0], text: d[5][1], t: d[5][2], dur: d[5][3], keys: d[5][4] }; } else D.callout = null;
   D.playbook.name = d[6][0]; D.playbook.steps = d[6][1]; D.playbook.idx = d[6][2];
   g.applying = false;
 }
@@ -118,7 +121,7 @@ export function netTick(g: Game, dt: number) {
   for (const m of net.inbox) {
     if (m.t === 's') applySnap(g, m);
     else if (m.t === 'yo') net.unit = m.unit;
-    else if (m.t === 'over') { g.stats.mined = m.stats[0]; g.stats.built = m.stats[1]; g.stats.kills = m.stats[2]; g.stats.lost = m.stats[3]; g.time = m.time; g.end(!!m.won); }
+    else if (m.t === 'over') { g.stats.mined = m.stats[0]; g.stats.built = m.stats[1]; g.stats.kills = m.stats[2]; g.stats.lost = m.stats[3]; g.time = m.time; g.end(g.myTeam ? !m.won : !!m.won); }
   }
   net.inbox.length = 0;
   // a body the server has given us and we are not yet driving

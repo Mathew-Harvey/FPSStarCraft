@@ -148,6 +148,17 @@ To put it on the internet, deploy the `Dockerfile` to any host that supports Web
 
 How it works: the server runs the same game code as single player at 30 ticks a second and sends every client a snapshot 15 times a second, about 1 KB each. Each client moves and aims its own body, reports its hits, and the server decides health, ore, building, training and the enemy.
 
+## Split screen
+
+Two players on one machine share one Ironhold yard. Pick a map and a shift on the Skirmish tab, choose side by side or stacked, and press Split screen. No server is needed.
+
+- Player one keeps the keyboard and mouse.
+- Player two uses a controller: left stick moves, right stick looks, RT fires, LT aims or raises the shield, A dashes, B is the grenade or ability, X reloads or rotates, Y uses or trains, hold LB for the jump wheel and pick with the D-pad, RB jumps into the body in the crosshair, D-pad up opens the build menu, Start pauses.
+- With no controller, player two gets the right-hand side of the keyboard: arrows move, I J K L look, O fires, P aims, H uses, N reloads, M is the ability, `/` opens the build menu, comma and full stop pick, `'` holds the jump wheel, `;` jumps to the target.
+- With two controllers, player one can use the first as well as the keyboard, and player two takes the second.
+
+It is built on the online co-op code. `src/split.ts` runs a silent copy of the match inside the page, the way the server does, and each half of the screen is an ordinary client of it. Both halves draw through one renderer into their own rectangle (`ViewPipe` in `src/gfx.ts`), and each has its own HUD. `node test/split.mjs` plays a short match in a headless browser.
+
 ## Trailer and landing page
 
 `docs/index.html` is a landing page with the trailer at the top. Turn on GitHub Pages for the `docs` folder to publish it. `docs/trailer.mp4` is rendered from the real game, one frame at a time, by `test/trailer.cjs`, a script that stages seven shots and steps the simulation a twenty-fourth of a second per frame. It is silent, because the game's sound is synthesised live in the browser.

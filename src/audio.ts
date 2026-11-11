@@ -5,10 +5,14 @@ let noiseBuf: AudioBuffer | null = null;
 let music: GainNode | null = null, volume = .5, mood = 0, moodNow = 0, step = 0, nextT = 0;
 export function setVolume(v: number) { volume = v; if (master && ctx) master.gain.setTargetAtTime(v, ctx.currentTime, .05); }
 /** 0 is silence, .25 is calm base music, 1 is a full fight. */
-export function setMood(x: number) { mood = x; }
+export function setMood(x: number) { if (!level) return; moods[seat] = x; mood = Math.max(moods[0], moods[1]); }
 let musicOn = true;
 export function setMusic(on: boolean) { musicOn = on; }
 let drillOsc: OscillatorNode | null = null, drillGain: GainNode | null = null;
+/** Split screen runs three copies of the game in one page: a silent one that owns the match, and one for each player. */
+let level = 1, seat = 0; const drills: [OscillatorNode | null, GainNode | null][] = [[null, null], [null, null]], moods = [0, 0];
+/** Sets who the next sounds belong to. `gain` 0 is silent. `who` is 0 for player one and 1 for player two. */
+export function audioSeat(gain: number, who = 0) { drills[seat] = [drillOsc, drillGain]; level = gain; seat = who; drillOsc = drills[who][0]; drillGain = drills[who][1]; }
 
 export function initAudio() {
   if (ctx) { ctx.resume(); return; }
@@ -27,15 +31,17 @@ export function initAudio() {
 }
 function env(g: GainNode, t: number, peak: number, dur: number) { peak = Math.max(peak, .0002); g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(peak, t + .005); g.gain.exponentialRampToValueAtTime(0.0001, t + dur); }
 function noise(dur: number, freq: number, peak: number, type: BiquadFilterType = 'lowpass') {
-  if (!ctx || !master || !noiseBuf || peak < .004) return;
+  peak *= level; if (!ctx || !master || !noiseBuf || peak < .004) return;
   const t = ctx.currentTime, s = ctx.createBufferSource(), f = ctx.createBiquadFilter(), g = ctx.createGain();
   s.buffer = noiseBuf; f.type = type; f.frequency.value = freq; env(g, t, peak, dur); s.connect(f); f.connect(g); g.connect(master); s.start(t, Math.random() * .5, dur + .05);
 }
 function tone(f0: number, f1: number, dur: number, peak: number, type: OscillatorType = 'square') {
-  if (!ctx || !master || peak < .004) return;
+  peak *= level; if (!ctx || !master || peak < .004) return;
   const t = ctx.currentTime, o = ctx.createOscillator(), g = ctx.createGain();
   o.type = type; o.frequency.setValueAtTime(f0, t); o.frequency.exponentialRampToValueAtTime(Math.max(20, f1), t + dur); env(g, t, peak, dur); o.connect(g); g.connect(master); o.start(t); o.stop(t + dur + .05);
 }
+/** The second half of a two-part sound. The silent copy of the game never gets to play it. */
+function later(f: () => void, ms: number) { const l = level; if (l) setTimeout(() => { const now = level; level = l; f(); level = now; }, ms); }
 /** `vol` 0..1 lets distant events play quieter. */
 export const sfx = {
   shot: (vol = 1) => { noise(.12, 2200, .5 * vol); tone(220, 60, .09, .25 * vol, 'sawtooth'); },
@@ -45,7 +51,7 @@ export const sfx = {
   ko: (vol = 1, veyl = true) => { if (veyl) { tone(900, 120, .35, .22 * vol, 'sine'); tone(1350, 200, .3, .1 * vol, 'triangle'); noise(.25, 2600, .2 * vol, 'highpass'); } else { tone(300, 60, .3, .3 * vol, 'triangle'); noise(.25, 600, .3 * vol); } },
   step: (heavy = false) => { noise(.07, heavy ? 260 : 420, heavy ? .16 : .1); },
   crit: () => { tone(1320, 1760, .09, .16, 'triangle'); },
-  streak: (n: number) => { [0, 4, 7, 12].slice(0, Math.min(4, n)).forEach((st, i) => setTimeout(() => tone(440 * Math.pow(2, st / 12), 440 * Math.pow(2, st / 12), .12, .2, 'square'), i * 70)); },
+  streak: (n: number) => { [0, 4, 7, 12].slice(0, Math.min(4, n)).forEach((st, i) => later(() => tone(440 * Math.pow(2, st / 12), 440 * Math.pow(2, st / 12), .12, .2, 'square'), i * 70)); },
   boom: (vol = 1) => { noise(.7, 420, .9 * vol); tone(120, 28, .55, .6 * vol, 'sine'); noise(.12, 3000, .3 * vol, 'highpass'); },
   blast: (vol = 1) => { noise(.26, 1300, .75 * vol); tone(150, 40, .2, .45 * vol, 'sawtooth'); },
   clang: () => { tone(620, 540, .22, .22, 'square'); tone(931, 860, .3, .14, 'triangle'); noise(.05, 4000, .3, 'highpass'); },
@@ -58,17 +64,17 @@ export const sfx = {
   blip: () => { tone(660, 660, .05, .12); },
   deny: () => { tone(160, 110, .16, .2); },
   place: () => { tone(220, 440, .14, .2, 'triangle'); noise(.1, 500, .2); },
-  built: () => { tone(440, 440, .09, .18, 'triangle'); setTimeout(() => tone(660, 660, .14, .18, 'triangle'), 90); },
+  built: () => { tone(440, 440, .09, .18, 'triangle'); later(() => tone(660, 660, .14, .18, 'triangle'), 90); },
   jump: () => { noise(.3, 4000, .22, 'highpass'); tone(200, 1200, .22, .14, 'sine'); },
   card: () => { noise(.2, 300, .5); tone(110, 55, .3, .35, 'sawtooth'); },
-  alarm: () => { tone(520, 520, .18, .22); setTimeout(() => tone(390, 390, .22, .22), 200); },
+  alarm: () => { tone(520, 520, .18, .22); later(() => tone(390, 390, .22, .22), 200); },
   callout: () => { tone(520, 780, .08, .14, 'triangle'); },
-  reload: () => { noise(.05, 3000, .25, 'highpass'); setTimeout(() => noise(.06, 1800, .3, 'bandpass'), 260); },
-  win: () => { [523, 659, 784, 1046].forEach((f, i) => setTimeout(() => tone(f, f, .25, .2, 'triangle'), i * 140)); },
-  lose: () => { [392, 330, 262, 196].forEach((f, i) => setTimeout(() => tone(f, f, .3, .2, 'sawtooth'), i * 180)); },
+  reload: () => { noise(.05, 3000, .25, 'highpass'); later(() => noise(.06, 1800, .3, 'bandpass'), 260); },
+  win: () => { [523, 659, 784, 1046].forEach((f, i) => later(() => tone(f, f, .25, .2, 'triangle'), i * 140)); },
+  lose: () => { [392, 330, 262, 196].forEach((f, i) => later(() => tone(f, f, .3, .2, 'sawtooth'), i * 180)); },
 };
 export function drillSound(on: boolean, biting: boolean) {
-  if (!ctx || !master) return;
+  if (!ctx || !master || !level) return;
   if (on && !drillOsc) { drillOsc = ctx.createOscillator(); drillGain = ctx.createGain(); drillOsc.type = 'sawtooth'; drillGain.gain.value = .0001; drillOsc.connect(drillGain); drillGain.connect(master); drillOsc.start(); }
   if (drillOsc && drillGain) { const t = ctx.currentTime; drillGain.gain.setTargetAtTime(on ? (biting ? .13 : .06) : .0001, t, .04); drillOsc.frequency.setTargetAtTime(biting ? 95 + Math.random() * 20 : 150, t, .05); }
 }
@@ -107,7 +113,7 @@ const VOICE: Record<string, [number, OscillatorType]> = { Quartermaster: [150, '
 let voiceT = 0;
 /** A few syllables of gibberish in the speaker's register, so lines in the feed feel spoken. */
 export function babble(who: string, len: number) {
-  const v = VOICE[who]; if (!ctx || !master || !v) return; const now = ctx.currentTime; if (now < voiceT) return;
+  const v = VOICE[who]; if (!ctx || !master || !v || !level || seat) return; const now = ctx.currentTime; if (now < voiceT) return;
   const n = Math.max(3, Math.min(9, Math.round(len / 9))); let t = now + .02;
   for (let i = 0; i < n; i++) {
     const o = ctx.createOscillator(), g = ctx.createGain(), f = ctx.createBiquadFilter(), d = .05 + Math.random() * .05, hz = v[0] * (1 + (Math.random() - .4) * .5);

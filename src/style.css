@@ -266,3 +266,12 @@ body.cb{--grn:#4da3ff;--mag:#ff9d1a}
 #pOpts .lbl{font-family:var(--cond);font-weight:700;letter-spacing:.1em;text-transform:uppercase;align-self:center}
 #pOpts{display:flex;flex-direction:column;gap:14px}#pOpts[hidden]{display:none}
 #fps{position:fixed;left:8px;bottom:6px;z-index:50;font:700 13px var(--cond);letter-spacing:.08em;color:var(--paper);background:rgba(14,13,20,.8);padding:2px 8px;pointer-events:none}
+
+/* split screen */
+.go.alt{background:var(--paper);box-shadow:7px 7px 0 var(--yel)}
+#game.split .hud{overflow:hidden}
+#splitBar{display:none;position:absolute;left:50%;top:0;bottom:0;width:6px;margin-left:-3px;background:var(--ink);pointer-events:none}
+#game.split #splitBar{display:block}
+#game.split.stack #splitBar{left:0;right:0;top:50%;bottom:auto;width:auto;height:6px;margin:-3px 0 0}
+.p2join{position:absolute;left:50%;top:27%;transform:translateX(-50%);width:max-content;max-width:74%;text-align:center;font-size:24px;line-height:1.25;background:rgba(14,13,20,.72);padding:12px 20px 14px;border:3px solid var(--ink)}
+.p2join b{display:block;font-family:var(--display);font-weight:400;font-size:34px;letter-spacing:.03em;text-transform:uppercase;color:var(--yel)}

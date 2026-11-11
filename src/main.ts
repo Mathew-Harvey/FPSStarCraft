@@ -1,10 +1,11 @@
 // Boot, input, the frame loop, and the menu screens.
 import * as THREE from 'three';
-import { Pipeline, V3, makeSky } from './gfx';
+import { Pipeline, ViewPipe, V3, makeSky } from './gfx';
 import * as MD from './models';
 import { Game } from './game';
 import { Hud } from './hud';
-import { initAudio, setVolume, setMusic } from './audio';
+import { initAudio, setVolume, setMusic, audioSeat } from './audio';
+import { LocalMatch } from './split';
 import { UNIT, DIFFS, Kind } from './data';
 import { MISSIONS } from './campaign';
 import { Net, Lobby } from './net';
@@ -13,7 +14,15 @@ THREE.ColorManagement.enabled = false;
 const $ = (id: string) => document.getElementById(id)!;
 const canvas = $('c') as HTMLCanvasElement;
 const pipe = new Pipeline(canvas);
-const hud = new Hud();
+// Player two's HUD in split screen is a copy of the first, made before the first one fills itself in.
+const hudEl2 = $('hud').cloneNode(true) as HTMLElement; hudEl2.querySelector('#chat')?.remove(); hudEl2.classList.add('p2');
+{ const j = document.createElement('div'); j.className = 'p2join c out'; j.id = 'p2join'; hudEl2.appendChild(j); }
+$('hud').after(hudEl2);
+{ const bar = document.createElement('div'); bar.id = 'splitBar'; hudEl2.after(bar); }
+const hud = new Hud(), hud2 = new Hud(hudEl2);
+const view1 = new ViewPipe(pipe), view2 = new ViewPipe(pipe);
+/** Split screen: the match both halves are playing, and player two's copy of the game. */
+let split: LocalMatch | null = null, game2: Game | null = null, splitSide = true;
 let quality = 1, slow = 0, fast = 0;
 /** True when the browser would not lock the mouse, so the game runs with a free cursor instead. */
 let freeMouse = false;
@@ -21,6 +30,11 @@ let freeMouse = false;
 function resize() {
   const w = window.innerWidth, h = window.innerHeight;
   const sc = Math.min(Math.min(window.devicePixelRatio || 1, 1.5), 1080 / h) * (gfxI === 1 ? .6 : gfxI === 2 ? .8 : gfxI === 3 ? 1 : quality);
+  if (split) {
+    const vw = splitSide ? w / 2 : w, vh = splitSide ? h : h / 2; pipe.resize(vw * sc, vh * sc, w * sc, h * sc);
+    const W = pipe.w, H = pipe.h; view1.rect = splitSide ? [0, 0, W, H] : [0, pipe.ch - H, W, H]; view2.rect = splitSide ? [pipe.cw - W, 0, W, H] : [0, 0, W, H];
+    hud.setSize(vw, vh); hud2.setSize(vw, vh, splitSide ? w / 2 : 0, splitSide ? 0 : h / 2); return;
+  }
   pipe.resize(w * sc, h * sc); hud.setSize(w, h);
 }
 
@@ -39,7 +53,7 @@ function portraits() {
   }
 }
 
-portraits();
+portraits(); hud2.portraits = hud.portraits;
 pipe.w = 0; resize();
 let camp = 0, mpOpen = false, mode = 'camp', jobI = 0, pname = '', srv = '';
 let net: Net | null = null;
@@ -51,8 +65,8 @@ const keyText = (code: string) => code.replace(/^Key|^Digit/, '').replace('Shift
 /** The key a player pressed, as the action the game code listens for. A default key that has been given away does nothing. */
 function logical(code: string) { for (const a in binds) if (binds[a] === code) return a; return binds[code] ? 'Unbound' : code; }
 let diffI = 1, mapI = 0, sens = 1, vol = .5, mus = true, curX = .5, moved = false;
-try { const o = JSON.parse(localStorage.getItem('ore-else') || '{}'); if (o.d >= 0 && o.d < 3) diffI = o.d; if (o.map >= 0 && o.map < 3) mapI = o.map; if (o.camp > 0) camp = Math.min(MISSIONS.length, o.camp); if (o.mp) mpOpen = true; if (o.mode === 'skirm') mode = 'skirm'; if (typeof o.name === 'string') pname = o.name.slice(0, 14); if (typeof o.srv === 'string') srv = o.srv.slice(0, 200); if (o.s > 0) sens = o.s; if (o.v >= 0) vol = o.v; if (o.m === false) mus = false; if (o.q >= 0 && o.q < 4) gfxI = o.q | 0; cbOn = !!o.cb; fpsOn = !!o.fps; if (o.k && typeof o.k === 'object') for (const [a] of ACTIONS) if (typeof o.k[a] === 'string' && o.k[a] !== a) binds[a] = o.k[a]; } catch (e) { /* storage is optional */ }
-const save = () => { try { localStorage.setItem('ore-else', JSON.stringify({ d: diffI, map: mapI, camp, mp: mpOpen, mode: mode === 'multi' ? 'camp' : mode, name: pname, srv, s: sens, v: vol, m: mus, q: gfxI, cb: cbOn, fps: fpsOn, k: binds })); } catch (e) { /* storage is optional */ } };
+try { const o = JSON.parse(localStorage.getItem('ore-else') || '{}'); if (o.d >= 0 && o.d < 3) diffI = o.d; if (o.map >= 0 && o.map < 3) mapI = o.map; if (o.camp > 0) camp = Math.min(MISSIONS.length, o.camp); if (o.mp) mpOpen = true; if (o.mode === 'skirm') mode = 'skirm'; if (typeof o.name === 'string') pname = o.name.slice(0, 14); if (typeof o.srv === 'string') srv = o.srv.slice(0, 200); if (o.s > 0) sens = o.s; if (o.v >= 0) vol = o.v; if (o.m === false) mus = false; if (o.q >= 0 && o.q < 4) gfxI = o.q | 0; cbOn = !!o.cb; fpsOn = !!o.fps; splitSide = o.ss !== 0; if (o.k && typeof o.k === 'object') for (const [a] of ACTIONS) if (typeof o.k[a] === 'string' && o.k[a] !== a) binds[a] = o.k[a]; } catch (e) { /* storage is optional */ }
+const save = () => { try { localStorage.setItem('ore-else', JSON.stringify({ d: diffI, map: mapI, camp, mp: mpOpen, mode: mode === 'multi' ? 'camp' : mode, name: pname, srv, s: sens, v: vol, m: mus, q: gfxI, cb: cbOn, fps: fpsOn, ss: splitSide ? 1 : 0, k: binds })); } catch (e) { /* storage is optional */ } };
 jobI = Math.min(camp, MISSIONS.length - 1);
 const want = () => mode !== 'skirm' ? { d: DIFFS[MISSIONS[jobI].diff], map: MISSIONS[jobI].map, m: MISSIONS[jobI] } : { d: DIFFS[diffI], map: mapI, m: null };
 let game = new Game(pipe, hud, want().d, want().map, want().m); game.sens = sens;
@@ -70,12 +84,13 @@ chat.addEventListener('keyup', e => e.stopPropagation()); chat.addEventListener(
 addEventListener('keydown', e => {
   const code = logical(e.code);
   if (rebinding) return;
-  if (game.net && game.phase === 'play' && code === 'Enter') { e.preventDefault(); game.keys.clear(); chat.hidden = false; chat.focus(); return; }
+  if (split && game2 && !padTwo && logical(e.code) === e.code && P2KEYS[e.code]) { if (live()) { e.preventDefault(); const k = P2KEYS[e.code]; if (k === 'Tool') { if (!e.repeat) game2.pressed.add(game2.tool === 2 ? 'Digit1' : 'Digit2'); } else if (k === 'Wheel-' || k === 'Wheel+') { if (!e.repeat) game2.wheel = k === 'Wheel+' ? 1 : -1; } else if (k === 'Mouse0' || k === 'Mouse2') { if (!e.repeat) game2.pressed.add(k); if (k === 'Mouse0') game2.lmb = true; else game2.rmb = true; } else if (k.startsWith('Look')) look2.add(k); else { if (!e.repeat) game2.pressed.add(k); game2.keys.add(k); } p2Seen = true; } return; }
+  if (game.net && !split && game.phase === 'play' && code === 'Enter') { e.preventDefault(); game.keys.clear(); chat.hidden = false; chat.focus(); return; }
   if (live()) { if (!e.ctrlKey && !e.metaKey && e.code !== 'Escape' && !/^F\d/.test(e.code)) e.preventDefault(); if (!e.repeat) game.pressed.add(code); game.keys.add(code); }
   if (e.code === 'Escape' && freeMouse) { if (game.phase === 'play') pause(); else if (game.phase === 'paused') resume(); }
 });
-addEventListener('keyup', e => game.keys.delete(logical(e.code)));
-addEventListener('blur', () => { game.keys.clear(); game.lmb = game.rmb = false; });
+addEventListener('keyup', e => { const k = split && game2 && logical(e.code) === e.code ? P2KEYS[e.code] : ''; if (k && game2) { if (k === 'Mouse0') game2.lmb = false; else if (k === 'Mouse2') game2.rmb = false; else if (k.startsWith('Look')) look2.delete(k); else game2.keys.delete(k); if (!padTwo) return; } game.keys.delete(logical(e.code)); });
+addEventListener('blur', () => { game.keys.clear(); game.lmb = game.rmb = false; if (game2) { game2.keys.clear(); game2.lmb = game2.rmb = false; } look2.clear(); });
 canvas.addEventListener('mousedown', e => { if (!live()) return; e.preventDefault(); game.pressed.add('Mouse' + e.button); if (e.button === 0) game.lmb = true; if (e.button === 2) game.rmb = true; if (!locked() && !freeMouse) lock(); });
 addEventListener('mouseup', e => { if (e.button === 0) game.lmb = false; if (e.button === 2) game.rmb = false; });
 addEventListener('mousemove', e => { curX = e.clientX / innerWidth; if (e.movementX || e.movementY) moved = true; if (live() && (locked() || freeMouse)) { game.mdx += e.movementX || 0; game.mdy += e.movementY || 0; } });
@@ -87,16 +102,78 @@ function lock() { try { const p: any = (canvas as any).requestPointerLock(); if 
 document.addEventListener('pointerlockerror', () => { freeMouse = true; });
 document.addEventListener('pointerlockchange', () => { if (!locked() && live() && !freeMouse) pause(); });
 
-function fresh() { hud.reset(); const w = want(); game = new Game(pipe, hud, w.d, w.map, w.m); game.sens = sens; ended = false; (window as any).__ore.game = game; }
+function fresh() { endSplit(); hud.reset(); const w = want(); game = new Game(pipe, hud, w.d, w.map, w.m); game.sens = sens; ended = false; (window as any).__ore.game = game; }
 function start() { initAudio(); setVolume(vol); setMusic(mus); { const w = want(); if (game.diff !== w.d || game.mapI !== w.map || game.mission !== w.m || game.time > 0) fresh(); } $('menu').hidden = true; $('pause').hidden = true; $('end').hidden = true; hud.show(true); game.phase = 'play'; game.introT = 1.8; lock(); }
-function pause() { if (game.phase !== 'play' && game.phase !== 'card') return; if (game.net) { game.phase = 'paused'; game.keys.clear(); game.lmb = game.rmb = false; $('pause').hidden = false; return; } game.phase = 'paused'; game.keys.clear(); game.lmb = game.rmb = false; $('pause').hidden = false; }
-function resume() { if (game.phase !== 'paused') return; initAudio(); $('pause').hidden = true; game.phase = 'play'; lock(); }
+function pause() { if (game.phase !== 'play' && game.phase !== 'card') return; if (game2) { game2.phase = 'paused'; game2.keys.clear(); game2.lmb = game2.rmb = false; look2.clear(); } if (game.net) { game.phase = 'paused'; game.keys.clear(); game.lmb = game.rmb = false; $('pause').hidden = false; return; } game.phase = 'paused'; game.keys.clear(); game.lmb = game.rmb = false; $('pause').hidden = false; }
+function resume(byPad = false) { if (game.phase !== 'paused') return; initAudio(); $('pause').hidden = true; game.phase = 'play'; if (game2) game2.phase = 'play'; if (!byPad) lock(); }
 $('start').addEventListener('click', start);
-$('resume').addEventListener('click', resume);
-$('again').addEventListener('click', () => { if (game.net) { toMenu(); return; } if (game.mission && game.won && jobI < MISSIONS.length - 1) jobI++; fresh(); start(); });
+$('resume').addEventListener('click', () => resume());
+$('again').addEventListener('click', () => { if (split) { startSplit(); return; } if (game.net) { toMenu(); return; } if (game.mission && game.won && jobI < MISSIONS.length - 1) jobI++; fresh(); start(); });
 $('startJob').addEventListener('click', start);
 function toMenu() { $('end').hidden = true; $('pause').hidden = true; hud.show(false); if (document.pointerLockElement) document.exitPointerLock(); showMode(); fresh(); $('menu').hidden = false; }
 $('toMenu').addEventListener('click', toMenu);
+// ---- split screen
+/** Player two without a controller: the right-hand side of the keyboard. Values are the keys the game code listens for. */
+const P2KEYS: Record<string, string> = { ArrowUp: 'KeyW', ArrowDown: 'KeyS', ArrowLeft: 'KeyA', ArrowRight: 'KeyD', KeyI: 'LookU', KeyK: 'LookD', KeyJ: 'LookL', KeyL: 'LookR', KeyO: 'Mouse0', KeyP: 'Mouse2', KeyH: 'KeyE', KeyN: 'KeyR', KeyM: 'KeyC', Semicolon: 'KeyF', Quote: 'Tab', Comma: 'Wheel-', Period: 'Wheel+', Slash: 'Tool', ShiftRight: 'ShiftLeft', ControlRight: 'Space', Digit8: 'KeyT', Digit9: 'KeyY', Digit0: 'KeyU', Backspace: 'KeyQ', Backslash: 'Mouse1', Minus: 'KeyV', BracketLeft: 'KeyZ', BracketRight: 'KeyX' };
+const PADKEYS: Record<string, string> = { E: 'Y', R: 'X', C: 'B', F: 'RB', Tab: 'LB', Space: 'A', RMB: 'LT', T: '◄', Y: '▲', U: '►', Q: '▼', Z: '▲', X: '▼', V: 'Back', B: 'R3', MMB: 'R3' };
+const KBDKEYS: Record<string, string> = { E: 'H', R: 'N', C: 'M', F: ';', Tab: "'", Space: 'R Ctrl', RMB: 'P', T: '8', Y: '9', U: '0', Q: 'Bksp', MMB: '\\', V: '-', Z: '[', X: ']' };
+const look2 = new Set<string>();
+/** True once player two has a controller. Until then the keyboard fallback is live. */
+let padTwo = false, padBlocked = false, p2Seen = false, p2Hint = 0;
+const padHeld: Set<string>[] = [new Set(), new Set()], padWas: boolean[][] = [[], []], padRun = [false, false], padFire = [[false, false], [false, false]];
+function pads(): Gamepad[] { try { return Array.from(navigator.getGamepads ? navigator.getGamepads() : []).filter(p => !!p && p.connected && p.buttons.length >= 10) as Gamepad[]; } catch (e) { padBlocked = true; return []; } }
+/** Turns one controller into the keys and mouse movement the game already understands. */
+function padDrive(g: Game, p: Gamepad, slot: number, dt: number) {
+  const ax = (i: number) => { const v = p.axes[i] || 0, a = Math.abs(v); return a < .18 ? 0 : Math.sign(v) * (a - .18) / .82; };
+  const was = padWas[slot], down = (i: number) => !!p.buttons[i] && (p.buttons[i].pressed || p.buttons[i].value > .35), hit = (i: number) => down(i) && !was[i];
+  const mine = padHeld[slot], hold = (code: string, on: boolean) => { if (on) { if (!mine.has(code)) { mine.add(code); g.keys.add(code); g.pressed.add(code); } } else if (mine.has(code)) { mine.delete(code); g.keys.delete(code); } };
+  const tap = (i: number, code: string) => { if (hit(i)) g.pressed.add(code); };
+  if (game.phase === 'play' || game.phase === 'card') {
+    const lx = ax(0), ly = ax(1), rx = ax(2), ry = ax(3);
+    hold('KeyW', ly < -.3); hold('KeyS', ly > .3); hold('KeyA', lx < -.3); hold('KeyD', lx > .3);
+    if (hit(10)) padRun[slot] = true; if (ly > -.5) padRun[slot] = false; hold('ShiftLeft', padRun[slot]);
+    g.mdx += rx * (.35 + .65 * Math.abs(rx)) * 1500 * dt; g.mdy += ry * (.35 + .65 * Math.abs(ry)) * 1000 * dt;
+    const f = padFire[slot], rt = down(7), lt = down(6);
+    if (rt !== f[0]) { f[0] = rt; g.lmb = rt; if (rt) g.pressed.add('Mouse0'); } if (lt !== f[1]) { f[1] = lt; g.rmb = lt; if (lt) g.pressed.add('Mouse2'); }
+    tap(0, 'Space'); tap(1, 'KeyC'); tap(2, 'KeyR'); tap(3, 'KeyE'); tap(5, 'KeyF'); tap(8, 'KeyV'); tap(11, 'Mouse1'); if (g.net && hit(11)) g.pressed.add('KeyB');
+    hold('Tab', down(4));
+    // the D-pad does whatever the screen is offering
+    const pr = g.prompt || '', train = /<b>[TYU]<\/b>/.test(pr), picking = g.tab || (g.tool === 2 && g.me?.kind === 'rigger'), call = !!g.dir.callout;
+    if (train) { tap(14, 'KeyT'); tap(12, 'KeyY'); tap(15, 'KeyU'); }
+    else { if (picking) { if (hit(14)) g.wheel = -1; if (hit(15)) g.wheel = 1; } if (call) { tap(12, 'KeyZ'); tap(13, 'KeyX'); } else { if (hit(12) && g.me?.kind === 'rigger') g.pressed.add(g.tool === 2 ? 'Digit1' : 'Digit2'); tap(13, 'KeyQ'); } }
+    if (hit(9)) pause();
+  } else if (game.phase === 'paused' && hit(9)) resume(true);
+  for (let i = 0; i < p.buttons.length; i++) was[i] = down(i);
+}
+function padPoll(dt: number) {
+  if (!game2) return; const ps = pads();
+  // One controller belongs to player two. With two, player one may use the first and keep the keyboard as well.
+  const two = ps.length > 1 ? ps[1] : ps[0], one = ps.length > 1 ? ps[0] : null;
+  if (!!two !== padTwo) { padTwo = !!two; look2.clear(); game2.keys.clear(); game2.lmb = game2.rmb = false; padHeld[1].clear(); p2Labels(); }
+  if (one) padDrive(game, one, 0, dt); if (two) { padDrive(game2, two, 1, dt); if (two.buttons.some(b => b.pressed) || two.axes.some(a => Math.abs(a) > .5)) p2Seen = true; }
+  else if (game.phase === 'play') { const lx = (look2.has('LookR') ? 1 : 0) - (look2.has('LookL') ? 1 : 0), ly = (look2.has('LookD') ? 1 : 0) - (look2.has('LookU') ? 1 : 0); game2.mdx += lx * 1100 * dt; game2.mdy += ly * 700 * dt; }
+  p2Hint += dt; $('p2join').hidden = p2Seen || p2Hint > 40 || game.phase !== 'play';
+}
+/** Player two's HUD names controller buttons, or the right-hand keys when there is no controller. */
+function p2Labels() {
+  const m = padTwo ? PADKEYS : KBDKEYS; hud2.relabel(k => m[k] ?? k);
+  hudEl2.querySelector('.jump .foot')!.innerHTML = padTwo ? 'D-pad left or right to pick · Let go of <span class="k">LB</span> to jump' : 'Comma or full stop to pick · Let go of <span class="k">\'</span> to jump';
+  hudEl2.querySelector('#build p')!.textContent = padTwo ? 'D-pad left or right pick · X rotate · RT place · D-pad up puts it away' : 'Comma or full stop pick · N rotate · O place · / puts it away';
+  $('p2join').innerHTML = padTwo ? '<b>Player two</b>Left stick moves · right stick looks · RT fires · LT aims · hold LB to jump bodies · D-pad up for the build menu' : padBlocked ? '<b>Player two</b>This page is not allowed to read controllers, so player two is on the keyboard: arrows move · I J K L look · O fires · P aims · H uses · / build menu' : '<b>Player two</b>Press any button on a controller to take over this half. No controller? Arrows move · I J K L look · O fires · P aims · H uses · / build menu';
+}
+function startSplit() {
+  initAudio(); setVolume(vol); setMusic(mus); mode = 'skirm'; hud.reset(); hud2.reset();
+  const m = split = new LocalMatch(mapI, diffI), mk = (i: number) => { const g = new Game(i ? view2 : view1, i ? hud2 : hud, DIFFS[diffI], mapI, null, m.seats[i]); g.sens = i ? 1 : sens; g.names = m.names; g.teams = m.teams; g.myTeam = 0; g.phase = 'play'; g.introT = 1.8; return g; };
+  game = mk(0); game2 = mk(1); view1.time = view2.time = pipe.time; ended = false; (window as any).__ore.game = game;
+  padTwo = pads().length > 0; p2Seen = false; p2Hint = 0; padHeld[0].clear(); padHeld[1].clear(); look2.clear(); p2Labels();
+  $('game').classList.add('split'); $('game').classList.toggle('stack', !splitSide);
+  $('menu').hidden = true; $('pause').hidden = true; $('end').hidden = true; hud.show(true); hud2.show(true); resize(); lock();
+}
+function endSplit() { if (!split && !game2) return; split = null; game2 = null; hud2.show(false); $('game').classList.remove('split', 'stack'); pipe.w = 0; resize(); }
+$('startSplit').addEventListener('click', startSplit);
+const splitBtns = Array.from($('splitDir').querySelectorAll('button')) as HTMLButtonElement[];
+const showSplit = () => splitBtns.forEach((b, i) => { const on = (i === 0) === splitSide; b.classList.toggle('on', on); b.setAttribute('aria-pressed', String(on)); });
+splitBtns.forEach((b, i) => b.addEventListener('click', () => { splitSide = i === 0; showSplit(); save(); })); showSplit();
 // ---- campaign and mode tabs
 let ended = false;
 const modeBtns = Array.from($('modes').querySelectorAll('button')) as HTMLButtonElement[];
@@ -140,7 +217,7 @@ async function mpConnect(then: (n: Net) => void) {
   n.onLobby = l => { showLobby(l); if (l.code) { mErr(''); lastCode = l.code; } }; n.onError = m => mErr(m);
   n.onClose = () => { net = null; if (game.net) { game.net = null; toMenu(); } showMode(); if (lastCode) { mCode.value = lastCode; mErr('Lost the connection. Press Join to get back into lobby ' + lastCode + '.'); } else mErr('Lost the connection to the server.'); };
   n.onBegin = m => {
-    mode = 'multi'; hud.reset(); game = new Game(pipe, hud, DIFFS[m.diff], m.map, null, n); game.sens = sens; game.names = m.names; game.myTeam = m.team || 0; game.teams = m.teams || {}; if (m.ph) { game.applying = true; for (const r of m.ph) { const q = game.props[r[0]]; if (q && q.alive && q.hp > r[1]) game.damageProp(q, q.hp - r[1], null); } game.applying = false; } ended = false; (window as any).__ore.game = game;
+    endSplit(); mode = 'multi'; hud.reset(); game = new Game(pipe, hud, DIFFS[m.diff], m.map, null, n); game.sens = sens; game.names = m.names; game.myTeam = m.team || 0; game.teams = m.teams || {}; if (m.ph) { game.applying = true; for (const r of m.ph) { const q = game.props[r[0]]; if (q && q.alive && q.hp > r[1]) game.damageProp(q, q.hp - r[1], null); } game.applying = false; } ended = false; (window as any).__ore.game = game;
     initAudio(); setVolume(vol); setMusic(mus); $('menu').hidden = true; $('pause').hidden = true; $('end').hidden = true; hud.show(true); game.phase = 'play'; game.introT = 1.8; lock();
   };
   try { await n.connect(srv); net = n; mErr(''); then(n); } catch (e) { mErr(String((e as Error).message || e) + ' Check the server address.'); }
@@ -167,7 +244,7 @@ volEl.addEventListener('input', () => { vol = +volEl.value; setVolume(vol); save
 const musEl = $('mus') as HTMLInputElement; musEl.checked = mus; musEl.addEventListener('change', () => { mus = musEl.checked; setMusic(mus); save(); syncOpts(); });
 // ---- options tab
 const sens2 = $('sens2') as HTMLInputElement, vol2 = $('vol2') as HTMLInputElement, mus2 = $('mus2') as HTMLInputElement, cbEl = $('cb') as HTMLInputElement, gfxB = Array.from($('gfx').querySelectorAll('button')) as HTMLButtonElement[];
-function applyOpts() { document.body.classList.toggle('cb', cbOn); hud.cb = cbOn; pipe.shadowEvery = gfxI === 1 ? 3 : 1; hud.keyLabel = Object.keys(binds).length ? k => keyText(keyOf(k === 'Tab' || k === 'Space' ? k : 'Key' + k)) : null; resize(); }
+function applyOpts() { document.body.classList.toggle('cb', cbOn); hud.cb = hud2.cb = cbOn; pipe.shadowEvery = gfxI === 1 ? 3 : 1; hud.keyLabel = Object.keys(binds).length ? k => keyText(keyOf(k === 'Tab' || k === 'Space' ? k : 'Key' + k)) : null; resize(); }
 function syncOpts() { sens2.value = sensEl.value = String(sens); vol2.value = volEl.value = String(vol); mus2.checked = musEl.checked = mus; cbEl.checked = cbOn; gfxB.forEach((b, i) => b.classList.toggle('on', i === gfxI)); }
 function showKeys() { $('keys').innerHTML = ACTIONS.map(([a, label]) => `<button type="button" data-a="${a}" class="${rebinding === a ? 'on' : ''}">${label}<b>${rebinding === a ? 'Press a key' : keyText(keyOf(a))}</b></button>`).join(''); }
 sens2.addEventListener('input', () => { sens = +sens2.value; game.sens = sens; save(); syncOpts(); }); vol2.addEventListener('input', () => { vol = +vol2.value; setVolume(vol); save(); syncOpts(); });
@@ -193,9 +270,13 @@ function frame(now: number) {
   // Without mouse capture, holding the cursor near a screen edge turns the view.
   if (freeMouse && moved && live() && !game.tab) { const ex = curX < .1 ? (curX - .1) / .1 : curX > .9 ? (curX - .9) / .1 : 0; game.mdx += ex * 900 * dt; }
   if (freeMouse !== freeShown) { freeShown = freeMouse; $('edgeNote').hidden = !freeMouse; $('freeNote').hidden = !freeMouse; }
-  game.update(dt);
+  if (split && game2) {
+    if (game.phase !== 'paused') split.frame(dt);
+    padPoll(dt);
+    audioSeat(.65, 0); game.update(dt); audioSeat(.65, 1); game2.update(dt); audioSeat(1, 0);
+  } else game.update(dt);
   if (fpsOn) { fpsN++; fpsT += dt; fpsWorst = Math.max(fpsWorst, dt); if (fpsT >= .5) { const info = pipe.renderer.info.render; $('fps').textContent = `${Math.round(fpsN / fpsT)} fps · worst ${Math.round(fpsWorst * 1000)} ms · ${pipe.w | 0}×${pipe.h | 0} · ${game.units.length} units`; fpsN = 0; fpsT = 0; fpsWorst = 0; void info; } }
-  if (game.phase === 'over' && !ended) { ended = true; const m = game.mission; if (m && game.won) { const i = MISSIONS.indexOf(m); camp = Math.max(camp, i + 1); if (camp >= MISSIONS.length) mpOpen = true; save(); } $('again').textContent = game.net ? 'Back to the lobby' : m ? (game.won ? (MISSIONS.indexOf(m) < MISSIONS.length - 1 ? 'Next job' : 'Run it again') : 'Try that again') : 'Another shift'; }
+  if (game.phase === 'over' && !ended) { ended = true; const m = game.mission; if (m && game.won) { const i = MISSIONS.indexOf(m); camp = Math.max(camp, i + 1); if (camp >= MISSIONS.length) mpOpen = true; save(); } $('again').textContent = split ? 'Another shift' : game.net ? 'Back to the lobby' : m ? (game.won ? (MISSIONS.indexOf(m) < MISSIONS.length - 1 ? 'Next job' : 'Run it again') : 'Try that again') : 'Another shift'; }
   // Drop the render resolution if the machine can't keep up, and bring it back if it can.
   if (dt > .034) { slow++; fast = 0; } else if (dt < .02) { fast++; slow = Math.max(0, slow - 1); }
   if (gfxI === 0)
@@ -204,5 +285,5 @@ function frame(now: number) {
   if (fast > 900 && quality < 1) { quality = Math.min(1, quality / .85); fast = 0; resize(); }
   requestAnimationFrame(frame);
 }
-(window as any).__ore = { atlasUsed: MD.atlasUsed, game, start, pipe, hud, setFree: (v: boolean) => { freeMouse = v; }, pickMap, unlock: () => { camp = MISSIONS.length; mpOpen = true; mode = 'multi'; showMode(); }, net: () => net, pickJob: (i: number) => { mode = 'camp'; camp = Math.max(camp, i); jobI = i; showMode(); fresh(); } };
+(window as any).__ore = { atlasUsed: MD.atlasUsed, game, start, pipe, hud, hud2, startSplit, split: () => split, game2: () => game2, setFree: (v: boolean) => { freeMouse = v; }, pickMap, unlock: () => { camp = MISSIONS.length; mpOpen = true; mode = 'multi'; showMode(); }, net: () => net, pickJob: (i: number) => { mode = 'camp'; camp = Math.max(camp, i); jobI = i; showMode(); fresh(); } };
 requestAnimationFrame(frame);

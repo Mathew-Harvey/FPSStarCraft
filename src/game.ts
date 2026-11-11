@@ -1,7 +1,7 @@
 // The simulation and the player: entities, combat, effects, the first-person bodies,
 // and jumping between them. Strategy (economy AI, raids, squad plans) lives in director.ts.
 import * as THREE from 'three';
-import { Pipeline, V3, M, G, R, mk, setLayer, L_FX, L_SELF, holoOK, holoBad, ringMat, tracerMat, makeSky } from './gfx';
+import { Pipeline, ViewPipe, V3, M, G, R, mk, setLayer, L_FX, L_SELF, holoOK, holoBad, ringMat, tracerMat, makeSky } from './gfx';
 import * as MD from './models';
 import { sfx, drillSound, setMood, babble } from './audio';
 import type { Hud } from './hud';
@@ -58,7 +58,7 @@ export class Game {
   shake = 0; noRender = false; alertT = 0; mood = 0;
   introT = 0; menuPos = V3(); menuQuat = new THREE.Quaternion(); hitStop = 0; streak = 0; streakT = 0; kick = 0; stepPhase = 0; dustT = 0; hopT = 0; hopCd = 0; hopX = 0; hopZ = 0; endT = 0; endWon = false;
 
-  constructor(public pipe: Pipeline, public hud: Hud, public diff: Difficulty = DIFFS[1], public mapI = 0, public mission: Mission | null = null, public net: Net | null = null) {
+  constructor(public pipe: Pipeline | ViewPipe, public hud: Hud, public diff: Difficulty = DIFFS[1], public mapI = 0, public mission: Mission | null = null, public net: Net | null = null) {
     setMap(mapI); (M.ground as any).uniforms.uColor.value.setRGB(MAP.ground[0], MAP.ground[1], MAP.ground[2]); (M.mesa as any).uniforms.uColor.value.setRGB(MAP.mesa[0], MAP.mesa[1], MAP.mesa[2]); (M.rock as any).uniforms.uColor.value.setRGB(MAP.rock[0], MAP.rock[1], MAP.rock[2]); 
     const s = this.scene; s.add(makeSky()); MD.buildWorld(s, this.props, this.anim); this.spires = this.props.filter(p => p.solid); s.add(this.cam);
     this.vm = { drill: MD.vmDrill(), rifle: MD.vmRifle(), scatter: MD.vmScatter(), shield: MD.vmShield(), cannon: MD.vmCannon(), long: MD.vmLong(), pistol: MD.vmPistol(), veyl: MD.vmVeyl() };
@@ -896,7 +896,7 @@ export class Game {
     }
     if (me) {
       if (me.alive) this.bodyLayer(me, true);
-      const sprint = this.keys.has('ShiftLeft') && me.moving && this.ads < .3, fovT = (this.hopT > 0 ? 82 : sprint ? 75 : 68) - this.ads * (SHOT[me.kind]?.zoom ?? 6); cam.fov += (fovT - cam.fov) * Math.min(1, dt * 10);
+      const sprint = this.keys.has('ShiftLeft') && me.moving && this.ads < .3, fovT = (this.hopT > 0 ? 82 : sprint ? 75 : 68) - this.ads * (SHOT[me.kind]?.zoom ?? 6); cam.fov += (this.fitFov(fovT) - cam.fov) * Math.min(1, dt * 10);
       const bobY = me.moving ? Math.sin(this.bob) * .035 * (1 - this.ads * .7) : 0, sh = this.shake * .03;
       cam.position.set(me.pos.x + R(-sh, sh), UNIT[me.kind].eye + bobY + R(-sh, sh), me.pos.z + R(-sh, sh)); cam.rotation.set(this.pitch + this.recoil * .012, this.yaw + Math.PI, Math.sin(this.bob * .5) * (me.moving ? .004 : 0) - this.swayX * .6, 'YXZ');
       const intro = this.introT > 0 ? 1 - this.introT / 1.8 : 1;
@@ -921,6 +921,8 @@ export class Game {
     // music follows how hot things are around the player
     if (me) { let hot = this.time - me.lastHit < 6 ? 1 : 0; if (!hot) for (const u of this.units) if (u.team === 1 && u.alive && Math.abs(u.pos.x - me.pos.x) < 45 && Math.abs(u.pos.z - me.pos.z) < 45) { hot = 1; break; } this.mood += (hot - this.mood) * Math.min(1, dt * (hot ? 2 : .4)); setMood(this.phase === 'play' ? .25 + this.mood * .75 : .15); }
   }
+  /** Split screen halves are very wide or very tall. This keeps the view from stretching in the first and from feeling boxed in in the second. */
+  fitFov(fov: number) { const a = this.pipe.w / this.pipe.h; return a > 2.6 ? 2 * Math.atan(Math.tan(fov * Math.PI / 360) * 2.6 / a) * 180 / Math.PI : a < 1.2 ? fov + 9 : fov; }
   weapon() { const me = this.me; return me && GUNS[me.kind] ? GUNS[me.kind] : null; }
 }
 export { UNIT, BLD, BUILDABLE, OUTPOST };

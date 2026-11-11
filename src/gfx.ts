@@ -288,6 +288,10 @@ export class Pipeline {
   sat = 1; static = 0; time = 0; flash = 0;
   /** Redraw the shadow map every Nth frame. Low picture quality uses 3. */
   shadowEvery = 1; private frameN = 0;
+  /** Size of the canvas itself. It is larger than `w` by `h` only when the screen is split into views. */
+  cw = 1; ch = 1;
+  /** Where on the canvas the finished picture goes, in canvas pixels from the bottom left. Null fills the canvas. */
+  rect: [number, number, number, number] | null = null;
 
   constructor(canvas: HTMLCanvasElement) {
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: false, preserveDrawingBuffer: true, powerPreference: 'high-performance' });
@@ -307,11 +311,12 @@ export class Pipeline {
     this.postScene.add(new THREE.Mesh(new THREE.PlaneGeometry(2, 2), this.postMat));
   }
 
-  resize(w: number, h: number) {
-    w = Math.max(2, Math.floor(w)); h = Math.max(2, Math.floor(h));
+  /** `w` by `h` is the size of one view. `cw` by `ch` is the whole canvas, when that is bigger because the screen is split. */
+  resize(w: number, h: number, cw = w, ch = h) {
+    w = Math.max(2, Math.floor(w)); h = Math.max(2, Math.floor(h)); cw = Math.max(2, Math.floor(cw)); ch = Math.max(2, Math.floor(ch));
+    if (cw !== this.cw || ch !== this.ch) { this.cw = cw; this.ch = ch; this.renderer.setSize(cw, ch, false); }
     if (w === this.w && h === this.h) return;
     this.w = w; this.h = h; this.px = h / 900; SHARED.uPx.value = this.px;
-    this.renderer.setSize(w, h, false);
     this.rtC.dispose(); this.rtN.dispose();
     this.rtC = new THREE.WebGLRenderTarget(w, h, { minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter });
     this.rtC.depthTexture = new THREE.DepthTexture(w, h); this.rtC.depthTexture.type = THREE.UnsignedIntType;
@@ -322,9 +327,9 @@ export class Pipeline {
   /** Moves the sun toward the horizon and warms the grade. 0 is midday, 1 is sunset. */
   setDusk(k: number) { if (Math.abs(k - DUSK.value) < .002 && k !== 0) return; DUSK.value = k; LIGHT.set(-.55 - k * .2, .62 - k * .22, .56).normalize(); FOG.set('#f3c9a0').lerp(DUSKFOG, k); }
   /** Renders the scene with shadows centred on `focus`, covering `span` metres. */
-  draw(scene: THREE.Scene, cam: THREE.PerspectiveCamera | THREE.OrthographicCamera, focus: THREE.Vector3, span: number) {
+  draw(scene: THREE.Scene, cam: THREE.PerspectiveCamera | THREE.OrthographicCamera, focus: THREE.Vector3, span: number, shadows = false) {
     const r = this.renderer, sun = this.sun;
-    if (this.frameN++ % this.shadowEvery === 0) {
+    if (this.frameN++ % this.shadowEvery === 0 || shadows) {
       sun.left = sun.bottom = -span / 2; sun.right = sun.top = span / 2; sun.updateProjectionMatrix();
       sun.position.copy(focus).addScaledVector(LIGHT, 220); sun.lookAt(focus); sun.updateMatrixWorld();
       SHARED.uShadowMat.value.multiplyMatrices(sun.projectionMatrix, sun.matrixWorldInverse);
@@ -338,7 +343,20 @@ export class Pipeline {
     r.setRenderTarget(this.rtN); r.setClearColor(0x8080ff, 1); r.clear(); r.render(scene, cam); scene.overrideMaterial = null;
 
     const u = this.postMat.uniforms; u.uOrtho.value = (cam as any).isOrthographicCamera ? 1 : 0; u.uNear.value = cam.near; u.uFar.value = cam.far; u.uSat.value = this.sat; u.uFlash.value = this.flash; u.uStatic.value = this.static; u.uTime.value = this.time;
-    r.setRenderTarget(null); r.render(this.postScene, this.postCam);
+    r.setRenderTarget(null);
+    if (this.rect) { const q = this.rect; r.setViewport(q[0], q[1], q[2], q[3]); r.setScissor(q[0], q[1], q[2], q[3]); r.setScissorTest(true); r.render(this.postScene, this.postCam); r.setScissorTest(false); r.setViewport(0, 0, this.cw, this.ch); }
+    else r.render(this.postScene, this.postCam);
+  }
+}
+/** One player's part of a split screen. It stands in for the pipeline, keeps that player's own flash and static, and draws into its own rectangle. */
+export class ViewPipe {
+  time = 0; flash = 0; static = 0; sat = 1; rect: [number, number, number, number] = [0, 0, 2, 2];
+  constructor(public base: Pipeline) { }
+  get w() { return this.base.w; } get h() { return this.base.h; }
+  setDusk(k: number) { this.base.setDusk(k); }
+  draw(scene: THREE.Scene, cam: THREE.PerspectiveCamera | THREE.OrthographicCamera, focus: THREE.Vector3, span: number) {
+    const b = this.base; b.time = this.time; b.flash = this.flash; b.static = this.static; b.sat = this.sat; b.rect = this.rect;
+    b.draw(scene, cam, focus, span, true); b.rect = null;
   }
 }
 /** Builds the shared textures and materials without a renderer, for the match server. */

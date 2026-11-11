@@ -4,7 +4,6 @@ import type { Game } from './game';
 import { UNIT, BLD, BUILDABLE, Unit, Building, MAP, MAPS, OUTPOST, ROAD, NORTH_PATH, roadPt } from './data';
 const capW = (t: string) => t.charAt(0).toUpperCase() + t.slice(1);
 
-const $ = (id: string) => document.getElementById(id)!;
 const V = new THREE.Vector3();
 interface Floater { el: HTMLElement; pos: THREE.Vector3; t: number; life: number }
 
@@ -15,32 +14,37 @@ export class Hud {
   cb = false;
   /** Set when keys are rebound: turns the default key printed in a prompt into the key the player chose. */
   keyLabel: ((k: string) => string) | null = null;
-  private root = $('hud'); private anchors = $('anchors');
+  private els = new Map<string, HTMLElement>(); private anchors: HTMLElement;
+  /** Finds a part of this HUD. Split screen has two HUDs with the same parts, so the search starts inside this one. */
+  private $(id: string): HTMLElement { let e = this.els.get(id); if (!e) { e = (this.root.querySelector('#' + id) as HTMLElement | null) || document.getElementById(id)!; this.els.set(id, e); } return e; }
   private cache = new Map<string, string>();
   private bars: HTMLElement[] = []; private barFill: HTMLElement[] = []; private labs: HTMLElement[] = [];
   private floats: Floater[] = []; private pingPos = new THREE.Vector3(); private pingT = 0;
   private hurtA = 0; private dirA = 0; private hitT = 0; private miniT = 0; private last = 0; private feedN = 0;
-  private mini = ($('mini') as HTMLCanvasElement).getContext('2d')!;
+  private mini: CanvasRenderingContext2D;
 
-  constructor() {
+  constructor(private root: HTMLElement = document.getElementById('hud')!) {
+    this.anchors = this.$('anchors'); this.mini = (this.$('mini') as HTMLCanvasElement).getContext('2d')!;
     for (let i = 0; i < 48; i++) { const b = document.createElement('div'); b.className = 'hb'; const f = document.createElement('i'); b.appendChild(f); b.hidden = true; this.anchors.appendChild(b); this.bars.push(b); this.barFill.push(f); }
     for (let i = 0; i < 10; i++) { const l = document.createElement('div'); l.className = 'lab'; l.hidden = true; l.appendChild(document.createElement('div')); this.anchors.appendChild(l); this.labs.push(l); }
   }
-  setSize(w: number, h: number) {
+  setSize(w: number, h: number, x = 0, y = 0) {
     this.scale = Math.min(h / 900, w / 1280); this.W = w / this.scale; this.H = h / this.scale;
-    const s = this.root.style; s.width = this.W + 'px'; s.height = this.H + 'px'; s.transform = `scale(${this.scale})`;
+    const s = this.root.style; s.width = this.W + 'px'; s.height = this.H + 'px'; s.transform = `scale(${this.scale})`; s.left = x + 'px'; s.top = y + 'px';
   }
   show(on: boolean) { this.root.hidden = !on; }
-  reset() { $('feed').innerHTML = ''; for (const f of this.floats) f.el.remove(); this.floats = []; this.cache.clear(); this.pingT = 0; this.hurtA = 0; this.titleCard('', '', ''); $('end').hidden = true; $('lost').hidden = true; }
+  /** Changes the names of the keys printed in prompts, and redraws every prompt with them. */
+  relabel(f: ((k: string) => string) | null) { this.keyLabel = f; this.cache.clear(); }
+  reset() { this.$('feed').innerHTML = ''; for (const f of this.floats) f.el.remove(); this.floats = []; this.cache.clear(); this.pingT = 0; this.hurtA = 0; this.titleCard('', '', ''); this.$('end').hidden = true; this.$('lost').hidden = true; }
 
   /** Sets text or HTML only when it has changed, so the page is not rebuilt every frame. */
-  private set(id: string, v: string, html = false) { if (this.cache.get(id) === v) return; this.cache.set(id, v); const e = $(id); if (html) e.innerHTML = this.keyLabel ? v.replace(/<(b|span class="k"[^>]*)>(Tab|Space|[A-Z])<\//g, (_m, tag, k) => `<${tag}>${this.keyLabel!(k)}</`) : v; else e.textContent = v; }
-  private cls(id: string, v: string) { const k = 'c:' + id; if (this.cache.get(k) === v) return; this.cache.set(k, v); $(id).className = v; }
-  private vis(id: string, on: boolean) { const k = 'h:' + id; const v = on ? '1' : '0'; if (this.cache.get(k) === v) return; this.cache.set(k, v); $(id).hidden = !on; }
-  private img(id: string, kind: string) { const k = 'i:' + id; if (this.cache.get(k) === kind) return; this.cache.set(k, kind); const src = this.portraits[kind]; if (src) ($(id) as HTMLImageElement).src = src; }
+  private set(id: string, v: string, html = false) { if (this.cache.get(id) === v) return; this.cache.set(id, v); const e = this.$(id); if (html) e.innerHTML = this.keyLabel ? v.replace(/<(b|span class="k"[^>]*)>(TAB|Tab|Space|RMB|MMB|[A-Z])<\//g, (_m, tag, k) => `<${tag}>${this.keyLabel!(k === 'TAB' ? 'Tab' : k)}</`) : v; else e.textContent = v; }
+  private cls(id: string, v: string) { const k = 'c:' + id; if (this.cache.get(k) === v) return; this.cache.set(k, v); this.$(id).className = v; }
+  private vis(id: string, on: boolean) { const k = 'h:' + id; const v = on ? '1' : '0'; if (this.cache.get(k) === v) return; this.cache.set(k, v); this.$(id).hidden = !on; }
+  private img(id: string, kind: string) { const k = 'i:' + id; if (this.cache.get(k) === kind) return; this.cache.set(k, kind); const src = this.portraits[kind]; if (src) (this.$(id) as HTMLImageElement).src = src; }
 
   feed(who: string, msg: string, cls = '') {
-    const box = $('feed'), d = document.createElement('div'); if (cls) d.className = cls; const b = document.createElement('b'); b.textContent = who; d.appendChild(b); d.appendChild(document.createTextNode(msg)); box.appendChild(d);
+    const box = this.$('feed'), d = document.createElement('div'); if (cls) d.className = cls; const b = document.createElement('b'); b.textContent = who; d.appendChild(b); d.appendChild(document.createTextNode(msg)); box.appendChild(d);
     while (box.children.length > 4) box.firstElementChild!.remove();
     setTimeout(() => d.classList.add('old'), 6500); setTimeout(() => d.remove(), 7200);
   }
@@ -49,19 +53,19 @@ export class Hud {
     const el = document.createElement('div'); el.className = 'fl out ' + cls; el.textContent = text; el.style.opacity = '0'; this.anchors.appendChild(el);
     const life = cls === 'ko' || cls === 'kobad' ? 1.1 : .75; this.floats.push({ el, pos: pos.clone().add(V.set((Math.random() - .5) * .5, 0, (Math.random() - .5) * .5)), t: life, life });
   }
-  hurt(ang: number | null) { this.hurtA = Math.min(1, this.hurtA + .55); if (ang !== null) { this.dirA = 1; $('hurtDir').style.transform = `rotate(${(-ang).toFixed(2)}rad)`; } }
+  hurt(ang: number | null) { this.hurtA = Math.min(1, this.hurtA + .55); if (ang !== null) { this.dirA = 1; this.$('hurtDir').style.transform = `rotate(${(-ang).toFixed(2)}rad)`; } }
   hitmark(crit: boolean) { this.hitT = .14; this.cls('hitm', crit ? 'hitm crit' : 'hitm'); }
-  streak(text: string) { const e = $('streak'); e.textContent = text; e.hidden = false; e.style.animation = 'none'; void e.offsetWidth; e.style.animation = ''; clearTimeout(this.streakTimer); this.streakTimer = setTimeout(() => { e.hidden = true; }, 1300) as any; }
+  streak(text: string) { const e = this.$('streak'); e.textContent = text; e.hidden = false; e.style.animation = 'none'; void e.offsetWidth; e.style.animation = ''; clearTimeout(this.streakTimer); this.streakTimer = setTimeout(() => { e.hidden = true; }, 1300) as any; }
   private streakTimer = 0;
   ping(p: THREE.Vector3) { this.pingPos.copy(p); this.pingT = 3; }
-  titleCard(kind: string, name: string, quip: string) { const e = $('tcard'); if (!name) { e.hidden = true; return; } $('tcName').textContent = name; $('tcQuip').textContent = quip; const src = this.portraits[kind]; if (src) ($('tcImg') as HTMLImageElement).src = src; e.hidden = false; }
+  titleCard(kind: string, name: string, quip: string) { const e = this.$('tcard'); if (!name) { e.hidden = true; return; } this.$('tcName').textContent = name; this.$('tcQuip').textContent = quip; const src = this.portraits[kind]; if (src) (this.$('tcImg') as HTMLImageElement).src = src; e.hidden = false; }
   showEnd(g: Game) {
-    $('endTitle').textContent = g.won ? (g.mission ? 'Job done' : 'Paid in full') : 'Shift over'; $('endTitle').className = 'logo sm' + (g.won ? '' : ' bad');
-    $('endLine').textContent = g.won && g.mission ? g.mission.outro : g.won ? 'Every Choir Stone is gravel. The Charter thanks you with a smaller invoice.' : 'The Headframe is scrap. The Charter will be billing your next of kin.';
-    if (g.myTeam) { $('endTitle').textContent = g.won ? 'The last verse' : 'Out of tune'; $('endLine').textContent = g.won ? 'The Headframe is scrap and the valley is quiet again. The Chorus holds the note.' : 'Every Choir Stone is gravel. The singing has stopped, for now.'; }
+    this.$('endTitle').textContent = g.won ? (g.mission ? 'Job done' : 'Paid in full') : 'Shift over'; this.$('endTitle').className = 'logo sm' + (g.won ? '' : ' bad');
+    this.$('endLine').textContent = g.won && g.mission ? g.mission.outro : g.won ? 'Every Choir Stone is gravel. The Charter thanks you with a smaller invoice.' : 'The Headframe is scrap. The Charter will be billing your next of kin.';
+    if (g.myTeam) { this.$('endTitle').textContent = g.won ? 'The last verse' : 'Out of tune'; this.$('endLine').textContent = g.won ? 'The Headframe is scrap and the valley is quiet again. The Chorus holds the note.' : 'Every Choir Stone is gravel. The singing has stopped, for now.'; }
     const m = Math.floor(g.time / 60), s = Math.floor(g.time % 60);
-    $('endStats').innerHTML = [[`${m}:${String(s).padStart(2, '0')}`, 'Shift length'], [Math.floor(g.stats.mined), 'Ore dug'], [g.stats.built, 'Buildings up'], [g.stats.kills, 'Veyl dropped'], [g.stats.lost, 'Crew lost']].map(([a, b]) => `<div><b>${a}</b><span>${b}</span></div>`).join('');
-    $('end').hidden = false; this.show(false);
+    this.$('endStats').innerHTML = [[`${m}:${String(s).padStart(2, '0')}`, 'Shift length'], [Math.floor(g.stats.mined), 'Ore dug'], [g.stats.built, 'Buildings up'], [g.stats.kills, 'Veyl dropped'], [g.stats.lost, 'Crew lost']].map(([a, b]) => `<div><b>${a}</b><span>${b}</span></div>`).join('');
+    this.$('end').hidden = false; this.show(false);
   }
 
   private project(p: THREE.Vector3, cam: THREE.Camera) { V.copy(p).project(cam); if (V.z > 1 || V.z < -1 || Math.abs(V.x) > 1.15 || Math.abs(V.y) > 1.2) return false; V.x = (V.x * .5 + .5) * this.W; V.y = (-V.y * .5 + .5) * this.H; return true; }
@@ -80,7 +84,7 @@ export class Hud {
     if (g.myTeam) this.set('qm', `<span class="k" style="font-size:13px">G</span> Call the raid <b>${g.raidCall > 0 ? Math.ceil(g.raidCall) + 's' : 'Ready'}</b>`, true); else this.set('qm', `<span class="k" style="font-size:13px">G</span> Quartermaster <b>${D.auto ? 'Auto' : 'Off'}</b>`, true); this.cls('qm', 'qm c out' + (D.auto ? '' : ' off'));
     // who
     this.set('whoName', UNIT[me.kind].name); this.img('whoImg', me.kind); this.set('whoHp', String(Math.max(0, Math.ceil(me.hp))));
-    const hpw = Math.max(0, me.hp / me.maxHp * 100).toFixed(0); if (this.cache.get('hpw') !== hpw) { this.cache.set('hpw', hpw); const b = $('whoBar'); b.style.width = hpw + '%'; b.style.background = +hpw < 35 ? 'var(--red)' : 'var(--grn)'; }
+    const hpw = Math.max(0, me.hp / me.maxHp * 100).toFixed(0); if (this.cache.get('hpw') !== hpw) { this.cache.set('hpw', hpw); const b = this.$('whoBar'); b.style.width = hpw + '%'; b.style.background = +hpw < 35 ? 'var(--red)' : 'var(--grn)'; }
     // tools
     const rig = me.kind === 'rigger'; this.vis('slots', rig); this.vis('ammo', !rig);
     if (rig) this.set('slots', `<div class="${g.tool === 1 ? 'on' : ''}"><b>1</b><span>Drill</span></div><div class="${g.tool === 2 ? 'on' : ''}"><b>2</b><span>Build</span></div>`, true);
@@ -93,17 +97,17 @@ export class Hud {
     this.set('hint', `<span><span class="k">TAB</span> Jump${g.jumpCd > 0 ? ` <span class="cd">${g.jumpCd.toFixed(1)}s</span>` : ''}</span>` + (g.lastBody?.alive ? `<span><span class="k">Q</span> Last body</span>` : '') + (g.soldiers().some(u => u !== me) ? `<span><span class="k">V</span> ${D.following() ? 'Send squad home' : 'Squad on me'}</span><span><span class="k">MMB</span> Send</span>` : ''), true);
     // squad callout and countdown
     const co = D.callout; this.vis('callout', !!co && !tab);
-    if (co) { this.set('callKeys', co.keys.map(k => `<span><b>${k[0]}</b>${k[1]}</span>`).join(''), true); this.set('callWho', co.who); this.set('callText', co.text, true); this.img('callImg', 'linesman'); $('callTm').style.width = Math.max(0, co.t / co.dur * 100) + '%'; }
+    if (co) { this.set('callKeys', co.keys.map(k => `<span><b>${k[0]}</b>${k[1]}</span>`).join(''), true); this.set('callWho', co.who); this.set('callText', co.text, true); this.img('callImg', 'linesman'); this.$('callTm').style.width = Math.max(0, co.t / co.dur * 100) + '%'; }
     const cnt = D.plan?.phase === 'count'; this.vis('count', !!cnt); if (cnt) { this.set('countN', 'GO IN ' + Math.ceil(D.plan!.t)); this.set('countL', D.plan!.label); }
     const raid = D.raidIn < 15 && g.stones().length > 0 && !co && !cnt; this.vis('raid', raid); if (raid) this.set('raid', `Raid in ${Math.max(0, Math.ceil(D.raidIn))} · ${D.raidDir === 'north' ? capW(MAP.flankName) : capW(MAP.road)}`);
     const objs = D.objectives(), teach = g.mission ? true : !(objs[0].done && objs[1].done && objs[2].done) && g.time < 600; this.vis('objs', teach && !building); if (teach) this.set('objs', `<h6>${g.mission ? g.mission.tag + ' · ' + g.mission.name : 'First shift'}</h6>` + objs.map(o => `<div class="${o.done ? 'dn' : ''}">${o.text}</div>`).join(''), true);
     let boss: Unit | null = null; for (const u of g.units) if (u.alive && u.kind === 'warden' && u.team === 1 && !g.myTeam && u.pos.distanceTo(me.pos) < 70) { boss = u; break; }
-    this.vis('boss', !!boss && !co && !cnt && !raid); if (boss) { $('bossHp').style.width = (boss.hp / boss.maxHp * 100).toFixed(1) + '%'; $('bossSh').style.width = (boss.shield / boss.maxShield * 100).toFixed(1) + '%'; }
+    this.vis('boss', !!boss && !co && !cnt && !raid); if (boss) { this.$('bossHp').style.width = (boss.hp / boss.maxHp * 100).toFixed(1) + '%'; this.$('bossSh').style.width = (boss.shield / boss.maxShield * 100).toFixed(1) + '%'; }
     // jump cards
     if (tab) this.set('cards', g.tabList.length ? g.tabList.map((e, i) => `<div class="card${i === g.tabSel ? ' on' : ''}${e.alert ? ' alert' : ''}"><div class="frame"><img src="${this.portraits[e.unit.kind] || ''}" alt=""></div><div class="n d">${e.label}</div><div class="t">${e.task}</div><div class="bar"><i style="width:${(e.hp * 100).toFixed(0)}%;background:${e.hp < .35 ? 'var(--red)' : 'var(--grn)'}"></i></div><span class="k">${i + 1}</span></div>`).join('') : '<div class="none">Nobody else to jump into yet. Train someone first.</div>', true);
     // effects
-    this.dirA = Math.max(0, this.dirA - dt * 1.1); $('hurtDir').style.opacity = this.dirA.toFixed(2); this.hurtA = Math.max(0, this.hurtA - dt * 1.2); $('hurt').style.opacity = (this.hurtA + (me.hp / me.maxHp < .3 ? .25 + Math.sin(now * 6) * .1 : 0)).toFixed(2);
-    if (this.hitT > 0) { this.hitT -= dt; $('hitm').style.opacity = this.hitT > 0 ? '1' : '0'; }
+    this.dirA = Math.max(0, this.dirA - dt * 1.1); this.$('hurtDir').style.opacity = this.dirA.toFixed(2); this.hurtA = Math.max(0, this.hurtA - dt * 1.2); this.$('hurt').style.opacity = (this.hurtA + (me.hp / me.maxHp < .3 ? .25 + Math.sin(now * 6) * .1 : 0)).toFixed(2);
+    if (this.hitT > 0) { this.hitT -= dt; this.$('hitm').style.opacity = this.hitT > 0 ? '1' : '0'; }
 
     // world-anchored bars
     let bi = 0, li = 0;
@@ -144,7 +148,7 @@ export class Hud {
   }
 
   private crew(g: Game) {
-    const el = $('crew'); if (!g.net) { if (!el.hidden) el.hidden = true; return; }
+    const el = this.$('crew'); if (!g.net) { if (!el.hidden) el.hidden = true; return; }
     const html = Object.keys(g.names).map(k => { const id = +k, u = (g.units as Unit[]).find(x => x.alive && x.pilot === id), s = g.score[id] || [0, 0, 0]; return `<div class="${id === g.net!.id ? 'me' : ''}${g.teams[id] ? ' v' : ''}"><b>${g.names[id]}</b><span>${u ? UNIT[u.kind].name : 'Down'}</span><em>${s[0]} kills${g.teams[id] ? '' : ` · ${s[1]} ore`}</em></div>`; }).join('');
     if (this.cache.get('crew') !== html) { this.cache.set('crew', html); el.innerHTML = html; } el.hidden = false;
   }

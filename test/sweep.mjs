@@ -57,6 +57,16 @@ try {
   check(follow.followed >= 3, `V puts the squad on player two (${follow.followed} following)`);
   check(follow.moved >= 2, `after player two's body dies, the squad follows the new body (${follow.moved} of ${follow.n})`);
 
+  // 3b. A title card for a new kind of body does not freeze an online world.
+  const card = await p.evaluate(() => {
+    const h = __ore.split().host, c = __ore.game2(), b = h.spawn('breacher', 0, 6, 14); ff(1);
+    c.seenKinds.delete('breacher'); c.jumpCd = 0; c.possess(c.units.find(u => u.id === b.id)); const t0 = c.time, ph = c.phase;
+    // run the halves without the fast-forward helper, which skips title cards
+    for (let i = 0; i < 20; i++) { h.noRender = true; __ore.split().frame(1 / 30); __ore.game.update(1 / 30); c.update(1 / 30); }
+    return { ph, moved: c.time - t0 };
+  });
+  check(card.ph === 'card' && card.moved > .3, `the world keeps moving under a title card online (${card.moved.toFixed(2)}s passed)`);
+
   // 4. Doctored commands: the match caps ore, welding and the Patch pulse however many times they are claimed.
   const cheat = await p.evaluate(() => {
     const h = __ore.split().host, g = __ore.game, me = h.units.find(u => u.id === g.me.id); if (me.kind !== 'rigger') { const r = h.units.find(u => u.alive && u.kind === 'rigger' && !u.pilot); g.jumpCd = 0; g.possess(g.units.find(u => u.id === r.id)); ff(1); }
@@ -92,6 +102,16 @@ try {
   // 6. The pause screen has a way out of a running shift.
   const quit = await p.evaluate(() => { const q = document.getElementById('quit'); if (!q) return 'no button'; document.dispatchEvent(new KeyboardEvent('keydown', { code: 'Escape', bubbles: true })); q.click(); return { split: !!__ore.split(), menu: !document.getElementById('menu').hidden }; });
   check(quit.menu && !quit.split, 'Quit on the pause screen ends the split screen match and opens the menu');
+  // 8. Pausing during a title card does not leave the card stuck on screen.
+  const tc = await p.evaluate(() => { __ore.pickMap(0); __ore.start(); const g = __ore.game; g.introT = 0; const u = g.spawn('linesman', 0, 4, 4); g.jumpCd = 0; g.possess(u); const was = g.phase;
+    document.dispatchEvent(new KeyboardEvent('keydown', { code: 'Escape', bubbles: true })); document.getElementById('resume').click(); g.update(1 / 30);
+    const shown = !document.getElementById('tcard').hidden; __ore.quit(); return { was, shown }; });
+  check(tc.was === 'card' && !tc.shown, 'pausing during a title card clears the card');
+
+  // 7. Starting shift after shift does not pile up old worlds on the graphics card.
+  const geo = await p.evaluate(async () => { const n = []; for (let i = 0; i < 4; i++) { __ore.pickMap(i % 3); __ore.start(); __ore.game.update(1 / 30); n.push(__ore.pipe.renderer.info.memory.geometries); __ore.quit(); } return n; });
+  check(geo[3] < geo[0] + 40, `restarting shifts frees the old world (${geo.join(', ')} meshes on the card)`);
+
 } catch (e) { console.log('ERROR', e); fail.push('exception'); }
 await b.close();
 console.log(fail.length ? `\n${fail.length} FAILED` : '\nall sweep checks passed'); process.exit(fail.length ? 1 : 0);

@@ -4,7 +4,7 @@ import { Pipeline, ViewPipe, V3, makeSky } from './gfx';
 import * as MD from './models';
 import { Game } from './game';
 import { Hud } from './hud';
-import { initAudio, setVolume, setMusic, audioSeat } from './audio';
+import { initAudio, setVolume, setMusic, audioSeat, hush } from './audio';
 import { LocalMatch } from './split';
 import { UNIT, BLD, UPGRADES, TRAINS, UNIT_NEEDS, DIFFS, Kind, BKind } from './data';
 import { MISSIONS } from './campaign';
@@ -87,7 +87,7 @@ addEventListener('keydown', e => {
   if (split && game2 && !padTwo && logical(e.code) === e.code && P2KEYS[e.code]) { if (live()) { e.preventDefault(); const k = P2KEYS[e.code]; if (k === 'Tool') { if (!e.repeat) game2.pressed.add(game2.myTeam ? 'Digit' + ((game2.verse + 1) % 3 + 1) : game2.tool === 2 ? 'Digit1' : 'Digit2'); } else if (k === 'Wheel-' || k === 'Wheel+') { if (!e.repeat) game2.wheel = k === 'Wheel+' ? 1 : -1; } else if (k === 'Mouse0' || k === 'Mouse2') { if (!e.repeat) game2.pressed.add(k); if (k === 'Mouse0') game2.lmb = true; else game2.rmb = true; } else if (k.startsWith('Look')) look2.add(k); else { if (!e.repeat) game2.pressed.add(k); game2.keys.add(k); } p2Seen = true; } return; }
   if (game.net && !split && game.phase === 'play' && code === 'Enter') { e.preventDefault(); game.keys.clear(); chat.hidden = false; chat.focus(); return; }
   if (live()) { if (!e.ctrlKey && !e.metaKey && e.code !== 'Escape' && !/^F\d/.test(e.code)) e.preventDefault(); if (!e.repeat) game.pressed.add(code); game.keys.add(code); }
-  if (e.code === 'Escape' && freeMouse) { if (game.phase === 'play') pause(); else if (game.phase === 'paused') resume(); }
+  if (e.code === 'Escape' && freeMouse) { if (game.phase === 'play' || game.phase === 'card') pause(); else if (game.phase === 'paused') resume(); }
 });
 addEventListener('keyup', e => { const k = split && game2 && logical(e.code) === e.code ? P2KEYS[e.code] : ''; if (k && game2) { if (k === 'Mouse0') game2.lmb = false; else if (k === 'Mouse2') game2.rmb = false; else if (k.startsWith('Look')) look2.delete(k); else game2.keys.delete(k); if (!padTwo) return; } game.keys.delete(logical(e.code)); });
 addEventListener('blur', () => { game.keys.clear(); game.lmb = game.rmb = false; if (game2) { game2.keys.clear(); game2.lmb = game2.rmb = false; } look2.clear(); });
@@ -102,7 +102,7 @@ function lock() { try { const p: any = (canvas as any).requestPointerLock(); if 
 document.addEventListener('pointerlockerror', () => { freeMouse = true; });
 document.addEventListener('pointerlockchange', () => { if (!locked() && live() && !freeMouse) pause(); });
 
-function fresh() { endSplit(); hud.reset(); const w = want(); game = new Game(pipe, hud, w.d, w.map, w.m); game.sens = sens; ended = false; (window as any).__ore.game = game; }
+function fresh() { endSplit(); hush(); hud.reset(); const w = want(); game.dispose(); game = new Game(pipe, hud, w.d, w.map, w.m); game.sens = sens; ended = false; (window as any).__ore.game = game; }
 function start() { initAudio(); setVolume(vol); setMusic(mus); { const w = want(); if (game.diff !== w.d || game.mapI !== w.map || game.mission !== w.m || game.time > 0) fresh(); } $('menu').hidden = true; $('pause').hidden = true; $('end').hidden = true; hud.show(true); game.phase = 'play'; game.introT = 1.8; lock(); }
 /** The pause screen shows the whole tech tree: what is standing, what can be built next and what each building sells. */
 function showTree() {
@@ -114,7 +114,7 @@ function showTree() {
     return `<div class="node ${have ? 'have' : off || miss.length ? 'lock' : 'can'}"><h4>${BLD[k].name}</h4><p>${have ? 'Standing' : off ? 'Not on this job' : miss.length ? 'Needs ' + miss.map(n => BLD[n].name).join(' and ') : k === 'headframe' ? '' : 'Ready to build · ' + BLD[k].cost}</p>${units || ups ? `<ul>${units}${ups}</ul>` : `<ul><li class="${have ? 'ok' : ''}"><small>${BLD[k].blurb}</small></li></ul>`}</div>`;
   }).join('')}</div>`).join('');
 }
-function pause() { if (game.phase !== 'play' && game.phase !== 'card') return; showTree(); if (game2) { game2.phase = 'paused'; game2.keys.clear(); game2.lmb = game2.rmb = false; look2.clear(); } if (game.net) { game.phase = 'paused'; game.keys.clear(); game.lmb = game.rmb = false; $('pause').hidden = false; return; } game.phase = 'paused'; game.keys.clear(); game.lmb = game.rmb = false; $('pause').hidden = false; }
+function pause() { if (game.phase !== 'play' && game.phase !== 'card') return; hush(); showTree(); for (const g of [game, game2]) if (g && g.phase === 'card') g.hud.titleCard('', '', ''); if (game2) { game2.phase = 'paused'; game2.keys.clear(); game2.lmb = game2.rmb = false; look2.clear(); } if (game.net) { game.phase = 'paused'; game.keys.clear(); game.lmb = game.rmb = false; $('pause').hidden = false; return; } game.phase = 'paused'; game.keys.clear(); game.lmb = game.rmb = false; $('pause').hidden = false; }
 function resume(byPad = false) { if (game.phase !== 'paused') return; initAudio(); $('pause').hidden = true; game.phase = 'play'; if (game2) game2.phase = 'play'; if (!byPad) lock(); }
 $('start').addEventListener('click', start);
 $('resume').addEventListener('click', () => resume());
@@ -177,13 +177,13 @@ function p2Labels() {
 }
 function startSplit(versus = splitVs) {
   splitVs = versus === true; initAudio(); setVolume(vol); setMusic(mus); mode = 'skirm'; hud.reset(); hud2.reset();
-  const m = split = new LocalMatch(mapI, diffI, 2, splitVs), mk = (i: number) => { const g = new Game(i ? view2 : view1, i ? hud2 : hud, DIFFS[diffI], mapI, null, m.seats[i]); g.sens = i ? 1 : sens; g.names = m.names; g.teams = m.teams; g.myTeam = m.teams[i + 1] || 0; g.phase = 'play'; g.introT = 1.8; return g; };
-  game = mk(0); game2 = mk(1); view1.time = view2.time = pipe.time; ended = false; (window as any).__ore.game = game;
+  const prev = split, m = split = new LocalMatch(mapI, diffI, 2, splitVs), mk = (i: number) => { const g = new Game(i ? view2 : view1, i ? hud2 : hud, DIFFS[diffI], mapI, null, m.seats[i]); g.sens = i ? 1 : sens; g.names = m.names; g.teams = m.teams; g.myTeam = m.teams[i + 1] || 0; g.phase = 'play'; g.introT = 1.8; return g; };
+  const old = [game, game2, prev?.host]; game = mk(0); game2 = mk(1); for (const g of old) if (g && g !== game) g.dispose(); view1.time = view2.time = pipe.time; ended = false; (window as any).__ore.game = game;
   padTwo = pads().length > 0; p2Seen = false; p2Hint = 0; padHeld[0].clear(); padHeld[1].clear(); look2.clear(); p2Labels();
   $('game').classList.add('split'); $('game').classList.toggle('stack', !splitSide);
   $('menu').hidden = true; $('pause').hidden = true; $('end').hidden = true; hud.show(true); hud2.show(true); resize(); lock();
 }
-function endSplit() { if (!split && !game2) return; split = null; game2 = null; hud2.show(false); $('game').classList.remove('split', 'stack'); pipe.w = 0; resize(); }
+function endSplit() { if (!split && !game2) return; split?.host.dispose(); game2?.dispose(); split = null; game2 = null; hud2.show(false); $('game').classList.remove('split', 'stack'); pipe.w = 0; resize(); }
 $('startSplit').addEventListener('click', () => startSplit(false)); $('startSplitVs').addEventListener('click', () => startSplit(true));
 const splitBtns = Array.from($('splitDir').querySelectorAll('button')) as HTMLButtonElement[];
 const showSplit = () => splitBtns.forEach((b, i) => { const on = (i === 0) === splitSide; b.classList.toggle('on', on); b.setAttribute('aria-pressed', String(on)); });
@@ -231,7 +231,7 @@ async function mpConnect(then: (n: Net) => void) {
   n.onLobby = l => { showLobby(l); if (l.code) { mErr(''); lastCode = l.code; } }; n.onError = m => mErr(m);
   n.onClose = () => { net = null; if (game.net === n) { game.net = null; toMenu(); } showMode(); if (lastCode) { mCode.value = lastCode; mErr('Lost the connection. Press Join to get back into lobby ' + lastCode + '.'); } else mErr('Lost the connection to the server.'); };
   n.onBegin = m => {
-    endSplit(); mode = 'multi'; hud.reset(); game = new Game(pipe, hud, DIFFS[m.diff], m.map, null, n); game.sens = sens; game.names = m.names; game.myTeam = m.team || 0; game.teams = m.teams || {}; if (m.ph) { game.applying = true; for (const r of m.ph) { const q = game.props[r[0]]; if (q && q.alive && q.hp > r[1]) game.damageProp(q, q.hp - r[1], null); } game.applying = false; } ended = false; (window as any).__ore.game = game;
+    endSplit(); mode = 'multi'; hud.reset(); game.dispose(); game = new Game(pipe, hud, DIFFS[m.diff], m.map, null, n); game.sens = sens; game.names = m.names; game.myTeam = m.team || 0; game.teams = m.teams || {}; if (m.ph) { game.applying = true; for (const r of m.ph) { const q = game.props[r[0]]; if (q && q.alive && q.hp > r[1]) game.damageProp(q, q.hp - r[1], null); } game.applying = false; } ended = false; (window as any).__ore.game = game;
     initAudio(); setVolume(vol); setMusic(mus); $('menu').hidden = true; $('pause').hidden = true; $('end').hidden = true; hud.show(true); game.phase = 'play'; game.introT = 1.8; lock();
   };
   try { await n.connect(srv); net = n; mErr(''); then(n); } catch (e) { mErr(String((e as Error).message || e) + ' Check the server address.'); }

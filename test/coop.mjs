@@ -29,7 +29,8 @@ try {
   check(a.units === c.units && a.bld === c.bld, `same world on both screens (${a.units} units, ${a.bld} buildings)`);
   check(a.pilots.length === 2 && String(a.pilots) === String(c.pilots), 'both see who is driving what');
   // Ada walks, drills and stakes out a Bunkhouse. Bo jumps into another Rigger.
-  const ax = await A.evaluate(() => { const g = __ore.game; g.me.pos.x += 3; for (let i = 0; i < 24; i++) g.net.cmd('mn', 0, 3); g.net.cmd('pl', 'bunkhouse', -14, 10, 0); return g.me.pos.x; });
+  // She switches the Quartermaster off first, so the only new building is hers. The server only pays for drilling at a seam, a few ore at a time.
+  const ax = await A.evaluate(async () => { const g = __ore.game, n = g.ores[0], sleep = ms => new Promise(r => setTimeout(r, ms)); g.net.cmd('or', 'G'); g.me.pos.x = n.pos.x + 3; g.me.pos.z = n.pos.z; await sleep(1500); for (let i = 0; i < 26; i++) { g.net.cmd('mn', 0, 3); await sleep(250); } g.net.cmd('pl', 'bunkhouse', -14, 10, 0); return g.me.pos.x; });
   const bo = await B.evaluate(() => { const g = __ore.game; const u = g.units.find(u => u.team === 0 && !u.pilot && u.kind === 'rigger'); g.possess(u, true); return u.id; });
   const built = () => __ore.game.buildings.filter(b => b.alive).length === 11;
   check(await until(A, built) && await until(B, built), "Ada's Bunkhouse reached both players"); a = await state(A); c = await state(B);
@@ -37,7 +38,7 @@ try {
   check(await until(B, ([id, x]) => Math.abs(__ore.game.uById.get(id).pos.x - x) < .6, [a.me, ax]), 'Bo sees Ada where Ada is standing');
   check(await until(A, id => !!__ore.game.uById.get(id)?.pilot, bo) && (await state(B)).me === bo, 'Bo jumped bodies and Ada can see it');
   // Bo shoots a Choir Stone and a rock through the server; both worlds must agree afterwards.
-  const [sid, qid, was] = await B.evaluate(() => { const g = __ore.game, s = g.stones()[0], q = g.props.find(p => p.alive && p.name === 'Boulder'); g.net.cmd('dm', s.id, 500, 0); g.net.cmd('dp', q.id, 900); return [s.id, q.id, s.hp]; });
+  const [sid, qid, was] = await B.evaluate(() => { const g = __ore.game, s = g.stones()[0], q = g.props.filter(p => p.alive && p.name === 'Boulder').sort((a, b) => Math.hypot(a.x - g.me.pos.x, a.z - g.me.pos.z) - Math.hypot(b.x - g.me.pos.x, b.z - g.me.pos.z))[0]; g.net.cmd('dm', s.id, 500, 0); g.net.cmd('dp', q.id, 900); return [s.id, q.id, s.hp]; });
   const hurt = ([s, was]) => __ore.game.bById.get(s).hp < was, gone = q => !__ore.game.props[q].alive;
   check(await until(B, hurt, [sid, was]) && await until(A, hurt, [sid, was]), 'damage goes through the server and both see the Stone hurt');
   check(await until(B, gone, qid) && await until(A, gone, qid), 'a boulder Bo broke is broken for Ada too');

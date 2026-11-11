@@ -89,6 +89,8 @@ export class Game {
     if (!net) { this.me = this.units[0]; this.possess(this.me, true); } this.yaw = Math.atan2(ROAD.dx - .4, ROAD.dz - .4);
   }
 
+  /** Frees this world's own meshes on the graphics card once the game is thrown away. Shared shapes stay; three.js re-uploads anything used again. */
+  dispose() { const keep = new Set<THREE.BufferGeometry>(Object.values(G) as THREE.BufferGeometry[]); this.scene.traverse((o: any) => { if (o.geometry && !keep.has(o.geometry)) o.geometry.dispose(); }); for (const w of this.wrecks) w.b.obj.traverse((o: any) => { if (o.geometry) o.geometry.dispose(); }); }
   model(k: BKind): THREE.Group { return MD.atlasify(this.rawModel(k)); }
   rawModel(k: BKind): THREE.Group { return k === 'headframe' ? MD.headframe(this.anim) : k === 'bunkhouse' ? MD.bunkhouse() : k === 'depot' ? MD.depot() : k === 'watchpost' ? MD.watchpost() : k === 'machineshop' ? MD.machineshop(this.anim) : k === 'foundry' ? MD.foundry(this.anim) : k === 'assay' ? MD.assay(this.anim) : k === 'mast' ? MD.mast(this.anim) : k === 'reedgate' ? MD.reedgate(this.anim) : k === 'broodpit' ? MD.broodpit(this.anim) : k === 'thornspire' ? MD.thornspire(this.anim) : k === 'wardpylon' ? MD.wardpylon(this.anim) : MD.choir(this.anim); }
 
@@ -345,7 +347,7 @@ export class Game {
     if (this.phase === 'card') { this.cardT -= dtReal; if (this.cardT <= 0) { this.phase = 'play'; this.hud.titleCard('', '', ''); } }
     if (this.phase === 'play') {
       const tabNow = this.keys.has('Tab') && !!this.me?.alive && this.staticT <= 0;
-      if (tabNow && !this.tab) { this.tabSel = 0; this.refreshTab(); sfx.blip(); }
+      if (tabNow && !this.tab) { this.tabSel = 0; this.refreshTab(); sfx.blip(); drillSound(false, false); }
       if (!tabNow && this.tab) { const e = this.tabList[this.tabSel]; if (e && e.unit.alive) this.possess(e.unit); }
       this.tab = tabNow;
       if (this.tab) { for (let i = 0; i < this.tabList.length; i++) if (P.has('Digit' + (i + 1))) { this.tabSel = i; sfx.blip(); } if (this.wheel) { this.tabSel = (this.tabSel + (this.wheel > 0 ? 1 : this.tabList.length - 1)) % Math.max(1, this.tabList.length); sfx.blip(); } }
@@ -359,7 +361,7 @@ export class Game {
       if (this.mission && this.endT <= 0) { this.mission.tick?.(this, this.ms, dt); if (this.mission.objectives.every(o => o.done(this))) { this.endT = 2.4; this.endWon = true; this.pipe.flash = 1; } }
       this.updateUnits(dt); this.updateBuildings(dt); this.updateProjs(dt); this.updateChunks(dt); this.updateWrecks(dt); this.dir.update(dt);
       this.updateFx(dt); }
-    } else { if (this.net && this.phase === 'paused') { netTick(this, dtReal); this.poseUnits(dtReal); this.updateProjs(dtReal); this.updateChunks(dtReal); this.updateWrecks(dtReal); } this.updateFx(this.phase === 'menu' || (this.net && this.phase === 'paused') ? dtReal : 0); }
+    } else { const live = !!this.net && (this.phase === 'paused' || this.phase === 'card'); /* an online match does not stop for a pause screen or a title card */ if (live) { netTick(this, dtReal); this.poseUnits(dtReal); this.updateProjs(dtReal); this.updateChunks(dtReal); this.updateWrecks(dtReal); } this.updateFx(this.phase === 'menu' || live ? dtReal : 0); }
     const t = this.pipe.time; for (const f of this.anim) f(t);
     this.shake = Math.max(0, this.shake - dtReal * 2.5); this.pipe.flash = Math.max(0, this.pipe.flash - dtReal * 2.6);
     this.units = this.units.filter(u => u.alive); this.buildings = this.buildings.filter(b => b.alive);

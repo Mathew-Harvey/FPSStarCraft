@@ -134,7 +134,7 @@ In a match, press B to ping the spot you are looking at and Enter to type to the
 
 **How each side wins.** Ironhold is few, expensive and long-armed: it wins by out-digging the raids and pushing with a mixed squad (shield in front, rifles in the middle, a Longshot behind). The Veyl are many, free and close-in: they win by never letting the crew settle. Cantors tie up Breachers, Lancers wear down a Gantry, a Warden walks through shields and walkers, and Longshots or a mixed squad answer all three. `node tools/duel.cjs 4` prints the squad against squad table those lines come from.
 
-**Versus.** In the lobby, up to two players can press Play as the Veyl. They wake up inside Veyl bodies at the outpost: the Cantor fights with blades, the Lancer fires one long beam, and the Warden slams the ground. Each body has a second move on right click: the Cantor's Whirl hits everything in reach (and its cuts build a Crescendo while they keep landing), the Lancer's Held Note winds up and goes through a whole line, and the Warden's Low Note gives every Veyl in earshot its shield back. Veyl players jump between Veyl bodies the same way, pick the next raid's verse with 1, 2 and 3 (Blades, Lances or the Deep Voice, which brings a Warden from the fourth raid on), press G to call it early, and win by breaking the Headframe. The Chorus still breeds and marches on its own, so the Veyl players are its champions, not its whole army. `node test/versus.mjs` plays one of each side against the other.
+**Versus.** In the lobby, up to two players can press Play as the Veyl. They wake up inside Veyl bodies at the outpost: the Cantor fights with blades, the Lancer fires one long beam, and the Warden slams the ground. Each body has a second move on right click: the Cantor's Whirl hits everything in reach (and its cuts build a Crescendo while they keep landing), the Lancer's Held Note winds up and goes through a whole line, and the Warden's Low Note gives every Veyl in earshot its shield back. Veyl players jump between Veyl bodies the same way, pick the next raid's verse with 1, 2 and 3 (Blades, Lances or the Deep Voice, which brings a Warden from the fourth raid on), press G to call it early (from the two-minute mark, so the yard has a chance to hire its first rifles), and win by breaking the Headframe. The Chorus still breeds and marches on its own, so the Veyl players are its champions, not its whole army. `node test/versus.mjs` plays one of each side against the other.
 
 Multiplayer needs the game server, because the server runs the match and every player's browser is a window onto it. The server also serves the game page, so there is only one thing to host.
 
@@ -146,7 +146,7 @@ npm start          # http://localhost:8080
 
 To put it on the internet, deploy the `Dockerfile` to any host that supports WebSockets. `render.yaml` is a ready blueprint for Render. The server listens on `PORT` (default 8080) and answers `/healthz`. Players open the server's address and the lobby connects on its own.
 
-`npm test` starts a local server, joins two headless browsers to one lobby and checks that both see the same match (needs Playwright with Chromium).
+`npm test` starts a local server, joins two headless browsers to one lobby and checks that both see the same match (needs Playwright with Chromium). It also runs `test/server.mjs` (lobbies, sides, reconnecting and junk input, with plain WebSocket clients) and `test/sweep.mjs` (checks for the bugs fixed in the November bug sweep).
 
 How it works: the server runs the same game code as single player at 30 ticks a second and sends every client a snapshot 15 times a second, about 1 KB each. Each client moves and aims its own body, reports its hits, and the server decides health, ore, building, training and the enemy.
 
@@ -172,6 +172,7 @@ The tables live in `src/data.ts` (`BLD`, `TRAINS`, `UNIT_NEEDS`, `UPGRADES`). Th
 Two scripts play whole matches in a headless browser at many times real speed, with drawing switched off.
 
 - `node tools/soak.cjs '[[0,1],[1,1]]'` plays hands-off matches (pairs of map and difficulty) and reports errors, bodies that stop moving, and who won.
+- `node tools/monkey.cjs [seconds] [scenario]` mashes every control at random in single player on every map and shift, each campaign job, and split screen co-op and versus, and reports crashes and broken state (NaN positions, bodies off the map, health over the maximum, halves of a split screen that disagree).
 - `node tools/bot.cjs <mode> <difficulty> [map]` plays as a scripted first-person player with perfect aim. Modes: `linesman` (walk in alone and shoot), `rigger` (drill rush), `longshot`, `squad` (defend, say yes to pushes, go with them) and `afk`. It exists to find one-trick wins.
 
 The Veyl base answers an attack: guards walk out to whoever is shooting, however far away, and the Reed Gate sends help. It sends much more against one or two attackers than against a full push. Rifles and pistols do little to buildings, so cracking the base takes Breachers, grenades, the Gantry or numbers.

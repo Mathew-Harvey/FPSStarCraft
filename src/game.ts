@@ -48,7 +48,7 @@ export class Game {
   tab = false; tabSel = 0; tabList: { label: string; task: string; unit: Unit; hp: number; alert: boolean }[] = [];
   keys = new Set<string>(); pressed = new Set<string>(); mdx = 0; mdy = 0; lmb = false; rmb = false; wheel = 0;
   obj = { drilled: 0, jumped: false, answered: false, built: false };
-  stats = { kills: 0, lost: 0, mined: 0, built: 0 };
+  stats = { kills: 0, lost: 0, mined: 0, built: 0, lostTo: {} as Record<string, number> };
   // effects
   vm: Record<string, THREE.Group> = {};
   tracers: { m: THREE.Mesh; t: number }[] = []; puffs: { m: THREE.Mesh; t: number; life: number; v: THREE.Vector3; s: number }[] = [];
@@ -210,7 +210,7 @@ export class Game {
     const dealt = amt, shielded = (!!u && u.shield > 0) || warded;
     if (u) { u.pop = 1; if (u.shield > 0) { const a = Math.min(u.shield, amt); u.shield -= a; amt -= a; this.bubble(u); } }
     // A hit from a body somebody is driving lands with weight: the target is shoved back and loses a beat.
-    if (u && u.team === 1 && u.kind !== 'warden' && from && isUnit(from) && (from === me || from.pilot) && dealt >= 5) { const sx = u.pos.x - from.pos.x, sz = u.pos.z - from.pos.z, sd = Math.hypot(sx, sz) || 1, k = Math.min(10, dealt * .16); u.kx += sx / sd * k; u.kz += sz / sd * k; u.cd = Math.max(u.cd, Math.min(.5, dealt * .012)); }
+    if (u && u.kind !== 'warden' && u.kind !== 'gantry' && !u.pilot && from && isUnit(from) && from.team !== u.team && (from === me || from.pilot) && dealt >= 5) { const sx = u.pos.x - from.pos.x, sz = u.pos.z - from.pos.z, sd = Math.hypot(sx, sz) || 1, k = from.kind === 'rigger' ? 14 : Math.min(10, dealt * .16); u.kx += sx / sd * k; u.kz += sz / sd * k; u.cd = Math.max(u.cd, Math.min(.5, dealt * .012)); }
     t.hp -= amt;
     if (this.evq && u && u.pilot && from) this.evq.push(['ht', u.id, r1(from.pos.x), r1(from.pos.z)]);
     const head = V3(t.pos.x, u ? UNIT[u.kind].headY + .4 : (t as Building).h * .7, t.pos.z);
@@ -230,6 +230,8 @@ export class Game {
   bloom = 0;
   /** Damage a Breacher has soaked on the shield, 0 to 1. It comes back out with the next blast. */
   payback = 0; salvoCd = 0;
+  /** Veyl player: cooldown on the body's second move, the verse picked for the next raid, and the Cantor's rising combo. */
+  vCd = 0; verse = 0; combo = 0; comboT = 0;
   killUnit(u: Unit, from: Unit | Building | null) {
     if (this.evq) { this.evq.push(['ku', u.id, from ? from.id : 0]); const kp = from && (from as Unit).pilot; if (kp && u.team === 1 && this.score[kp]) this.score[kp][0]++; }
     if (u.kind === 'gantry' && u.alive && !this.net) { u.alive = false; this.explode(V3(u.pos.x, 0, u.pos.z), 0, 40, 6, null); u.alive = true; }
@@ -241,7 +243,7 @@ export class Game {
     this.corpses.push({ obj: u.obj, t: 0, veyl, ax: ax / al, az: az / al, s: u.obj.scale.x });
     if (veyl && from === this.me && this.me) { sfx.kill(); this.hitStop = u.kind === 'warden' ? .25 : this.me.kind === 'longshot' ? .12 : .06; this.streak = this.time < this.streakT ? this.streak + 1 : 1; this.streakT = this.time + 4; if (this.streak >= 2) { this.hud.streak(['', '', 'DOUBLE KO!', 'TRIPLE!', 'OVERTIME!', 'RAMPAGE!'][Math.min(5, this.streak)]); sfx.streak(this.streak); } }
     if (veyl) { this.stats.kills++; if (u.kind === 'warden') { this.shake = Math.max(this.shake, v); this.feed('Alpha', 'Warden down! Did everybody see that? I did that.', ''); } else if (from && isUnit(from) && from.team === 0 && from !== this.me && Math.random() < .12) this.dir.bark(from, 'kill'); }
-    else { this.stats.lost++; if (u !== this.me && isSoldier(u) && Math.random() < .35) this.dir.bark(u, 'down'); }
+    else { this.stats.lost++; { const kk = from ? from.kind : 'other'; this.stats.lostTo[kk] = (this.stats.lostTo[kk] || 0) + 1; } if (u !== this.me && isSoldier(u) && Math.random() < .35) this.dir.bark(u, 'down'); }
     if (u.site) u.site.builder = null;
     if (u === this.me) { this.staticT = 1.9; this.feed('Signal', 'Body lost. Finding you a new one.', 'al'); sfx.deny(); drillSound(false, false); }
   }
@@ -444,8 +446,13 @@ export class Game {
   /** First person as a Veyl body. Only in versus, where a player sings for the Chorus. */
   updateVeyl(dt: number, P: Set<string>, eye: THREE.Vector3, dir: THREE.Vector3) {
     const me = this.me!, vm = this.vm.veyl, flash = vm.userData.flash; flash.visible = false; this.raidCall = Math.max(0, this.raidCall - dt);
-    if (P.has('KeyG')) { if (this.raidCall <= 0) { this.raidCall = 90; this.net?.cmd('rd'); sfx.callout(); } else sfx.deny(); }
+    this.vCd = Math.max(0, this.vCd - dt); this.comboT -= dt; if (this.comboT <= 0) this.combo = 0;
+    // 1, 2 and 3 pick the verse the next raid is written in: all blades, mostly lances, or the deep voice.
+    for (let i = 0; i < 3; i++) if (P.has('Digit' + (i + 1)) && this.verse !== i) { this.verse = i; sfx.blip(); }
+    if (P.has('KeyG')) { if (this.raidCall <= 0) { this.raidCall = 90; this.net?.cmd('rd', this.verse); sfx.callout(); } else sfx.deny(); }
     if (me.kind === 'warden') {
+      // Right click: the Low Note. Every Veyl in earshot gets its shield back.
+      if (P.has('Mouse2')) { if (this.vCd <= 0) { this.vCd = 20; this.net?.cmd('vs'); sfx.charge(1); sfx.boom(.3); this.shake = Math.max(this.shake, .5); this.warn(me.pos.x, me.pos.z, 16, .5); this.hud.damage(V3(me.pos.x, 4.6, me.pos.z), 'LOW NOTE', 'shield'); } else sfx.deny(); }
       if (this.vWind > 0) {
         this.vWind -= dt; if (this.vWind > 0) return;
         this.fireCd = 2; this.recoil = 1; this.shake = Math.min(1, this.shake + .6); const c = V3(this.vX, 0, this.vZ);
@@ -454,12 +461,30 @@ export class Game {
       if (this.lmb && this.fireCd <= 0) { this.vWind = .7; this.vX = me.pos.x + Math.sin(this.yaw) * 3.4; this.vZ = me.pos.z + Math.cos(this.yaw) * 3.4; this.warn(this.vX, this.vZ, 4.6, .7); sfx.charge(1); }
       return;
     }
+    if (me.kind === 'cantor' && P.has('Mouse2')) {
+      // Right click: the Whirl. Everything in arm's reach, all the way round.
+      if (this.vCd > 0) sfx.deny(); else { this.vCd = 6; this.fireCd = .5; this.recoil = 1; me.swing = 1; sfx.slash(1); sfx.dash(.6); this.shake = Math.max(this.shake, .35); let n = 0;
+        for (const u of this.units) { if (!u.alive || u.team !== 0) continue; if (Math.hypot(u.pos.x - me.pos.x, u.pos.z - me.pos.z) > 3.8 + UNIT[u.kind].rad) continue; this.damage(u, 24, me); n++; }
+        if (n) { this.hud.hitmark(false); sfx.hit(); this.hud.damage(V3(me.pos.x, 2.6, me.pos.z), n > 1 ? 'WHIRL x' + n : 'WHIRL!', 'ko'); } return; }
+    }
+    if (me.kind === 'lancer') {
+      // Right click: the Held Note. A beat to wind up, then a beam that goes through the whole line.
+      if (this.vWind > 0) {
+        this.vWind -= dt; if (this.vWind > 0) return;
+        this.fireCd = 1.3; this.recoil = 1; this.kick += .04; this.shake = Math.max(this.shake, .5); flash.visible = true; sfx.zap(1); sfx.boom(.25); me.swing = 1;
+        const muzzle = V3(); flash.getWorldPosition(muzzle); muzzle.addScaledVector(dir, 1.6); let at = 0, skip: Unit | null = me, n = 0, fall = 1, wall = false;
+        for (let i = 0; i < 4; i++) { const h = this.ray(V3().copy(eye).addScaledVector(dir, at), dir, 80 - at, -1, skip); if (!h) { at = 80; break; } at += h.dist; if (h.unit && h.unit.team === 0) { this.damage(h.unit, 55 * fall, me, !!h.head); skip = h.unit; fall *= .8; n++; at += .4; continue; } if (h.b && h.b.team === 0) { this.damage(h.b, 40, me); n++; } wall = true; break; }
+        const end = V3().copy(eye).addScaledVector(dir, Math.min(80, at)); this.tracer(muzzle, end, beamMat, .16); if (wall) this.puff(end, 3, .6, M.teal, .8);
+        if (n) { this.hud.hitmark(n > 1); sfx.hit(); if (n > 1) this.hud.streak('ONE NOTE, ' + n + ' VOICES'); } return;
+      }
+      if (P.has('Mouse2')) { if (this.vCd <= 0) { this.vCd = 7; this.vWind = .8; sfx.charge(1); } else sfx.deny(); return; }
+    }
     if (!this.lmb || this.fireCd > 0) return;
     if (me.kind === 'cantor') {
-      this.fireCd = .6; this.recoil = 1; me.swing = 1; sfx.slash(1); let any = false;
-      for (const u of this.units) { if (!u.alive || u.team !== 0) continue; const dx = u.pos.x - me.pos.x, dz = u.pos.z - me.pos.z, d = Math.hypot(dx, dz); if (d > 3 + UNIT[u.kind].rad || (dx * dir.x + dz * dir.z) / (d || 1) < .45) continue; this.damage(u, 16, me); any = true; }
+      this.fireCd = .6; this.recoil = 1; me.swing = 1; sfx.slash(1); let any = false; const cut = 16 + this.combo * 4;
+      for (const u of this.units) { if (!u.alive || u.team !== 0) continue; const dx = u.pos.x - me.pos.x, dz = u.pos.z - me.pos.z, d = Math.hypot(dx, dz); if (d > 3 + UNIT[u.kind].rad || (dx * dir.x + dz * dir.z) / (d || 1) < .45) continue; this.damage(u, cut, me); any = true; }
       for (const b of this.buildings) { if (!b.alive || b.team !== 0 || this.distToBox(b, me.pos.x, me.pos.z) > 2.8) continue; const dx = b.pos.x - me.pos.x, dz = b.pos.z - me.pos.z; if (dx * dir.x + dz * dir.z < 0) continue; this.damage(b, 14, me); any = true; }
-      if (any) { this.hud.hitmark(false); sfx.hit(); this.shake = Math.max(this.shake, .2); }
+      if (any) { this.hud.hitmark(this.combo >= 3); sfx.hit(); this.shake = Math.max(this.shake, .2 + this.combo * .06); this.combo = Math.min(3, this.combo + 1); this.comboT = 2; }
       return;
     }
     // Lancer: one long, bright note
@@ -508,7 +533,7 @@ export class Game {
     else if (this.tool === 1 && P.has('Mouse2') && this.bashCd <= 0) {
       // Right click: the drill kicks like a jackhammer. Short reach, big shove, and it cracks scenery.
       this.bashCd = 1.1; this.bashT = .25; this.recoil = 1; this.shake = Math.max(this.shake, .4); sfx.clang(); sfx.dash(.6); let any = false;
-      for (const u of this.units) { if (!u.alive || u.team !== 1) continue; const dx = u.pos.x - me.pos.x, dz = u.pos.z - me.pos.z, d = Math.hypot(dx, dz); if (d > 3.2 + UNIT[u.kind].rad || (dx * dir.x + dz * dir.z) / (d || 1) < .45) continue; this.damage(u, 22, me); const k = u.kind === 'warden' ? 2 : 14; u.kx += dx / (d || 1) * k; u.kz += dz / (d || 1) * k; any = true; }
+      for (const u of this.units) { if (!u.alive || u.team !== 1) continue; const dx = u.pos.x - me.pos.x, dz = u.pos.z - me.pos.z, d = Math.hypot(dx, dz); if (d > 3.2 + UNIT[u.kind].rad || (dx * dir.x + dz * dir.z) / (d || 1) < .45) continue; this.damage(u, 22, me); any = true; }
       if (look?.prop && look.dist < 3.6) { this.damageProp(look.prop, 60, me, V3().copy(eye).addScaledVector(dir, look.dist)); any = true; } else if (look?.b && look.b.team === 1 && look.dist < 3.6) { this.damage(look.b, 40, me); any = true; }
       if (any) { this.hud.hitmark(false); sfx.hit(); this.hud.damage(V3().copy(eye).addScaledVector(dir, 2), 'CLONK!', 'ko'); }
     }
@@ -843,7 +868,7 @@ export class Game {
         const mul = this.gunMul(), a = V3(u.pos.x + Math.sin(u.yaw) * 1.1, 1.0, u.pos.z + Math.cos(u.yaw) * 1.1); u.swing = 1; u.flashT = .07;
         if (big) { u.cd = .8 + R(0, .15); a.y = 2.3; const b = V3(t.pos.x + R(-.8, .8), isB ? ty : .3, t.pos.z + R(-.8, .8)); this.tracer(a, b, tracerMat, .16); sfx.blast(this.vol(u.pos) * .6); this.damage(t, (isB ? 16 : 12) * mul, u); this.burst(b, 12 * mul, 3.2, u, t); if (this.time > u.dashCd && !isB && d < 6) { u.dashCd = this.time + (this.up.servo ? 7 : 12); this.stomp(u); } }
         else if (heavy) { u.cd = 1.05 + R(0, .2); let dm = 0; for (let i = 0; i < 5; i++) { const hit = isB || Math.random() < .7; if (hit) dm += isB ? 4 : 6; if (i % 2 === 0) this.tracer(a, V3(t.pos.x + R(-1, 1), ty + R(-.6, .6), t.pos.z + R(-1, 1))); } sfx.blast(this.vol(u.pos) * .5); this.damage(t, dm * mul, u); }
-        else if (long) { u.cd = 1.7 + R(0, .3); const hit = isB || Math.random() < .85, b = V3(t.pos.x, ty + .3, t.pos.z); if (!hit) b.add(TMP.set(R(-1.5, 1.5), R(0, 1.5), R(-1.5, 1.5))); this.tracer(a, b, tracerMat, .13); sfx.blast(this.vol(u.pos) * .5); if (hit) this.damage(t, (isB ? 18 : 52) * mul * (glass ? 1.15 : 1), u); }
+        else if (long) { u.cd = 1.7 + R(0, .3); const hit = isB || Math.random() < (d < 12 ? .4 : .85), b = V3(t.pos.x, ty + .3, t.pos.z); if (!hit) b.add(TMP.set(R(-1.5, 1.5), R(0, 1.5), R(-1.5, 1.5))); this.tracer(a, b, tracerMat, .13); sfx.blast(this.vol(u.pos) * .5); if (hit) this.damage(t, (isB ? 18 : 52) * mul * (glass ? 1.15 : 1), u); }
         else if (doc) { u.cd = .55 + R(0, .1); const hit = isB || Math.random() < .6, b = V3(t.pos.x, ty, t.pos.z); this.tracer(a, b); sfx.shot(this.vol(u.pos) * .35); if (hit) this.damage(t, 5 * mul, u); }
         else if (!isB && d > 9 && d < 24 && this.time > u.dashCd && this.units.filter(o => o.alive && o.team === 1 && Math.abs(o.pos.x - t.pos.x) < 4.5 && Math.abs(o.pos.z - t.pos.z) < 4.5).length >= 3) {
           // three or more bunched up: a Linesman lobs a grenade into the middle of them
@@ -871,7 +896,7 @@ export class Game {
     if (t && t.alive) {
       const isB = !isUnit(t), d = isB ? this.distToBox(t as Building, u.pos.x, u.pos.z) : t.pos.distanceTo(u.pos);
       if (!isB && d > 45) { u.target = null; return; }
-      if (d > (isB ? 1.3 : 1.7 + UNIT[(t as Unit).kind].rad * .5)) { if (d > 6 && d < 13 && u.dashCd <= 0) { u.dashT = .4; u.dashCd = 5; this.puff(TMP.copy(u.pos).setY(.5), 3, .7, M.teal, .4); sfx.dash(this.vol(u.pos)); } 
+      if (d > (isB ? 1.3 : 1.7 + UNIT[(t as Unit).kind].rad * .5)) { if (d > 6 && d < 13 && u.dashCd <= 0) { u.dashT = .4; u.dashCd = 3.5; this.puff(TMP.copy(u.pos).setY(.5), 3, .7, M.teal, .4); sfx.dash(this.vol(u.pos)); } 
         // closing on someone with a gun, a Cantor weaves instead of running down the barrel
         let wx = 0, wz = 0; if (!isB && d > 7 && u.dashT <= 0) { const k = Math.sin(this.time * 3.1 + u.id * 1.7) * Math.min(4.5, d * .3), nx = -(t.pos.z - u.pos.z) / d, nz = (t.pos.x - u.pos.x) / d; wx = nx * k; wz = nz * k; }
         this.moveTo(u, t.pos.x + wx, t.pos.z + wz, dt, .5, u.dashT > 0 ? 2.6 : 1); }
@@ -884,7 +909,7 @@ export class Game {
     if (u.wind <= 0 && this.aiFallBack(u, dt)) return;
     if (u.wind > 0) {
       u.wind -= dt; const t = u.target; if (t && t.alive) this.aimAt(u, t, 1.5);
-      if (u.wind <= 0) { u.cd = 2.3 + R(0, .5); if (t && t.alive) { const from = V3(u.pos.x + Math.sin(u.yaw) * 2, 1.5, u.pos.z + Math.cos(u.yaw) * 2), ty = isUnit(t) ? UNIT[t.kind].bodyY : Math.min(t.h * .5, 3), v = V3(t.pos.x - from.x, ty - from.y, t.pos.z - from.z).normalize().multiplyScalar(30); this.shoot(from, v, 1, 14 * this.diff.enemy, false, u); sfx.zap(this.vol(u.pos)); u.swing = 1; } }
+      if (u.wind <= 0) { u.cd = 2 + R(0, .4); if (t && t.alive) { const from = V3(u.pos.x + Math.sin(u.yaw) * 2, 1.5, u.pos.z + Math.cos(u.yaw) * 2), ty = isUnit(t) ? UNIT[t.kind].bodyY : Math.min(t.h * .5, 3), v = V3(t.pos.x - from.x, ty - from.y, t.pos.z - from.z).normalize().multiplyScalar(30); this.shoot(from, v, 1, 20 * this.diff.enemy, false, u); sfx.zap(this.vol(u.pos)); u.swing = 1; } }
       return;
     }
     if (u.think <= 0) { u.think = .35; const raid = u.order.type === 'raid'; u.target = this.acquire(u, 34, raid && !(u.order.path && u.order.path.length) ? 24 : 0); }

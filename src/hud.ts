@@ -63,8 +63,19 @@ export class Hud {
     this.$('endTitle').textContent = g.won ? (g.mission ? 'Job done' : 'Paid in full') : 'Shift over'; this.$('endTitle').className = 'logo sm' + (g.won ? '' : ' bad');
     this.$('endLine').textContent = g.won && g.mission ? g.mission.outro : g.won ? 'Every Choir Stone is gravel. The Charter thanks you with a smaller invoice.' : 'The Headframe is scrap. The Charter will be billing your next of kin.';
     if (g.myTeam) { this.$('endTitle').textContent = g.won ? 'The last verse' : 'Out of tune'; this.$('endLine').textContent = g.won ? 'The Headframe is scrap and the valley is quiet again. The Chorus holds the note.' : 'Every Choir Stone is gravel. The singing has stopped, for now.'; }
+    if (!g.won) {
+      // Say what did the damage and what answers it, so a loss teaches something.
+      const top = Object.entries(g.stats.lostTo).sort((a, b) => b[1] - a[1])[0], why: Record<string, string> = {
+        thornspire: 'Most of your crew fell to Thorn Spires. A Longshot out-ranges them: clear the Spires before the squad walks in.',
+        choir: 'Most of your crew fell beside the Choir Stones, which sting anything near them. Bring a Patch and break one Stone at a time.',
+        cantor: 'Most of your crew fell to Cantors. They have to reach you first: rifles and Watchposts cut them down on the way in.',
+        lancer: 'Most of your crew fell to Lancers. They trade evenly with rifles, so put a Breacher in front and a Longshot behind.',
+        warden: 'Most of your crew fell to a Warden. Rifles alone lose to it: bring Longshots and a mixed squad.' };
+      const tip = g.myTeam ? 'A mixed Ironhold squad beats any single verse. Call the raid while their squad is away from the yard, and change the verse when they adapt.' : top && why[top[0]];
+      if (tip) this.$('endLine').textContent += ' ' + tip;
+    }
     const m = Math.floor(g.time / 60), s = Math.floor(g.time % 60);
-    this.$('endStats').innerHTML = [[`${m}:${String(s).padStart(2, '0')}`, 'Shift length'], [Math.floor(g.stats.mined), 'Ore dug'], [g.stats.built, 'Buildings up'], [g.stats.kills, 'Veyl dropped'], [g.stats.lost, 'Crew lost']].map(([a, b]) => `<div><b>${a}</b><span>${b}</span></div>`).join('');
+    this.$('endStats').innerHTML = [[`${m}:${String(s).padStart(2, '0')}`, 'Shift length'], [Math.floor(g.stats.mined), 'Ore dug'], [g.stats.built, 'Buildings up'], [g.stats.kills, g.myTeam ? 'Voices lost' : 'Veyl dropped'], [g.stats.lost, g.myTeam ? 'Crew broken' : 'Crew lost']].map(([a, b]) => `<div><b>${a}</b><span>${b}</span></div>`).join('');
     this.$('end').hidden = false; this.show(false);
   }
 
@@ -81,14 +92,14 @@ export class Hud {
     const m = Math.floor(g.time / 60), s = Math.floor(g.time % 60); this.set('clock', `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`);
     const D = g.dir, pb = D.playbook, ph = pb.idx; this.set('play', `<b>${pb.name}</b>` + pb.steps.map((n, i) => `<span class="${i === ph ? 'on' : i < ph ? 'dn' : ''}">${n}</span>`).join(''), true);
     const st = g.stones().length, sq = g.soldiers().length; this.vis('resOre', !g.myTeam); this.vis('play', !g.myTeam); this.set('whoSub', g.myTeam ? 'You · Veyl Chorus' : 'You · Ironhold Charter'); this.vis('resSup', !g.myTeam); if (g.myTeam) this.set('goal', `Break the Headframe · <em>${st} Stone${st === 1 ? '' : 's'} still singing</em>`, true); else if (g.mission) { const next = g.mission.objectives.find(o => !o.done(g)); this.set('goal', (next ? next.text(g) : 'Job done') + (sq ? ` · Squad ${sq}` : ''), true); } else this.set('goal', `Smash the Choir Stones · <em>${st} left</em>` + (sq ? ` · Squad ${sq}` : ''), true);
-    if (g.myTeam) this.set('qm', `<span class="k" style="font-size:13px">G</span> Call the raid <b>${g.raidCall > 0 ? Math.ceil(g.raidCall) + 's' : 'Ready'}</b>`, true); else this.set('qm', `<span class="k" style="font-size:13px">G</span> Quartermaster <b>${D.auto ? 'Auto' : 'Off'}</b>`, true); this.cls('qm', 'qm c out' + (D.auto ? '' : ' off'));
+    if (g.myTeam) this.set('qm', `<span class="k" style="font-size:13px">G</span> Call the raid <b>${g.raidCall > 0 ? Math.ceil(g.raidCall) + 's' : 'Ready'}</b> · <span class="k" style="font-size:13px">1 2 3</span> <b>${['Blades', 'Lances', 'Deep Voice'][g.verse]}</b>`, true); else this.set('qm', `<span class="k" style="font-size:13px">G</span> Quartermaster <b>${D.auto ? 'Auto' : 'Off'}</b>`, true); this.cls('qm', 'qm c out' + (D.auto ? '' : ' off'));
     // who
     this.set('whoName', UNIT[me.kind].name); this.img('whoImg', me.kind); this.set('whoHp', String(Math.max(0, Math.ceil(me.hp))));
     const hpw = Math.max(0, me.hp / me.maxHp * 100).toFixed(0); if (this.cache.get('hpw') !== hpw) { this.cache.set('hpw', hpw); const b = this.$('whoBar'); b.style.width = hpw + '%'; b.style.background = +hpw < 35 ? 'var(--red)' : 'var(--grn)'; }
     // tools
     const rig = me.kind === 'rigger'; this.vis('slots', rig); this.vis('ammo', !rig);
     if (rig) this.set('slots', `<div class="${g.tool === 1 ? 'on' : ''}"><b>1</b><span>Drill${g.tool === 1 ? ' · RMB kick' : ''}</span></div><div class="${g.tool === 2 ? 'on' : ''}"><b>2</b><span>Build</span></div>`, true);
-    else if (me.team === 1) { this.set('ammoN', g.vWind > 0 ? '<small>Winding</small>' : g.fireCd > 0 ? '<small>...</small>' : '<small>Ready</small>', true); this.cls('ammoN', 'n d out'); this.set('ammoL', me.kind === 'cantor' ? 'Chorus Blades · <span class="k">Space</span> Dash' : me.kind === 'lancer' ? 'Long Note · aim for the head' : 'Low Note · ground slam', true); }
+    else if (me.team === 1) { this.set('ammoN', g.vWind > 0 ? '<small>Winding</small>' : g.fireCd > 0 ? '<small>...</small>' : '<small>Ready</small>', true); this.cls('ammoN', 'n d out'); this.set('ammoL', (me.kind === 'cantor' ? `Chorus Blades${g.combo ? ' · <b style="color:var(--yel)">Crescendo ' + g.combo + '</b>' : ''} · <span class="k">RMB</span> Whirl ` : me.kind === 'lancer' ? 'Long Note · <span class="k">RMB</span> Held Note ' : 'Ground slam · <span class="k">RMB</span> Low Note ') + (g.vCd > 0 ? Math.ceil(g.vCd) + 's' : 'ready'), true); }
     else { const w = g.weapon()!; this.set('ammoN', g.reloadT > 0 ? '<small>Reloading</small>' : `${g.ammo}<small> / ${w.mag}</small>`, true); this.cls('ammoN', 'n d out' + (g.ammo <= w.mag / 4 && g.reloadT <= 0 ? ' low' : '')); this.set('ammoL', me.kind === 'longshot' ? `Long Rifle · <span class="k">RMB</span> Scope` : me.kind === 'patch' ? `Rivet Pistol · shoot friends to mend · <span class="k">C</span> Patch-up ${g.nadeCd > 0 ? Math.ceil(g.nadeCd) + 's' : 'ready'}` : me.kind === 'gantry' ? `Autocannon · <span class="k">RMB</span> Salvo ${g.salvoCd > 0 ? Math.ceil(g.salvoCd) + 's' : 'ready'} · <span class="k">C</span> Stomp ${g.nadeCd > 0 ? Math.ceil(g.nadeCd) + 's' : 'ready'}` : me.kind === 'breacher' ? `Scattergun · <span class="k">RMB</span> Shield${g.brace ? ' up · click to bash' : ''}${g.payback > .3 ? ' · <b style="color:var(--yel)">Payback ' + Math.round(g.payback * 80) + '%</b>' : ''}` : `Rifle · <span class="k">C</span> Grenade ${g.nadeCd > 0 ? Math.ceil(g.nadeCd) + 's' : 'ready'}`, true); }
     this.cls('cross', 'cross' + (me.kind === 'breacher' || me.kind === 'gantry' ? ' ring' : (me.kind === 'linesman' || me.kind === 'patch') && g.ads > .6 ? ' dot' : me.kind === 'longshot' && g.ads > .6 ? ' scope' : ''));
     { const b = (1 + g.bloom * .9 + (me.moving ? .12 : 0)).toFixed(2); if (this.cache.get('bloom') !== b) { this.cache.set('bloom', b); this.$('cross').style.scale = b; } }

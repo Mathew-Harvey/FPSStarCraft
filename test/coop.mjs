@@ -57,7 +57,9 @@ try {
   // Bo comes back mid-match with the same code and gets a body and the same world
   const B2 = await open('Bo'); await B2.fill('#mCode', code); await B2.click('#mJoinBtn');
   await B2.waitForFunction(() => __ore.game.net && __ore.game.me && __ore.game.units.length > 6); await B2.evaluate(() => { __ore.game.noRender = true; }); c = await state(B2);
-  check(await until(A, id => __ore.game.units.filter(u => u.pilot).length === 2 && !!__ore.game.uById.get(id)?.pilot, c.me), 'Bo rejoins the running match with the code and gets a body'); await sleep(1500);
+  // Bo's body can be shot out from under him by a raid while this runs, so ask for whichever body he is in now.
+  let back = false; for (let i = 0; i < 40 && !back; i++) { const id = await B2.evaluate(() => { const g = __ore.game; return g.me && g.me.alive ? g.me.id : 0; }); back = !!id && await A.evaluate(id => __ore.game.units.filter(u => u.pilot).length === 2 && !!__ore.game.uById.get(id)?.pilot, id); if (!back) await sleep(400); }
+  check(back, 'Bo rejoins the running match with the code and gets a body'); await sleep(1500);
   a = await state(A); c = await state(B2);
   check(a.units === c.units && a.bld === c.bld && a.propsAlive === c.propsAlive, `the rejoined world matches (${c.units} units, ${c.bld} buildings, ${c.propsAlive} props standing)`);
   await b.close();

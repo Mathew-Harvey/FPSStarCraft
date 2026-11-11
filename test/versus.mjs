@@ -31,10 +31,11 @@ try {
   // every Veyl body works in first person, with the picture on
   const kinds = await V.evaluate(async () => {
     const g = __ore.game, out = [], sleep = ms => new Promise(r => setTimeout(r, ms)); g.noRender = false;
-    for (const k of ['cantor', 'lancer', 'warden']) { const u = g.units.find(u => u.alive && u.team === 1 && u.kind === k && (!u.pilot || u === g.me)); if (!u) continue; if (u !== g.me) { g.jumpCd = 0; g.possess(u); await sleep(600); if (g.phase === 'card') await sleep(1400); } g.lmb = true; await sleep(2600); g.lmb = false; out.push(k + (g.me === u ? '' : '?')); }
+    for (const k of ['cantor', 'lancer', 'warden']) { const u = g.units.find(u => u.alive && u.team === 1 && u.kind === k && (!u.pilot || u === g.me)); if (!u) continue; if (u !== g.me) { g.jumpCd = 0; g.possess(u); await sleep(600); if (g.phase === 'card') await sleep(1400); } g.lmb = true; await sleep(2600); g.lmb = false; await sleep(300); g.vCd = 0; for (let i = 0; i < 30 && g.vCd <= 0; i++) { if (g.phase === 'card') g.phase = 'play'; g.pressed.add('Mouse2'); await sleep(100); } out.push(k + (g.me === u ? '' : '?') + (g.vCd > 0 ? '+' : '!')); }
     g.keys.add('Tab'); await sleep(500); const tabs = g.tabList.length; g.keys.delete('Tab'); await sleep(300); g.noRender = true; return out.join(' ') + ' tab=' + tabs;
   });
   check(/cantor/.test(kinds) && !/\?/.test(kinds), 'Vex jumps between Veyl bodies and swings each one: ' + kinds);
+  check(!/!/.test(kinds), 'every Veyl body has its second move on right click');
   if (SHOTS) { await V.evaluate(() => { const g = __ore.game; g.noRender = false; g.pitch = 0; }); await sleep(2500); await V.screenshot({ path: `${SHOTS}/versus-vex.jpg`, type: 'jpeg', quality: 88 }); await V.evaluate(() => { __ore.game.noRender = true; }); }
   // each side hurts the other through the server
   v = await st(V);

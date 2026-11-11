@@ -39,6 +39,7 @@ export function serverCmd(g: Game, pid: number, unit: Unit | null, c: any[]) {
     const bk = BUDGET.get(unit) || { left: 900, t: g.time }; BUDGET.set(unit, bk); bk.left = Math.min(900, bk.left + (g.time - bk.t) * 450); bk.t = g.time;
     const amt = Math.min(450, num(2), bk.left); if (amt <= 0) return; bk.left -= amt; g.damage(t, amt, unit, !!c[3]);
   }
+  else if (k === 'vs') { if (unit && unit.kind === 'warden' && unit.team === 1 && g.time >= ((unit as any).noteT || 0)) { (unit as any).noteT = g.time + 19; for (const o of g.units) if (o.alive && o.team === 1 && Math.hypot(o.pos.x - unit.pos.x, o.pos.z - unit.pos.z) < 16) { o.shield = Math.min(o.maxShield, o.shield + 60); o.pop = .6; } } }
   else if (k === 'hl') { const o = g.units.find(x => x.id === num(1)); if (unit && unit.kind === 'patch' && o && o.alive && o.team === unit.team && Math.hypot(o.pos.x - unit.pos.x, o.pos.z - unit.pos.z) < 70) { const bk = BUDGET.get(unit) || { left: 900, t: g.time }; BUDGET.set(unit, bk); bk.left = Math.min(900, bk.left + (g.time - bk.t) * 450); bk.t = g.time; if (bk.left >= 80) { bk.left -= 80; o.hp = Math.min(o.maxHp, o.hp + 10); } } }
   else if (k === 'dp') { if (!unit) return; const p = g.props[num(1)]; if (p) g.damageProp(p, Math.min(900, num(2)), unit); }
   else if (k === 'tr') { if (c.length === 9) g.evq!.push(['tr', ...c.slice(1).map(Number), pid]); }
@@ -58,7 +59,7 @@ export function serverCmd(g: Game, pid: number, unit: Unit | null, c: any[]) {
   else if (k === 'wd') { const b = g.buildings.find(x => x.id === num(1)); if (b && b.alive && b.team === 0 && !b.built) b.progress += Math.min(.6, Math.max(0, num(2))) / BLD[b.kind].time * 1.6; }
   else if (k === 'fx') { const b = g.buildings.find(x => x.id === num(1)); if (b && b.alive && b.team === 0 && b.built) b.hp = Math.min(b.maxHp, b.hp + 40 * Math.min(.6, Math.max(0, num(2)))); }
   else if (k === 'xx') { g.evq!.push(['ex', num(1), 0, num(2), Math.min(8, Math.max(1, num(3))), 1, pid]); }
-  else if (k === 'rd') { if (g.teams[pid] !== 1) return; const now = g.time; if (now < (g as any).raidLock) return; (g as any).raidLock = now + 85; g.dir.raidIn = Math.min(g.dir.raidIn, 6); g.feed('Lookout', 'The singing just changed key. They are coming early.', 'al'); }
+  else if (k === 'rd') { if (g.teams[pid] !== 1) return; const now = g.time; if (now < (g as any).raidLock) return; (g as any).raidLock = now + 85; g.dir.raidIn = Math.min(g.dir.raidIn, 6); g.dir.verse = Math.max(0, Math.min(2, Math.floor(num(1)) || 0)); g.feed('Lookout', 'The singing just changed key. They are coming early.', 'al'); }
   else if (k === 'pg') { const x = Math.max(-400, Math.min(400, num(1))), z = Math.max(-400, Math.min(400, num(2))); g.evq!.push(['pg', pid, x, z]); }
   else if (k === 'ch') { const t = String(c[1] || '').replace(/[<>&]/g, '').trim().slice(0, 120); if (t) g.evq!.push(['fd', g.names[pid] || 'Crew', t, 'ch']); }
   else if (k === 'pt') { if (unit && unit.kind === 'patch') g.patchUp(unit); }

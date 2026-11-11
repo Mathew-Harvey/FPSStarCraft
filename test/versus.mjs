@@ -29,9 +29,10 @@ try {
   check(await until(A, () => { const d = __ore.game.dir; return d.raidIn <= 6 || d.raidLive; }), 'Vex calls the raid early'); const a2 = await st(A);
   check(Math.abs(a2.ore - a.ore) < 12 && a2.bld === a.bld, 'a Veyl player cannot mine or build for Ironhold');
   // every Veyl body works in first person, with the picture on
+  // A slow runner draws a frame in a few hundred milliseconds and the match clock only moves a tenth of a second a frame, so a wind-up can take seconds of wall time: keep pressing for up to fifteen.
   const kinds = await V.evaluate(async () => {
     const g = __ore.game, out = [], sleep = ms => new Promise(r => setTimeout(r, ms)); g.noRender = false;
-    for (const k of ['cantor', 'lancer', 'warden']) { const u = g.units.find(u => u.alive && u.team === 1 && u.kind === k && (!u.pilot || u === g.me)); if (!u) continue; if (u !== g.me) { g.jumpCd = 0; g.possess(u); await sleep(600); if (g.phase === 'card') await sleep(1400); } g.lmb = true; await sleep(2600); g.lmb = false; await sleep(300); g.vCd = 0; for (let i = 0; i < 30 && g.vCd <= 0; i++) { if (g.phase === 'card') g.phase = 'play'; g.pressed.add('Mouse2'); await sleep(100); } out.push(k + (g.me === u ? '' : '?') + (g.vCd > 0 ? '+' : '!')); }
+    for (const k of ['cantor', 'lancer', 'warden']) { const u = g.units.find(u => u.alive && u.team === 1 && u.kind === k && (!u.pilot || u === g.me)); if (!u) continue; if (u !== g.me) { g.jumpCd = 0; g.possess(u); await sleep(600); if (g.phase === 'card') await sleep(1400); } g.lmb = true; await sleep(2600); g.lmb = false; await sleep(300); g.vCd = 0; for (let i = 0; i < 150 && g.vCd <= 0; i++) { if (g.phase === 'card') g.phase = 'play'; g.pressed.add('Mouse2'); await sleep(100); } out.push(k + (g.me === u ? '' : '?') + (g.vCd > 0 ? '+' : '!')); }
     g.keys.add('Tab'); await sleep(500); const tabs = g.tabList.length; g.keys.delete('Tab'); await sleep(300); g.noRender = true; return out.join(' ') + ' tab=' + tabs;
   });
   check(/cantor/.test(kinds) && !/\?/.test(kinds), 'Vex jumps between Veyl bodies and swings each one: ' + kinds);

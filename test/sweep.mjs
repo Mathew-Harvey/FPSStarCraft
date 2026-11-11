@@ -26,6 +26,31 @@ try {
   });
   check(qm.depotAt && qm.bunk > 0, 'the Quartermaster finds another spot when the player built on his Bunkhouse spot');
 
+  // 1b. Hand drilling fills the Rigger's pack, which only counts once it is walked to the Headframe.
+  const pack = await p.evaluate(() => {
+    __ore.pickMap(0); __ore.start(); const g = __ore.game; g.noRender = true; g.introT = 0; g.dir.auto = false; const me = g.me, n = g.ores[0]; for (const u of g.own('rigger')) if (u !== me) u.alive = false; g.update(1 / 30); const ore0 = g.ore;
+    me.pos.set(n.pos.x - 3, 0, n.pos.z); const drill = secs => { for (let i = 0; i < secs * 30; i++) { if (g.phase === 'card') g.phase = 'play'; g.tool = 1; g.yaw = Math.atan2(n.pos.x - me.pos.x, n.pos.z - me.pos.z); g.pitch = Math.atan2(-.5, Math.hypot(n.pos.x - me.pos.x, n.pos.z - me.pos.z)); g.lmb = true; g.update(1 / 30); } };
+    drill(12); const held = me.carrying, bank0 = g.ore - ore0;
+    me.pos.set(0, 0, 7); g.lmb = false; for (let i = 0; i < 10; i++) g.update(1 / 30);
+    return { held, cap: g.packCap(), bank0, banked: g.ore - ore0, after: me.carrying };
+  });
+  check(pack.held === pack.cap && pack.bank0 === 0, `twelve seconds on the drill fills the pack and stops (${pack.held} of ${pack.cap}), with nothing banked yet`);
+  check(pack.banked === pack.cap && pack.after === 0, `walking the pack to the Headframe banks it (${pack.banked} ore)`);
+
+  // 1c. A drilled-out seam settles and comes back, so a long shift does not run dry for good.
+  const seam = await p.evaluate(() => { const g = __ore.game, n = g.ores[1]; n.amount = 0; g.oreCheck(n); ff(160); return { back: n.amount, max: n.max }; });
+  check(seam.back > 0 && seam.back < seam.max, `an empty seam comes back after a while (${seam.back} of ${seam.max})`);
+
+  // 1d. A push that dies on their doorstep makes the next muster bigger.
+  const muster = await p.evaluate(() => {
+    const g = __ore.game, d = g.dir; for (const u of g.soldiers()) u.alive = false; d.plan = null; d.callout = null; d.raidIn = 999; d.raidLive = false; d.warned = false;
+    for (let i = 0; i < 7; i++) { const u = g.spawn('linesman', 0, 6 + i, 14); u.order = { type: 'guard', x: u.pos.x, z: u.pos.z }; }
+    d.fails = 0; d.nextPlan = 0; d.squad(.1); const first = !!d.plan; d.plan = null; d.callout = null;
+    d.fails = 1; d.nextPlan = 0; d.squad(.1); const after = !!d.plan; d.plan = null; d.callout = null;
+    for (let i = 0; i < 1; i++) { const u = g.spawn('linesman', 0, 6 + i, 17); u.order = { type: 'guard', x: u.pos.x, z: u.pos.z }; } d.nextPlan = 0; d.squad(.1); const bigger = !!d.plan; __ore.quit(); return { first, after, bigger };
+  });
+  check(muster.first && !muster.after && muster.bigger, 'after a failed push the squad waits for two more before it pitches again');
+
   // 2. Split screen co-op: a site placed next to a player's Rigger still gets built by the crew.
   await p.evaluate(() => { document.querySelectorAll('#diff button')[0].click(); __ore.startSplit(false); }); await p.waitForFunction(() => __ore.game.me && __ore.game2() && __ore.game2().me);
   const site = await p.evaluate(() => {
@@ -71,14 +96,14 @@ try {
   const cheat = await p.evaluate(() => {
     const h = __ore.split().host, g = __ore.game, me = h.units.find(u => u.id === g.me.id); if (me.kind !== 'rigger') { const r = h.units.find(u => u.alive && u.kind === 'rigger' && !u.pilot); g.jumpCd = 0; g.possess(g.units.find(u => u.id === r.id)); ff(1); }
     const body = h.units.find(u => u.alive && u.pilot === 1), n = h.ores.reduce((a, o, i) => (o.amount > 0 && (a < 0 || o.pos.distanceTo(body.pos) < h.ores[a].pos.distanceTo(body.pos)) ? i : a), -1), node = h.ores[n];
-    body.pos.x = node.pos.x + 3; body.pos.z = node.pos.z; const quiet = () => h.units.forEach(u => { if (u.kind === 'rigger' && !u.pilot) u.carrying = 0; }); quiet(); const ore0 = h.ore; for (let i = 0; i < 60; i++) g.net.cmd('mn', n, 3); g.net.flush(null); ff(.05);
-    const mined = h.ore - ore0;
+    body.pos.x = node.pos.x + 3; body.pos.z = node.pos.z; body.carrying = 0; for (let i = 0; i < 60; i++) g.net.cmd('mn', n, 3); g.net.flush(null); ff(.05);
+    const mined = body.carrying; body.carrying = 0;
     const x = Math.round(body.pos.x) + 8, z = Math.round(body.pos.z) + 8; h.ore += 300; const b = h.addBuilding('depot', 0, x, z, false); body.pos.x = x - 5; body.pos.z = z;
     for (let i = 0; i < 60; i++) g.net.cmd('wd', b.id, .6); g.net.flush(null); h.units.forEach(u => { if (u.kind === 'rigger') u.site = null; }); b.builder = body; ff(.05);
-    return { mined, progress: b.progress, far: (() => { quiet(); const o0 = h.ore, far = h.ores.findIndex(o => o.amount > 0 && o.pos.distanceTo(body.pos) > 30); for (let i = 0; i < 5; i++) g.net.cmd('mn', far, 3); g.net.flush(null); ff(.05); return h.ore - o0; })() };
+    return { mined, progress: b.progress, far: (() => { body.carrying = 0; const far = h.ores.findIndex(o => o.amount > 0 && o.pos.distanceTo(body.pos) > 30); for (let i = 0; i < 5; i++) g.net.cmd('mn', far, 3); g.net.flush(null); ff(.05); return body.carrying; })() };
   });
-  check(cheat.mined <= 13, `sixty drill claims in one go bank at most a few seconds of drilling (${cheat.mined} ore)`);
-  check(cheat.far === 0, 'drilling a seam from across the map banks nothing');
+  check(cheat.mined <= 13, `sixty drill claims in one go put at most a few seconds of drilling in the pack (${cheat.mined} ore)`);
+  check(cheat.far === 0, 'drilling a seam from across the map gets nothing');
   check(cheat.progress < .3, `sixty weld claims do not finish a Depot (${Math.round(cheat.progress * 100)}%)`);
 
   // 5. Split screen versus: the Veyl player's kills count, and the Veyl HUD has no squad orders or broken objectives.

@@ -20,7 +20,7 @@ One skirmish as the Ironhold Charter against a Veyl outpost. Smash the three Cho
 
 **Your side, the Ironhold Charter**
 
-- **Rigger**: drill ore by hand, place buildings, weld them up faster, patch damage. Right-click with the drill out is a jackhammer kick that throws a raider back and cracks scenery.
+- **Rigger**: drill ore by hand into a 15-ore pack (21 with Deep Buckets) and walk it to the Headframe to bank it, place buildings, weld them up faster, patch damage. A drilled-out seam settles and comes back at a third of its ore after a couple of minutes. Right-click with the drill out is a jackhammer kick that throws a raider back and cracks scenery.
 - **Linesman**: rifle with a 24-round magazine, aim-down-sights, headshot crits and a grenade on a cooldown. Every gun opens its crosshair under sustained fire, so short bursts hit harder at range, and every hit you land shoves the target and costs it a beat.
 - **Breacher**: scattergun and a riot shield. Hold right-click to brace behind the shield, click while braced to bash. Damage soaked on the shield charges Payback, which comes out with the next blast for up to 80% more.
 - **Gantry**: a two-legged walker from the Foundry with a cannon on each side. Click fires explosive shells, Right-click lobs a two-shell salvo that bursts where it lands, `C` stomps and throws everything nearby off its feet.
@@ -43,7 +43,7 @@ One skirmish as the Ironhold Charter against a Veyl outpost. Smash the three Cho
 
 - **Jump**: hold `Tab` for the slowed-down overview and pick a body, press `F` on a unit you are looking at, or `Q` to go back to your last body. If your body dies you drop into the nearest one.
 - **Quartermaster**: an AI that runs the economy for you (build order, supply, upgrades, training). `G` turns it off if you want to do it yourself.
-- **Squad plans**: Alpha squad pitches a plan when it has the numbers: Yard Push down the road, Back Door round the north ridge, or Last Shift when one Stone is left. `Z` agrees, `C` picks the other route, `X` holds, `V` makes them follow you, middle click sends them somewhere.
+- **Squad plans**: Alpha squad pitches a plan when it has the numbers: Yard Push down the road, Back Door round the north ridge, or Last Shift when one Stone is left. `Z` agrees, `C` picks the other route, `X` holds, `V` makes them follow you, middle click sends them somewhere. A push that breaks nothing makes the squad wait for two more bodies before it pitches the next one, up to six more, so the army builds up instead of trickling into the outpost.
 - **Raids**: the Veyl hit your base in growing waves from the east road or the north ridge, with a fifteen second warning.
 - Three difficulty levels, an adaptive synthesised soundtrack, and mouse and volume settings on the pause screen.
 

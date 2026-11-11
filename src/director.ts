@@ -15,7 +15,7 @@ function postSlots(): number[][] {
   return [r(roadPt(31, 6)), [Math.round(e[0] / el * 30), Math.round(e[1] / el * 30)], r(roadPt(33, -9)), r(roadPt(-8, 12))];
 }
 const HINTS: [number, string, string][] = [
-  [1.5, 'Quartermaster', 'Welcome to Dustbowl 7. Hold click on the green ore to drill. I\'ll handle the paperwork.'],
+  [1.5, 'Quartermaster', 'Welcome to Dustbowl 7. Hold click on the green ore to drill, then walk the pack back to the Headframe. I\'ll handle the paperwork.'],
   [16, 'Quartermaster', 'Press 2 if you want to place buildings yourself. Press G to make me stop.'],
   [70, 'Lookout', 'Veyl outpost is at the end of the road. Three Choir Stones. They will come for us first.'],
   [125, 'Quartermaster', 'There\'s a fat ore seam marked green on your map. Worth the walk.'],
@@ -39,7 +39,7 @@ interface Wave { units: Unit[]; sx: number; sz: number; t: number; go: boolean; 
 export class Director {
   auto = true; qmT = 0; hintI = 0; chatT = 55; barkT = 0;
   plan: { phase: 'ask' | 'count' | 'go'; t: number; target: Building | null; book: number; label: string } | null = null;
-  nextPlan = 60; callout: Callout | null = null; pushes = 0; lastFailed = false;
+  nextPlan = 60; callout: Callout | null = null; pushes = 0; lastFailed = false; /** Pushes in a row that broke nothing. */ fails = 0;
   playbook = { name: 'Yard Push', steps: BOOKS[0].steps, idx: 0 };
   raidIn: number; raidDir: 'east' | 'north' = 'east'; raidN = 0; /** The verse a Veyl player picked for the next raid: 0 all blades, 1 mostly lances, 2 the deep voice. -1 leaves it to the Conductor. */ verse = -1; /** When the Veyl last answered a failed push with a raid of their own. Rationed, so a bad start does not snowball. */ lastCounter = -999; raidLive = false; warned = false; raidAge = 0; raidSeen = false; reinT = 50;
   flags: Record<string, boolean> = {};
@@ -84,6 +84,7 @@ export class Director {
   }
   buildingLost(b: Building) {
     const g = this.g;
+    if (b.team === 1) this.fails = 0;
     if (b.kind === 'reedgate') { this.say('Lookout', 'Reed Gate is down! Their reinforcements just got a lot slower.', 'in'); sfx.callout(); return; }
     if (b.kind === 'broodpit') { const n = g.pits().length; this.say('Lookout', n ? 'Brood Pit caved in! Their raids just got thinner.' : 'Both Brood Pits are gone. Whatever raids are left will be scraps.', 'in'); sfx.callout(); return; }
     if (b.kind === 'thornspire') { this.say('Alpha', 'Thorn Spire down. That one owed me a helmet.', ''); return; }
@@ -148,6 +149,8 @@ export class Director {
     // A crew with no Riggers and no money is not out of the game: the Charter fronts enough for one more.
     if (this.g.ore < 50 && !this.g.own('rigger').length && this.g.ownB('headframe').length) this.g.ore = Math.min(50, this.g.ore + dt * 2.5);
     const g = this.g, now = g.time;
+    // A drilled-out seam settles and the ore creeps back, a third of it, so a long shift never runs the yard dry for good.
+    for (const n of g.ores) { if (n.amount > 0) { n.dryT = 0; continue; } n.dryT = (n.dryT || 0) + dt; if (n.dryT > 150) { n.amount = Math.round(n.max * .35); n.dryT = 0; g.oreCheck(n); if (!g.mission) this.say('Quartermaster', 'An old seam has settled and the green is showing again. Worth another dig.', ''); } }
     if (!g.mission) while (this.hintI < HINTS.length && now >= HINTS[this.hintI][0]) { const h = HINTS[this.hintI++]; this.say(h[1], h[2], 'in'); }
     if (this.callout) this.callout.t -= dt;
     this.quartermaster(dt); this.enemy(dt); this.squad(dt);
@@ -281,7 +284,8 @@ export class Director {
   squad(dt: number) {
     const g = this.g, now = g.time, all = g.soldiers(), idle = all.filter(u => u.order.type === 'guard' && u !== g.me && !u.pilot), stones = g.stones();
     if (!this.plan && now > this.nextPlan && (stones.length || (g.mission && this.targetFor(0))) && !this.raidLive && !this.warned) {
-      const last = stones.length === 1, need = last ? 5 : 6;
+      // Every push that dies on their doorstep makes the next muster bigger, so the yard stops feeding the Chorus six at a time.
+      const last = stones.length === 1, need = (last ? 5 : 6) + 2 * Math.min(this.fails, 3);
       if (idle.length >= need) {
         const book = last ? 2 : this.lastFailed || this.pushes % 2 === 1 ? 1 : 0; this.plan = { phase: 'ask', t: 10, target: null, book, label: BOOKS[book].label };
         const text = book === 2 ? `One Stone left and ${idle.length} of us itching. <b>Everybody goes, both roads. Yes?</b>` : book === 1 ? `Front door ${this.lastFailed ? 'went badly' : 'is getting old'}. ${idle.length} of us go round by the <b>${MAP.flankName}</b> and hit them from behind. <b>You in?</b>` : `${idle.length} of us are standing around. We hit their east yard in twenty. <b>You in, or what?</b>`;
@@ -289,7 +293,8 @@ export class Director {
       }
     }
     const p = this.plan; if (!p) return; p.t -= dt;
-    if (p.phase === 'ask') { if (p.t <= 0) this.accept(false); }
+    // On Day shift a pitch nobody answers goes ahead. From Night shift up the squad waits for the word, so the army is the player's to spend.
+    if (p.phase === 'ask') { if (p.t <= 0) { if (g.diff.enemy < 1) this.accept(false); else { this.plan = null; this.callout = null; this.nextPlan = now + 45; this.say('Alpha', 'No word from you. We hold the yard until you say go.', ''); } } }
     else if (p.phase === 'count') {
       if (p.t <= 0) {
         p.phase = 'go'; p.target = this.targetFor(p.book); this.pushes++;
@@ -298,7 +303,7 @@ export class Director {
       }
     } else {
       const pushing = all.filter(u => u.order.type === 'amove');
-      if (!pushing.length || (pushing.length < 2 && all.length < 3)) { this.plan = null; this.nextPlan = now + 40; this.lastFailed = true; this.regroup(); this.say('Alpha', 'Push is spent. Pulling back to regroup.', 'al'); if (g.diff.enemy >= 1 && stones.length && !(g.mission && !g.mission.raids) && g.time > 300 && now - this.lastCounter > 150) { this.lastCounter = now; this.raidIn = Math.min(this.raidIn, 22); } }
+      if (!pushing.length || (pushing.length < 2 && all.length < 3)) { this.plan = null; this.nextPlan = now + 40; this.lastFailed = true; this.fails++; this.regroup(); this.say('Alpha', 'Push is spent. Pulling back to regroup.', 'al'); if (g.diff.enemy >= 1 && stones.length && !(g.mission && !g.mission.raids) && g.time > 300 && now - this.lastCounter > 150) { this.lastCounter = now; this.raidIn = Math.min(this.raidIn, 22); } }
     }
   }
 

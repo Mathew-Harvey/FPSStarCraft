@@ -35,10 +35,10 @@ function leave(p: Player) {
   tell(l);
 }
 /** Hands a body back to the AI. */
-function release(g: Game, p: Player) { const u = p.unit; p.unit = null; if (!u || !u.alive) return; u.pilot = 0; u.brace = false; u.moving = false; u.think = 0; if (u.team) { const st = g.stones()[0]; u.order = st && Math.hypot(u.pos.x - st.pos.x, u.pos.z - st.pos.z) > 60 ? { type: 'raid', x: 0, z: 0 } : { type: 'guard', x: u.pos.x, z: u.pos.z }; } else if (isSoldier(u)) g.dir.enlist(u); else { u.state = 'idle'; u.site = null; } }
+function release(g: Game, p: Player) { const u = p.unit; p.unit = null; if (!u || !u.alive) return; u.pilot = 0; u.brace = false; u.moving = false; u.think = 0; if (u.team) { const st = g.stones()[0]; u.order = st && Math.hypot(u.pos.x - st.pos.x, u.pos.z - st.pos.z) > 60 ? { type: 'raid', x: 0, z: 0 } : { type: 'guard', x: u.pos.x, z: u.pos.z }; } else if (isSoldier(u)) g.dir.enlist(u); else { u.state = u.carrying > 0 ? 'toHQ' : 'idle'; u.site = null; } }
 /** A Veyl body for a player on the Chorus side: one already standing, or a new Cantor from a Brood Pit. */
 function veylBody(g: Game): Unit | null { const free = g.units.filter(u => u.alive && u.team === 1 && !u.pilot && u.kind !== 'warden'); if (free.length) return free[Math.floor(Math.random() * free.length)]; const home = g.buildings.find(b => b.alive && b.kind === 'broodpit') || g.stones()[0]; return home ? g.spawn('cantor', 1, home.pos.x + 4, home.pos.z + 4) : null; }
-function pilot(g: Game, p: Player, u: Unit) { if (p.unit && p.unit !== u) release(g, p); u.pilot = p.id; p.unit = u; u.target = null; u.wind = 0; if (u.site) { u.site.builder = null; u.site = null; } u.state = 'idle'; u.carrying = 0; u.order = { type: 'guard', x: u.pos.x, z: u.pos.z }; }
+function pilot(g: Game, p: Player, u: Unit) { if (p.unit && p.unit !== u) release(g, p); u.pilot = p.id; p.unit = u; u.target = null; u.wind = 0; if (u.site) { u.site.builder = null; u.site = null; } u.state = 'idle'; if (u.carrying > 0) g.bank(u); u.order = { type: 'guard', x: u.pos.x, z: u.pos.z }; }
 
 function begin(l: Lobby) {
   setMap(l.map); const g = new Game(noPipe(), noHud, DIFFS[l.diff], l.map); g.noRender = true; g.evq = []; g.coop = l.players.length; g.me = null; g.phase = 'play';

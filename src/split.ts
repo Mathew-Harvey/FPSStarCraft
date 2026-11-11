@@ -36,8 +36,8 @@ export class LocalMatch {
   /** Hands a body back to the AI. */
   /** A Veyl body for the player on the Chorus side: one already standing, or a new Cantor from a Brood Pit. */
   private veylBody(): Unit | null { const g = this.host, free = g.units.filter(u => u.alive && u.team === 1 && !u.pilot && u.kind !== 'warden'); if (free.length) return free[Math.floor(Math.random() * free.length)]; const home = g.buildings.find(b => b.alive && b.kind === 'broodpit') || g.stones()[0]; return home ? g.spawn('cantor', 1, home.pos.x + 4, home.pos.z + 4) : null; }
-  private release(s: Seat) { const g = this.host, u = s.body; s.body = null; if (!u || !u.alive) return; u.pilot = 0; u.brace = false; u.moving = false; u.think = 0; if (u.team) { const st = g.stones()[0]; u.order = st && Math.hypot(u.pos.x - st.pos.x, u.pos.z - st.pos.z) > 60 ? { type: 'raid', x: 0, z: 0 } : { type: 'guard', x: u.pos.x, z: u.pos.z }; } else if (isSoldier(u)) g.dir.enlist(u); else { u.state = 'idle'; u.site = null; } }
-  private pilot(s: Seat, u: Unit) { if (s.body && s.body !== u) this.release(s); u.pilot = s.pid; s.body = u; u.target = null; u.wind = 0; if (u.site) { u.site.builder = null; u.site = null; } u.state = 'idle'; u.carrying = 0; u.order = { type: 'guard', x: u.pos.x, z: u.pos.z }; }
+  private release(s: Seat) { const g = this.host, u = s.body; s.body = null; if (!u || !u.alive) return; u.pilot = 0; u.brace = false; u.moving = false; u.think = 0; if (u.team) { const st = g.stones()[0]; u.order = st && Math.hypot(u.pos.x - st.pos.x, u.pos.z - st.pos.z) > 60 ? { type: 'raid', x: 0, z: 0 } : { type: 'guard', x: u.pos.x, z: u.pos.z }; } else if (isSoldier(u)) g.dir.enlist(u); else { u.state = u.carrying > 0 ? 'toHQ' : 'idle'; u.site = null; } }
+  private pilot(s: Seat, u: Unit) { if (s.body && s.body !== u) this.release(s); u.pilot = s.pid; s.body = u; u.target = null; u.wind = 0; if (u.site) { u.site.builder = null; u.site = null; } u.state = 'idle'; if (u.carrying > 0) this.host.bank(u); u.order = { type: 'guard', x: u.pos.x, z: u.pos.z }; }
   private say(s: Seat, o: any) { s.inbox.push(JSON.parse(JSON.stringify(o))); }
 
   private step() {

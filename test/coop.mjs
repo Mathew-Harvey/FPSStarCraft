@@ -29,8 +29,11 @@ try {
   check(a.units === c.units && a.bld === c.bld, `same world on both screens (${a.units} units, ${a.bld} buildings)`);
   check(a.pilots.length === 2 && String(a.pilots) === String(c.pilots), 'both see who is driving what');
   // Ada walks, drills and stakes out a Bunkhouse. Bo jumps into another Rigger.
-  // She switches the Quartermaster off first, so the only new building is hers. The server only pays for drilling at a seam, a few ore at a time.
-  const ax = await A.evaluate(async () => { const g = __ore.game, n = g.ores[0], sleep = ms => new Promise(r => setTimeout(r, ms)); g.net.cmd('or', 'G'); g.me.pos.x = n.pos.x + 3; g.me.pos.z = n.pos.z; await sleep(1500); for (let i = 0; i < 26; i++) { g.net.cmd('mn', 0, 3); await sleep(250); } g.net.cmd('pl', 'bunkhouse', -14, 10, 0); return g.me.pos.x; });
+  // She switches the Quartermaster off first, so the only new building is hers. The server only pays for drilling at a seam, a few ore at a time, and only once the pack reaches the Headframe.
+  const ax = await A.evaluate(async () => { const g = __ore.game, n = g.ores[0], sleep = ms => new Promise(r => setTimeout(r, ms)); g.net.cmd('or', 'G');
+    // a driven Rigger's pack holds 15 ore, so it takes trips: fill it at the seam, then walk it to the Headframe
+    for (let trip = 0; trip < 5; trip++) { g.me.pos.x = n.pos.x + 3; g.me.pos.z = n.pos.z; await sleep(2500); for (let i = 0; i < 5; i++) { g.net.cmd('mn', 0, 3); await sleep(250); } g.me.pos.x = 0; g.me.pos.z = 7; await sleep(2500); }
+    g.net.cmd('pl', 'bunkhouse', -14, 10, 0); return g.me.pos.x; });
   const bo = await B.evaluate(() => { const g = __ore.game; const u = g.units.find(u => u.team === 0 && !u.pilot && u.kind === 'rigger'); g.possess(u, true); return u.id; });
   const built = () => __ore.game.buildings.filter(b => b.alive).length === 11;
   check(await until(A, built) && await until(B, built), "Ada's Bunkhouse reached both players"); a = await state(A); c = await state(B);

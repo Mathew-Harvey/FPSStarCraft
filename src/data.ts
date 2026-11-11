@@ -82,7 +82,7 @@ export interface Prop {
   hp: number; maxHp: number; alive: boolean; solid: boolean; stage: number; stages: number;
   ranges: { attr: THREE.BufferAttribute; start: number; count: number }[]; obj?: THREE.Object3D; owner?: Prop; link: Prop[];
 }
-export interface OreNode { pos: THREE.Vector3; amount: number; max: number; obj: THREE.Group }
+export interface OreNode { pos: THREE.Vector3; amount: number; max: number; obj: THREE.Group; /** Seconds the seam has been empty. */ dryT?: number }
 export interface Callout { who: string; text: string; t: number; dur: number; keys: [string, string][] }
 export interface Difficulty { name: string; enemy: number; raid: number; blurb: string }
 export const DIFFS: Difficulty[] = [

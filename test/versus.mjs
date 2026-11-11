@@ -26,9 +26,8 @@ try {
   check(a.team === 0 && v.team === 1 && v.my === 1, `Ada is a ${a.kind} for Ironhold and Vex is a ${v.kind} for the Veyl`);
   // Vex tries Ironhold business and is refused, then calls the raid
   await V.evaluate(() => { const g = __ore.game; for (let i = 0; i < 10; i++) g.net.cmd('mn', 0, 3); g.net.cmd('pl', 'depot', 14, 20, 0); g.net.cmd('rd'); });
-  await sleep(1200); const a2 = await st(A);
+  check(await until(A, () => { const d = __ore.game.dir; return d.raidIn <= 6 || d.raidLive; }), 'Vex calls the raid early'); const a2 = await st(A);
   check(Math.abs(a2.ore - a.ore) < 12 && a2.bld === a.bld, 'a Veyl player cannot mine or build for Ironhold');
-  check(a2.raidIn <= 6, `Vex calls the raid early (${a2.raidIn.toFixed(1)}s out)`);
   // every Veyl body works in first person, with the picture on
   const kinds = await V.evaluate(async () => {
     const g = __ore.game, out = [], sleep = ms => new Promise(r => setTimeout(r, ms)); g.noRender = false;

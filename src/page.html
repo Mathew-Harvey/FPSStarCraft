@@ -49,6 +49,8 @@
     <div class="tcard" id="tcard" hidden><div class="in"><div class="frame"><img id="tcImg" alt=""></div><div class="nm d" id="tcName"></div><div class="q" id="tcQuip"></div><div class="s c">Ironhold Charter · now under your control</div></div></div>
   </div>
 
+  <div id="fps" hidden></div>
+
   <div class="screen" id="menu">
     <div class="box">
       <h1 class="logo">Ore Else</h1>
@@ -91,10 +93,11 @@
           <label>Volume <input type="range" id="vol2" min="0" max="1" step="0.05" value="0.5"></label>
           <label><input type="checkbox" id="mus2" checked> Music</label>
           <label><input type="checkbox" id="cb"> Colour-blind friendly team colours</label>
+          <label><input type="checkbox" id="fpsOn"> Show frame rate</label>
         </div>
         <div class="row"><span class="lbl">Picture</span><div class="diff" id="gfx" role="group" aria-label="Graphics quality"><button type="button">Auto<small>Adjusts to your machine</small></button><button type="button">Low<small>Fastest</small></button><button type="button">Medium<small>Balanced</small></button><button type="button">High<small>Sharpest</small></button></div></div>
         <p class="teach">Keys. Click one, then press the key you want. Mouse buttons stay as they are.</p>
-        <div class="keys" id="keys"></div>
+        <div class="binds" id="keys"></div>
         <div class="row"><button type="button" class="mini-btn" id="keysReset">Put the keys back</button></div>
       </div>
       <div class="panel" id="pMulti" hidden>

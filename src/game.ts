@@ -195,6 +195,8 @@ export class Game {
     if (t === this.me && this.safeT > 0) return;
     if (!t.alive || amt <= 0) return; t.lastHit = this.time;
     const u = isUnit(t) ? t : null, me = this.me;
+    // A unit sheltering behind scenery: shots from the far side by anything but a player mostly chew up the scenery instead.
+    if (u && u.cover && u.cover.alive && from && from !== me && isUnit(from) && !from.pilot) { const c = u.cover, cx = c.x - u.pos.x, cz = c.z - u.pos.z; if (Math.hypot(cx, cz) < c.r + 2.4 && cx * (from.pos.x - u.pos.x) + cz * (from.pos.z - u.pos.z) > 0 && Math.random() < .55) { this.damageProp(c, amt, from); return; } }
     if (u && u.kind === 'breacher' && from) { const dx = from.pos.x - u.pos.x, dz = from.pos.z - u.pos.z, d = Math.hypot(dx, dz) || 1; if ((dx * Math.sin(u.yaw) + dz * Math.cos(u.yaw)) / d > .25) { if (u.pilot) { if (u.brace) amt *= .25; } else if (u !== me) amt *= .55; else if (this.brace) { amt *= .25; sfx.clang(); } } }
     let warded = false;
     if (!u && t.team === 1 && (t as Building).kind !== 'wardpylon') { const w = this.ward(t.pos); if (w) { amt *= .7; warded = true; if (this.time > this.wardFx) { this.wardFx = this.time + .35; this.tracer(V3(w.pos.x, 4.6, w.pos.z), V3(t.pos.x, (t as Building).h * .6, t.pos.z), beamMat, .22); this.puff(TMP.set(t.pos.x, (t as Building).h * .6, t.pos.z), 3, .7, M.cyan, .5); } } }
@@ -819,9 +821,18 @@ export class Game {
       if (d > 25) this.moveTo(u, t.pos.x, t.pos.z, dt);
       else if (!isB && d < 9) { const ax = u.pos.x - t.pos.x, az = u.pos.z - t.pos.z, l = Math.hypot(ax, az) || 1; this.moveTo(u, u.pos.x + ax / l * 4, u.pos.z + az / l * 4, dt, .2, .9); u.yaw = Math.atan2(-ax, -az); if (u.cd <= 0) u.wind = .55; }
       else if (u.cd <= 0) u.wind = .7;
+      else if (!isB) this.takeCover(u, t as Unit, dt);
       return;
     }
-    u.pitch *= .9; this.advance(u, dt, u.order.type === 'raid' ? 6 : 1.5, u.order.type === 'raid' ? 1 : .6);
+    u.cover = null; u.pitch *= .9; this.advance(u, dt, u.order.type === 'raid' ? 6 : 1.5, u.order.type === 'raid' ? 1 : .6);
+  }
+  /** Between shots a Lancer ducks behind the nearest solid scenery, then leans out to fire. */
+  takeCover(u: Unit, t: Unit, dt: number) {
+    let c = u.cover || null; if (c && (!c.alive || Math.hypot(c.x - u.pos.x, c.z - u.pos.z) > 11)) c = u.cover = null;
+    if (!c && u.think > .3) { let bd = 8; for (const s of this.spires) { if (s.h < 1.6 || s.r < .5 || s.r > 6) continue; const dd = Math.hypot(s.x - u.pos.x, s.z - u.pos.z) - s.r; if (dd < bd && Math.hypot(s.x - t.pos.x, s.z - t.pos.z) > 6) { bd = dd; c = s; } } u.cover = c; }
+    if (!c) return;
+    const ax = c.x - t.pos.x, az = c.z - t.pos.z, l = Math.hypot(ax, az) || 1, off = c.r + UNIT[u.kind].rad + .4, side = u.id % 2 ? 1 : -1, peek = u.cd < .8 ? c.r + 1.4 : 0;
+    this.moveTo(u, c.x + ax / l * off - az / l * peek * side, c.z + az / l * off + ax / l * peek * side, dt, .3);
   }
   aiWarden(u: Unit, dt: number) {
     if (u.wind > 0) { u.wind -= dt; if (u.wind <= 0) { u.cd = 2.2; u.swing = 1; this.explode(V3(u.windX, 0, u.windZ), 1, 34 * this.diff.enemy, 4.6, u, true); } return; }

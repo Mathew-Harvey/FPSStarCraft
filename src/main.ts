@@ -10,6 +10,7 @@ import { LocalMatch, SplitMode } from './split';
 import { UNIT, BLD, UPGRADES, TRAINS, UNIT_NEEDS, DIFFS, Kind, BKind, mapCode, validMap, FACTION, SIDE, setSides, setSidesCode, sidesCode, fac, isWorker } from './data';
 import { MISSIONS } from './campaign';
 import { Net, Lobby } from './net';
+import { TouchPad, TouchPref, touchDevice, touchWords } from './touch';
 
 THREE.ColorManagement.enabled = false;
 const $ = (id: string) => document.getElementById(id)!;
@@ -27,10 +28,13 @@ let split: LocalMatch | null = null, game2: Game | null = null, splitSide = true
 let quality = 1, slow = 0, fast = 0;
 /** True when the browser would not lock the mouse, so the game runs with a free cursor instead. */
 let freeMouse = false;
+/** Touch controls: whether they are showing, and the player's choice (auto follows the device). */
+let touchOn = false, touchPref: TouchPref = 'auto';
 
 function resize() {
   const w = window.innerWidth, h = window.innerHeight;
-  const sc = Math.min(Math.min(window.devicePixelRatio || 1, 1.5), 1080 / h) * (gfxI === 1 ? .6 : gfxI === 2 ? .8 : gfxI === 3 ? 1 : quality);
+  // Phones have tiny, dense screens and slow graphics chips: draw at no more than one pixel per CSS pixel there.
+  const sc = Math.min(Math.min(window.devicePixelRatio || 1, touchOn ? 1 : 1.5), 1080 / h) * (gfxI === 1 ? .6 : gfxI === 2 ? .8 : gfxI === 3 ? 1 : quality);
   if (split && game2) {
     const vw = splitSide ? w / 2 : w, vh = splitSide ? h : h / 2; pipe.resize(vw * sc, vh * sc, w * sc, h * sc);
     const W = pipe.w, H = pipe.h; view1.rect = splitSide ? [0, 0, W, H] : [0, pipe.ch - H, W, H]; view2.rect = splitSide ? [pipe.cw - W, 0, W, H] : [0, 0, W, H];
@@ -66,8 +70,8 @@ const keyText = (code: string) => code.replace(/^Key|^Digit/, '').replace('Shift
 /** The key a player pressed, as the action the game code listens for. A default key that has been given away does nothing. */
 function logical(code: string) { for (const a in binds) if (binds[a] === code) return a; return binds[code] ? 'Unbound' : code; }
 let diffI = 1, mapI = 0, sideI = 0, foeI = 0, sens = 1, vol = .5, mus = true, curX = .5, moved = false;
-try { const o = JSON.parse(localStorage.getItem('ore-else') || '{}'); if (o.d >= 0 && o.d < 3) diffI = o.d; if (o.side >= 0 && o.side < 3) sideI = o.side; if (o.vs >= 0 && o.vs < 3) foeI = o.vs; else if (sideI) foeI = 2; else if (o.foe === 1) foeI = 1; if (validMap(o.map)) mapI = o.map; if (o.camp > 0) camp = Math.min(MISSIONS.length, o.camp); if (o.mp) mpOpen = true; if (o.mode === 'skirm') mode = 'skirm'; if (typeof o.name === 'string') pname = o.name.slice(0, 14); if (typeof o.srv === 'string') srv = o.srv.slice(0, 200); if (o.s > 0) sens = o.s; if (o.v >= 0) vol = o.v; if (o.m === false) mus = false; if (o.q >= 0 && o.q < 4) gfxI = o.q | 0; cbOn = !!o.cb; fpsOn = !!o.fps; splitSide = o.ss !== 0; if (o.side === 1) sideI = 1; if (o.k && typeof o.k === 'object') for (const [a] of ACTIONS) if (typeof o.k[a] === 'string' && o.k[a] !== a) binds[a] = o.k[a]; } catch (e) { /* storage is optional */ }
-const save = () => { try { localStorage.setItem('ore-else', JSON.stringify({ d: diffI, map: mapI, camp, mp: mpOpen, mode: mode === 'multi' ? 'camp' : mode, name: pname, srv, s: sens, v: vol, m: mus, q: gfxI, cb: cbOn, fps: fpsOn, ss: splitSide ? 1 : 0, side: sideI, vs: foeI, k: binds })); } catch (e) { /* storage is optional */ } };
+try { const o = JSON.parse(localStorage.getItem('ore-else') || '{}'); if (o.d >= 0 && o.d < 3) diffI = o.d; if (o.side >= 0 && o.side < 3) sideI = o.side; if (o.vs >= 0 && o.vs < 3) foeI = o.vs; else if (sideI) foeI = 2; else if (o.foe === 1) foeI = 1; if (validMap(o.map)) mapI = o.map; if (o.camp > 0) camp = Math.min(MISSIONS.length, o.camp); if (o.mp) mpOpen = true; if (o.mode === 'skirm') mode = 'skirm'; if (o.tp === 'on' || o.tp === 'off') touchPref = o.tp; if (typeof o.name === 'string') pname = o.name.slice(0, 14); if (typeof o.srv === 'string') srv = o.srv.slice(0, 200); if (o.s > 0) sens = o.s; if (o.v >= 0) vol = o.v; if (o.m === false) mus = false; if (o.q >= 0 && o.q < 4) gfxI = o.q | 0; cbOn = !!o.cb; fpsOn = !!o.fps; splitSide = o.ss !== 0; if (o.side === 1) sideI = 1; if (o.k && typeof o.k === 'object') for (const [a] of ACTIONS) if (typeof o.k[a] === 'string' && o.k[a] !== a) binds[a] = o.k[a]; } catch (e) { /* storage is optional */ }
+const save = () => { try { localStorage.setItem('ore-else', JSON.stringify({ d: diffI, map: mapI, camp, mp: mpOpen, mode: mode === 'multi' ? 'camp' : mode, name: pname, srv, s: sens, v: vol, m: mus, q: gfxI, cb: cbOn, fps: fpsOn, ss: splitSide ? 1 : 0, side: sideI, vs: foeI, k: binds, tp: touchPref })); } catch (e) { /* storage is optional */ } };
 jobI = Math.min(camp, MISSIONS.length - 1);
 /** The faction each foe button picks, in button order: the Veyl, the Gloam, Ironhold. */
 const FOE_FAC = [1, 2, 0];
@@ -106,7 +110,24 @@ addEventListener('wheel', e => { if (live()) { game.wheel = Math.sign(e.deltaY);
 addEventListener('contextmenu', e => e.preventDefault());
 canvas.addEventListener('auxclick', e => e.preventDefault());
 
-function lock() { try { const p: any = (canvas as any).requestPointerLock(); if (p && p.catch) p.catch(() => { freeMouse = true; }); } catch (e) { freeMouse = true; } }
+function lock() { if (touchOn) { phoneScreen(); return; } try { const p: any = (canvas as any).requestPointerLock(); if (p && p.catch) p.catch(() => { freeMouse = true; }); } catch (e) { freeMouse = true; } }
+/** On a phone, starting a match goes full screen and holds the screen sideways where the browser allows it. */
+function phoneScreen() {
+  try { const el: any = $('game'); if (!document.fullscreenElement && el.requestFullscreen) { const p = el.requestFullscreen({ navigationUI: 'hide' }); if (p && p.then) p.then(() => { try { const o: any = screen.orientation; o?.lock?.('landscape')?.catch?.(() => { /* not every browser lets a page turn the screen */ }); } catch (e) { /* optional */ } }).catch(() => { /* optional */ }); } } catch (e) { /* optional */ }
+}
+const pad = new TouchPad($('game'), () => game, { live: () => live(), pause: () => pause(), chat: () => { if (!game.net) return; game.keys.clear(); chat.hidden = false; chat.focus(); } });
+function setTouch(on: boolean) {
+  if (on === touchOn && pad.on === on) return; touchOn = on; pad.enable(on); hud.fit = on ? [1000, 640] : [1280, 900]; hud.words = on ? touchWords : null; showJobs();
+  if (on) freeMouse = false;
+  $('jump').querySelector('.foot')!.innerHTML = on ? 'Tap a body to jump into it · <span class="k">GO</span> jumps to the yellow one' : 'Press a number or scroll · Let go of <span class="k">TAB</span> to jump';
+  $('build').querySelector('p')!.textContent = on ? 'Tap a row or ◀ ▶ to pick · Rotate · Place' : 'Wheel or 2 pick · R rotate · Click place';
+  $('sensL').textContent = on ? 'Look speed' : 'Mouse speed'; $('sensL2').textContent = on ? 'Look speed' : 'Mouse speed';
+  pipe.w = 0; applyOpts();
+}
+const touchWanted = () => touchPref === 'on' || (touchPref === 'auto' && touchDevice());
+// A touch on a machine that did not look like a phone (a tablet in desktop mode, say) still switches the controls on.
+addEventListener('touchstart', () => { if (touchPref === 'auto' && !touchOn) setTouch(true); }, { passive: true });
+document.addEventListener('visibilitychange', () => { if (document.hidden) { pad.reset(); if (touchOn) pause(); } });
 document.addEventListener('pointerlockerror', () => { freeMouse = true; });
 document.addEventListener('pointerlockchange', () => { if (!locked() && live() && !freeMouse) pause(); });
 
@@ -215,7 +236,7 @@ let ended = false;
 const modeBtns = Array.from($('modes').querySelectorAll('button')) as HTMLButtonElement[];
 function showJobs() {
   $('jobs').innerHTML = MISSIONS.map((m, i) => `<button type="button" data-j="${i}" class="${i === jobI ? 'on' : ''} ${i < camp ? 'dn' : ''}" ${i > camp ? 'disabled' : ''} aria-pressed="${i === jobI}">${m.tag}<b>${m.name}</b><small>${i < camp ? 'Done' : i === camp ? 'Next up' : 'Locked'}</small></button>`).join('');
-  const m = MISSIONS[jobI]; $('bName').textContent = `${m.tag}: ${m.name}`; $('bTeach').textContent = 'Teaches: ' + m.teaches; $('bText').textContent = m.brief;
+  const m = MISSIONS[jobI]; $('bName').textContent = `${m.tag}: ${m.name}`; $('bTeach').textContent = 'Teaches: ' + m.teaches; $('bText').textContent = touchOn ? touchWords(m.brief) : m.brief;
   $('skipCamp').hidden = camp >= MISSIONS.length && mpOpen;
 }
 function showMode() {
@@ -283,15 +304,17 @@ const pickMap = (i: number) => useMap(i >= 10 ? i : mapCode(i, Math.floor(mapI /
 const pickSize = (s: number) => useMap(mapCode(mapI % 10, s));
 mapBtns.forEach((b, i) => b.addEventListener('click', () => pickMap(i))); sizeBtns.forEach(b => b.addEventListener('click', () => pickSize(+(b.dataset.s || 0)))); showMap();
 const sensEl = $('sens') as HTMLInputElement, volEl = $('vol') as HTMLInputElement; sensEl.value = String(sens); volEl.value = String(vol);
-sensEl.addEventListener('input', () => { sens = +sensEl.value; game.sens = sens; save(); });
+sensEl.addEventListener('input', () => { sens = +sensEl.value; game.sens = sens; pad.sens = sens; save(); });
 volEl.addEventListener('input', () => { vol = +volEl.value; setVolume(vol); save(); });
 const musEl = $('mus') as HTMLInputElement; musEl.checked = mus; musEl.addEventListener('change', () => { mus = musEl.checked; setMusic(mus); save(); syncOpts(); });
 // ---- options tab
 const sens2 = $('sens2') as HTMLInputElement, vol2 = $('vol2') as HTMLInputElement, mus2 = $('mus2') as HTMLInputElement, cbEl = $('cb') as HTMLInputElement, gfxB = Array.from($('gfx').querySelectorAll('button')) as HTMLButtonElement[];
-function applyOpts() { document.body.classList.toggle('cb', cbOn); hud.cb = hud2.cb = cbOn; pipe.shadowEvery = gfxI === 1 ? 3 : 1; hud.keyLabel = Object.keys(binds).length ? k => keyText(keyOf(k === 'Tab' || k === 'Space' ? k : 'Key' + k)) : null; resize(); }
+function applyOpts() { document.body.classList.toggle('cb', cbOn); hud.cb = hud2.cb = cbOn; pipe.shadowEvery = gfxI === 1 ? 3 : 1; hud.relabel(touchOn ? k => TOUCHKEYS[k] ?? k : Object.keys(binds).length ? k => keyText(keyOf(k === 'Tab' || k === 'Space' ? k : 'Key' + k)) : null); resize(); }
+/** On a touch screen the HUD names the on-screen buttons instead of keys. */
+const TOUCHKEYS: Record<string, string> = { RMB: 'Aim', MMB: 'Send', TAB: 'Jump', Tab: 'Jump', Space: 'Dash', C: 'Ability', Q: 'Back', V: 'Squad', G: 'QM', R: 'Reload' };
 function syncOpts() { sens2.value = sensEl.value = String(sens); vol2.value = volEl.value = String(vol); mus2.checked = musEl.checked = mus; cbEl.checked = cbOn; gfxB.forEach((b, i) => b.classList.toggle('on', i === gfxI)); }
 function showKeys() { $('keys').innerHTML = ACTIONS.map(([a, label]) => `<button type="button" data-a="${a}" class="${rebinding === a ? 'on' : ''}">${label}<b>${rebinding === a ? 'Press a key' : keyText(keyOf(a))}</b></button>`).join(''); }
-sens2.addEventListener('input', () => { sens = +sens2.value; game.sens = sens; save(); syncOpts(); }); vol2.addEventListener('input', () => { vol = +vol2.value; setVolume(vol); save(); syncOpts(); });
+sens2.addEventListener('input', () => { sens = +sens2.value; game.sens = sens; pad.sens = sens; save(); syncOpts(); }); vol2.addEventListener('input', () => { vol = +vol2.value; setVolume(vol); save(); syncOpts(); });
 sensEl.addEventListener('input', syncOpts); volEl.addEventListener('input', syncOpts);
 mus2.addEventListener('change', () => { mus = mus2.checked; setMusic(mus); save(); syncOpts(); });
 cbEl.addEventListener('change', () => { cbOn = cbEl.checked; save(); applyOpts(); });
@@ -304,7 +327,10 @@ addEventListener('keydown', e => {
   if (e.code !== 'Escape') { const a = rebinding, was = keyOf(a), other = ACTIONS.find(([x]) => x !== a && keyOf(x) === e.code); if (other) { if (was === other[0]) delete binds[other[0]]; else binds[other[0]] = was; } if (e.code === a) delete binds[a]; else binds[a] = e.code; save(); }
   rebinding = ''; showKeys(); applyOpts();
 }, true);
-syncOpts(); showKeys(); applyOpts();
+const touchB = Array.from($('touchPick').querySelectorAll('button')) as HTMLButtonElement[], TP: TouchPref[] = ['auto', 'on', 'off'];
+const showTouch = () => touchB.forEach((b, i) => { const on = TP[i] === touchPref; b.classList.toggle('on', on); b.setAttribute('aria-pressed', String(on)); });
+touchB.forEach((b, i) => b.addEventListener('click', () => { touchPref = TP[i]; save(); showTouch(); setTouch(touchWanted()); }));
+syncOpts(); showKeys(); applyOpts(); showTouch(); setTouch(touchWanted());
 $('full').addEventListener('click', () => { try { const p: any = document.fullscreenElement ? document.exitFullscreen() : $('game').requestFullscreen(); if (p && p.catch) p.catch(() => { /* optional */ }); } catch (e) { /* optional */ } });
 
 // ---------------------------------------------------------------- loop
@@ -312,7 +338,8 @@ let last = performance.now(), freeShown = false;
 function frame(now: number) {
   const dt = (now - last) / 1000; last = now;
   // Without mouse capture, holding the cursor near a screen edge turns the view.
-  if (freeMouse && moved && live() && !game.tab) { const ex = curX < .1 ? (curX - .1) / .1 : curX > .9 ? (curX - .9) / .1 : 0; game.mdx += ex * 900 * dt; }
+  pad.frame(); if (touchOn) document.body.classList.toggle('playing', live());
+  if (freeMouse && !touchOn && moved && live() && !game.tab) { const ex = curX < .1 ? (curX - .1) / .1 : curX > .9 ? (curX - .9) / .1 : 0; game.mdx += ex * 900 * dt; }
   if (freeMouse !== freeShown) { freeShown = freeMouse; $('edgeNote').hidden = !freeMouse; $('freeNote').hidden = !freeMouse; }
   if (split && game2) {
     if (game.phase !== 'paused') split.frame(dt);

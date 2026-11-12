@@ -28,8 +28,10 @@ export class Hud {
     for (let i = 0; i < 48; i++) { const b = document.createElement('div'); b.className = 'hb'; const f = document.createElement('i'); b.appendChild(f); b.hidden = true; this.anchors.appendChild(b); this.bars.push(b); this.barFill.push(f); }
     for (let i = 0; i < 10; i++) { const l = document.createElement('div'); l.className = 'lab'; l.hidden = true; l.appendChild(document.createElement('div')); this.anchors.appendChild(l); this.labs.push(l); }
   }
+  /** The smallest screen, in HUD pixels, the HUD is laid out for. Touch screens use a smaller one so the text is big enough to read. */
+  fit: [number, number] = [1280, 900];
   setSize(w: number, h: number, x = 0, y = 0) {
-    this.scale = Math.min(h / 900, w / 1280); this.W = w / this.scale; this.H = h / this.scale;
+    this.scale = Math.min(h / this.fit[1], w / this.fit[0]); this.W = w / this.scale; this.H = h / this.scale;
     const s = this.root.style; s.width = this.W + 'px'; s.height = this.H + 'px'; s.transform = `scale(${this.scale})`; s.left = x + 'px'; s.top = y + 'px';
   }
   show(on: boolean) { this.root.hidden = !on; }
@@ -38,13 +40,15 @@ export class Hud {
   reset() { this.$('feed').innerHTML = ''; for (const f of this.floats) f.el.remove(); this.floats = []; this.cache.clear(); this.pingT = 0; this.hurtA = 0; this.titleCard('', '', ''); this.$('end').hidden = true; this.$('lost').hidden = true; }
 
   /** Sets text or HTML only when it has changed, so the page is not rebuilt every frame. */
-  private set(id: string, v: string, html = false) { if (this.cache.get(id) === v) return; this.cache.set(id, v); const e = this.$(id); if (html) e.innerHTML = this.keyLabel ? v.replace(/<(b|span class="k"[^>]*)>(TAB|Tab|Space|RMB|MMB|[A-Z])<\//g, (_m, tag, k) => `<${tag}>${this.keyLabel!(k === 'TAB' ? 'Tab' : k)}</`) : v; else e.textContent = v; }
+  /** Rewrites tips that name keys, for a touch screen. */
+  words: ((s: string) => string) | null = null;
+  private set(id: string, v: string, html = false) { if (this.cache.get(id) === v) return; this.cache.set(id, v); const e = this.$(id); if (this.words && (id === 'objs' || id === 'goal')) v = this.words(v); if (html) e.innerHTML = this.keyLabel ? v.replace(/<(b|span class="k"[^>]*)>(TAB|Tab|Space|RMB|MMB|[A-Z])<\//g, (_m, tag, k) => `<${tag}>${this.keyLabel!(k === 'TAB' ? 'Tab' : k)}</`) : v; else e.textContent = v; }
   private cls(id: string, v: string) { const k = 'c:' + id; if (this.cache.get(k) === v) return; this.cache.set(k, v); this.$(id).className = v; }
   private vis(id: string, on: boolean) { const k = 'h:' + id; const v = on ? '1' : '0'; if (this.cache.get(k) === v) return; this.cache.set(k, v); this.$(id).hidden = !on; }
   private img(id: string, kind: string) { const k = 'i:' + id; if (this.cache.get(k) === kind) return; this.cache.set(k, kind); const src = this.portraits[kind]; if (src) (this.$(id) as HTMLImageElement).src = src; }
 
   feed(who: string, msg: string, cls = '') {
-    const box = this.$('feed'), d = document.createElement('div'); if (cls) d.className = cls; const b = document.createElement('b'); b.textContent = who; d.appendChild(b); d.appendChild(document.createTextNode(msg)); box.appendChild(d);
+    const box = this.$('feed'), d = document.createElement('div'); if (cls) d.className = cls; const b = document.createElement('b'); b.textContent = who; d.appendChild(b); d.appendChild(document.createTextNode(this.words ? this.words(msg) : msg)); box.appendChild(d);
     while (box.children.length > 4) box.firstElementChild!.remove();
     setTimeout(() => d.classList.add('old'), 6500); setTimeout(() => d.remove(), 7200);
   }

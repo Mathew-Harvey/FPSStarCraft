@@ -250,6 +250,20 @@ Two players on one machine, no server needed. Pick a map and a shift on the Skir
 
 It is built on the online co-op code. `src/split.ts` runs a silent copy of the match inside the page, the way the server does, and each half of the screen is an ordinary client of it. Both halves draw through one renderer into their own rectangle (`ViewPipe` in `src/gfx.ts`), and each has its own HUD. `node test/split.mjs` plays a short match in a headless browser.
 
+## Phones and tablets
+
+The game checks the device when it loads. On a phone or tablet (a touch screen that is the main way to point) it switches to touch controls by itself; on a desktop, including a laptop with a touch screen and a mouse, it keeps the keyboard and mouse. A touch on a machine that was not spotted also switches the controls on. Options has a **Touch controls** setting (Auto, On, Off) to override it.
+
+- Left half of the screen: put a thumb down anywhere and it becomes the move stick. Push it all the way forward to sprint.
+- Right half: drag to look. The Fire and Aim buttons turn the view too while held, so you can shoot and aim with one thumb.
+- Buttons on the right change with the body you are in: Fire (Drill, Hum, Chew, Bite, Place), Aim (Kick, Shield, Scope, Salvo, Whirl, Pounce and so on), Dash, the ability (Grenade, Patch, Stomp), Reload (Rotate in the build menu) and Jump.
+- Workers get a Build button on the left. In the build menu tap a row or use the arrows, then Place; Aim becomes Cancel.
+- Jump opens the bodies you own; tap one to jump into it. Back returns to the last body.
+- Whatever the prompt offers (train a unit, buy research, jump into the body in the crosshair, answer the squad) shows up as big buttons in the middle of the screen.
+- The bar at the top has pause, the Quartermaster, Squad and Send, and in multiplayer Ping and Say.
+
+Starting a match on a phone goes full screen and asks the browser to hold the screen sideways; held upright it asks you to turn it. The HUD is laid out larger and moved off the thumbs, tips that name keys name the buttons instead, and the picture is drawn at one pixel per screen point to keep the frame rate up. Split screen and key rebinding are hidden on touch screens. The code is `src/touch.ts`; `node test/touch.mjs` drives it on emulated iPhone, Pixel and iPad screens with real multi-touch.
+
 ## Trailer and landing page
 
 `docs/index.html` is a landing page with the trailer at the top. Turn on GitHub Pages for the `docs` folder to publish it. `docs/trailer.mp4` is rendered from the real game, one frame at a time, by `test/trailer.cjs`, a script that stages seven shots and steps the simulation a twenty-fourth of a second per frame. It is silent, because the game's sound is synthesised live in the browser.

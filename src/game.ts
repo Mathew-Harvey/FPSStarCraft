@@ -1054,7 +1054,9 @@ export class Game {
   aiCantor(u: Unit, dt: number) {
     if (this.leash(u, dt)) return;
     u.dashCd -= dt; u.dashT -= dt; if (this.aiFallBack(u, dt)) return;
-    if (u.think <= 0) { u.think = .3; const raid = u.order.type === 'raid' || u.order.type === 'amove', cur = u.target; if (!cur || !cur.alive || !isUnit(cur)) u.target = this.acquire(u, raid ? 22 : 28, raid && !(u.order.path && u.order.path.length) ? 14 : 0); }
+    if (u.think <= 0) { u.think = .3; const raid = u.order.type === 'raid' || u.order.type === 'amove', cur = u.target; // A Cantor on the march only looked 22 m ahead, while rifles reach 38 and a Watchpost 34: a push walked on at its target building while the
+      // defenders shot it for free (Veyl pushes lost twice what they killed and broke 3 buildings in 33 tries). One that is being hit goes for whoever is in reach.
+      if (!cur || !cur.alive || !isUnit(cur)) u.target = this.acquire(u, raid ? (this.time - u.lastHit < 2 ? 40 : 22) : 28, raid && !(u.order.path && u.order.path.length) ? 14 : 0); }
     const t = u.target;
     if (t && t.alive) {
       const isB = !isUnit(t), d = isB ? this.distToBox(t as Building, u.pos.x, u.pos.z) : t.pos.distanceTo(u.pos);

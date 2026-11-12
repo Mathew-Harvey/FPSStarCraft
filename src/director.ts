@@ -304,7 +304,10 @@ export class Director implements Side {
     else if (wantWell) put('hushwell', [[6, -14], [6, 16], [0, -18], [0, 20], [-6, -16], [-6, 18]], 'The song is crowded. Growing a Hush Well.');
     else if (building) saving = false;
     // The second Stone comes before the extra towers and songs: a Chorus that waited for all of them first expanded minutes after the Ironhold, or never.
-    else if (pitsUp.length && army >= 4 && g.time > 360 && exp.site && stones.length < wantStones) { hold = BLD.choir.cost; const [sx, sz] = exp.site, dx = HX - sx, dz = HZ - sz, l = Math.hypot(dx, dz) || 1, x = Math.round(sx + dx / l * 9), z = Math.round(sz + dz / l * 9); if (cash() >= BLD.choir.cost && g.canPlace('choir', x, z, false, T)) { g.place('choir', x, z, false, T); this.say('Conductor', 'Seeding a new Choir Stone on the far seam. Some Tenders will drift over.', '', T); } }
+    else if (pitsUp.length && army >= 4 && g.time > 360 && exp.site && stones.length < wantStones) { hold = BLD.choir.cost; const [sx, sz] = exp.site, dx = HX - sx, dz = HZ - sz, l = Math.hypot(dx, dz) || 1, at = [4, 5, 6, 7, 9].map(r => [Math.round(sx + dx / l * r), Math.round(sz + dz / l * r)]).find(p => g.canPlace('choir', p[0], p[1], false, T));
+      // As close to the seams as it will stand. A Stone is a pillar, not a shed with a long front wall: nine metres out, every Tender at a new
+      // Stone walked further than a Rigger does to a Headframe's near face, and the Chorus mined a third less from the same number of hands.
+      if (cash() >= BLD.choir.cost && at) { const [x, z] = at; g.place('choir', x, z, false, T); this.say('Conductor', 'Seeding a new Choir Stone on the far seam. Some Tenders will drift over.', '', T); } }
     else if (pitsUp.length && spires < Math.min(1, wantSpires)) put('thornspire', [[-12, -8], [-12, 10], [-16, 1]], 'A Thorn Spire by the road, to listen for boots.');
     else if (pitsUp.length && !ward.length && army >= 4) put('wardpylon', [[-4, 2], [-5, -4], [-5, 7]], 'A Ward Pylon. It keeps the Stones whole, and it knows the first songs.');
     else if (pitsUp.length && spires < wantSpires) put('thornspire', [[-12, -8], [-12, 10], [-16, 1], [-8, -16], [-8, 18]], 'Another Thorn Spire. The road should sting.');

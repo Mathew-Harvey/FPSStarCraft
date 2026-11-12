@@ -24,7 +24,10 @@ try {
     // software rendering is slow, so wait for the game to see a press instead of sleeping a fixed time
     const until = (fn, arg) => p.waitForFunction(fn, arg, { timeout: 15000 }).then(() => true, () => false);
     const tap = async sel => { const c = await box(sel); if (c) { await p.touchscreen.tap(c[0], c[1]); await p.waitForTimeout(300); } return !!c; };
-    check(await p.evaluate(() => document.body.classList.contains('touch') && !document.getElementById('touch').hidden), `${dev}: touch controls switched on by themselves`);
+
+    // checked before any finger touches the page, since a touch would switch the controls on by itself anyway
+    const on = await until(() => document.body.classList.contains('touch') && !document.getElementById('touch').hidden);
+    check(on, `${dev}: touch controls switched on by themselves` + (on ? '' : ' ' + JSON.stringify(await p.evaluate(() => ({ cls: document.body.className, hidden: document.getElementById('touch').hidden, pts: navigator.maxTouchPoints, ua: navigator.userAgent.slice(0, 60), phase: __ore.game.phase })))));
     if (SHOTS) await p.screenshot({ path: `${SHOTS}/touch-${dev.split(' ')[0]}.png` });
     const s0 = await st(), sx = vp.width * .2, sy = vp.height * .7;
     await T('touchStart', [{ x: sx, y: sy, id: 1 }]); for (let i = 1; i <= 5; i++) { await T('touchMove', [{ x: sx, y: sy - i * 16, id: 1 }]); await p.waitForTimeout(16); }

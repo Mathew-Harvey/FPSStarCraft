@@ -20,12 +20,12 @@ capm = 'hazC' if heavy else 'cW' if patch else 'cD' if long_ else 'cY'
 pants = 'fabG' if long_ else 'fab'
 steel = 'bD' if heavy else 'bS'
 
-fig = B.Figure(ROLE, scale=1.2 if heavy else 1.08)
+fig = B.Figure(ROLE, scale=1.2 if heavy else 1.08, detail=.8)
 HIP = .93
 fig.group('body', (0, 0, 0))
 fig.group('legL', (-.105, HIP, 0))
 fig.group('legR', (.105, HIP, 0))
-fig.group('head', (0, 1.5, 0), 'body')
+fig.group('head', (0, 1.5, 0), 'body', scale=1.14)
 AP = V(0, 1.36, .04)
 fig.group('arms', AP, 'body')
 if heavy:
@@ -173,7 +173,7 @@ elif patch:    # a medic wants to see what his hands are doing: two round glasse
     fig.add('gogglecups', 'head', 'bW', S.union(*cups), 460, voxel=.0025, uv=('front',), sharp=50)
     fig.add('goggleglass', 'head', 'lens', S.union(*gl), 130, voxel=.0025, uv=('front',))
 else:          # a slit of lit glass wrapped round the front
-    vh = .022 if heavy else .034
+    vh = .026 if heavy else .04
     vis = S.both(S.cut(S.ellipsoid(HC + V(0, -.048, .012), (.158, .1, .186)), S.ellipsoid(HC + V(0, -.048, .012), (.14, .2, .168))), S.slab(HC + V(0, -.05, 0), (0, 1, -.12), vh))
     vis = S.both(vis, S.plane(HC + V(0, 0, .075), (0, 0, -1)))
     fig.add('visor', 'head', 'visG', vis, 240, voxel=.0025, uv=('front',))
@@ -304,20 +304,20 @@ if heavy:   # the off arm carries a slab of a shield
     ShL, ElL = V(-.24, 1.42, -.01), V(-.36, 1.2, .02)
     RhL = S.basis(V(.55, .05, .83), (-1, 0, .4))
     SR = rot(0, .12, 0)
-    sc = V(-.3, 1.06, .46)
-    gripL = sc + V(0, .04, -.12)
+    sc = V(-.32, .96, .46)
+    gripL = sc + V(.02, .14, -.12)
     WrL = Hu.wrist_for(gripL, RhL, ElL)
     armL, _ = Hu.armoured_arm(-1, ShL, ElL, WrL, RhL, 1, sleeve=pants, guard=steel)
     Hu.add_arm(fig, 'armL', 'L', armL)
-    slab = S.box(sc, (.42, .62, .03), .06, SR)
+    slab = S.box(sc, (.42, .58, .03), .06, SR)
     slab = S.bump(slab, lambda p: .02 * (1 - ((p[..., 0] - sc[0]) / .42) ** 2))                                        # bowed across its width
-    slab = S.cut(slab, S.box(sc + SR @ V(0, .44, 0), (.2, .045, .1), .02, SR))                                      # the view slot
+    slab = S.cut(slab, S.box(sc + SR @ V(0, .4, 0), (.2, .045, .1), .02, SR))                                      # the view slot
     slab = S.bump(slab, lambda p: -.008 * np.clip(1 - np.abs(S.noise(p, 9, 21.5) - .5) * 7, 0, 1))
     fig.add('shield', 'armL', 'shield', slab, 900, voxel=.005, uv=('front',))
-    fig.add('shieldglass', 'armL', 'visG', S.box(sc + SR @ V(0, .44, .0), (.19, .035, .008), .004, SR), 40, voxel=.004, uv=('front',))
-    fig.add('shieldslot', 'armL', 'gunm', S.cut(S.box(sc + SR @ V(0, .44, .01), (.24, .075, .03), .02, SR), S.box(sc + SR @ V(0, .44, .01), (.19, .04, .06), .01, SR)), 160, voxel=.004, uv=('front',))
-    fig.add('shieldfoot', 'armL', 'haz', S.box(sc + SR @ V(0, -.47, .02), (.39, .095, .03), .025, SR), 160, voxel=.005, uv=('front',))
-    bs = [S.sphere(sc + SR @ V(x, y, .045 - x * x * .12), .03) for x, y in ((-.31, .5), (.31, .5), (-.31, -.3), (.31, -.3))]
+    fig.add('shieldglass', 'armL', 'visG', S.box(sc + SR @ V(0, .4, .0), (.19, .035, .008), .004, SR), 40, voxel=.004, uv=('front',))
+    fig.add('shieldslot', 'armL', 'gunm', S.cut(S.box(sc + SR @ V(0, .4, .01), (.24, .075, .03), .02, SR), S.box(sc + SR @ V(0, .4, .01), (.19, .04, .06), .01, SR)), 160, voxel=.004, uv=('front',))
+    fig.add('shieldfoot', 'armL', 'haz', S.box(sc + SR @ V(0, -.43, .02), (.39, .095, .03), .025, SR), 160, voxel=.005, uv=('front',))
+    bs = [S.sphere(sc + SR @ V(x, y, .045 - x * x * .12), .03) for x, y in ((-.31, .47), (.31, .47), (-.31, -.27), (.31, -.27))]
     fig.add('shieldbolts', 'armL', 'nS', S.union(*bs), 160, voxel=.004, uv=('front',))
     fig.add('shieldboss', 'armL', 'nO', S.ellipsoid(sc + SR @ V(0, .05, .04), (.1, .1, .04), SR), 120, voxel=.004, uv=('front',))
     fig.add('shieldbrace', 'armL', 'gunm', S.chain([sc + SR @ V(-.2, .12, -.04), sc + SR @ V(-.07, .04, -.12), sc + SR @ V(.1, .12, -.04)], .016), 90, voxel=.004)

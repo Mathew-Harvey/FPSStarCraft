@@ -103,7 +103,7 @@ def ring(c, rx, rz, h, t, rnd=.006):
 
 
 HS = 1.32                                                       # hands a size up from life, the way a comic draws a working man
-def arm_parts(side, Sh, El, Wr, y_hand, thumb, sleeve='fabT', skin='skinF', glove='gloveN', strap='leaB'):
+def arm_parts(side, Sh, El, Wr, y_hand, thumb, sleevem='fabT', skinm='skinF', glovem='gloveN', strapm='leaB'):
     """side is -1 for his own right (the game's armL) and 1 for the drill arm. Sh, El, Wr are the shoulder, elbow and wrist."""
     Sh, El, Wr = V(Sh), V(El), V(Wr)
     out = {}
@@ -117,11 +117,11 @@ def arm_parts(side, Sh, El, Wr, y_hand, thumb, sleeve='fabT', skin='skinF', glov
     A = S.Limb(Sh, roll_at)
     sleeve = S.bump(sleeve, A.folds([(.3, side * 1.3, 1.3, .008, .07, .12), (.5, -side * .6, 1.4, .008, .07, -.1), (.72, side * .4, 1.6, .009, .06, .1), (.84, 2.6, 1.4, .009, .06, -.08), (.16, 0, 1.2, .007, .06, .0)]))
     sleeve = S.bump(sleeve, lambda p: (S.noise(p, 22, 9.1) - .5) * .005)
-    out['sleeve'] = (sleeve, sleeve, 620, dict(voxel=.003, uv=('cyl', (Sh + roll_at) / 2, ax)))
+    out['sleeve'] = (sleevem, sleeve, 620, dict(voxel=.003, uv=('cyl', (Sh + roll_at) / 2, ax)))
     fax = (Wr - El) / np.linalg.norm(Wr - El)
     fore = S.union(S.rcone(El, Wr, .064, .046), S.sphere(El, .062), S.ellipsoid(El + fax * .09 + V(side * .012, 0, .006), (.057, .057, .08), S.basis(fax, (0, 0, 1))), k=.03)
     fore = S.union(fore, S.rcone(roll_at - ax * .02, El, .062, .06), k=.02)
-    out['forearm'] = (skin, fore, 380, dict(voxel=.003, uv=('cyl', (El + Wr) / 2, fax)))
+    out['forearm'] = (skinm, fore, 380, dict(voxel=.003, uv=('cyl', (El + Wr) / 2, fax)))
     Rh = S.basis(fax, y_hand)
     hand = S.fist(Wr + fax * .012, Rh, HS, thumb, fat=.004)
     cuff = S.union(S.rcone(Wr + fax * .012, Wr - fax * .075, .055, .069), S.torus(Wr - fax * .075, .067, .011, S.basis((0, 0, 1) - fax * fax[2] if abs(fax[2]) < .9 else (0, 1, 0), fax)), k=.012)
@@ -130,9 +130,9 @@ def arm_parts(side, Sh, El, Wr, y_hand, thumb, sleeve='fabT', skin='skinF', glov
     for x in (-.024, 0, .024):                                                       # seams down the back of the hand
         glove = S.groove(glove, [Hl((x, .026, .02)), Hl((x * 1.1, .03, .09))], .004, .004)
     glove = S.groove(glove, [Hl((-.05, .0, .012)), Hl((0, .026, .012)), Hl((.05, .0, .012))], .004, .004)
-    out['glove'] = (glove, glove, 1300, dict(voxel=.0022, uv=('cyl', Wr, fax)))
+    out['glove'] = (glovem, glove, 1300, dict(voxel=.0022, uv=('cyl', Wr, fax)))
     wr = S.torus(Wr - fax * .02, .056, .008, S.basis((0, 0, 1) - fax * fax[2] if abs(fax[2]) < .9 else (0, 1, 0), fax), squash=2.2)
-    out['wriststrap'] = (strap, S.union(wr, S.box(Wr - fax * .02 + Rh @ V(0, .061, 0), (.012, .006, .016), .003, Rh)), 110, dict(voxel=.002))
+    out['wriststrap'] = (strapm, S.union(wr, S.box(Wr - fax * .02 + Rh @ V(0, .061, 0), (.012, .006, .016), .003, Rh)), 110, dict(voxel=.002))
     return out, (Hl, Rh)
 
 

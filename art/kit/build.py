@@ -19,7 +19,12 @@ F = np.float32
 TINT = {'fabT': '#a8744a', 'fab': '#4d577c', 'fabG': '#6f7a55', 'fabR': '#b3362b', 'lea': '#6a4230', 'leaB': '#6a4230', 'leaN': '#6a4230', 'glove': '#f2b21c', 'gloveN': '#f2b21c',
         'skinF': '#e2a680', 'stache': '#3a2a20', 'vestB': '#f08a1c', 'hard': '#f7b516', 'nY': '#f7b516', 'pY': '#f7b516', 'bY': '#f7b516', 'nS': '#8d95a6', 'bS': '#8d95a6', 'pS': '#8d95a6',
         'nD': '#4a4f60', 'bD': '#4a4f60', 'pD': '#4a4f60', 'gunm': '#3a3d4a', 'gunB': '#3a3d4a', 'sole': '#22222c', 'rib': '#2a2a34', 'lens': '#5fd0ff', 'visG': '#ffe27a', 'drill': '#9aa2b0',
-        'nW': '#e8e2d0', 'pW': '#e8e2d0', 'haz': '#f7b516', 'hazB': '#f7b516', 'chest': '#f7b516', 'tank': '#d8452c', 'rubber': '#22222c', 'red': '#ff4b3a'}
+        'nW': '#e8e2d0', 'pW': '#e8e2d0', 'haz': '#f7b516', 'hazB': '#f7b516', 'chest': '#f7b516', 'tank': '#d8452c', 'rubber': '#22222c', 'red': '#ff4b3a',
+        'vD': '#4636b4', 'vDp': '#4636b4', 'vI': '#6a55e6', 'vIp': '#6a55e6', 'vL': '#d9d2f4', 'vG': '#f2c14a', 'vC': '#7ff0e4', 'vM': '#ff4f9a', 'teal': '#3fe0d0', 'mag': '#ff4fd0',
+        'helm': '#e8e2d0', 'helmO': '#f08a1c', 'helmR': '#e8e2d0', 'helmD': '#4a4f60', 'cY': '#f7b516', 'cW': '#e8e2d0', 'cD': '#4a4f60', 'hazC': '#f7b516', 'pO': '#f08a1c', 'bO': '#f08a1c', 'bW': '#e8e2d0', 'shield': '#8d95a6',
+        'gH': '#6f8f3a', 'gHn': '#6f8f3a', 'gHp': '#6f8f3a', 'gD': '#41582a', 'gDn': '#41582a', 'gV': '#d8e0a0', 'gB': '#e8dcc0', 'gBn': '#e8dcc0', 'gBc': '#e8dcc0', 'gBp': '#e8dcc0',
+        'gC': '#8a3d2e', 'gCn': '#8a3d2e', 'gCb': '#8a3d2e', 'gG': '#ff8a6a', 'gGb': '#ff8a6a', 'gS': '#d8ff6a', 'gEye': '#ffb43a', 'gMaw': '#3a1420',
+        'cyan': '#5fe8ff', 'violet': '#a070ff', 'wallS': '#9aa2b0', 'wallR': '#b8452c', 'wallT': '#3f8f8a', 'wallY': '#e0a820', 'wallD': '#4a4f60', 'wallG': '#7d8a5a', 'conc': '#9a8f86', 'wood': '#8a6a48', 'rust': '#8a4a2c', 'cO': '#f08a1c'}
 
 
 class Part:
@@ -158,29 +163,46 @@ def uv_for(part, pos, tri):
         return np.stack([(P[..., 0] - lo[0]) / span[0], (P[..., 2] - lo[2]) / span[2]], -1)
     if kind == 'side':
         return np.stack([(P[..., 2] - lo[2]) / span[2], (P[..., 1] - lo[1]) / span[1]], -1)
+    if kind == 'box':                               # each face is looked at square on, along whichever axis it faces most (walls, sheets, slabs)
+        n = np.abs(np.cross(P[:, 1] - P[:, 0], P[:, 2] - P[:, 0]))
+        ax = np.argmax(n, 1)[:, None]
+        Q = (P - lo) / span
+        u = np.where(ax == 0, Q[..., 2], Q[..., 0])
+        v = np.where(ax == 1, Q[..., 2], Q[..., 1])
+        return np.stack([u, v], -1)
+    if kind == 'plane':                             # ('plane', origin, across, up, width, height): a flat picture laid on a turned sheet
+        o, ua, va = (np.asarray(a, F) for a in part.uv[1:4])
+        return np.stack([((P - o) @ ua) / part.uv[4] + .5, ((P - o) @ va) / part.uv[5] + .5], -1)
     raise ValueError(kind)
 
 
-def crease(whole, pos, nrm):
-    """How tucked in (+) or how exposed (-) each point is, from the whole figure's field: the dark an inker lays into a fold."""
+def crease(whole, pos, nrm, unit=1.0):
+    """How tucked in (+) or how exposed (-) each point is, from the whole figure's field: the dark an inker lays into a fold.
+    `unit` is the size of the thing being inked: 1 for a figure a couple of metres tall, more for a building."""
     occ = np.zeros(len(pos), F)
     for h, w in ((.012, .55), (.03, .35), (.06, .1)):
+        h *= unit
         occ += w * np.clip(1 - whole(pos + nrm * h) / h, 0, 1)
     edge = np.zeros(len(pos), F)
     for h, w in ((.008, .6), (.018, .4)):
+        h *= unit
         edge += w * np.clip(1 + whole(pos - nrm * h) / h, 0, 1)
     return np.clip(occ * 1.6 - .08, 0, 1) - np.clip(edge * 1.5 - .25, 0, 1) * (occ < .15)
 
 
 class Figure:
-    def __init__(self, name, scale=1.0):
-        self.name, self.parts, self.groups, self.scale, self.points = name, [], {}, scale, {}
+    def __init__(self, name, scale=1.0, lo=(-1.2, -.2, -1.2), hi=(1.2, 2.5, 1.2), coarse=.02, detail=1.0, unit=1.0):
+        """lo and hi box in everything the figure could reach; coarse is the grid that finds each part inside it.
+        unit is how big the thing is next to a person (a building is 4 or 5): it widens the creases and the buried-face test to suit."""
+        self.name, self.parts, self.groups, self.scale, self.points, self.unit = name, [], {}, scale, {}, unit
+        self.lo, self.hi, self.coarse, self.detail = lo, hi, coarse, detail      # detail scales every part's triangle budget
 
     def group(self, name, pivot=(0, 0, 0), parent=None, scale=1.0):
         """scale swells a whole group about its pivot (a bigger head, say); the game applies it, so only use it on a group with no children."""
         self.groups[name] = {'pivot': [float(x) for x in pivot], 'parent': parent, 'scale': float(scale)}
 
     def hidden(self, part, v, f, margin=.005):
+        margin *= self.unit
         """Drop the faces buried inside a neighbour in the same group: nobody sees them and they eat the triangle budget."""
         deep = np.full(len(v), 1.0, F)
         for o in self.parts:
@@ -198,7 +220,7 @@ class Figure:
         self.points[name] = (group, [float(x) for x in at])
 
     def add(self, name, group, mat, fn, tris, **kw):
-        self.parts.append(Part(name, group, mat, fn, tris, **kw))
+        self.parts.append(Part(name, group, mat, fn, max(24, int(tris * self.detail)), **kw))
 
     def whole(self):
         fs = [p.fn for p in self.parts]
@@ -226,7 +248,7 @@ class Figure:
         head['points'] = {k: {'group': g, 'at': [float(x) for x in (np.asarray(at, F) - np.asarray(self.abs_pivot(g), F))]} for k, (g, at) in self.points.items()}
         for part in self.parts:                      # every part's box is needed before any part can ask who buries it
             if part.lo is None:
-                part.lo, part.hi = bounds(part.fn)
+                part.lo, part.hi = bounds(part.fn, self.lo, self.hi, self.coarse, .012 * self.unit)
         blob = bytearray()
         total = 0
         for part in self.parts:
@@ -250,7 +272,7 @@ class Figure:
             me.corner_normals.foreach_get('vector', cn)
             cnrm = to_game(cn.reshape(-1, 3)).reshape(-1, 3, 3)
             uv = uv_for(part, pos, tri).astype(F)
-            cav = crease(whole, pos, vnrm)
+            cav = crease(whole, pos, vnrm, self.unit)
             # the .blend keeps the UVs and the crease value too
             layer = me.uv_layers.new(name='UVMap')
             layer.data.foreach_set('uv', uv.reshape(-1, 2).ravel())

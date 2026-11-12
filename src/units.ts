@@ -234,6 +234,7 @@ function rigger(): THREE.Group {
 
 /** Ironhold walker: a two-legged loader rig with a cannon bolted to each side. */
 function gantry(): THREE.Group {
+  { const fig = figure('gantry'); if (fig) { const mz = fig.points.muzzle; if (mz) muzzle(mz.group, mz.at, 2.4); return fig.root; } }   // sculpted in Blender (art/gantry.py)
   const obj = new THREE.Group(), body = grp('body', obj);
   for (const sx of [-1, 1]) {
     const l = grp(sx < 0 ? 'legL' : 'legR', obj, [sx * .78, 1.55, 0]);
@@ -290,6 +291,7 @@ function claw(parent: THREE.Object3D, p: P3, s: number, dir: P3, mat: Mat) {
 }
 /** Veyl melee zealot: floats, swings a tuning-fork glaive. */
 function cantor(): THREE.Group {
+  { const fig = figure('cantor'); if (fig) return fig.root; }   // sculpted in Blender (art/veyl.py); below is what the match server builds
   const obj = new THREE.Group(), body = grp('body', obj);
   put(tail(.27, 1.14, .38, 'ct'), M.vD, body);
   for (const [y, r, z] of [[.5, .19, -.12], [.74, .25, -.05], [.96, .285, -.01]]) put(ring(r, .024), M.vG, body, [0, y, z], [H + .12, 0, 0]);
@@ -319,7 +321,9 @@ function cantor(): THREE.Group {
 }
 
 /** Veyl ranged unit: slim, one eye, carries a long crystal lance that throws slow bolts. */
+const lanceFlash = (arms: THREE.Object3D, p: P3) => { const f = grp('flash', arms, p); mk(G.sph, M.cyan, [0, 0, 0], [.5, .5, .5], 0, f); mk(G.oct, M.cyan, [0, 0, 0], [.9, .2, .2], 0, f); mk(G.oct, M.cyan, [0, 0, 0], [.2, .9, .2], 0, f); f.visible = false; setLayer(f, L_FX); };
 function lancer(): THREE.Group {
+  { const fig = figure('lancer'); if (fig) { const mz = fig.points.muzzle; if (mz) lanceFlash(mz.group, mz.at); return fig.root; } }
   const obj = new THREE.Group(), body = grp('body', obj);
   put(tail(.22, 1.0, .5, 'lt'), M.vD, body);
   for (const [y, r, z] of [[.42, .14, -.17], [.66, .2, -.06]]) put(ring(r, .02), M.vG, body, [0, y, z], [H + .2, 0, 0]);
@@ -341,12 +345,19 @@ function lancer(): THREE.Group {
   put(shard(.1, .84, 6, .12), M.vC, arms, [-.01, -.155, 1.48], [H - .04, 0, .17]); put(ring(.11, .02), M.mag, arms, [.02, -.16, 1.42]);
   for (const a of [0, 2.1, 4.2]) put(shard(.04, .3, 4, .2), M.vC, arms, [.02 + Math.cos(a) * .12, -.16 + Math.sin(a) * .12, 1.36], [H, 0, 0]);
   put(shard(.05, .3, 4, .8), M.vC, arms, [.36, -.24, -.6], [-H, 0, 0]);
-  const f = grp('flash', arms, [-.1, -.13, 2.2]); mk(G.sph, M.cyan, [0, 0, 0], [.5, .5, .5], 0, f); mk(G.oct, M.cyan, [0, 0, 0], [.9, .2, .2], 0, f); mk(G.oct, M.cyan, [0, 0, 0], [.2, .9, .2], 0, f); f.visible = false; setLayer(f, L_FX);
+  lanceFlash(arms, [-.1, -.13, 2.2]);
   return obj;
 }
 
 /** Veyl worker: small and round, hums ore loose with a tuning fork and carries it home in a glass sling. */
+/** The sling: a glass pod on the back that glows full of ore on the way home. */
+function slingPod(body: THREE.Object3D) {
+  const pack = grp('pack', body); pack.visible = false;
+  put(blob(.36, .32, .26), M.vD, pack, [0, 1.12, -.27]); put(ring(.15, .025), M.vG, pack, [0, 1.12, -.36], [0, 0, 0]);
+  for (let i = 0; i < 4; i++) put(shard(.07, .34, 5), M.ore, pack, [-.1 + i * .07, 1.3, -.27 + (i % 2) * .05], [R(-.3, .3), R(0, 3), R(-.3, .3)]);
+}
 function tender(): THREE.Group {
+  { const fig = figure('tender'); if (fig) { slingPod(fig.groups.body); return fig.root; } }
   const obj = new THREE.Group(), body = grp('body', obj);
   put(tail(.2, .84, .3, 'tt'), M.vD, body);
   for (const [y, r, z] of [[.36, .12, -.1], [.56, .16, -.04]]) put(ring(r, .02), M.vG, body, [0, y, z], [H + .14, 0, 0]);
@@ -360,10 +371,7 @@ function tender(): THREE.Group {
   for (const sx of [-1, 1]) { put(tube([[sx * .08, .34, -.02], [sx * .17, .5, -.08], [sx * .15, .66, -.16]], [.03, .024, .006], 6), M.vD, head); put(shard(.035, .16, 4, .4), M.teal, head, [sx * .15, .7, -.17]); }
   for (const x of [-.04, .04]) put(tube([[x, .06, .12], [x * 1.3, -.04, .15], [x * 1.4, -.13, .13]], [.012, .009, .003], 5), M.vG, head);
   const halo = grp('halo', body, [0, 1.95, -.26]); put(ring(.34, .04, .5, 26), M.teal, halo); for (const sx of [-1, 1]) put(shard(.04, .16, 4, .5), M.mag, halo, [sx * .34, 0, 0]);
-  // The sling: a glass pod on the back that glows full of ore on the way home.
-  const pack = grp('pack', body); pack.visible = false;
-  put(blob(.36, .32, .26), M.vD, pack, [0, 1.12, -.27]); put(ring(.15, .025), M.vG, pack, [0, 1.12, -.36], [0, 0, 0]);
-  for (let i = 0; i < 4; i++) put(shard(.07, .34, 5), M.ore, pack, [-.1 + i * .07, 1.3, -.27 + (i % 2) * .05], [R(-.3, .3), R(0, 3), R(-.3, .3)]);
+  slingPod(body);
   const armL = grp('armL', body, [-.27, 1.26, 0]);
   put(tube([[0, 0, 0], [-.1, -.2, .06], [-.08, -.4, .22]], [.05, .038, .03], 8), M.vD, armL); claw(armL, [-.08, -.43, .25], .07, [0, -.3, .9], M.vL);
   const armR = grp('armR', body, [.27, 1.26, 0]);
@@ -376,6 +384,7 @@ function tender(): THREE.Group {
 
 /** Veyl heavy: a floating shell giant with crystal fists. */
 function warden(): THREE.Group {
+  { const fig = figure('warden'); if (fig) return fig.root; }
   const obj = new THREE.Group(), body = grp('body', obj);
   put(tail(.95, 2.0, .7, 'wt'), M.vD, body);
   for (const [y, r, z] of [[.7, .5, -.3], [1.2, .78, -.12], [1.7, .95, -.02]]) put(ring(r, .06), M.vG, body, [0, y, z], [H + .14, 0, 0]);

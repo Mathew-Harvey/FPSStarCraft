@@ -5,14 +5,14 @@ import addon_utils
 from mathutils import Vector
 
 
-def render(path, views=(('front', 0), ('three', 35), ('side', 90), ('back', 180)), centre=(0, 0, 1.0), height=2.2, px=560, samples=24, clay=False):
+def render(path, views=(('front', 0), ('three', 35), ('side', 90), ('back', 180)), centre=(0, 0, 1.0), height=2.2, px=560, samples=24, clay=False, dist=6, aspect=.62):
     addon_utils.enable('cycles', default_set=True)
     sc = bpy.context.scene
     sc.render.engine = 'CYCLES'
     sc.cycles.samples = samples
     sc.cycles.device = 'CPU'
     sc.cycles.use_denoising = False
-    sc.render.resolution_x = int(px * .62)
+    sc.render.resolution_x = int(px * aspect)
     sc.render.resolution_y = px
     sc.render.film_transparent = False
     w = bpy.data.worlds.new('w')
@@ -26,7 +26,8 @@ def render(path, views=(('front', 0), ('three', 35), ('side', 90), ('back', 180)
     sc.collection.objects.link(sun)
     cam = bpy.data.objects.new('cam', bpy.data.cameras.new('cam'))
     cam.data.type = 'ORTHO'
-    cam.data.ortho_scale = height
+    cam.data.ortho_scale = height * max(1.0, aspect)
+    cam.data.clip_end = dist * 3
     sc.collection.objects.link(cam)
     sc.camera = cam
     if clay:
@@ -42,7 +43,7 @@ def render(path, views=(('front', 0), ('three', 35), ('side', 90), ('back', 180)
     for name, deg in views:
         a = np.radians(deg)
         d = Vector((np.sin(a), -np.cos(a), .12))
-        cam.location = c + d * 6
+        cam.location = c + d * dist
         cam.rotation_euler = (c - cam.location).to_track_quat('-Z', 'Y').to_euler()
         ld = Vector((np.sin(a - .7), -np.cos(a - .7), .9))
         sun.rotation_euler = (-ld).to_track_quat('-Z', 'Y').to_euler()

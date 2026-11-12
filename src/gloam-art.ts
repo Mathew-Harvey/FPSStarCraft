@@ -1,5 +1,6 @@
 // The Gloam: a fungal swarm that grows out of ore rot. Moss hide, ivory chitin, coral gills,
 // teal mushroom caps and lime spore sacs. Skins, the cast and their structures live here.
+import { figure } from './meshes';
 import * as THREE from 'three';
 import { INK, R, rnd, M, TX, EXTRA, paint, tone, T, mk, G, setLayer, L_FX } from './gfx';
 import type { Ctx } from './gfx';
@@ -120,7 +121,10 @@ function jaw(parent: THREE.Object3D, p: P3, w: number, l: number, n: number, up 
 
 // ---------------------------------------------------------------- the cast
 /** Worker: a squat six-legged grazer with a cap on its back and a belly that swells with ore cud. */
+/** The grazer's cud: a glowing belly sac and the ore it has not finished with. */
+function cud(body: THREE.Object3D) { const pack = grp('pack', body); pack.visible = false; put(blob(.5, .36, .58), M.gS, pack, [0, .32, -.18]); for (let i = 0; i < 4; i++) put(shard(.06, .3, 5), M.ore, pack, [-.14 + i * .09, .74, -.5 + (i % 2) * .08], [-.7 + R(-.2, .2), R(0, 3), R(-.3, .3)]); }
 function grazer(): THREE.Group {
+  { const fig = figure('grazer'); if (fig) { cud(fig.groups.body); return fig.root; } }   // sculpted in Blender (art/gloam.py); below is what the match server builds
   const obj = new THREE.Group(), body = grp('body', obj);
   const legs = [[.22, .36], [-.04, .4], [-.28, .36]];
   legs.forEach(([z, r], i) => { for (const sx of [-1, 1]) bugLeg(obj, `lg${i}${sx < 0 ? 'L' : 'R'}`, [sx * .24, .4, z], sx, r, .4, z * .5 + .04, .062); });
@@ -128,7 +132,7 @@ function grazer(): THREE.Group {
   put(blob(.7, .4, .84), M.gV, body, [0, .36, -.02]);
   mushroom(body, [0, .7, -.12], .52, .34, [-.12, 0, 0], 1.1);
   sacs(body, [0, .82, -.42], 4, .08, 3);
-  const pack = grp('pack', body); pack.visible = false; put(blob(.5, .36, .58), M.gS, pack, [0, .32, -.18]); for (let i = 0; i < 4; i++) put(shard(.06, .3, 5), M.ore, pack, [-.14 + i * .09, .74, -.5 + (i % 2) * .08], [-.7 + R(-.2, .2), R(0, 3), R(-.3, .3)]);
+  cud(body);
   const head = grp('head', body, [0, .5, .38]);
   put(blob(.46, .36, .42, v => { if (v.z > 0) v.y *= 1 - v.z * .3; }, 'gzh'), M.gHn, head, [0, .02, .08]);
   put(lathe(spl([[.2, 0], [.22, .06], [.17, .14], [0, .17]], 6), 16, PI * 1.3, 1.2), M.gBc, head, [0, .1, .06], [-.4, PI, 0]);
@@ -142,6 +146,7 @@ function grazer(): THREE.Group {
 }
 /** Cheap fast biter that hatches in pairs: low, long, all jaw. */
 function snapper(): THREE.Group {
+  { const fig = figure('snapper'); if (fig) return fig.root; }
   const obj = new THREE.Group(), body = grp('body', obj);
   for (const sx of [-1, 1]) { const n = sx < 0 ? 'L' : 'R'; bugLeg(obj, 'lg0' + n, [sx * .17, .44, .3], sx, .3, .44, .42, .065); bugLeg(obj, 'lg1' + n, [sx * .17, .44, -.26], sx, .34, .44, -.34, .075); }
   put(tube([[0, .58, .36], [0, .6, .05], [0, .56, -.3], [0, .46, -.66], [0, .36, -.98]], [.24, .27, .22, .12, .03], 10, .85), M.gH, body);
@@ -158,7 +163,9 @@ function snapper(): THREE.Group {
   return obj;
 }
 /** Ranged: a hunched spitter with a fan of bone quills and a cap for a head. */
+const spitFlash = (arms: THREE.Object3D, p: P3) => { const f = grp('flash', arms, p); mk(G.sph, M.gSpit, [0, 0, 0], [.3, .3, .3], 0, f); mk(G.oct, M.gSpit, [0, 0, .1], [.12, .12, .6], 0, f); f.visible = false; setLayer(f, L_FX); };
 function quillback(): THREE.Group {
+  { const fig = figure('quillback'); if (fig) { const mz = fig.points.muzzle; if (mz) spitFlash(mz.group, mz.at); return fig.root; } }
   const top = new THREE.Group(), obj = grp('sc', top), body = grp('body', obj); obj.scale.setScalar(1.22);
   for (const [i, z, r] of [[0, .3, .46], [1, -.3, .5]] as const) for (const sx of [-1, 1]) bugLeg(obj, `lg${i}${sx < 0 ? 'L' : 'R'}`, [sx * .26, .72, z], sx, r, .72, z * 1.1, .1);
   put(blob(.72, .66, 1.1, v => { v.y += v.z * .3; }, 'qbb'), M.gH, body, [0, .98, -.02]);
@@ -178,11 +185,12 @@ function quillback(): THREE.Group {
   // The spit tube: a bone-ringed snout, and a muzzle flash where the quill leaves.
   put(tube([[0, -.06, -.02], [0, -.08, .2], [0, -.06, .38]], [.1, .085, .07], 8), M.gH, arms); for (const z of [.1, .22, .34]) put(ring(.08, .022), M.gB, arms, [0, -.07, z]);
   put(ring(.06, .02), M.gS, arms, [0, -.06, .4]);
-  const f = grp('flash', arms, [0, -.06, .48]); mk(G.sph, M.gSpit, [0, 0, 0], [.3, .3, .3], 0, f); mk(G.oct, M.gSpit, [0, 0, .1], [.12, .12, .6], 0, f); f.visible = false; setLayer(f, L_FX);
+  spitFlash(arms, [0, -.06, .48]);
   return top;
 }
 /** Suicide runner: a swollen lime sac on scuttling legs. Bursts into acid. */
 function blister(): THREE.Group {
+  { const fig = figure('blister'); if (fig) return fig.root; }
   const obj = new THREE.Group(), body = grp('body', obj);
   for (const [i, z] of [[0, .16], [1, -.04], [2, -.22]] as const) for (const sx of [-1, 1]) bugLeg(obj, `lg${i}${sx < 0 ? 'L' : 'R'}`, [sx * .17, .3, z], sx, .24, .3, z * .8, .045);
   put(blob(.4, .26, .5), M.gH, body, [0, .34, .02]);
@@ -196,6 +204,7 @@ function blister(): THREE.Group {
 }
 /** Heavy: a six-legged tusked beetle the size of a truck, with an old cap grown over its shell. */
 function mulcher(): THREE.Group {
+  { const fig = figure('mulcher'); if (fig) return fig.root; }
   const obj = new THREE.Group(), body = grp('body', obj, [0, -.42, 0]);
   [[1.0, 1.5, 1.6], [-.1, 1.7, .1], [-1.1, 1.6, -1.6]].forEach(([z, r, f], i) => { for (const sx of [-1, 1]) { const l = bugLeg(obj, `lg${i}${sx < 0 ? 'L' : 'R'}`, [sx * .9, 1.25, z], sx, r, 1.25, f, .2); spine(l, [sx * r * .6, r * .3, f * .55], .7, .12, [0, 0, -sx * .5]); } });
   put(blob(2.6, 1.7, 3.6, v => { if (v.y < 0) v.y *= .6; v.y += Math.max(0, v.z) * .12; }, 'mlb'), M.gH, body, [0, 1.85, -.1]);
@@ -227,6 +236,7 @@ export const GLOAM_HEIGHT: Record<string, number> = { grazer: 1.0, snapper: .9, 
 function root(g: THREE.Object3D, a: P3, b: P3, r: number) { const m: P3 = [(a[0] + b[0]) / 2 + R(-.4, .4), Math.max(a[1], b[1]) + r * .6, (a[2] + b[2]) / 2 + R(-.4, .4)]; put(tube([a, m, b], [r, r * .8, r * .2], 8), M.gD, g); }
 /** Mother Cap: the base. A huge mushroom over a lumpy stalk, Buds growing round its foot. */
 export function mothercap(anim: ((t: number) => void)[]) {
+  const fig = figure('mothercap'); if (fig) { const q = fig.groups; anim.push(t => { q.top.rotation.y = Math.sin(t * .3) * .03; q.top.scale.y = 1 + Math.sin(t * 1.1) * .02; }); return fig.root; }
   const g = new THREE.Group();
   put(blob(9, 2.2, 7.4, v => { if (v.y < 0) v.y = 0; v.y *= 1 + Math.sin(v.x * 7 + v.z * 5) * .08; }, 'mcbase'), M.gHn, g, [0, 0, 0]);
   put(lathe(spl([[2.4, 0], [2.1, 1.6], [1.6, 3.4], [1.8, 5], [2.4, 6.2]], 12), 20), M.gH, g);
@@ -248,6 +258,7 @@ export function mothercap(anim: ((t: number) => void)[]) {
 }
 /** Spore Sac: supply. A ribbed bulb that breathes. */
 export function sporesac(anim: ((t: number) => void)[]) {
+  const fig = figure('sporesac'); if (fig) { const q = fig.groups; anim.push(t => { const k = 1 + Math.sin(t * 1.6) * .04; q.bulb.scale.set(k, 1 / k, k); }); return fig.root; }
   const g = new THREE.Group();
   put(blob(4.6, 1.2, 4.2, v => { if (v.y < 0) v.y = 0; }, 'ssb'), M.gHn, g);
   const bulb = grp('bulb', g, [0, .4, 0]);
@@ -260,6 +271,7 @@ export function sporesac(anim: ((t: number) => void)[]) {
 }
 /** Warren: a burrow mound pocked with holes and propped with bone. Snappers come from here. */
 export function warren(anim: ((t: number) => void)[]) {
+  const fig = figure('warren'); if (fig) { const q = fig.groups;  return fig.root; }
   const g = new THREE.Group();
   put(blob(7.4, 4.2, 6, v => { if (v.y < 0) v.y = 0; v.y *= 1 + Math.sin(v.x * 5) * Math.cos(v.z * 4) * .12; }, 'wmound'), M.gH, g);
   for (const [x, y, z, r] of [[1.8, 1.2, 2.0, .7], [-1.6, 1.5, 1.8, .55], [0, 2.4, 1.4, .5], [2.5, 1.0, -1.2, .6], [-2.3, 1, -1.4, .55]]) {
@@ -272,6 +284,7 @@ export function warren(anim: ((t: number) => void)[]) {
 }
 /** Quill Garden: bone spines grown in rows out of a moss bed. Quillbacks, first research. */
 export function quillgarden(anim: ((t: number) => void)[]) {
+  const fig = figure('quillgarden'); if (fig) { const q = fig.groups;  return fig.root; }
   const g = new THREE.Group();
   put(blob(7.2, 1.8, 6.2, v => { if (v.y < 0) v.y = 0; }, 'qgb'), M.gHn, g);
   for (let i = 0; i < 16; i++) { const a = i / 16 * TAU, d = 1.2 + (i % 3) * .9, l = 3.2 + (i % 4) * 1.1 - d * .4; spine(g, [Math.cos(a) * d, .4, Math.sin(a) * d * .85], l, .26, [Math.sin(a) * .35, 0, -Math.cos(a) * .35]); }
@@ -282,6 +295,7 @@ export function quillgarden(anim: ((t: number) => void)[]) {
 }
 /** Blister Bed: a dish of swelling acid sacs. */
 export function blisterbed(anim: ((t: number) => void)[]) {
+  const fig = figure('blisterbed'); if (fig) { const q = fig.groups; anim.push(t => { for (let i = 0; i < 6; i++) { const k = 1 + Math.sin(t * 2 + i * 1.7) * .05; q['pod' + i].scale.set(k, 1 / k, k); } }); return fig.root; }
   const g = new THREE.Group();
   put(lathe(spl([[0, 1.0], [2.6, .9], [3.4, 1.4], [3.6, .6], [3.2, 0]], 10), 22), M.gH, g);
   const pods: THREE.Object3D[] = [];
@@ -292,6 +306,7 @@ export function blisterbed(anim: ((t: number) => void)[]) {
 }
 /** Tusk Hollow: a giant ribcage den. Mulchers, second research. */
 export function tuskhollow(anim: ((t: number) => void)[]) {
+  const fig = figure('tuskhollow'); if (fig) { const q = fig.groups;  return fig.root; }
   const g = new THREE.Group();
   put(blob(9.4, 2.4, 7.4, v => { if (v.y < 0) v.y = 0; }, 'thb'), M.gHn, g);
   for (let i = 0; i < 5; i++) { const z = -2.6 + i * 1.3, h = 5.6 - Math.abs(i - 2) * .6; for (const sx of [-1, 1]) put(tube([[sx * 3.6, .2, z], [sx * 3.6, h * .6, z], [sx * 1.6, h, z * .9], [sx * .2, h + .3, z * .8]], [.42, .36, .28, .16], 10), M.gB, g); }
@@ -303,6 +318,7 @@ export function tuskhollow(anim: ((t: number) => void)[]) {
 }
 /** Old Growth: a branching tree of fungus. Third research. */
 export function oldgrowth(anim: ((t: number) => void)[]) {
+  const fig = figure('oldgrowth'); if (fig) { const q = fig.groups; anim.push(t => { for (let i = 0; i < 5; i++) q['cap' + i].rotation.z = Math.sin(t * .8 + i) * .05; }); return fig.root; }
   const g = new THREE.Group();
   put(blob(6.4, 2, 6.4, v => { if (v.y < 0) v.y = 0; }, 'ogb'), M.gHn, g);
   put(tube([[0, 0, 0], [.4, 3, .2], [-.2, 6, 0], [.2, 9, -.2]], [1.4, 1.0, .8, .5], 10), M.gH, g);
@@ -318,6 +334,7 @@ export function oldgrowth(anim: ((t: number) => void)[]) {
 }
 /** Stinger Stalk: defence. A tall stalk with a curled stinger that whips at anything close. */
 export function stinger(anim: ((t: number) => void)[]) {
+  const fig = figure('stinger'); if (fig) { const q = fig.groups; anim.push(t => { q.tip.rotation.x = Math.sin(t * 1.3) * .12; q.tip.rotation.y = Math.sin(t * .7) * .3; }); return fig.root; }
   const g = new THREE.Group();
   put(blob(3.2, 1.2, 3.2, v => { if (v.y < 0) v.y = 0; }, 'stb'), M.gHn, g);
   put(tube([[0, 0, 0], [.2, 2.4, 0], [-.1, 4.8, .1], [0, 6.4, 0]], [.7, .5, .42, .36], 10), M.gH, g);

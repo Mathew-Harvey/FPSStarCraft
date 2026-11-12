@@ -104,7 +104,7 @@ def reedgate():
         for j, (z0, z1, top) in enumerate(((.95, 1.6, 5.4), (-.95, -1.8, 4.5))):
             q = Vk.curve([(sx * 3.5, .3, z0), (sx * 4.5, top * .55, z1 * .9), (sx * 4.6, top, z1)], 10)
             fig.add('reed%s%d' % ('L' if sx < 0 else 'R', j), 'body', 'vL', Vk.horn(q, Vk.radii([.42, .3, .03], len(q)), plates=4, lip=.025), 300, voxel=.028, uv=('cyl', (sx * 4.2, top / 2, z1), (0, 1, 0)))
-    fig.add('bands', 'body', 'vG', S.union(*gold, S.torus((0, .9, 0), 2.6, .1, squash=1.0)), 800, voxel=.026, uv=('cyl',))
+    fig.add('bands', 'body', 'vG', S.union(*gold, S.torus((0, .9, 0), 2.3, .1, squash=1.0)), 800, voxel=.026, uv=('cyl',))
     key = S.union(Vk.crystal((0, 9.9, 0), (0, 7.6, 0), .34, 6, .25), *[Vk.crystal((sx * 3.55, 6.6, 0), (sx * 4.9, 8.3, 0), .3, 6, .25) for sx in (-1, 1)])
     fig.add('keystone', 'body', 'vC', key, 240, voxel=.024, uv=('cyl',), sharp=25)
     shards(fig, 'crystals', 'body', [(np.cos(a) * 3.75, np.sin(a) * 2.7, h, np.cos(a) * .4, np.sin(a) * .4) for a, h in ((.5, 1.5), (1.4, 1.0), (2.5, 1.8), (3.6, 1.2), (4.4, 1.6), (5.3, .9), (5.9, 1.3))])

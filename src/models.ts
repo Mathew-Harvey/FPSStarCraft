@@ -10,8 +10,9 @@ import { NEW, grp, put, can, nv } from './units';
 import { GLOAM_UNITS, GLOAM_HEIGHT, GLOAM_BUILDINGS, vmGloam } from './gloam-art';
 /** A Gloam body's first-person mandibles, tusks or snout. */
 export const vmG = (k: string) => vmGloam(k, bake, L_VM);
-export const gloamB = (k: string, anim: ((t: number) => void)[]) => GLOAM_BUILDINGS[k](anim);
+export const gloamB = (k: string, anim: ((t: number) => void)[]) => bake(GLOAM_BUILDINGS[k](anim));   // baked here so a sculpt's shared geometry is copied before the atlas rewrites it
 import { lathe, hard, spl, capsule, rbox, blob, nub, rod, blade, tube, plate, rrect, ring, shard, slab, warp, crag, boulder } from './sculpt';
+import { figure } from './meshes';
 
 export interface Rig { body: THREE.Object3D; head?: THREE.Object3D; arms?: THREE.Object3D; armL?: THREE.Object3D; armR?: THREE.Object3D; legL?: THREE.Object3D; legR?: THREE.Object3D; flash?: THREE.Object3D; halo?: THREE.Object3D; pack?: THREE.Object3D; height: number }
 export interface Model { obj: THREE.Group; rig: Rig }
@@ -82,25 +83,25 @@ function win(g: THREE.Object3D, p: P3, w: number, h: number, ry = 0) { put(plate
 /** A run of pipe with flanged joints. */
 function pipe(g: THREE.Object3D, pts: P3[], r: number, mat: THREE.Material = M.bD) { put(tube(pts, r, 8), mat, g); for (const q of [pts[0], pts[pts.length - 1]]) put(blob(r * 3, r * 3, r * 3), M.nS, g, q); }
 export function headframe(anim: ((t: number) => void)[]) {
-  const g = new THREE.Group();
-  put(slab(13, .24, 9, 3, .05), M.conc, g, [0, .12, 0]);
-  put(slab(10, 4.4, 7, 2.5, .14), M.wallS, g, [0, 2.3, 0]);
-  put(slab(10.2, .7, 7.2, 1.3, .08), M.haz, g, [0, 4.1, 0]); put(slab(10.5, .4, 7.5, 3, .1), M.wallD, g, [0, 4.7, 0]);
+  const fig = figure('headframe'), g = fig ? fig.root : new THREE.Group();
+  if (!fig) { put(slab(13, .24, 9, 3, .05), M.conc, g, [0, .12, 0]); }
+  if (!fig) { put(slab(10, 4.4, 7, 2.5, .14), M.wallS, g, [0, 2.3, 0]); }
+  if (!fig) { put(slab(10.2, .7, 7.2, 1.3, .08), M.haz, g, [0, 4.1, 0]); put(slab(10.5, .4, 7.5, 3, .1), M.wallD, g, [0, 4.7, 0]); }
   put(plate(rrect(3.2, 3, .12), .2, .05), M.doorP, g, [1.6, 1.6, 3.5]); put(slab(3.8, .36, .3, 1.9, .06), M.pY, g, [1.6, 3.3, 3.56]);
   for (const sx of [-1, 1]) put(slab(.3, 3.1, .3, 3, .06), M.pY, g, [1.6 + sx * 1.75, 1.6, 3.56]);
   win(g, [-2.7, 2.7, 3.5], 1.7, .8); win(g, [-2.7, 1.3, 3.5], 1.7, .8);
   poster(g, [-.95, 2.75, 3.53], 0, .85, 1.12, M.post2, .04); poster(g, [-1.05, 1.5, 3.53], 0, .7, .92, M.post1, -.06); poster(g, [4.3, 1.55, 3.53], 0, .8, 1.05, M.post3, .05); poster(g, [5.03, 2.0, 1.5], H2, .8, 1.05, M.post4, .04);
-  for (let i = 0; i < 2; i++) { const x = -3.2 + i * 6.4; put(can(1.2, 1.6, .08), M.bS, g, [x, 5.6, -1.6]); put(lathe([...hard([[1.2, 0], [1.26, .04]]), ...spl([[1.24, .1], [1.0, .5], [.5, .76], [0, .82]], 8)], 20), M.cY, g, [x, 6.4, -1.6]); put(ring(1.21, .06), M.nD, g, [x, 5.3, -1.6], [H2, 0, 0]); }
-  pipe(g, [[-3.2, 6.9, -1.6], [-3.2, 7.5, -1.6], [0, 7.5, -1.6], [3.2, 7.5, -1.6], [3.2, 6.9, -1.6]], .12); pipe(g, [[-4.6, 5.4, -1.6], [-5.3, 5.4, -1.6], [-5.3, 2.4, -1.6]], .14, M.bY);
+  if (!fig) { for (let i = 0; i < 2; i++) { const x = -3.2 + i * 6.4; put(can(1.2, 1.6, .08), M.bS, g, [x, 5.6, -1.6]); put(lathe([...hard([[1.2, 0], [1.26, .04]]), ...spl([[1.24, .1], [1.0, .5], [.5, .76], [0, .82]], 8)], 20), M.cY, g, [x, 6.4, -1.6]); put(ring(1.21, .06), M.nD, g, [x, 5.3, -1.6], [H2, 0, 0]); } }
+  if (!fig) { pipe(g, [[-3.2, 6.9, -1.6], [-3.2, 7.5, -1.6], [0, 7.5, -1.6], [3.2, 7.5, -1.6], [3.2, 6.9, -1.6]], .12); pipe(g, [[-4.6, 5.4, -1.6], [-5.3, 5.4, -1.6], [-5.3, 2.4, -1.6]], .14, M.bY); }
   const top = 14.2;
-  for (const sx of [-1, 1]) for (const sz of [-1, 1]) { tb([sx * 2.6, 4.8, sz * 2.2], [sx * .6, top, sz * .6], .17, M.bY, g); put(slab(.7, .3, .7, 1, .05), M.pD, g, [sx * 2.6, 4.95, sz * 2.2]); }
-  for (const h of [.3, .6]) { const y = 4.8 + (top - 4.8) * h, w = 2.6 - 2 * h, d = 2.2 - 1.6 * h; tb([-w, y, d], [w, y, d], .1, M.bD, g); tb([-w, y, -d], [w, y, -d], .1, M.bD, g); tb([-w, y, d], [-w, y, -d], .1, M.bD, g); tb([w, y, d], [w, y, -d], .1, M.bD, g); }
-  tb([-2.6, 4.8, 2.2], [1.6, 4.8 + (top - 4.8) * .3, 1.72], .08, M.bD, g); tb([2.0, 7.62, 1.72], [-1.4, 10.44, 1.24], .08, M.bD, g); tb([-2.6, 4.8, -2.2], [1.6, 7.62, -1.72], .08, M.bD, g); tb([2.0, 7.62, -1.72], [-1.4, 10.44, -1.24], .08, M.bD, g);
-  put(slab(1.9, 1.0, 1.9, 2, .12), M.chest, g, [0, top + .3, 0]); put(slab(2.2, .16, 2.2, 2, .05), M.pD, g, [0, top + .88, 0]);
+  if (!fig) { for (const sx of [-1, 1]) for (const sz of [-1, 1]) { tb([sx * 2.6, 4.8, sz * 2.2], [sx * .6, top, sz * .6], .17, M.bY, g); put(slab(.7, .3, .7, 1, .05), M.pD, g, [sx * 2.6, 4.95, sz * 2.2]); } }
+  if (!fig) { for (const h of [.3, .6]) { const y = 4.8 + (top - 4.8) * h, w = 2.6 - 2 * h, d = 2.2 - 1.6 * h; tb([-w, y, d], [w, y, d], .1, M.bD, g); tb([-w, y, -d], [w, y, -d], .1, M.bD, g); tb([-w, y, d], [-w, y, -d], .1, M.bD, g); tb([w, y, d], [w, y, -d], .1, M.bD, g); } }
+  if (!fig) { tb([-2.6, 4.8, 2.2], [1.6, 4.8 + (top - 4.8) * .3, 1.72], .08, M.bD, g); tb([2.0, 7.62, 1.72], [-1.4, 10.44, 1.24], .08, M.bD, g); tb([-2.6, 4.8, -2.2], [1.6, 7.62, -1.72], .08, M.bD, g); tb([2.0, 7.62, -1.72], [-1.4, 10.44, -1.24], .08, M.bD, g); }
+  if (!fig) { put(slab(1.9, 1.0, 1.9, 2, .12), M.chest, g, [0, top + .3, 0]); put(slab(2.2, .16, 2.2, 2, .05), M.pD, g, [0, top + .88, 0]); }
   const wheel = new THREE.Group(); put(ring(1.8, .13, 1, 32), M.bD, wheel); put(ring(1.6, .05, 1, 32), M.nS, wheel); for (let i = 0; i < 4; i++) put(rbox(3.4, .14, .12, .04), M.pD, wheel, 0, [0, 0, i * Math.PI / 4]); put(can(.32, .5, .04), M.bY, wheel, 0, [H2, 0, 0]);
   wheel.position.set(0, top + 1.4, 1.1); g.add(wheel); anim.push(t => { wheel.rotation.z = t * .5; });
   put(blob(.34, .34, .34), M.red, g, [0, top + 3.5, 0]); tb([0, top + .7, 0], [0, top + 3.4, 0], .05, M.nD, g, 6); tb([0, top + 1.4, 1.1], [0, top + 1.4, 0], .1, M.nD, g, 6);
-  put(can(.46, 3.4, .04), M.wallR, g, [3.4, 6.4, -2]); put(ring(.5, .09), M.nD, g, [3.4, 8.0, -2], [H2, 0, 0]); put(ring(.48, .06), M.nY, g, [3.4, 6.2, -2], [H2, 0, 0]);
+  if (!fig) { put(can(.46, 3.4, .04), M.wallR, g, [3.4, 6.4, -2]); put(ring(.5, .09), M.nD, g, [3.4, 8.0, -2], [H2, 0, 0]); put(ring(.48, .06), M.nY, g, [3.4, 6.2, -2], [H2, 0, 0]); }
   for (let i = 0; i < 5; i++) { const p = mk(G.sph, M.smoke, [3.4, 9, -2], [1, 1, 1], 0, g); p.userData.dyn = true; anim.push(t => { const k = ((t * .16 + i / 5) % 1); p.position.set(3.4 + k * 3.2 + Math.sin(i * 2.1) * .5, 8.6 + k * 7, -2 - k * 2); const s = .9 + k * 2.6; p.scale.set(s, s * .85, s); }); }
   put(plate(rrect(5.2, 1.4, .1), .2, .05), M.sign, g, [-1.4, 5.8, 3.3]); tb([-3.4, 4.9, 3.3], [-3.4, 5.2, 3.3], .08, M.nD, g, 6); tb([.6, 4.9, 3.3], [.6, 5.2, 3.3], .08, M.nD, g, 6);
   tb([5.6, 0, 4.2], [5.6, 6, 4.2], .1, M.bD, g); put(rbox(.9, .5, .4, .08), M.pD, g, [5.6, 6.1, 4.3], [.4, 0, 0]); put(plate(rrect(.74, .34, .04), .1, .02), M.visG, g, [5.6, 6.0, 4.48], [.4, 0, 0]);
@@ -112,11 +113,11 @@ export function headframe(anim: ((t: number) => void)[]) {
 }
 /** Quonset hut. Long axis along X, door on the +Z side. */
 export function bunkhouse() {
-  const g = new THREE.Group();
-  put(slab(7.6, .2, 5.8, 3, .05), M.conc, g, [0, .1, 0]);
-  mk(G.half, M.wallG, [0, .2, 0], [5.2, 7, 5.2], [0, 0, Math.PI / 2], g);
-  for (const x of [-2.4, 0, 2.4]) put(lathe(hard([[2.6, -.07], [2.68, 0], [2.6, .07]]), 20, Math.PI), M.bD, g, [x, .2, 0], [0, 0, H2]);
-  for (const sx of [-1, 1]) put(slab(.18, .8, 5.3, 2.6, .05), M.wallD, g, [sx * 3.52, .5, 0]);
+  const fig = figure('bunkhouse'), g = fig ? fig.root : new THREE.Group();
+  if (!fig) { put(slab(7.6, .2, 5.8, 3, .05), M.conc, g, [0, .1, 0]); }
+  if (!fig) { mk(G.half, M.wallG, [0, .2, 0], [5.2, 7, 5.2], [0, 0, Math.PI / 2], g); }
+  if (!fig) { for (const x of [-2.4, 0, 2.4]) put(lathe(hard([[2.6, -.07], [2.68, 0], [2.6, .07]]), 20, Math.PI), M.bD, g, [x, .2, 0], [0, 0, H2]); }
+  if (!fig) { for (const sx of [-1, 1]) put(slab(.18, .8, 5.3, 2.6, .05), M.wallD, g, [sx * 3.52, .5, 0]); }
   put(plate(rrect(1.5, 2.1, .08), .16, .04), M.doorP, g, [3.56, 1.25, 0], [0, H2, 0]); put(slab(.2, .24, 1.9, 2, .05), M.pY, g, [3.6, 2.42, 0]); win(g, [3.6, 2.9, 0], .7, .3, H2);
   put(rbox(1.5, .9, .9, .1), M.pD, g, [1, 2.0, 2.2]); put(can(.3, .1), M.rib, g, [1, 2.0, 2.68], [H2, 0, 0]); put(ring(.3, .05), M.nS, g, [1, 2.0, 2.7]);
   tb([-2.2, 2.5, 0], [-2.2, 5.6, 0], .05, M.nD, g, 6); put(blob(.24, .24, .24), M.red, g, [-2.2, 5.7, 0]); tb([-2.8, 4.6, 0], [-1.6, 4.6, 0], .04, M.nD, g, 6);
@@ -193,8 +194,8 @@ function container(g: THREE.Object3D, mat: THREE.Material, p: P3, ry: number) {
   for (const sx of [-1, 1]) for (const sy of [-1, 1]) for (const sz of [-1, 1]) put(rbox(.22, .22, .22, .04), M.pD, c, [sx * 2.42, sy * 1.07, sz * 1.07]);
 }
 export function depot() {
-  const g = new THREE.Group();
-  container(g, M.wallR, [0, 1.15, -1.2], 0); container(g, M.wallT, [.2, 1.15, 1.25], .06); container(g, M.wallY, [.1, 3.45, 0], -.12);
+  const fig = figure('depot'), g = fig ? fig.root : new THREE.Group();
+  if (!fig) { container(g, M.wallR, [0, 1.15, -1.2], 0); container(g, M.wallT, [.2, 1.15, 1.25], .06); container(g, M.wallY, [.1, 3.45, 0], -.12); }
   put(tube([[-2, 4.62, -.6], [0, 4.7, .9], [2.2, 4.62, -.5]], .05, 6), M.leaB, g); put(blob(1.6, .5, 1.2), M.fabT, g, [-.6, 4.7, .1]);
   // Lived in. The board hangs off the top box, the doors get a roof, and the top is somebody's yard.
   signboard(g, [-.3, 3.72, 1.17], [0, -.12, .045], 2.6, 1.08, M.signDep);
@@ -209,14 +210,14 @@ export function depot() {
   return bake(g);
 }
 export function watchpost() {
-  const g = new THREE.Group();
-  for (const sx of [-1, 1]) for (const sz of [-1, 1]) { tb([sx * 1.2, 0, sz * 1.2], [sx * .9, 4.5, sz * .9], .1, M.bD, g); put(slab(.5, .2, .5, 1, .04), M.conc, g, [sx * 1.2, .1, sz * 1.2]); }
-  for (const sz of [-1, 1]) { tb([-1.15, .8, sz * 1.15], [1.0, 3.6, sz * .95], .06, M.nD, g, 6); tb([1.15, .8, sz * 1.15], [-1.0, 3.6, sz * .95], .06, M.nD, g, 6); }
-  for (const sx of [-1, 1]) { tb([sx * 1.15, .8, -1.15], [sx * .95, 3.6, 1.0], .06, M.nD, g, 6); }
-  put(slab(2.9, .3, 2.9, 1.5, .06), M.wallS, g, [0, 4.6, 0]);
-  for (const [x, z, w, d] of [[0, 1.4, 2.9, .16], [0, -1.4, 2.9, .16], [1.4, 0, .16, 2.9], [-1.4, 0, .16, 2.9]]) put(slab(w, .9, d, 1.45, .05), M.pY, g, [x, 5.2, z]);
-  for (const sx of [-1, 1]) for (const sz of [-1, 1]) tb([sx * 1.3, 5.6, sz * 1.3], [sx * 1.3, 6.9, sz * 1.3], .06, M.nD, g, 6);
-  put(lathe(hard([[2.5, 0], [2.45, .1], [0, 1.3]]), 4), M.wallR, g, [0, 6.85, 0], [0, Math.PI / 4, 0]);
+  const fig = figure('watchpost'), g = fig ? fig.root : new THREE.Group();
+  if (!fig) { for (const sx of [-1, 1]) for (const sz of [-1, 1]) { tb([sx * 1.2, 0, sz * 1.2], [sx * .9, 4.5, sz * .9], .1, M.bD, g); put(slab(.5, .2, .5, 1, .04), M.conc, g, [sx * 1.2, .1, sz * 1.2]); } }
+  if (!fig) { for (const sz of [-1, 1]) { tb([-1.15, .8, sz * 1.15], [1.0, 3.6, sz * .95], .06, M.nD, g, 6); tb([1.15, .8, sz * 1.15], [-1.0, 3.6, sz * .95], .06, M.nD, g, 6); } }
+  if (!fig) { for (const sx of [-1, 1]) { tb([sx * 1.15, .8, -1.15], [sx * .95, 3.6, 1.0], .06, M.nD, g, 6); } }
+  if (!fig) { put(slab(2.9, .3, 2.9, 1.5, .06), M.wallS, g, [0, 4.6, 0]); }
+  if (!fig) { for (const [x, z, w, d] of [[0, 1.4, 2.9, .16], [0, -1.4, 2.9, .16], [1.4, 0, .16, 2.9], [-1.4, 0, .16, 2.9]]) put(slab(w, .9, d, 1.45, .05), M.pY, g, [x, 5.2, z]); }
+  if (!fig) { for (const sx of [-1, 1]) for (const sz of [-1, 1]) tb([sx * 1.3, 5.6, sz * 1.3], [sx * 1.3, 6.9, sz * 1.3], .06, M.nD, g, 6); }
+  if (!fig) { put(lathe(hard([[2.5, 0], [2.45, .1], [0, 1.3]]), 4), M.wallR, g, [0, 6.85, 0], [0, Math.PI / 4, 0]); }
   for (const sx of [-1, 1]) tb([sx * .2 - 1.6, .2, 1.5], [sx * .2 - 1.6, 4.7, 1.5], .035, M.nD, g, 5); for (let i = 0; i < 9; i++) tb([-1.8, .5 + i * .5, 1.5], [-1.4, .5 + i * .5, 1.5], .025, M.nS, g, 5);
   for (const [x, z] of [[1.0, 1.52], [-.4, 1.52]]) put(blob(.7, .34, .4), M.fabT, g, [x, 5.82, z]);
   const gun = new THREE.Group(); gun.position.set(0, 6.0, 0); g.add(gun); g.userData.gun = gun;
@@ -229,6 +230,8 @@ function spire(g: THREE.Object3D, r: number, h: number, mat: THREE.Material, p: 
   put(warp(lathe(spl([[r, 0], [r * .92, h * .15], [r * .7, h * .45], [r * .42, h * .75], [r * .12, h * .96], [0, h]], 16), 12), v => { const k = v.y / h, a = k * 1.4, c = Math.cos(a), s = Math.sin(a), x = v.x + Math.sin(k * 5) * r * .16; v.x = x * c - v.z * s; v.z = x * s + v.z * c; }, 'spire' + [r, h]), mat, g, p, lean);
 }
 export function choir(anim: ((t: number) => void)[]) {
+  const fig = figure('choir');
+  if (fig) { for (const [r, ry, tx, w] of [[fig.groups.ring0, 4.2, .25, .7], [fig.groups.ring1, 7.4, -.3, -.9]] as [THREE.Group, number, number, number][]) anim.push(t => { r.rotation.set(tx, t * w, 0); r.position.y = ry + Math.sin(t * 1.4 + ry) * .18; }); return bake(fig.root); }
   const g = new THREE.Group();
   put(lathe(spl([[2.2, 0], [2.0, .3], [1.3, .7], [1.0, 1.0]], 8), 16), M.vD, g);
   spire(g, 1.15, 11.4, M.vI, [0, .6, 0]); spire(g, .6, 5.6, M.vL, [1.0, .3, .3], [0, 1, -.2]); spire(g, .5, 4.2, M.vL, [-.9, .3, -.5], [.15, 3, .22]);
@@ -249,9 +252,9 @@ const rockPool: THREE.BufferGeometry[] = [];
 export function rocks(i: number) { if (!rockPool.length) { let s = 7; const rand = () => { s = (s * 16807) % 2147483647; return s / 2147483647; }; for (let k = 0; k < 6; k++) rockPool.push(boulder(rand)); } return rockPool[Math.abs(Math.floor(i)) % 6]; }
 /** Assay Office: the clever end of the yard. A balance scale on the roof weighs ore against the Charter's promises. */
 export function assay(anim: ((t: number) => void)[]) {
-  const g = new THREE.Group();
-  put(slab(7.2, .2, 6.4, 3, .05), M.conc, g, [0, .1, 0]);
-  put(slab(5.8, 3.0, 4.6, 2.2, .12), M.wallT, g, [0, 1.7, -.3]); put(slab(6.2, .3, 5.0, 3, .08), M.wallD, g, [0, 3.35, -.3]);
+  const fig = figure('assay'), g = fig ? fig.root : new THREE.Group();
+  if (!fig) { put(slab(7.2, .2, 6.4, 3, .05), M.conc, g, [0, .1, 0]); }
+  if (!fig) { put(slab(5.8, 3.0, 4.6, 2.2, .12), M.wallT, g, [0, 1.7, -.3]); put(slab(6.2, .3, 5.0, 3, .08), M.wallD, g, [0, 3.35, -.3]); }
   put(plate(rrect(1.3, 2.2, .1), .2, .05), M.doorP, g, [-1.6, 1.3, 2.02]); put(slab(1.9, .36, .24, 1, .05), M.haz, g, [-1.6, 2.7, 2.08]);
   win(g, [1.0, 2.0, 2.02], 1.9, 1.0); win(g, [2.92, 2.0, -.3], 1.5, .9, H2); win(g, [-2.92, 2.0, -.3], 1.5, .9, H2);
   // the scale
@@ -261,7 +264,7 @@ export function assay(anim: ((t: number) => void)[]) {
   put(shard(.3, .8, 5, .2), M.ore, beam, [-2.2, -1.36, 0]); put(rbox(.5, .34, .4, .05), M.pY, beam, [2.2, -1.2, 0]);
   anim.push(t => { beam.rotation.z = Math.sin(t * .9) * .1 - .05; });
   // sample stack and pipework round the side
-  put(can(.55, 2.6, .05), M.bS, g, [2.1, 4.7, -1.7]); put(lathe([...hard([[.55, 0], [.6, .04]]), ...spl([[.58, .1], [.4, .36], [0, .46]], 6)], 14), M.cO, g, [2.1, 6.0, -1.7]); put(ring(.57, .05), M.nD, g, [2.1, 4.4, -1.7], [H2, 0, 0]);
+  if (!fig) { put(can(.55, 2.6, .05), M.bS, g, [2.1, 4.7, -1.7]); put(lathe([...hard([[.55, 0], [.6, .04]]), ...spl([[.58, .1], [.4, .36], [0, .46]], 6)], 14), M.cO, g, [2.1, 6.0, -1.7]); put(ring(.57, .05), M.nD, g, [2.1, 4.4, -1.7], [H2, 0, 0]); }
   pipe(g, [[2.1, 3.9, -1.1], [2.1, 3.9, .2], [2.6, 3.2, .8]], .09);
   // The clever end of the yard still leaks: a porch on poles, the clerk's loft, the board, and a bench for the queue.
   signboard(g, [.5, 4.12, 2.05], [-.07, 0, .035], 3.9, 1.08, M.signAssay, .12);
@@ -276,32 +279,34 @@ export function assay(anim: ((t: number) => void)[]) {
 }
 /** Signal Mast: a lattice tower with a turning dish. The Charter listens in, and sends the good kit. */
 export function mast(anim: ((t: number) => void)[]) {
-  const g = new THREE.Group(), top = 10, r0 = 1.7, r1 = .42, at = (y: number) => r0 + (r1 - r0) * y / top;
-  put(slab(4.6, .2, 4.6, 2, .05), M.conc, g, [0, .1, 0]);
+  const fig = figure('mast'), g = fig ? fig.root : new THREE.Group(), top = 10, r0 = 1.7, r1 = .42, at = (y: number) => r0 + (r1 - r0) * y / top;
+  if (!fig) { put(slab(4.6, .2, 4.6, 2, .05), M.conc, g, [0, .1, 0]); }
+  if (!fig) {
   for (const sx of [-1, 1]) for (const sz of [-1, 1]) { tb([sx * r0, 0, sz * r0], [sx * r1, top, sz * r1], .2, M.bY, g); put(slab(.6, .24, .6, 1, .04), M.conc, g, [sx * r0, .14, sz * r0]); }
   const lv = [1.6, 3.8, 5.9, 7.8, 9.4];
   lv.forEach((y, i) => { const r = at(y), y2 = i < lv.length - 1 ? lv[i + 1] : top, r2 = at(y2);
     for (const s of [-1, 1]) { tb([-r, y, s * r], [r, y, s * r], .1, M.bY, g, 6); tb([s * r, y, -r], [s * r, y, r], .1, M.bY, g, 6); tb([-r * s, y, s * r], [r2 * s, y2, s * r2], .07, M.bS, g, 5); tb([s * r, y, r * s], [s * r2, y2, -r2 * s], .07, M.bS, g, 5); } });
   put(slab(1.5, .26, 1.5, 1, .05), M.wallS, g, [0, top + .1, 0]); for (const sx of [-1, 1]) for (const sz of [-1, 1]) tb([sx * .7, top + .2, sz * .7], [sx * .7, top + .9, sz * .7], .03, M.nD, g, 5);
-  tb([0, top + .2, 0], [0, top + 3.2, 0], .1, M.bS, g, 6); for (const y of [1.2, 1.9, 2.6]) tb([-.5 + y * .12, top + y, 0], [.5 - y * .12, top + y, 0], .03, M.nS, g, 5);
+  }
+  if (!fig) tb([0, top + .2, 0], [0, top + 3.2, 0], .1, M.bS, g, 6); for (const y of [1.2, 1.9, 2.6]) tb([-.5 + y * .12, top + y, 0], [.5 - y * .12, top + y, 0], .03, M.nS, g, 5);
   put(blob(.24, .24, .24), M.red, g, [0, top + 3.3, 0]);
   const dish = grp('dish', g, [0, top + .5, 0]); put(lathe([...spl([[0, 0], [.6, .08], [1.1, .4], [1.35, .86]], 8), ...hard([[1.4, .88], [1.36, .96]])], 18), M.bS, dish, [0, .6, .5], [1.15, 0, 0]); tb([0, .6, .5], [0, 1.15, 1.7], .035, M.nD, dish, 5); put(blob(.14, .14, .14), M.pY, dish, [0, 1.15, 1.7]); tb([0, 0, 0], [0, .6, .5], .08, M.bD, dish, 6);
   anim.push(t => { dish.rotation.y = t * .5; });
   // relay hut at the foot
-  put(slab(2.0, 1.7, 1.6, 1.2, .08), M.wallR, g, [0, 1.05, 0]); put(slab(2.2, .2, 1.8, 1.2, .05), M.wallD, g, [0, 2.0, 0]); win(g, [0, 1.25, .82], .9, .5); put(slab(.5, .5, .1, .5, .03), M.haz, g, [-.7, 1.2, .84]);
+  if (!fig) { put(slab(2.0, 1.7, 1.6, 1.2, .08), M.wallR, g, [0, 1.05, 0]); put(slab(2.2, .2, 1.8, 1.2, .05), M.wallD, g, [0, 2.0, 0]); } win(g, [0, 1.25, .82], .9, .5); put(slab(.5, .5, .1, .5, .03), M.haz, g, [-.7, 1.2, .84]);
   pipe(g, [[1.0, 1.5, 0], [1.5, 1.1, .3], [2.0, .25, .7]], .06);
   return bake(g);
 }
 /** Workshop: unlocks Breachers and sells upgrades. */
 export function machineshop(anim: ((t: number) => void)[]) {
-  const g = new THREE.Group();
-  put(slab(9, .2, 7, 3, .05), M.conc, g, [0, .1, 0]);
-  put(slab(6.4, 3.6, 5, 2.2, .12), M.wallR, g, [-.6, 1.9, -.4]); put(slab(6.8, .3, 5.4, 3, .08), M.wallD, g, [-.6, 3.85, -.4]);
+  const fig = figure('machineshop'), g = fig ? fig.root : new THREE.Group();
+  if (!fig) { put(slab(9, .2, 7, 3, .05), M.conc, g, [0, .1, 0]); }
+  if (!fig) { put(slab(6.4, 3.6, 5, 2.2, .12), M.wallR, g, [-.6, 1.9, -.4]); put(slab(6.8, .3, 5.4, 3, .08), M.wallD, g, [-.6, 3.85, -.4]); }
   put(plate(rrect(3.4, 2.8, .1), .2, .05), M.doorP, g, [-.6, 1.5, 2.1]); put(slab(3.9, .42, .26, 1.3, .06), M.haz, g, [-.6, 3.1, 2.16]);
   win(g, [-3.2, 2.6, 2.1], .9, .6);
-  put(can(.8, 4.4, .06), M.bS, g, [3.4, 2.2, -1.2]); put(lathe([...hard([[.8, 0], [.86, .04]]), ...spl([[.84, .1], [.66, .4], [.34, .56], [0, .6]], 8)], 18), M.cO, g, [3.4, 4.4, -1.2]); for (const y of [1.4, 3.2]) put(ring(.82, .07), M.nD, g, [3.4, y, -1.2], [H2, 0, 0]);
-  pipe(g, [[3.4, 3.6, -.4], [3.4, 3.6, .6], [2.4, 3.2, .9]], .1);
-  tb([3.4, 0, 2.2], [3.4, 5.6, 2.2], .15, M.bY, g); tb([3.4, 5.5, 2.2], [-1.6, 5.5, 2.2], .13, M.bY, g); tb([3.4, 4.2, 2.2], [1.6, 5.5, 2.2], .07, M.nD, g, 6); put(slab(.7, .3, .7, 1, .05), M.conc, g, [3.4, .15, 2.2]);
+  if (!fig) { put(can(.8, 4.4, .06), M.bS, g, [3.4, 2.2, -1.2]); put(lathe([...hard([[.8, 0], [.86, .04]]), ...spl([[.84, .1], [.66, .4], [.34, .56], [0, .6]], 8)], 18), M.cO, g, [3.4, 4.4, -1.2]); for (const y of [1.4, 3.2]) put(ring(.82, .07), M.nD, g, [3.4, y, -1.2], [H2, 0, 0]); }
+  if (!fig) { pipe(g, [[3.4, 3.6, -.4], [3.4, 3.6, .6], [2.4, 3.2, .9]], .1); }
+  if (!fig) { tb([3.4, 0, 2.2], [3.4, 5.6, 2.2], .15, M.bY, g); tb([3.4, 5.5, 2.2], [-1.6, 5.5, 2.2], .13, M.bY, g); tb([3.4, 4.2, 2.2], [1.6, 5.5, 2.2], .07, M.nD, g, 6); put(slab(.7, .3, .7, 1, .05), M.conc, g, [3.4, .15, 2.2]); }
   const hook = grp('hook', g, [-1.2, 5.4, 2.2]); tb([0, 0, 0], [0, -1.6, 0], .03, M.nD, hook, 5); put(rbox(.3, .26, .3, .05), M.pY, hook, [0, -.1, 0]); put(tube([[0, -1.6, 0], [.18, -1.82, 0], [0, -2.04, 0], [-.16, -1.86, 0]], [.05, .06, .05, .02], 6), M.nD, hook); anim.push(t => { hook.position.x = -.4 + Math.sin(t * .5) * 1.1; });
   const gear = grp('gear', g, [-.6, 4.9, -.4]); put(can(1.1, .4, .05), M.bY, gear); for (let i = 0; i < 8; i++) { const a = i / 8 * 6.283; put(rbox(.5, .4, .4, .06), M.pY, gear, [Math.cos(a) * 1.2, 0, Math.sin(a) * 1.2], [0, -a, 0]); } put(can(.4, .5, .04), M.bD, gear, [0, .1, 0]);
   gear.rotation.x = .25; anim.push(t => { gear.rotation.y = t * .8; });
@@ -318,15 +323,15 @@ export function machineshop(anim: ((t: number) => void)[]) {
 }
 /** Ironhold tier-three works: a furnace hall with a glowing crucible and a tall stack. */
 export function foundry(anim: ((t: number) => void)[]) {
-  const g = new THREE.Group();
-  put(slab(8.8, .2, 7.6, 3, .05), M.conc, g, [0, .1, 0]);
-  put(slab(5.8, 4.2, 5.2, 2.6, .12), M.wallD, g, [-.8, 2.2, -.6]); put(slab(6.2, .4, 5.6, 3, .08), M.wallR, g, [-.8, 4.5, -.6]);
-  put(slab(4.6, .9, 4.2, 2.3, .1), M.wallS, g, [-.8, 5.1, -.6]); put(slab(5.7, .42, .26, 1.3, .06), M.haz, g, [-.8, 3.5, 2.06]);
+  const fig = figure('foundry'), g = fig ? fig.root : new THREE.Group();
+  if (!fig) { put(slab(8.8, .2, 7.6, 3, .05), M.conc, g, [0, .1, 0]); }
+  if (!fig) { put(slab(5.8, 4.2, 5.2, 2.6, .12), M.wallD, g, [-.8, 2.2, -.6]); put(slab(6.2, .4, 5.6, 3, .08), M.wallR, g, [-.8, 4.5, -.6]); }
+  if (!fig) put(slab(4.6, .9, 4.2, 2.3, .1), M.wallS, g, [-.8, 5.1, -.6]); put(slab(5.7, .42, .26, 1.3, .06), M.haz, g, [-.8, 3.5, 2.06]);
   put(plate(rrect(2.6, 2.8, .1), .2, .05), M.doorP, g, [-1.6, 1.5, 2.02]);
   const glow = put(plate(rrect(1.5, 1.6, .2), .14, .03), M.fireP, g, [.9, 1.3, 2.03]); glow.userData.dyn = true; put(rbox(.14, 1.7, .12, .03), M.pD, g, [.9, 1.3, 2.1]); put(rbox(1.6, .14, .12, .03), M.pD, g, [.9, 1.3, 2.1]); put(plate(rrect(1.8, 1.9, .26), .1, .03), M.gunm, g, [.9, 1.3, 1.98]);
-  put(can(.75, 7.2, .06), M.wallR, g, [3.2, 3.6, -1.8]); put(can(.9, .4, .05), M.bD, g, [3.2, 7.3, -1.8]); for (const y of [5.2, 2.4]) put(ring(.78, .09), M.nY, g, [3.2, y, -1.8], [H2, 0, 0]);
-  put(lathe(hard([[.7, 0], [.95, .12], [.98, 1.4], [.86, 1.5], [.8, 1.42], [0, 1.42]]), 20), M.bS, g, [3.1, .15, 1.6]); const melt = put(can(.5, .06, .01), M.fireP, g, [3.1, 1.6, 1.6]); melt.userData.dyn = true;
-  pipe(g, [[2.4, 4.0, -1.8], [1.4, 4.9, -1.6], [.6, 5.5, -1.2]], .12); pipe(g, [[3.2, 1.6, -.9], [3.2, 2.2, .2], [3.1, 2.0, .9]], .1, M.bY);
+  if (!fig) { put(can(.75, 7.2, .06), M.wallR, g, [3.2, 3.6, -1.8]); put(can(.9, .4, .05), M.bD, g, [3.2, 7.3, -1.8]); for (const y of [5.2, 2.4]) put(ring(.78, .09), M.nY, g, [3.2, y, -1.8], [H2, 0, 0]); }
+  if (!fig) put(lathe(hard([[.7, 0], [.95, .12], [.98, 1.4], [.86, 1.5], [.8, 1.42], [0, 1.42]]), 20), M.bS, g, [3.1, .15, 1.6]); const melt = put(can(.5, .06, .01), M.fireP, g, [3.1, 1.6, 1.6]); melt.userData.dyn = true;
+  if (!fig) { pipe(g, [[2.4, 4.0, -1.8], [1.4, 4.9, -1.6], [.6, 5.5, -1.2]], .12); pipe(g, [[3.2, 1.6, -.9], [3.2, 2.2, .2], [3.1, 2.0, .9]], .1, M.bY); }
   tb([-3.4, 0, 3.2], [-3.4, 3.2, 3.2], .12, M.bY, g); put(rbox(.56, .36, .56, .08), M.pD, g, [-3.4, 3.3, 3.2]); put(blob(.4, .2, .4), M.visG, g, [-3.4, 3.12, 3.2]);
   put(slab(1.2, .9, .9, 1, .07), M.wallR, g, [-3.3, .5, 3.0], [0, .2, 0]); put(slab(.9, .7, .7, 1, .06), M.wallY, g, [1.2, .45, 3.3], [0, -.3, 0]);
   anim.push(t => { const k = 1 + Math.sin(t * 5) * .06 + Math.sin(t * 13) * .03; melt.scale.set(1.6 * k, 1, 1.6 * k); glow.scale.y = .94 + Math.sin(t * 7) * .05; });
@@ -339,7 +344,8 @@ function horn(g: THREE.Object3D, base: P3, tip: P3, r: number, mat: THREE.Materi
 }
 /** Veyl spawner: a standing ring that raids walk out of. */
 export function reedgate(anim: ((t: number) => void)[]) {
-  const g = new THREE.Group();
+  const fig = figure('reedgate'), g = fig ? fig.root : new THREE.Group();
+  if (fig) { const r = fig.groups.ring; anim.push(t => { r.rotation.z = t * .35; }); } else {
   put(lathe(spl([[3.6, 0], [3.4, .4], [2.8, .7], [2.6, .9], [0, .9]], 10), 20), M.vD, g); put(ring(2.9, .1, 1, 36), M.vG, g, [0, .78, 0], [H2, 0, 0]);
   for (const sx of [-1, 1]) {
     horn(g, [sx * 3.0, .4, 0], [sx * 2.2, 9.4, 0], .8, M.vI, .22); horn(g, [sx * 3.5, .3, .9], [sx * 4.3, 5.2, 1.4], .4, M.vL, .1); horn(g, [sx * 3.5, .3, -.9], [sx * 4.5, 4.4, -1.6], .36, M.vL, .1);
@@ -348,23 +354,28 @@ export function reedgate(anim: ((t: number) => void)[]) {
   }
   const ringG = grp('ring', g, [0, 4.6, 0]); put(ring(2.8, .2, .6, 44), M.mag, ringG); put(ring(2.5, .06, 1, 40), M.vG, ringG); for (let i = 0; i < 6; i++) { const a = i / 6 * 6.283; put(shard(.2, .9, 4, .5), M.teal, ringG, [Math.cos(a) * 2.8, Math.sin(a) * 2.8, 0], [0, 0, a - H2]); }
   anim.push(t => { ringG.rotation.z = t * .35; });
-  const veil = mk(G.disc, M.violet, [0, 4.6, 0], [4.9, 4.9, 1], 0, g); veil.userData.dyn = true; (veil.material as THREE.Material).side = THREE.DoubleSide; anim.push(t => { const k = 1 + Math.sin(t * 2.2) * .04; veil.scale.set(4.9 * k, 4.9 * k, 1); });
   for (let i = 0; i < 7; i++) { const a = i / 7 * 6.283 + .3, h = R(.9, 1.8); put(shard(.2, h, 5, .25), M.vC, g, [Math.cos(a) * 3.6, .8, Math.sin(a) * 3.6], [R(-.4, .4), 0, R(-.4, .4)]); }
+  }
+  const veil = mk(G.disc, M.violet, [0, 4.6, 0], [4.9, 4.9, 1], 0, g); veil.userData.dyn = true; (veil.material as THREE.Material).side = THREE.DoubleSide; anim.push(t => { const k = 1 + Math.sin(t * 2.2) * .04; veil.scale.set(4.9 * k, 4.9 * k, 1); });
   return bake(g);
 }
 /** Veyl hatchery: a ribbed crater with a glowing pool. Raids climb out of these. */
 export function broodpit(anim: ((t: number) => void)[]) {
-  const g = new THREE.Group();
-  put(lathe(spl([[3.8, 0], [3.6, .5], [3.0, 1.1], [2.5, 1.35], [2.2, 1.1], [2.0, .7]], 14), 22), M.vD, g); put(ring(2.55, .12, 1, 36), M.vG, g, [0, 1.3, 0], [H2, 0, 0]);
+  const fig = figure('broodpit'), g = fig ? fig.root : new THREE.Group();
+  if (!fig) { put(lathe(spl([[3.8, 0], [3.6, .5], [3.0, 1.1], [2.5, 1.35], [2.2, 1.1], [2.0, .7]], 14), 22), M.vD, g); put(ring(2.55, .12, 1, 36), M.vG, g, [0, 1.3, 0], [H2, 0, 0]); }
   const pool = mk(G.disc, M.violet, [0, 1.0, 0], [2.4, 2.4, 1], [-Math.PI / 2, 0, 0], g); pool.userData.dyn = true;
+  if (!fig) {
   for (let i = 0; i < 7; i++) { const a = i / 7 * 6.283 + .2, h = i % 2 ? 4.6 : 3.4, c = Math.cos(a), s = Math.sin(a); horn(g, [c * 3.1, .5, s * 3.1], [c * 1.5, h, s * 1.5], .42, i % 2 ? M.vL : M.vI, .32); }
   for (let i = 0; i < 5; i++) { const a = i / 5 * 6.283 + .9; put(blob(.6, .76, .6), i % 2 ? M.vC : M.vM, g, [Math.cos(a) * 1.5, 1.2, Math.sin(a) * 1.5]); }
   put(ring(1.8, .1, .5, 36), M.mag, g, [0, 1.5, 0], [H2, 0, 0]);
+  }
   anim.push(t => { const k = 2.4 * (1 + Math.sin(t * 2.6) * .08); pool.scale.set(k, k, 1); });
   return bake(g);
 }
 /** Veyl turret: a crooked spike with a floating eye that spits bolts. */
 export function thornspire(anim: ((t: number) => void)[]) {
+  const fig = figure('thornspire');
+  if (fig) { const { eye, halo } = fig.groups; anim.push(t => { eye.rotation.y = t * 2.2; eye.position.y = 6.9 + Math.sin(t * 2 + 6) * .14; halo.rotation.set(.3, t * 1.3, 0); halo.position.y = eye.position.y; }); return bake(fig.root); }
   const g = new THREE.Group();
   put(lathe(spl([[1.4, 0], [1.3, .25], [.9, .5], [0, .55]], 8), 14), M.vD, g);
   put(tube([[0, .3, 0], [.2, 1.8, .1], [-.16, 3.4, -.1], [.1, 5.0, .06], [0, 6.0, 0]], [.62, .56, .44, .3, .1], 10), M.vI, g);
@@ -377,6 +388,8 @@ export function thornspire(anim: ((t: number) => void)[]) {
 }
 /** Veyl shield node: three claws holding a bright core. Halves damage to every Veyl building nearby. */
 export function wardpylon(anim: ((t: number) => void)[]) {
+  const fig = figure('wardpylon');
+  if (fig) { const { core, r1, r2 } = fig.groups; anim.push(t => { core.scale.setScalar(1 + Math.sin(t * 3.4) * .1); core.rotation.y = t * .4; r1.rotation.y = t * .9; r2.rotation.set(t * .6, 0, t * 1.4); }); return bake(fig.root); }
   const g = new THREE.Group();
   put(lathe(spl([[1.7, 0], [1.6, .3], [1.15, .5], [0, .56]], 8), 16), M.vD, g); put(ring(1.1, .07), M.vG, g, [0, .56, 0], [H2, 0, 0]);
   for (let i = 0; i < 3; i++) { const a = i / 3 * 6.283, c = Math.cos(a), s = Math.sin(a); put(tube([[c * 1.2, .3, s * 1.2], [c * 1.75, 2.6, s * 1.75], [c * 1.5, 4.8, s * 1.5], [c * .62, 6.2, s * .62]], [.4, .34, .24, .03], 10), i % 2 ? M.vL : M.vI, g); put(ring(.36, .05), M.vG, g, [c * 1.66, 2.0, s * 1.66], [H2, 0, 0]); }
@@ -387,9 +400,10 @@ export function wardpylon(anim: ((t: number) => void)[]) {
 }
 /** Veyl supply: a quiet well. Four reeds arch over a dark pool, and a hush orb hangs above it, breathing. */
 export function hushwell(anim: ((t: number) => void)[]) {
-  const g = new THREE.Group();
-  put(lathe(spl([[2.4, 0], [2.3, .38], [1.95, .86], [1.62, 1.08], [1.42, .96]], 12), 22), M.vD, g); put(ring(1.62, .1, 1, 34), M.vG, g, [0, 1.06, 0], [H2, 0, 0]);
+  const fig = figure('hushwell'), g = fig ? fig.root : new THREE.Group();
+  if (!fig) { put(lathe(spl([[2.4, 0], [2.3, .38], [1.95, .86], [1.62, 1.08], [1.42, .96]], 12), 22), M.vD, g); put(ring(1.62, .1, 1, 34), M.vG, g, [0, 1.06, 0], [H2, 0, 0]); }
   const pool = mk(G.disc, M.violet, [0, .92, 0], [1.46, 1.46, 1], [-Math.PI / 2, 0, 0], g); pool.userData.dyn = true;
+  if (fig) { const { orb, halo } = fig.groups; anim.push(t => { const k = 1 + Math.sin(t * 1.3) * .08; orb.position.y = 2.7 + Math.sin(t * .9) * .18; orb.scale.setScalar(k); orb.rotation.y = t * .3; halo.position.y = orb.position.y; halo.rotation.set(Math.sin(t * .5) * .4, 0, Math.cos(t * .5) * .4); const q = 1.46 * (1 + Math.sin(t * 1.3 + 1) * .04); pool.scale.set(q, q, 1); }); return bake(g); }
   for (let i = 0; i < 4; i++) { const a = i / 4 * 6.283 + .4, c = Math.cos(a), s = Math.sin(a); horn(g, [c * 2.05, .5, s * 2.05], [c * .55, 4.3, s * .55], .26, i % 2 ? M.vL : M.vI, .26); put(shard(.09, .5, 4, .3), M.vC, g, [c * 2.2, .3, s * 2.2], [s * .5, 0, -c * .5]); }
   const orb = put(blob(.62, .62, .62), M.vM, g, [0, 2.7, 0]); orb.userData.dyn = true; const halo = put(ring(.78, .05, 1, 30), M.teal, g, [0, 2.7, 0], [H2, 0, 0]); halo.userData.dyn = true;
   for (let i = 0; i < 3; i++) { const a = i / 3 * 6.283; put(shard(.12, .7, 5, .3), M.vC, g, [Math.cos(a) * 1.0, 1.0, Math.sin(a) * 1.0], [Math.sin(a) * .4, 0, -Math.cos(a) * .4]); }

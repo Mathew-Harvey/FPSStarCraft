@@ -28,8 +28,9 @@ TINT = {'fabT': '#a8744a', 'fab': '#4d577c', 'fabG': '#6f7a55', 'fabR': '#b3362b
 
 
 class Part:
-    def __init__(self, name, group, mat, fn, tris, voxel=.003, uv=('cyl',), sharp=42.0, lo=None, hi=None):
-        self.name, self.group, self.mat, self.fn, self.tris, self.voxel, self.uv, self.sharp, self.lo, self.hi = name, group, mat, fn, tris, voxel, uv, sharp, lo, hi
+    def __init__(self, name, group, mat, fn, tris, voxel=.003, uv=('cyl',), sharp=42.0, lo=None, hi=None, planar=0.0):
+        """planar (degrees) is for flat-sided things: faces that lie within that angle of each other are merged first, so plate stays plate."""
+        self.name, self.group, self.mat, self.fn, self.tris, self.voxel, self.uv, self.sharp, self.lo, self.hi, self.planar = name, group, mat, fn, tris, voxel, uv, sharp, lo, hi, planar
 
 
 def field(fn, lo, hi, voxel):
@@ -112,16 +113,26 @@ def mesh_object(part, v, f):
         bmesh.ops.remove_doubles(bm, verts=bm.verts, dist=part.voxel * .2)
         bm.to_mesh(me)
         bm.free()
-        md = ob.modifiers.new('budget', 'DECIMATE')
-        md.ratio = part.tris / max(1, len(me.polygons))
-        md.use_collapse_triangulate = True
-        dg = bpy.context.evaluated_depsgraph_get()
-        me2 = bpy.data.meshes.new_from_object(ob.evaluated_get(dg))
-        ob.modifiers.clear()
-        ob.data = me2
-        bpy.data.meshes.remove(me)
-        me = me2
-        me.name = part.name
+        def apply():
+            nonlocal me
+            dg = bpy.context.evaluated_depsgraph_get()
+            me2 = bpy.data.meshes.new_from_object(ob.evaluated_get(dg))
+            ob.modifiers.clear()
+            ob.data = me2
+            bpy.data.meshes.remove(me)
+            me = me2
+            me.name = part.name
+        if part.planar:
+            md = ob.modifiers.new('flat', 'DECIMATE')
+            md.decimate_type = 'DISSOLVE'
+            md.angle_limit = np.radians(part.planar)
+            ob.modifiers.new('tri', 'TRIANGULATE')
+            apply()
+        if len(me.polygons) > part.tris:
+            md = ob.modifiers.new('budget', 'DECIMATE')
+            md.ratio = part.tris / max(1, len(me.polygons))
+            md.use_collapse_triangulate = True
+            apply()
     for p in me.polygons:
         p.use_smooth = True
     me.set_sharp_from_angle(angle=np.radians(part.sharp))
@@ -191,11 +202,12 @@ def crease(whole, pos, nrm, unit=1.0):
 
 
 class Figure:
-    def __init__(self, name, scale=1.0, lo=(-1.2, -.2, -1.2), hi=(1.2, 2.5, 1.2), coarse=.02, detail=1.0, unit=1.0):
+    def __init__(self, name, scale=1.0, lo=(-1.2, -.2, -1.2), hi=(1.2, 2.5, 1.2), coarse=.02, detail=1.0, unit=1.0, ink=1.0):
         """lo and hi box in everything the figure could reach; coarse is the grid that finds each part inside it.
         unit is how big the thing is next to a person (a building is 4 or 5): it widens the creases and the buried-face test to suit."""
         self.name, self.parts, self.groups, self.scale, self.points, self.unit = name, [], {}, scale, {}, unit
         self.lo, self.hi, self.coarse, self.detail = lo, hi, coarse, detail      # detail scales every part's triangle budget
+        self.ink = ink                         # how strongly creases are inked. Flat plate cut down to a few big triangles has corners only, and a corner is always tucked under its neighbour, so plate buildings turn it off
 
     def group(self, name, pivot=(0, 0, 0), parent=None, scale=1.0):
         """scale swells a whole group about its pivot (a bigger head, say); the game applies it, so only use it on a group with no children."""
@@ -272,7 +284,9 @@ class Figure:
             me.corner_normals.foreach_get('vector', cn)
             cnrm = to_game(cn.reshape(-1, 3)).reshape(-1, 3, 3)
             uv = uv_for(part, pos, tri).astype(F)
-            cav = crease(whole, pos, vnrm, self.unit)
+            if part.uv[-1] == 'swap':                 # the skin's stripes run the other way on this part
+                uv = np.ascontiguousarray(uv[..., ::-1])
+            cav = crease(whole, pos, vnrm, self.unit) * self.ink if self.ink else np.zeros(len(pos), F)
             # the .blend keeps the UVs and the crease value too
             layer = me.uv_layers.new(name='UVMap')
             layer.data.foreach_set('uv', uv.reshape(-1, 2).ravel())

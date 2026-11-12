@@ -291,3 +291,75 @@ body.cb{--grn:#4da3ff;--mag:#ff9d1a}
 .tree li b{font-weight:700;margin-right:6px}.tree li.dn b{color:var(--grn)}.tree li.dn b::before{content:"✓ "}
 .tree li small{font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);font-weight:700}
 .prompt{text-align:center;line-height:1.3}.prompt i{font-style:normal;opacity:.7;font-size:.8em}
+/* ---------------------------------------------------------------- touch screens */
+#touch{position:absolute;inset:0;z-index:4;touch-action:none;-webkit-touch-callout:none;--u:clamp(44px,11vmin,74px);--sl:max(14px,env(safe-area-inset-left,0px));--sr:max(14px,env(safe-area-inset-right,0px));--sb:max(10px,env(safe-area-inset-bottom,0px))}
+#touch[hidden]{display:none}
+#touch button{position:absolute;font-family:var(--display);font-weight:400;text-transform:uppercase;letter-spacing:.03em;color:var(--paper);background:rgba(14,13,20,.55);border:3px solid rgba(14,13,20,.9);box-shadow:3px 3px 0 rgba(14,13,20,.6);border-radius:50%;padding:0;font-size:calc(var(--u)*.24);line-height:1;touch-action:none;-webkit-tap-highlight-color:transparent;display:flex;align-items:center;justify-content:center;text-align:center}
+#touch button[hidden]{display:none}
+#touch button.on{background:var(--yel);color:var(--ink)}
+.tright button{width:calc(var(--u)*1.12);height:calc(var(--u)*1.12)}
+.tright{position:absolute;right:var(--sr);bottom:var(--sb);width:calc(var(--u)*5.2);height:calc(var(--u)*3.8)}
+.tright [data-b=fire]{width:calc(var(--u)*1.75);height:calc(var(--u)*1.75);right:calc(var(--u)*.55);bottom:calc(var(--u)*.45);font-size:calc(var(--u)*.34);background:rgba(232,72,58,.55);border-color:var(--ink)}
+.tright [data-b=aim]{right:calc(var(--u)*2.5);bottom:calc(var(--u)*.2)}
+.tright [data-b=dash]{right:calc(var(--u)*2.55);bottom:calc(var(--u)*1.5)}
+.tright [data-b=abil]{right:calc(var(--u)*1.6);bottom:calc(var(--u)*2.45)}
+.tright [data-b=reload]{right:calc(var(--u)*.2);bottom:calc(var(--u)*2.45)}
+.tright [data-b=jump]{right:calc(var(--u)*3.75);bottom:calc(var(--u)*2.6);background:rgba(43,176,166,.5)}
+.tright [data-b=prev],.tright [data-b=next]{width:calc(var(--u)*.95);height:calc(var(--u)*.95);font-size:calc(var(--u)*.38)}
+.tright [data-b=prev]{right:calc(var(--u)*3.8);bottom:calc(var(--u)*.3)}
+.tright [data-b=next]{right:calc(var(--u)*3.8);bottom:calc(var(--u)*1.45)}
+.tleft{position:absolute;left:var(--sl);top:52%;width:calc(var(--u)*1.2)}
+.tleft button{left:0;width:calc(var(--u)*1.12);height:calc(var(--u)*1.12)}
+.tleft [data-b=back]{top:calc(var(--u)*1.3)}
+.tbar{position:absolute;left:50%;transform:translateX(-50%);top:calc(max(4px,env(safe-area-inset-top,0px)) + 9vmin);display:flex;gap:8px}
+#touch .tbar button{position:static;border-radius:6px;transform:skewX(-8deg);height:calc(var(--u)*.62);min-width:calc(var(--u)*.9);padding:0 10px;font-size:calc(var(--u)*.24);background:rgba(14,13,20,.7)}
+.tctx{position:absolute;left:50%;transform:translateX(-50%);top:56%;display:flex;flex-wrap:wrap;justify-content:center;gap:8px;width:min(46vw,520px)}
+#touch .tctx button{position:static;border-radius:4px;transform:skewX(-8deg);background:var(--paper);color:var(--ink);border-color:var(--ink);font-size:calc(var(--u)*.24);padding:6px 12px 8px;min-height:calc(var(--u)*.7);max-width:100%}
+.tstick{position:absolute;width:calc(clamp(40px,13vmin,70px)*2);height:calc(clamp(40px,13vmin,70px)*2);margin:calc(clamp(40px,13vmin,70px)*-1) 0 0 calc(clamp(40px,13vmin,70px)*-1);border-radius:50%;border:3px solid rgba(250,240,220,.5);background:rgba(14,13,20,.3);pointer-events:none}
+.tstick[hidden]{display:none}
+.tstick i{position:absolute;left:50%;top:50%;width:46%;height:46%;margin:-23% 0 0 -23%;border-radius:50%;background:rgba(250,240,220,.75);border:3px solid var(--ink)}
+/* the HUD makes room for thumbs */
+body.touch .hint,body.touch .play,body.touch #edgeNote{display:none!important}
+body.touch .goal{top:20px}
+body.touch .callout .ckeys{display:none}
+body.touch .logo{text-shadow:3px 3px 0 var(--ink),-2px -2px 0 var(--ink),2px -2px 0 var(--ink),-2px 2px 0 var(--ink),5px 5px 0 var(--mag)}
+body.touch .who{left:28px;top:226px;bottom:auto;transform:scale(.62);transform-origin:0 0}
+body.touch .feed{top:310px;width:400px}
+body.touch .ammo,body.touch .slots{right:auto;left:50%;bottom:14px;transform:translateX(-50%) scale(.8);transform-origin:50% 100%}
+body.touch .ammo{text-align:center}body.touch .ammo .n{font-size:64px}
+body.touch .build{right:auto;left:280px;top:120px;width:330px;transform:scale(.78);transform-origin:0 0}
+body.touch #buildRows>div,body.touch #hud .card{pointer-events:auto}
+body.touch .objs{top:150px;transform:scale(.7);transform-origin:100% 0}
+body.touch .jump .cards{right:auto;left:50%;top:132px;transform:translateX(-50%) scale(.82);transform-origin:50% 0;gap:8px}
+body.touch .jump .foot{bottom:20px}
+body.touch .prompt{top:300px}
+body.touch.tctxon .prompt{display:none!important}
+body.touch .chat{bottom:auto;top:200px;left:50%;margin-left:-220px}
+/* menus on a phone: smaller titles, no keyboard lists */
+.only-touch{display:none}
+body.touch .only-touch{display:grid}
+body.touch .only-keys,body.touch #freeNote{display:none!important}
+#turnNote{display:none}
+@media (orientation:portrait){body.touch.playing #turnNote{display:flex;position:fixed;inset:0;z-index:60;align-items:center;justify-content:center;text-align:center;padding:30px;background:rgba(14,13,20,.94);font-family:var(--display);font-size:30px;text-transform:uppercase;color:var(--yel)}}
+@media (max-height:520px),(max-width:700px){
+  body.touch .screen{padding-block:10px;align-items:flex-start}
+  body.touch .box{gap:10px}
+  body.touch .logo{font-size:clamp(40px,11vh,72px)}
+  body.touch .logo.sm{font-size:clamp(34px,9vh,56px)}
+  body.touch .tagline{font-size:16px}
+  body.touch .modes button{font-size:18px;padding:4px 12px 6px}
+  body.touch .modes button small{font-size:11px}
+  body.touch .go{font-size:24px;padding:4px 20px 7px}
+  body.touch .diff button{font-size:16px;padding:3px 12px 5px}
+  body.touch .diff button small{font-size:11px}
+  body.touch .brief{padding:10px 14px 12px}
+  body.touch .brief p{font-size:16px}
+  body.touch .keys div{font-size:15px}
+  body.touch .row{gap:10px 16px}
+  body.touch .modes{flex-wrap:nowrap;overflow-x:auto}
+  body.touch .modes button{flex:none}
+  body.touch .modes button small{letter-spacing:.04em}
+  body.touch .jobs button{min-width:0;padding:3px 10px 5px}
+  body.touch .jobs button b{font-size:16px}
+  body.touch .logo{line-height:1}
+}

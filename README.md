@@ -88,7 +88,29 @@ TypeScript and three.js, bundled by esbuild into one HTML file. No art assets: m
 - [Game design document](docs/design/GAME_DESIGN.md)
 - [Look test](docs/design/mockups/index.html): the mockup scenes the renderer was developed against.
 
-Not in yet: playing as the Veyl, Flux as a second resource, more maps, and multiplayer.
+Not in yet: Flux as a second resource and more maps.
+
+## Playing as the Veyl
+
+Pick **The Veyl** on the Skirmish tab and press **Start singing**. Ironhold is run by bots: the Quartermaster digs, builds, trains and sends its squads at you, and you win by breaking every Headframe.
+
+The Veyl run the same kind of economy as the yard, with their own pieces:
+
+| Ironhold | The Veyl | What it does |
+| --- | --- | --- |
+| Rigger | **Tender** (50) | Hums ore from a seam into a glass sling with 1, carries it to a Choir Stone, and sings buildings up with 2 |
+| Headframe (400) | **Choir Stone** (400) | Where ore is banked and Tenders wake. Seed one on a far field to expand. Lose them all and the song ends |
+| Depot | **Hush Well** (100) | Room for eight more voices |
+| Bunkhouse | **Brood Pit** (150) | Wakes Cantors (75) and Lancers (80) |
+| Watchpost | **Thorn Spire** (110) | Shoots anything that walks up |
+| Machine Shop | **Ward Pylon** (150) | Cuts damage to nearby buildings, and teaches Keener Edges, Thicker Glass, Quick Step and Twin Thorns |
+| Foundry | **Reed Gate** (200) | Wakes the Warden (340), and teaches Bright Edges, Deep Glass, Long Breath (Lancers reach further) and Quick Bloom (shields grow back twice as fast) |
+
+The Choir Stone also teaches **Low Hum** (Tenders gather 30% faster) and **Wide Chorus** (more room for voices). Press G to hand the Chorus to the Conductor, who then grows it the way the bot Chorus does. The Chorus Lead pitches pushes the same way the Squad Lead does (Z yes, X hold, V follow me, middle mouse to point), the Conductor warns you when Ironhold boots are coming, and the Watcher calls out when your buildings are hit.
+
+**Balance.** A paid Veyl fighter that the AI drives takes 40% less from each hit and hits 45% harder than the free raiders the bot Chorus breeds in an Ironhold skirmish, so equal ore buys roughly an even fight. The body you drive yourself takes hits at face value, the same as an Ironhold one, so you can't stack the bonus on your own hero. Workers on both sides run from raiders and nearby guards come to help, and a bot Ironhold facing a Veyl player puts up a Watchpost early, so a lone hero can't wipe the economy. On Double shift a bot side facing a person gets 15% more from each load; on Day and Night nobody gets extra ore. A half-built site can be shot down, and an unfinished Choir Stone doesn't keep the Chorus alive. Single player as Ironhold is unchanged.
+
+`node test/veyl.mjs` plays a solo Veyl run in a browser, and `node tools/eco.cjs '[[0,1]]' 30` sets Ironhold bots against Veyl bots, both with full economies, for balancing.
 
 ## The Veyl base
 
@@ -139,7 +161,7 @@ In a match, press B to ping the spot you are looking at and Enter to type to the
 
 **How each side wins.** Ironhold is few, expensive and long-armed: it wins by out-digging the raids and pushing with a mixed squad (shield in front, rifles in the middle, a Longshot behind). The Veyl are many, free and close-in: they win by never letting the crew settle. Cantors tie up Breachers, Lancers wear down a Gantry, a Warden walks through shields and walkers, and Longshots or a mixed squad answer all three. `node tools/duel.cjs 4` prints the squad against squad table those lines come from.
 
-**Versus.** In the lobby, up to two players can press Play as the Veyl. They wake up inside Veyl bodies at the outpost: the Cantor fights with blades, the Lancer fires one long beam, and the Warden slams the ground. Each body has a second move on right click: the Cantor's Whirl hits everything in reach (and its cuts build a Crescendo while they keep landing), the Lancer's Held Note winds up and goes through a whole line, and the Warden's Low Note gives every Veyl in earshot its shield back. Veyl players jump between Veyl bodies the same way, pick the next raid's verse with 1, 2 and 3 (Blades, Lances or the Deep Voice, which brings a Warden from the fourth raid on), press G to call it early (from the two-minute mark, so the yard has a chance to hire its first rifles), and win by breaking the Headframe. The Chorus still breeds and marches on its own, so the Veyl players are its champions, not its whole army. `node test/versus.mjs` plays one of each side against the other.
+**Versus.** In the lobby, any player can press Play as the Veyl. When anyone does, the Chorus runs a full economy like the yard does (see Playing as the Veyl below), Veyl players wake up as Tenders at the Choir Stone, and they win by breaking every Headframe. Each Veyl fighter has a second move on right click: the Cantor's Whirl hits everything in reach (and its cuts build a Crescendo while they keep landing), the Lancer's Held Note winds up and goes through a whole line, and the Warden's Low Note gives every Veyl in earshot its shield back. A side with nobody on it is run by bots, so a lobby that is all Veyl plays against an Ironhold bot crew. `node test/versus.mjs` plays one of each side against the other.
 
 Multiplayer needs the game server, because the server runs the match and every player's browser is a window onto it. The server also serves the game page, so there is only one thing to host.
 
@@ -184,7 +206,7 @@ The Veyl base answers an attack: guards walk out to whoever is shooting, however
 
 ## Split screen
 
-Two players on one machine, no server needed. Pick a map and a shift on the Skirmish tab, choose side by side or stacked, then press **Split screen co-op** to share one Ironhold yard, or **Split screen versus** to put player two in the Veyl. In versus, player two wins by breaking the Headframe: use (Y on a controller) calls the raid, and the build key (D-pad up) changes its verse.
+Two players on one machine, no server needed. Pick a map and a shift on the Skirmish tab, choose side by side or stacked, then press **Split screen co-op** to share one side (Ironhold, or the Veyl when the Veyl are picked as your side), or **Split screen versus** to put player two in the Veyl. In versus both sides dig, build and train, and player two wins by breaking every Headframe.
 
 - Player one keeps the keyboard and mouse.
 - Player two uses a controller: left stick moves, right stick looks, RT fires, LT aims or raises the shield, A dashes, B is the grenade or ability, X reloads or rotates, Y uses or trains, hold LB for the jump wheel and pick with the D-pad, RB jumps into the body in the crosshair, D-pad up opens the build menu, Start pauses.

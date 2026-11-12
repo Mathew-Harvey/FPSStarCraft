@@ -55,7 +55,7 @@ try {
   const maps = await p.evaluate(() => {
     const out = {}; for (const [size, name] of [[1, 'small'], [0, 'medium'], [2, 'large']]) { __ore.pickMap(0); __ore.pickSize(size); __ore.start(); const g = __ore.game; out[name] = { fields: g.ores.length, out: Math.round(Math.hypot(g.stones()[0].pos.x, g.stones()[0].pos.z)) }; }
     __ore.pickMap(0); __ore.pickSize(0); __ore.start(); const g = __ore.game; g.noRender = true; g.introT = 0; g.dir.auto = false; g.fog.update(g, 1, true);
-    const st = g.stones()[0], far = g.ores[g.ores.length - 1];
+    const st = g.stones()[0], far = g.ores.filter(n => g.stones().every(t => Math.hypot(n.pos.x - t.pos.x, n.pos.z - t.pos.z) > 60)).pop();   // the Veyl home seams sit behind the outpost
     const fog = { yard: g.fog.sees(0, 0), outpost: g.fog.seen(st.pos.x, st.pos.z), field: g.fog.seen(far.pos.x, far.pos.z) };
     // a second Headframe out on a field: Riggers bank there, and losing the first one is not the end
     const [sx, sz] = [far.pos.x, far.pos.z], l = Math.hypot(sx, sz), at = g.dir.freeSpot('headframe', Math.round(sx - sx / l * 14), Math.round(sz - sz / l * 14)) || [0, 30], [hx, hz] = at; g.ore = 1000;
@@ -132,17 +132,12 @@ try {
     const h = __ore.split().host, c = __ore.game2(), body = h.units.find(u => u.alive && u.pilot === 2), victim = h.spawn('rigger', 0, body.pos.x + 1, body.pos.z);
     h.damage(victim, 9999, body); ff(1);
     for (let i = 0; i < 3; i++) h.spawn('linesman', 0, 4 + i, 12); ff(1);
-    c.noRender = false; c.update(1 / 30); c.noRender = true; const hint = document.querySelector('.hud.p2 #hint').textContent;
-    const early = h.dir.raidIn; c.pressed.add('KeyG'); ff(1); const refused = h.dir.raidIn > early - 3 && c.raidCall <= 0;
-    h.time = Math.max(h.time, 125); ff(1); c.pressed.add('KeyG'); ff(1); const called = h.dir.raidIn <= 6 || h.dir.raidLive; ff(95, () => c.keys.clear());
+    c.noRender = false; c.update(1 / 30); c.noRender = true;
     const objs = c.dir.objectives();
-    return { kills: h.score[2][0], squadHint: /Squad on me|Send squad/.test(hint), called: objs[1].done, refused, accepted: called };
+    return { kills: h.score[2][0], objs: objs.length, eco: h.eco };
   });
   check(vs.kills >= 1, `the Veyl player's kills reach the scoreboard (${vs.kills})`);
-  check(!vs.squadHint, 'the Veyl player is not offered squad orders they cannot give');
-  check(vs.refused, 'the Veyl player cannot call a raid in the opening two minutes');
-  check(vs.accepted, 'after two minutes the Veyl player can call the raid');
-  check(vs.called, 'the "call a raid" objective stays ticked after the cooldown');
+  check(vs.eco && vs.objs > 0, 'versus runs the Veyl economy and the Veyl player has objectives of their own');
 
   // 6. The pause screen has a way out of a running shift.
   const quit = await p.evaluate(() => { const q = document.getElementById('quit'); if (!q) return 'no button'; document.dispatchEvent(new KeyboardEvent('keydown', { code: 'Escape', bubbles: true })); q.click(); return { split: !!__ore.split(), menu: !document.getElementById('menu').hidden }; });

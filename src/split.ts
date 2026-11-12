@@ -1,9 +1,10 @@
-// Split screen: two players on one machine. Co-op shares one Ironhold yard; versus puts player two in the Veyl.
+// Split screen: two players on one machine. Co-op shares one side's base; versus puts player two in the Veyl.
 // It reuses the online co-op design. A silent copy of the game owns the match, the way the server does,
 // and each player's half of the screen is an ordinary client of it. Nothing leaves the page.
+// A single player on the Veyl side runs the same way, with one seat: the bots run Ironhold.
 import { Game } from './game';
 import { Net } from './net';
-import { DIFFS, setMap, Unit, isSoldier } from './data';
+import { DIFFS, setMap, Unit, isSoldier, isWorker } from './data';
 import { buildSnap, serverCmd, serverMove } from './netgame';
 import { audioSeat } from './audio';
 
@@ -19,24 +20,29 @@ export class Seat extends Net {
   close() { this.open = false; }
 }
 
+/** Who plays which side: everyone on Ironhold, player two on the Veyl, or everyone on the Veyl against Ironhold bots. */
+export type SplitMode = 'coop' | 'versus' | 'veyl';
 export class LocalMatch {
-  host: Game; seats: Seat[]; names: Record<number, string> = {}; teams: Record<number, number> = {};
+  host: Game; seats: Seat[]; names: Record<number, string> = {}; teams: Record<number, number> = {}; mode: SplitMode;
   private acc = 0; private tick = 0; private done = false;
-  constructor(public map: number, public diff: number, players = 2, public versus = false) {
-    audioSeat(0);
-    setMap(map); const g = this.host = new Game(noPipe(), noHud, DIFFS[diff], map); g.noRender = true; g.evq = []; g.me = null; g.phase = 'play';
-    this.seats = []; for (let i = 0; i < players; i++) this.seats.push(new Seat(i + 1, i ? 'Player two' : 'Player one'));
-    for (const s of this.seats) { this.names[s.pid] = s.name; this.teams[s.pid] = versus && s.pid > 1 ? 1 : 0; g.score[s.pid] = [0, 0, 0]; }
-    g.names = this.names; g.teams = this.teams; g.coop = Math.max(1, this.seats.filter(s => !this.teams[s.pid]).length);
+  /** True when the Veyl run their own economy here, so each half's copy of the game has to set up the same world. */
+  get eco() { return this.host.eco; }
+  constructor(public map: number, public diff: number, players = 2, mode: SplitMode | boolean = 'coop') {
+    audioSeat(0); this.mode = mode === true ? 'versus' : mode === false ? 'coop' : mode;
+    const team = (pid: number) => this.mode === 'veyl' ? 1 : this.mode === 'versus' && pid > 1 ? 1 : 0, eco = this.mode !== 'coop';
+    setMap(map); const g = this.host = new Game(noPipe(), noHud, DIFFS[diff], map, null, null, eco); g.noRender = true; g.evq = []; g.me = null; g.phase = 'play';
+    this.seats = []; for (let i = 0; i < players; i++) this.seats.push(new Seat(i + 1, players === 1 ? 'You' : i ? 'Player two' : 'Player one'));
+    for (const s of this.seats) { this.names[s.pid] = s.name; this.teams[s.pid] = team(s.pid); g.score[s.pid] = [0, 0, 0]; }
+    g.names = this.names; g.teams = this.teams; g.coop = Math.max(1, this.seats.filter(s => !this.teams[s.pid]).length); g.human = [this.seats.some(s => !this.teams[s.pid]), this.seats.some(s => this.teams[s.pid] === 1)];
     const riggers = g.own('rigger'); this.seats.forEach((s, i) => { const u = this.teams[s.pid] ? this.veylBody() : riggers[i % riggers.length]; if (u) { this.pilot(s, u); s.unit = u.id; } });
-    if (versus) { g.feedTo = 1; g.feed('Quartermaster', 'The other half of this screen sings for the Veyl. Keep the Headframe standing and break their Stones.', 'in'); g.feedTo = 2; g.feed('Chorus', 'You sing for the Veyl tonight. Break their Headframe. Pick the verse, call the raid and march with it.', 'in'); g.feedTo = 0; }
+    if (this.mode === 'versus') { g.feedTo = 1; g.feed('Quartermaster', 'The other half of this screen sings for the Veyl. Keep a Headframe standing and break their Stones.', 'in'); g.feedTo = 2; g.feed('Conductor', 'You sing for the Veyl tonight. Hum ore, grow the Chorus, and break every Headframe.', 'in'); g.feedTo = 0; }
+    else if (this.mode === 'veyl') g.feed('Conductor', players > 1 ? 'Two voices lead the Chorus tonight. The Ironhold bots are digging in down the road. Break every Headframe.' : 'You lead the Chorus tonight. The Ironhold are digging in down the road. Break every Headframe.', 'in');
     else g.feed('Quartermaster', 'Two of you on one payroll, and one screen between you. The Veyl have noticed and are sending more.', 'in');
     audioSeat(1);
   }
-  /** Hands a body back to the AI. */
-  /** A Veyl body for the player on the Chorus side: one already standing, or a new Cantor from a Brood Pit. */
-  private veylBody(): Unit | null { const g = this.host, free = g.units.filter(u => u.alive && u.team === 1 && !u.pilot && u.kind !== 'warden'); if (free.length) return free[Math.floor(Math.random() * free.length)]; const home = g.buildings.find(b => b.alive && b.kind === 'broodpit') || g.stones()[0]; return home ? g.spawn('cantor', 1, home.pos.x + 4, home.pos.z + 4) : null; }
-  private release(s: Seat) { const g = this.host, u = s.body; s.body = null; if (!u || !u.alive) return; u.pilot = 0; u.brace = false; u.moving = false; u.think = 0; if (u.team) { const st = g.stones()[0]; u.order = st && Math.hypot(u.pos.x - st.pos.x, u.pos.z - st.pos.z) > 60 ? { type: 'raid', x: 0, z: 0 } : { type: 'guard', x: u.pos.x, z: u.pos.z }; } else if (isSoldier(u)) g.dir.enlist(u); else { u.state = u.carrying > 0 ? 'toHQ' : 'idle'; u.site = null; } }
+  /** A Veyl body for a player on the Chorus side: a free Tender or fighter, or a fresh Tender at a Choir Stone. */
+  private veylBody(): Unit | null { const g = this.host, free = g.units.filter(u => u.alive && u.team === 1 && !u.pilot && u.kind !== 'warden'), t = free.filter(u => isWorker(u.kind)); if (t.length) return t[Math.floor(Math.random() * t.length)]; if (free.length) return free[Math.floor(Math.random() * free.length)]; return g.ownB('choir', false, 1).length ? g.spawn('tender', 1, ...g.hqSpot(1)) : null; }
+  private release(s: Seat) { const g = this.host, u = s.body; s.body = null; if (!u || !u.alive) return; u.pilot = 0; u.brace = false; u.moving = false; u.think = 0; if (isWorker(u.kind)) { u.state = u.carrying > 0 ? 'toHQ' : 'idle'; u.site = null; } else if (u.team && g.eco) g.dir.enlist(u); else if (u.team) { const st = g.stones()[0]; u.order = st && Math.hypot(u.pos.x - st.pos.x, u.pos.z - st.pos.z) > 60 ? { type: 'raid', x: 0, z: 0 } : { type: 'guard', x: u.pos.x, z: u.pos.z }; } else if (isSoldier(u)) g.dir.enlist(u); else { u.state = u.carrying > 0 ? 'toHQ' : 'idle'; u.site = null; } }
   private pilot(s: Seat, u: Unit) { if (s.body && s.body !== u) this.release(s); u.pilot = s.pid; s.body = u; u.target = null; u.wind = 0; if (u.site) { u.site.builder = null; u.site = null; } u.state = 'idle'; if (u.carrying > 0) this.host.bank(u); u.order = { type: 'guard', x: u.pos.x, z: u.pos.z }; }
   private say(s: Seat, o: any) { s.inbox.push(JSON.parse(JSON.stringify(o))); }
 
@@ -49,7 +55,7 @@ export class LocalMatch {
         if (Array.isArray(m.c)) for (const c of m.c.slice(0, 60)) {
           if (!Array.isArray(c)) continue;
           if (c[0] === 'bd') { const u = g.units.find(x => x.id === c[1]); if (u && u.alive && u.team === this.teams[s.pid] && (!u.pilot || u.pilot === s.pid)) this.pilot(s, u); }
-          else if (c[0] === 'rs' && this.teams[s.pid]) { if (!s.body && g.stones().length) { const u = this.veylBody(); if (u) { this.pilot(s, u); this.say(s, { t: 'yo', unit: u.id }); } } }
+          else if (c[0] === 'rs' && this.teams[s.pid]) { if (!s.body && g.stones().length) { const u = this.veylBody(); if (u) { this.pilot(s, u); this.say(s, { t: 'yo', unit: u.id }); g.feedTo = s.pid; g.feed('Conductor', 'A fresh voice for you. Mind this one.', ''); g.feedTo = 0; } } }
           else if (c[0] === 'rs') { if (!s.body && g.ownB('headframe').length) { const u = g.spawn('rigger', 0, ...g.hqSpot()); this.pilot(s, u); this.say(s, { t: 'yo', unit: u.id }); g.feedTo = s.pid; g.feed('Quartermaster', 'Found you a fresh Rigger. Try to keep this one.', ''); g.feedTo = 0; } }
           else serverCmd(g, s.pid, s.body, c);
         }
@@ -58,7 +64,7 @@ export class LocalMatch {
     }
     g.update(TICK); this.tick++;
     if (this.tick % 2 === 0) { const snap = JSON.stringify(buildSnap(g)); for (const s of this.seats) { s.lastSnap = performance.now(); s.inbox.push(JSON.parse(snap)); } }
-    if (g.phase === 'over') { this.done = true; const st = g.stats; for (const s of this.seats) this.say(s, { t: 'over', won: g.won, stats: [Math.floor(st.mined), st.built, st.kills, st.lost], time: g.time }); }
+    if (g.phase === 'over') { this.done = true; const st = g.stats; for (const s of this.seats) this.say(s, { t: 'over', won: g.won, stats: [Math.floor(st.mined), st.built, st.kills, st.lost, Math.floor(st.minedV)], time: g.time }); }
   }
   /** Runs the match forward by one screen frame. The match itself ticks thirty times a second, like the server. */
   frame(dt: number) {

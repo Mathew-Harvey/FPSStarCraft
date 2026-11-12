@@ -4,7 +4,7 @@ import * as THREE from 'three';
 import { V3, R, M } from './gfx';
 import { sfx } from './audio';
 import type { Game } from './game';
-import { Kind, BKind, UNIT, BLD, UPGRADES, Unit, Building, Callout, OUTPOST, GATE, RALLY, RALLY_N, NORTH_PATH, MAP, MAPS, ROAD, veylPt, roadPt, isSoldier } from './data';
+import { Kind, BKind, UNIT, BLD, UPGRADES, Unit, Building, Callout, OUTPOST, GATE, RALLY, RALLY_N, VRALLY, VRALLY_N, VHOME, NORTH_PATH, MAP, MAPS, ROAD, FACTION, veylPt, roadPt, isSoldier, foeOf } from './data';
 
 const DEPOT_SLOTS = [[-13, 9], [-13, -9], [-19, 0], [-22, 12], [-26, -6], [-20, 22]];
 const POST_SLOTS_0 = [[31, 20], [9, -31], [33, 5], [-8, 26]];
@@ -33,11 +33,42 @@ const CHATTER = [
 ];
 const KILL = ['Purple down!', 'That one\'s done singing.', 'Put it on my tab.', 'Got one. Counting it twice.', 'Scratch one choirboy.'];
 const DOWN = ['Man down! Not me. Yet.', 'We lost one. Deduct it from somebody else.', 'They got Kowalski. Again.', 'Medic! We don\'t have one! Medic anyway!'];
+// The Veyl side, when somebody plays it.
+const VHINTS: [number, string, string][] = [
+  [1.5, 'Conductor', 'The Chorus wakes. Hold click on the green ore to hum it loose, then carry it to the Choir Stone. I will tend the rest.'],
+  [16, 'Conductor', 'Press 2 to seed buildings yourself. Press G and I will stop.'],
+  [70, 'Watcher', 'The Ironhold yard is at the end of the road. Break every Headframe and the valley is ours.'],
+  [125, 'Conductor', 'The map is dark until a voice walks it. Find another seam and seed a Choir Stone beside it (press 2). It becomes a new home.'],
+];
+const VBOOKS = [
+  { name: 'Road Song', steps: ['Gather', 'Swell', 'March'], go: 'Down the road, all of us. Sing them out of their bunks.', label: 'The Chorus marches down the road' },
+  { name: 'Ridge Song', steps: ['Gather', 'Swell', 'Circle'], go: 'Over the ridge. They will hear us when it is too late.', label: 'The Chorus circles over the ridge' },
+  { name: 'Final Verse', steps: ['Gather', 'Swell', 'All voices'], go: 'Every voice, both roads. Let the last Headframe fall.', label: 'Every voice on the last Headframe' },
+];
+const VCHATTER = [
+  'The rock here hums in a minor key. I do not care for it.', 'The Ironhold sing so badly. All hammer, no tune.', 'My shell itches. It means rain, or rifles.',
+  'Another Tender asked me what silence sounds like. I did not answer.', 'The Stones are restless tonight.', 'I counted the stars. One of them is a Headframe light.',
+  'If they shoot at me again I will sing louder.', 'Somebody keeps humming flat. It is not me.',
+];
+const VKILL = ['One fewer hammer.', 'That one has stopped banging.', 'The rust takes them.', 'Quiet, at last.'];
+const VDOWN = ['A voice is gone.', 'We are one fewer.', 'The song thins.', 'They broke a shell. Remember it.'];
+
+/** One side's squad and economy brain. The Director keeps Ironhold's on itself; a Veyl side that somebody plays gets its own. */
+export interface Side {
+  team: number; auto: boolean; qmT: number; hintI: number; chatT: number;
+  plan: { phase: 'ask' | 'count' | 'go'; t: number; target: Building | null; book: number; label: string } | null;
+  nextPlan: number; callout: Callout | null; pushes: number; lastFailed: boolean; fails: number; playbook: { name: string; steps: string[]; idx: number };
+  /** An enemy push is on its way in. */
+  raidLive: boolean; retarget: number;
+}
 
 /** One group of raiders: where it gathers, where it is going, and whether it has been let off the leash. */
 interface Wave { units: Unit[]; sx: number; sz: number; t: number; go: boolean; n0: number; north: boolean; tx: number; tz: number; hunt?: boolean }
-export class Director {
-  auto = true; qmT = 0; hintI = 0; chatT = 55; barkT = 0;
+export class Director implements Side {
+  team = 0; retarget = 0; auto = true; qmT = 0; hintI = 0; chatT = 55; barkT = 0;
+  /** The Veyl side's brain, used when they run their own economy. */
+  vs: Side = { team: 1, auto: true, qmT: 0, hintI: 0, chatT: 70, plan: null, nextPlan: 75, callout: null, pushes: 0, lastFailed: false, fails: 0, playbook: { name: VBOOKS[0].name, steps: VBOOKS[0].steps, idx: 0 }, raidLive: false, retarget: 0 };
+  side(team: number): Side { return team ? this.vs : this; }
   plan: { phase: 'ask' | 'count' | 'go'; t: number; target: Building | null; book: number; label: string } | null = null;
   nextPlan = 60; callout: Callout | null = null; pushes = 0; lastFailed = false; /** Pushes in a row that broke nothing. */ fails = 0;
   playbook = { name: 'Yard Push', steps: BOOKS[0].steps, idx: 0 };
@@ -45,28 +76,41 @@ export class Director {
   flags: Record<string, boolean> = {};
 
   constructor(public g: Game) {
-    this.raidIn = 170 * g.diff.raid;
-    const guard = (k: Kind, x: number, z: number) => { if (g.net) return; const u = g.spawn(k, 1, x, z); u.order = { type: 'guard', x, z }; };
+    this.raidIn = g.eco ? 1e9 : 170 * g.diff.raid;
+    const guard = (k: Kind, x: number, z: number) => { if (g.net || g.eco) return; const u = g.spawn(k, 1, x, z); u.order = { type: 'guard', x, z }; };
     for (const [x, z] of [[-14, -5], [-12, 7], [-4, 0], [-18, 1]]) guard('cantor', ...veylPt(x, z));
     for (const [x, z] of [[0, -7], [0, 9]]) guard('lancer', ...veylPt(x, z));
   }
 
   // ------------------------------------------------------------ squad bookkeeping
-  rallyAt(i: number, north = false) { const r = north ? RALLY_N : RALLY; return { x: r.x + ((i % 4) - 1.5) * 2.4, z: r.z + Math.floor(i / 4) * 2.4 }; }
-  following() { return this.g.soldiers().some(u => u.order.type === 'follow'); }
-  pathFor(book: number, i: number): number[][] | undefined { return book === 1 || (book === 2 && i % 2) ? [...NORTH_PATH].reverse().map(p => [p[0], p[1]]) : undefined; }
-  targetFor(book: number): Building | null { const s = this.g.stones(), want = this.g.mission?.target?.(this.g) || null; if (!s.length || want) return want || this.g.buildings.find(b => b.alive && b.team === 1) || null; const w = this.g.ward(s[0].pos); if (w) return w; return book === 1 ? s.reduce((a, b) => a.pos.z < b.pos.z ? a : b) : this.g.nearestStone(RALLY); }
+  rallyAt(i: number, north = false, s: Side = this) { const r = s.team ? (north ? VRALLY_N : VRALLY) : north ? RALLY_N : RALLY; return { x: r.x + ((i % 4) - 1.5) * 2.4, z: r.z + Math.floor(i / 4) * 2.4 }; }
+  following(s: Side = this) { return this.g.army(s.team).some(u => u.order.type === 'follow'); }
+  books(s: Side) { return s.team ? VBOOKS : BOOKS; }
+  pathFor(book: number, i: number, s: Side = this): number[][] | undefined { return book === 1 || (book === 2 && i % 2) ? (s.team ? [...NORTH_PATH] : [...NORTH_PATH].reverse()).map(p => [p[0], p[1]]) : undefined; }
+  targetFor(book: number, s: Side = this): Building | null {
+    const g = this.g;
+    if (s.team) {
+      // The Veyl walk down the road and take the first thing they meet, circle round to whatever the Watchposts cannot see, or go all in on the last Headframe.
+      const all = g.ownB(), hfs = g.ownB('headframe'); if (!all.length) return null; const from = book === 1 ? NORTH_PATH[NORTH_PATH.length - 1] : [VRALLY.x, VRALLY.z];
+      if (book === 2 && hfs.length) return hfs.reduce((a, b) => Math.hypot(a.pos.x - from[0], a.pos.z - from[1]) < Math.hypot(b.pos.x - from[0], b.pos.z - from[1]) ? a : b);
+      return all.reduce((a, b) => Math.hypot(a.pos.x - from[0], a.pos.z - from[1]) < Math.hypot(b.pos.x - from[0], b.pos.z - from[1]) ? a : b);
+    }
+    const st = g.stones(), want = g.mission?.target?.(g) || null; if (!st.length || want) return want || g.buildings.find(b => b.alive && b.team === 1) || null; const w = g.ward(st[0].pos); if (w) return w;
+    // Against a Chorus that builds, the squad takes the outlying buildings on its way in, and goes for a Stone when it is all in.
+    if (g.eco && book !== 2) { const vb = g.ownB(undefined, false, 1), from = book === 1 ? NORTH_PATH[0] : [RALLY.x, RALLY.z]; if (vb.length) return vb.reduce((a, b) => Math.hypot(a.pos.x - from[0], a.pos.z - from[1]) < Math.hypot(b.pos.x - from[0], b.pos.z - from[1]) ? a : b); }
+    return book === 1 ? st.reduce((a, b) => a.pos.z < b.pos.z ? a : b) : g.nearestStone(RALLY);
+  }
   /** Gives a soldier a place in the squad that matches whatever the squad is doing right now. */
   enlist(u: Unit) {
-    const g = this.g; u.slot = g.soldiers().filter(x => x !== u).length;
-    if (this.plan?.phase === 'go' && this.plan.target && !this.raidLive && !this.warned) u.order = { type: 'amove', x: this.plan.target.pos.x, z: this.plan.target.pos.z };
-    else if (this.following()) u.order = { type: 'follow', x: 0, z: 0, lead: g.soldiers().find(x => x.order.type === 'follow')?.order.lead };
-    else { const p = this.rallyAt(u.slot, this.raidLive && this.raidDir === 'north'); u.order = { type: 'guard', x: p.x, z: p.z }; }
+    const g = this.g, s = this.side(u.team), army = g.army(s.team); u.slot = army.filter(x => x !== u).length;
+    if (s.plan?.phase === 'go' && s.plan.target && !s.raidLive && !(s.team === 0 && this.warned)) u.order = { type: 'amove', x: s.plan.target.pos.x, z: s.plan.target.pos.z };
+    else if (this.following(s)) u.order = { type: 'follow', x: 0, z: 0, lead: army.find(x => x.order.type === 'follow')?.order.lead };
+    else { const p = this.rallyAt(u.slot, s.raidLive && (s.team ? false : this.raidDir === 'north'), s); u.order = { type: 'guard', x: p.x, z: p.z }; }
   }
-  regroup(north = false) { this.g.soldiers().filter(u => u !== this.g.me && u.order.type !== 'follow').forEach((u, i) => { u.slot = i; const p = this.rallyAt(i, north); u.order = { type: 'guard', x: p.x, z: p.z }; }); }
-  squadTask() { return this.plan?.phase === 'go' ? BOOKS[this.plan.book].name + ' under way' : this.following() ? 'Following you' : this.raidLive ? 'Holding off the raid' : 'Holding the yard'; }
+  regroup(north = false, s: Side = this) { this.g.army(s.team).filter(u => u !== this.g.me && !u.pilot && u.order.type !== 'follow').forEach((u, i) => { u.slot = i; const p = this.rallyAt(i, north, s); u.order = { type: 'guard', x: p.x, z: p.z }; }); }
+  squadTask(s: Side = this) { return s.plan?.phase === 'go' ? this.books(s)[s.plan.book].name + ' under way' : this.following(s) ? 'Following you' : s.raidLive ? (s.team ? 'Holding off the push' : 'Holding off the raid') : s.team ? 'Guarding the Stones' : 'Holding the yard'; }
   say(who: string, msg: string, cls = '') { this.g.feed(who, msg, cls); }
-  bark(u: Unit, kind: 'kill' | 'down') { if (this.g.net || this.g.time < this.barkT) return; this.barkT = this.g.time + 7; const l = kind === 'kill' ? KILL : DOWN; this.say(UNIT[u.kind].name, l[Math.floor(Math.random() * l.length)], kind === 'down' ? 'al' : ''); }
+  bark(u: Unit, kind: 'kill' | 'down') { if (this.g.net || this.g.time < this.barkT) return; this.barkT = this.g.time + 7; const l = u.team ? (kind === 'kill' ? VKILL : VDOWN) : kind === 'kill' ? KILL : DOWN; this.say(UNIT[u.kind].name, l[Math.floor(Math.random() * l.length)], kind === 'down' ? 'al' : ''); }
 
   // ------------------------------------------------------------ events from the simulation
   trained(u: Unit) {
@@ -74,9 +118,22 @@ export class Director {
     if (u.kind === 'longshot' && !this.flags.long) { this.flags.long = true; this.say('Longshot', 'Longshot reporting. Hold right-click for the scope. One shot, then find a new hill.', 'in'); sfx.callout(); }
     if (u.kind === 'patch' && !this.flags.patch) { this.flags.patch = true; this.say('Patch', 'Patch on shift. I mend whoever is closest to dying. As me, press C to top everyone up.', 'in'); sfx.callout(); }
     if (u.kind === 'gantry' && !this.flags.gantry) { this.flags.gantry = true; this.say('Gantry', 'Walker online. Click fires the cannons, C stomps. Jump in, the seat is warm.', 'in'); sfx.callout(); }
+    if (u.team && this.g.eco) {
+      if (u.kind === 'cantor' && !this.flags.vcan) { this.flags.vcan = true; this.say('Cantor', 'A Cantor wakes. Look at me and press F to take the blades. Right click whirls.', 'in'); sfx.callout(); }
+      if (u.kind === 'lancer' && !this.flags.vlan) { this.flags.vlan = true; this.say('Lancer', 'A Lancer, listening. Click throws the long note; right click holds it through a whole line.', 'in'); sfx.callout(); }
+      if (u.kind === 'warden' && !this.flags.vwar) { this.flags.vwar = true; this.say('Warden', 'The deep voice is awake. Click slams the ground; right click gives every Veyl near me its shield back.', 'in'); sfx.callout(); }
+      return;
+    }
     if (u.kind === 'breacher' && !this.flags.breach) { this.flags.breach = true; this.say('Breacher', 'Shield\'s heavy. Hold right-click to hide behind it, click to bash.', 'in'); sfx.callout(); }
   }
   buildingDone(b: Building) {
+    if (b.team === 1 && this.g.eco) {
+      if (b.kind === 'broodpit' && !this.flags.vpit) { this.flags.vpit = true; this.say('Conductor', 'The Brood Pit is open. Look at it and press E for a Cantor, T for a Lancer.', 'in'); }
+      else if (b.kind === 'wardpylon') this.say('Conductor', 'The Ward Pylon sings. Buildings near it take less harm, and it teaches the first songs.', 'in');
+      else if (b.kind === 'reedgate') this.say('Conductor', 'The Reed Gate is open. A Warden can wake there now.', 'in');
+      else if (b.kind === 'choir') this.say('Conductor', 'A new Choir Stone sings. Tenders can bring ore here.', 'in');
+      return;
+    }
     if (b.team !== 0) return;
     if (b.kind === 'bunkhouse' && !this.flags.bunk) { this.flags.bunk = true; this.say('Quartermaster', 'Bunkhouse is up. Look at the door and press E for a Linesman.', 'in'); }
     else if (b.kind === 'machineshop') this.say('Quartermaster', 'Machine Shop\'s open. Breachers at the Bunkhouse, upgrades at the bench.', 'in');
@@ -84,7 +141,9 @@ export class Director {
   }
   buildingLost(b: Building) {
     const g = this.g;
-    if (b.team === 1) this.fails = 0;
+    if (b.team === 1) this.fails = 0; else this.vs.fails = 0;
+    if (g.eco && b.team === 1) { this.say('Watcher', `The ${BLD[b.kind].name} has fallen silent.`, 'al'); if (b.kind === 'choir' && g.stones().length) this.say('Lookout', `A Choir Stone is down. ${g.stones().length} still singing.`, 'in'); else if (b.kind !== 'choir') this.say('Alpha', `${BLD[b.kind].name} down. Keep swinging.`, ''); return; }
+    if (g.eco && b.team === 0 && b.kind === 'headframe' && g.ownB('headframe').length) this.say('Watcher', `A Headframe is down. ${g.ownB('headframe').length} still standing.`, 'in');
     if (b.kind === 'reedgate') { this.say('Lookout', 'Reed Gate is down! Their reinforcements just got a lot slower.', 'in'); sfx.callout(); return; }
     if (b.kind === 'broodpit') { const n = g.pits().length; this.say('Lookout', n ? 'Brood Pit caved in! Their raids just got thinner.' : 'Both Brood Pits are gone. Whatever raids are left will be scraps.', 'in'); sfx.callout(); return; }
     if (b.kind === 'thornspire') { this.say('Alpha', 'Thorn Spire down. That one owed me a helmet.', ''); return; }
@@ -101,7 +160,7 @@ export class Director {
 
   // ------------------------------------------------------------ orders from the player
   playerOrders(P: Set<string>, eye: THREE.Vector3, dir: THREE.Vector3, lookDist: number) {
-    const g = this.g, net = g.net, p = this.plan;
+    const g = this.g, net = g.net, p = this.side(g.myTeam).plan;
     if (P.has('KeyG')) { if (net) net.cmd('or', 'G'); else this.order('G'); sfx.blip(); }
     if (P.has('KeyV')) { if (net) net.cmd('or', 'V'); else this.order('V'); }
     if (P.has('Mouse1')) { const q = V3(); if (g.groundPoint(q, 160) || (lookDist > 0 && q.copy(eye).addScaledVector(dir, lookDist).setY(0))) { g.hud.ping(q); if (net) net.cmd('or', 'M', Math.round(q.x), Math.round(q.z)); else this.order('M', q.x, q.z); } }
@@ -112,35 +171,36 @@ export class Director {
   }
   /** One squad or base order. In multiplayer the server runs this for whichever player sent it, with lead set to their body. */
   order(k: string, x = 0, z = 0, lead: Unit | null = this.g.me) {
-    const g = this.g, squad = g.soldiers().filter(u => u !== lead && !u.pilot), p = this.plan;
-    if (k === 'G') { this.auto = !this.auto; this.say('Quartermaster', this.auto ? 'Back on the clock. I\'ll handle the building.' : 'Fine. You build it. I\'ll watch.', ''); }
+    const g = this.g, s = this.side(lead ? lead.team : 0), v = s.team === 1, squad = g.army(s.team).filter(u => u !== lead && !u.pilot), p = s.plan, who = v ? 'Chorus Lead' : 'Alpha';
+    if (k === 'G') { s.auto = !s.auto; this.say(v ? 'Conductor' : 'Quartermaster', v ? (s.auto ? 'I will tend the Chorus again.' : 'The Chorus is yours to tend. I will listen.') : this.auto ? 'Back on the clock. I\'ll handle the building.' : 'Fine. You build it. I\'ll watch.', ''); }
     else if (k === 'V') {
-      if (squad.length) { const rel = this.following(); squad.forEach((u, i) => { u.slot = i; const q = this.rallyAt(i); u.order = rel ? { type: 'guard', x: q.x, z: q.z } : { type: 'follow', x: 0, z: 0, lead: lead || undefined }; }); this.say('Alpha', rel ? 'Back to the rally point. Finally, a sit-down.' : 'On you, boss. Try not to get us killed.', ''); this.plan = null; this.callout = null; this.nextPlan = g.time + (rel ? 25 : 60); sfx.callout(); } else sfx.deny();
+      if (squad.length) { const rel = this.following(s); squad.forEach((u, i) => { u.slot = i; const q = this.rallyAt(i, false, s); u.order = rel ? { type: 'guard', x: q.x, z: q.z } : { type: 'follow', x: 0, z: 0, lead: lead || undefined }; }); this.say(who, v ? (rel ? 'Back to the Stones, then.' : 'We follow your voice.') : rel ? 'Back to the rally point. Finally, a sit-down.' : 'On you, boss. Try not to get us killed.', ''); s.plan = null; s.callout = null; s.nextPlan = g.time + (rel ? 25 : 60); sfx.callout(); } else sfx.deny();
     }
     else if (k === 'M') {
-      if (squad.length) { for (const u of squad) u.order = { type: 'amove', x: x + R(-2.5, 2.5), z: z + R(-2.5, 2.5) }; if (this.plan?.phase !== 'go') { this.plan = null; this.callout = null; this.nextPlan = g.time + 60; } this.say('Alpha', 'Moving. Shooting anything purple on the way.', ''); sfx.callout(); } else sfx.deny();
+      if (squad.length) { for (const u of squad) u.order = { type: 'amove', x: x + R(-2.5, 2.5), z: z + R(-2.5, 2.5) }; if (s.plan?.phase !== 'go') { s.plan = null; s.callout = null; s.nextPlan = g.time + 60; } this.say(who, v ? 'We go where you point. Singing.' : 'Moving. Shooting anything purple on the way.', ''); sfx.callout(); } else sfx.deny();
     }
     else if (p && p.phase === 'ask') {
-      if (k === 'X') { this.plan = null; this.callout = null; this.nextPlan = g.time + 40; this.say('Alpha', 'Holding. Wake us when you\'re ready.', ''); sfx.blip(); }
-      else if (k === 'Z') this.accept(true);
-      else if (k === 'C' && p.book < 2) { p.book = 1 - p.book; p.label = BOOKS[p.book].label; this.accept(true); }
+      if (k === 'X') { s.plan = null; s.callout = null; s.nextPlan = g.time + 40; this.say(who, v ? 'We hold the note. Call when you want us.' : 'Holding. Wake us when you\'re ready.', ''); sfx.blip(); }
+      else if (k === 'Z') this.accept(true, s);
+      else if (k === 'C' && p.book < 2) { p.book = 1 - p.book; p.label = this.books(s)[p.book].label; this.accept(true, s); }
     }
   }
-  accept(byPlayer: boolean) {
-    const p = this.plan!; p.phase = 'count'; p.t = byPlayer ? 5 : 12; this.callout = null; if (byPlayer) this.g.obj.answered = true;
-    this.say('Alpha', byPlayer ? (p.book === 1 ? 'Back door it is. Sneaky. I like it.' : 'That\'s the spirit. Moving out.') : 'No answer. Taking that as a yes.', ''); sfx.blip();
+  accept(byPlayer: boolean, s: Side = this) {
+    const p = s.plan!; p.phase = 'count'; p.t = byPlayer ? 5 : 12; s.callout = null; if (byPlayer && !this.g.net) this.g.obj.answered = true;
+    if (s.team) this.say('Chorus Lead', byPlayer ? (p.book === 1 ? 'The ridge, then. Quietly.' : 'We sing. Gather.') : 'No word. We go anyway.', '');
+    else this.say('Alpha', byPlayer ? (p.book === 1 ? 'Back door it is. Sneaky. I like it.' : 'That\'s the spirit. Moving out.') : 'No answer. Taking that as a yes.', ''); sfx.blip();
   }
 
   /** True if a building here would stand between the Headframe and a seam the Riggers walk to. */
-  onOreRoute(k: BKind, x: number, z: number) {
-    const m = Math.max(BLD[k].hx, BLD[k].hz) + 2.5;
-    for (const n of this.g.ores) { const ox = n.pos.x, oz = n.pos.z, L = ox * ox + oz * oz; if (n.amount <= 0 || L > 45 * 45) continue; const t = Math.max(0, Math.min(1, (x * ox + z * oz) / L)); if (Math.hypot(x - ox * t, z - oz * t) < m) return true; }
+  onOreRoute(k: BKind, x: number, z: number, team = 0) {
+    const m = Math.max(BLD[k].hx, BLD[k].hz) + 2.5, hx = team ? VHOME.x : 0, hz = team ? VHOME.z : 0; x -= hx; z -= hz;
+    for (const n of this.g.ores) { const ox = n.pos.x - hx, oz = n.pos.z - hz, L = ox * ox + oz * oz; if (n.amount <= 0 || L > 45 * 45) continue; const t = Math.max(0, Math.min(1, (x * ox + z * oz) / L)); if (Math.hypot(x - ox * t, z - oz * t) < m) return true; }
     return false;
   }
   /** The planned spot if it is free, otherwise the nearest free ground around it, still inside the yard. */
-  freeSpot(k: BKind, x: number, z: number): [number, number] | null {
-    const g = this.g, yard = Math.hypot(x, z) < 60; if (g.canPlace(k, x, z, false)) return [x, z];
-    for (let r = 3; r <= 24; r += 3) for (let i = 0; i < 12; i++) { const a = i / 12 * Math.PI * 2 + r, px = Math.round(x + Math.cos(a) * r), pz = Math.round(z + Math.sin(a) * r); if ((yard && (Math.hypot(px, pz) < 12 || Math.hypot(px, pz) > 60)) || this.onOreRoute(k, px, pz)) continue; if (g.canPlace(k, px, pz, false)) return [px, pz]; }
+  freeSpot(k: BKind, x: number, z: number, team = 0): [number, number] | null {
+    const g = this.g, hx = team ? VHOME.x : 0, hz = team ? VHOME.z : 0, d = (px: number, pz: number) => Math.hypot(px - hx, pz - hz), yard = d(x, z) < 60; if (g.canPlace(k, x, z, false, team)) return [x, z];
+    for (let r = 3; r <= 24; r += 3) for (let i = 0; i < 12; i++) { const a = i / 12 * Math.PI * 2 + r, px = Math.round(x + Math.cos(a) * r), pz = Math.round(z + Math.sin(a) * r); if ((yard && (d(px, pz) < 12 || d(px, pz) > 60)) || this.onOreRoute(k, px, pz, team)) continue; if (g.canPlace(k, px, pz, false, team)) return [px, pz]; }
     return null;
   }
 
@@ -153,10 +213,72 @@ export class Director {
     for (const n of g.ores) { if (n.amount > 0) { n.dryT = 0; continue; } n.dryT = (n.dryT || 0) + dt; if (n.dryT > 150) { n.amount = Math.round(n.max * .35); n.dryT = 0; g.oreCheck(n); if (!g.mission) this.say('Quartermaster', 'An old seam has settled and the green is showing again. Worth another dig.', ''); } }
     if (!g.mission) while (this.hintI < HINTS.length && now >= HINTS[this.hintI][0]) { const h = HINTS[this.hintI++]; this.say(h[1], h[2], 'in'); }
     if (this.callout) this.callout.t -= dt;
-    this.quartermaster(dt); this.enemy(dt); this.squad(dt);
+    // A side nobody plays never switches its economy off.
+    if (!g.human[0]) this.auto = true;
+    this.quartermaster(dt); this.squad(dt);
+    if (g.eco) {
+      const V = this.vs; if (!g.human[1]) V.auto = true; if (V.callout) V.callout.t -= dt;
+      while (V.hintI < VHINTS.length && now >= VHINTS[V.hintI][0]) { const h = VHINTS[V.hintI++]; this.say(h[1], h[2], 'in'); }
+      if (g.cash(1) < 50 && g.own('tender', 1).length < 3 && g.ownB('choir', false, 1).length) g.purse[1] = Math.min(50, g.purse[1] + dt * 2.5);
+      this.conductor(dt); this.squad(dt, V);
+      V.chatT -= dt; if (V.chatT <= 0) { V.chatT = R(40, 75); const a = g.army(1).filter(u => u !== g.me && !u.pilot && !u.target); if (a.length >= 2 && !V.raidLive && !V.callout) { const u = a[Math.floor(Math.random() * a.length)]; this.say(UNIT[u.kind].name, VCHATTER[Math.floor(Math.random() * VCHATTER.length)], ''); } }
+      const vb = V.plan ? VBOOKS[V.plan.book] : VBOOKS[0]; V.playbook.name = vb.name; V.playbook.steps = vb.steps; V.playbook.idx = !g.ownB('broodpit', true, 1).length ? 0 : V.plan?.phase === 'go' ? 2 : 1;
+    } else this.enemy(dt);
     // idle chatter
     this.chatT -= dt; if (this.chatT <= 0) { this.chatT = R(38, 70); const s = g.soldiers().filter(u => u !== g.me && !u.target); if (s.length >= 2 && !this.raidLive && !this.callout) { const u = s[Math.floor(Math.random() * s.length)]; this.say(UNIT[u.kind].name, CHATTER[Math.floor(Math.random() * CHATTER.length)], ''); } }
     const b = this.plan ? BOOKS[this.plan.book] : BOOKS[0]; this.playbook.name = b.name; this.playbook.steps = b.steps; this.playbook.idx = !g.ownB('bunkhouse', true).length ? 0 : this.plan?.phase === 'go' ? 2 : 1;
+  }
+
+  /** The Veyl economy, when the Chorus runs one: what to grow next, what to learn, and who to wake. It mirrors the Quartermaster. */
+  conductor(dt: number) {
+    const g = this.g, V = this.vs, T = 1; V.qmT -= dt; if (V.qmT > 0 || !V.auto) return; V.qmT = 1;
+    const own = (k: BKind) => g.ownB(k, false, T), up = (k: BKind) => g.ownB(k, true, T), cash = () => g.cash(T);
+    const pits = own('broodpit'), pitsUp = up('broodpit'), sites = g.ownB(undefined, false, T).filter(b => !b.built), building = sites.length > 0;
+    const free = g.supplyCap(T) - g.supplyUsed(T), army = g.army(T).length, spires = own('thornspire').length, ward = own('wardpylon'), wardUp = up('wardpylon').length > 0, gate = own('reedgate'), gateUp = up('reedgate')[0];
+    const stones = own('choir'), home = up('choir')[0] || stones[0]; if (!home) return;
+    const wantWell = pits.length > 0 && free <= 3 && !sites.some(b => b.kind === 'hushwell') && own('hushwell').length < 6;
+    const wantSpires = army >= 3 || g.human[0] ? 1 + (g.time > 420 ? 1 : 0) + (g.time > 840 ? 1 : 0) : 0;
+    const put = (k: BKind, slots: number[][], line: string) => { if (cash() < BLD[k].cost) return false; for (const [lx, lz] of slots) { const [x, z] = veylPt(lx, lz), at = this.freeSpot(k, Math.round(x), Math.round(z), T); if (at) { g.place(k, at[0], at[1], false, T); this.say('Conductor', line, ''); return true; } } return false; };
+    const spare = (keys: string[]) => { for (const k of keys) { const u = UPGRADES.find(x => x.key === k)!; if (!g.up[u.key] && g.ownB(u.at, true, T).length && (!u.needs || g.up[u.needs]) && cash() >= u.cost + 120) return g.buyUpgrade(u.key); } return false; };
+    const homeLeft = g.ores.filter(n => Math.hypot(n.pos.x - VHOME.x, n.pos.z - VHOME.z) < 40).reduce((a, n) => [a[0] + n.amount, a[1] + n.max], [0, 0]);
+    const wantStones = Math.min((MAP.sites || []).length + 1, 1 + (g.time > 480 || homeLeft[0] < homeLeft[1] * .5 ? 1 : 0) + (g.time > 960 ? 1 : 0) + (g.time > 1440 ? 1 : 0));
+    const exp = this.vExpansion(stones);
+    let saving = true, hold = 95;
+    if (!pits.length) put('broodpit', [[-2, -10], [-2, 12], [-8, 1]], 'A Brood Pit first. The voices need somewhere to wake.');
+    else if (wantWell) put('hushwell', [[6, -14], [6, 16], [0, -18], [0, 20], [-6, -16], [-6, 18]], 'The song is crowded. Growing a Hush Well.');
+    else if (building) saving = false;
+    else if (pitsUp.length && spires < Math.min(1, wantSpires)) put('thornspire', [[-12, -8], [-12, 10], [-16, 1]], 'A Thorn Spire by the road, to listen for boots.');
+    else if (pitsUp.length && !ward.length && army >= 4) put('wardpylon', [[-4, 2], [-5, -4], [-5, 7]], 'A Ward Pylon. It keeps the Stones whole, and it knows the first songs.');
+    else if (pitsUp.length && spires < wantSpires) put('thornspire', [[-12, -8], [-12, 10], [-16, 1], [-8, -16], [-8, 18]], 'Another Thorn Spire. The road should sting.');
+    else if (wardUp && !g.up.vedge && army >= 5) g.buyUpgrade('vedge');
+    else if (pitsUp.length && army >= 6 && exp.site && stones.length < wantStones) { hold = BLD.choir.cost; const [sx, sz] = exp.site, dx = VHOME.x - sx, dz = VHOME.z - sz, l = Math.hypot(dx, dz) || 1, x = Math.round(sx + dx / l * 9), z = Math.round(sz + dz / l * 9); if (cash() >= BLD.choir.cost && g.canPlace('choir', x, z, false, T)) { g.place('choir', x, z, false, T); this.say('Conductor', 'Seeding a new Choir Stone on the far seam. Some Tenders will drift over.', ''); } }
+    else if (exp.bare) { const [bx, bz] = exp.bare; for (const [ox, oz] of [[6, 6], [-6, 6], [6, -6], [-6, -6]]) if (cash() >= BLD.thornspire.cost && g.canPlace('thornspire', bx + ox, bz + oz, false, T)) { g.place('thornspire', bx + ox, bz + oz, false, T); this.say('Conductor', 'A Thorn Spire to keep the new Stone company.', ''); break; } }
+    else if (wardUp && g.up.vedge && !gate.length && army >= 7) { hold = 200; put('reedgate', [[2, -17], [2, 19], [-10, -14], [-10, 16]], 'The Reed Gate grows. Something deep is listening.'); }
+    else if (gateUp && army >= 6 && free >= 6 && g.own('warden', T).length + gateUp.queue.length < (g.time > 660 ? 2 : 1)) { hold = UNIT.warden.cost; if (cash() >= hold) g.train(gateUp, 'warden'); }
+    else if (pits.length === 1 && pitsUp.length === 1 && g.time > 230) put('broodpit', [[-2, 12], [-2, -10], [-8, 1], [-10, -14]], 'A second Brood Pit. Twice the voices.');
+    else if (wardUp && !g.up.vglass && army >= 6) g.buyUpgrade('vglass');
+    else if (gateUp && !g.up.vedge2 && army >= 9) { hold = 150; g.buyUpgrade('vedge2'); }
+    else if (gateUp && !g.up.vglass2 && army >= 10) { hold = 150; g.buyUpgrade('vglass2'); }
+    else if (spare(['vhum', 'vstep', 'vthorn', 'vbreath', 'vwide', 'vbloom'])) saving = true;
+    else saving = false;
+    // Tenders: eight for the home Stone and six more for each new one, woken at whichever Stone is shortest of hands.
+    const tend = g.own('tender', T), hqs = up('choir');
+    if (tend.length < 8 + 6 * (hqs.length - 1) && free > 0 && cash() >= 50 && (pits.length || tend.length < 6)) {
+      const crew = (h: Building) => tend.filter(u => g.nearHQ((u.node || u).pos.x, (u.node || u).pos.z, T) === h).length + h.queue.length;
+      const h = hqs.filter(b => !b.queue.length && crew(b) < (b === home ? 8 : 6)).sort((a, b) => crew(a) - crew(b))[0]; if (h) g.train(h, 'tender');
+    }
+    const cans = g.own('cantor', T).length, lans = g.own('lancer', T).length;
+    for (const b of pitsUp) if (b.queue.length < 2) {
+      const q = (k: Kind) => b.queue.filter(x => x.kind === k).length, k: Kind = lans + q('lancer') < Math.floor((cans + q('cantor')) / 2) + 1 && army >= 2 ? 'lancer' : 'cantor';
+      if (cash() >= UNIT[k].cost + (saving ? hold : 0)) g.train(b, k);
+    }
+  }
+  /** The next seam worth a Choir Stone (nearest home, nobody there yet, and away from the Ironhold), and a new Stone still without a Thorn Spire. */
+  vExpansion(stones: Building[]): { site: number[] | null; bare: number[] | null } {
+    const g = this.g, near = (x: number, z: number, r: number, f: (b: Building) => boolean) => g.buildings.some(b => b.alive && f(b) && Math.hypot(b.pos.x - x, b.pos.z - z) < r);
+    const free = (MAP.sites || []).filter(([x, z]) => !near(x, z, 30, b => b.team === 1 && b.kind === 'choir') && !near(x, z, 50, b => b.team === 0) && g.ores.some(n => n.amount > 0 && Math.hypot(n.pos.x - x, n.pos.z - z) < 16)).sort((a, b) => Math.hypot(a[0] - VHOME.x, a[1] - VHOME.z) - Math.hypot(b[0] - VHOME.x, b[1] - VHOME.z));
+    const bare = stones.find(h => h.built && Math.hypot(h.pos.x - VHOME.x, h.pos.z - VHOME.z) > 30 && !near(h.pos.x, h.pos.z, 24, b => b.team === 1 && b.kind === 'thornspire'));
+    return { site: free[0] || null, bare: bare ? [bare.pos.x, bare.pos.z] : null };
   }
 
   quartermaster(dt: number) {
@@ -166,7 +288,7 @@ export class Director {
     const wantDepot = bunk.length > 0 && free <= 3 && !sites.some(b => b.kind === 'depot') && g.ownB('depot').length < 6;
     // The planned spot can be taken: the player may have built there, or a fallen tower left rubble. Then the nearest free ground will do.
     const put = (k: BKind, x: number, z: number, line: string) => { if (g.ore < BLD[k].cost || (g.mission && !g.mission.allow.includes(k))) return false; const at = this.freeSpot(k, x, z); if (!at) return false; g.place(k, at[0], at[1], false); this.say('Quartermaster', line, ''); return true; };
-    const wantPosts = army >= 3 ? 1 + (this.raidN >= 2 ? 1 : 0) + (this.raidN >= 4 ? 1 : 0) : 0;
+    const wantPosts = army >= 3 || (g.eco && g.human[1]) ? 1 + (this.raidN >= 2 ? 1 : 0) + (this.raidN >= 4 ? 1 : 0) : 0;
     // One goal at a time, in priority order. While a goal is unpaid, training holds back a reserve so the goal gets bought.
     let saving = true, hold = 95;
     const hfs = g.ownB('headframe'), exp = this.expansion(hfs);
@@ -299,30 +421,51 @@ export class Director {
     }
   }
 
-  squad(dt: number) {
-    const g = this.g, now = g.time, all = g.soldiers(), idle = all.filter(u => u.order.type === 'guard' && u !== g.me && !u.pilot), stones = g.stones();
-    if (!this.plan && now > this.nextPlan && (stones.length || (g.mission && this.targetFor(0))) && !this.raidLive && !this.warned) {
-      // Every push that dies on their doorstep makes the next muster bigger, so the yard stops feeding the Chorus six at a time.
-      const last = stones.length === 1, need = (last ? 5 : 6) + 2 * Math.min(this.fails, 3);
+  squad(dt: number, s: Side = this) {
+    const g = this.g, now = g.time, v = s.team === 1, all = g.army(s.team), idle = all.filter(u => u.order.type === 'guard' && u !== g.me && !u.pilot), B = this.books(s);
+    const foes = v ? g.ownB() : g.stones(), hfs = g.ownB('headframe');
+    if (g.eco && s.raidLive && !g.army(foeOf(s.team)).some(u => u.order.type === 'amove')) s.raidLive = false;
+    // Against a Chorus that builds, "the last Stone" means the Veyl base is nearly gone, not that they only ever had one.
+    const last = v ? hfs.length === 1 && g.ownB().length <= 2 && now > 300 : foes.length === 1 && (!g.eco || g.ownB(undefined, false, 1).length <= 3);
+    const enemyPush = v ? this.plan?.phase === 'go' : this.vs.plan?.phase === 'go';
+    if (!s.plan && now > s.nextPlan && (foes.length || (!v && g.mission && this.targetFor(0))) && !s.raidLive && !(s.team === 0 && this.warned) && !enemyPush) {
+      // Every push that dies on their doorstep makes the next muster bigger, so the side stops feeding the enemy six at a time.
+      const need = g.eco && !g.army(foeOf(s.team)).length ? 7 : (last ? 5 : 6) + 2 * Math.min(s.fails, 3);   // nobody left to stop us but the towers: a fair-sized push, without the caution
       if (idle.length >= need) {
-        const book = last ? 2 : this.lastFailed || this.pushes % 2 === 1 ? 1 : 0; this.plan = { phase: 'ask', t: 10, target: null, book, label: BOOKS[book].label };
-        const text = book === 2 ? `One Stone left and ${idle.length} of us itching. <b>Everybody goes, both roads. Yes?</b>` : book === 1 ? `Front door ${this.lastFailed ? 'went badly' : 'is getting old'}. ${idle.length} of us go round by the <b>${MAP.flankName}</b> and hit them from behind. <b>You in?</b>` : `${idle.length} of us are standing around. We hit their east yard in twenty. <b>You in, or what?</b>`;
-        this.callout = { who: 'Alpha Lead', text, t: 10, dur: 10, keys: book === 2 ? [['Z', 'Do it'], ['X', 'Hold']] : [['Z', 'Do it'], ['C', book ? 'Front door' : 'Back door'], ['X', 'Hold']] }; sfx.callout();
+        const book = last ? 2 : s.lastFailed || s.pushes % 2 === 1 ? 1 : 0; s.plan = { phase: 'ask', t: 10, target: null, book, label: B[book].label };
+        const text = v
+          ? (book === 2 ? `One Headframe left and ${idle.length} voices ready. <b>Every voice, both roads. Shall we?</b>` : book === 1 ? `The road ${s.lastFailed ? 'turned us back' : 'is expected'}. ${idle.length} of us circle over the <b>${MAP.flankName}</b> and come at them from behind. <b>Shall we sing?</b>` : `${idle.length} voices are restless. We march down the road in twenty. <b>Shall we sing?</b>`)
+          : (book === 2 ? `One Stone left and ${idle.length} of us itching. <b>Everybody goes, both roads. Yes?</b>` : book === 1 ? `Front door ${s.lastFailed ? 'went badly' : 'is getting old'}. ${idle.length} of us go round by the <b>${MAP.flankName}</b> and hit them from behind. <b>You in?</b>` : `${idle.length} of us are standing around. We hit their ${g.eco ? 'nearest building' : 'east yard'} in twenty. <b>You in, or what?</b>`);
+        s.callout = { who: v ? 'Chorus Lead' : 'Alpha Lead', text, t: 10, dur: 10, keys: book === 2 ? [['Z', v ? 'Sing' : 'Do it'], ['X', 'Hold']] : [['Z', v ? 'Sing' : 'Do it'], ['C', book ? (v ? 'The road' : 'Front door') : v ? 'The ridge' : 'Back door'], ['X', 'Hold']] }; if (!g.net) sfx.callout();
       }
     }
-    const p = this.plan; if (!p) return; p.t -= dt;
-    // On Day shift a pitch nobody answers goes ahead. From Night shift up the squad waits for the word, so the army is the player's to spend.
-    if (p.phase === 'ask') { if (p.t <= 0) { if (g.diff.enemy < 1) this.accept(false); else { this.plan = null; this.callout = null; this.nextPlan = now + 45; this.say('Alpha', 'No word from you. We hold the yard until you say go.', ''); } } }
+    const p = s.plan; if (!p) return; p.t -= dt;
+    // On Day shift a pitch nobody answers goes ahead, and so does every pitch on a side nobody plays. From Night shift up the squad waits for the word, so the army is the player's to spend.
+    if (p.phase === 'ask') { if (p.t <= 0) { if (g.diff.enemy < 1 || !g.human[s.team]) this.accept(false, s); else { s.plan = null; s.callout = null; s.nextPlan = now + 45; this.say(v ? 'Chorus Lead' : 'Alpha', v ? 'No word from you. We guard the Stones until you call.' : 'No word from you. We hold the yard until you say go.', ''); } } }
     else if (p.phase === 'count') {
       if (p.t <= 0) {
-        p.phase = 'go'; p.target = this.targetFor(p.book); this.pushes++;
-        if (p.target) { let i = 0; for (const u of all) if (u !== g.me && !u.pilot && u.order.type === 'guard') { u.order = { type: 'amove', x: p.target.pos.x + R(-3, 3), z: p.target.pos.z + R(-3, 3), path: this.pathFor(p.book, i++) }; } }
-        this.say('Alpha', BOOKS[p.book].go, ''); sfx.callout();
+        p.phase = 'go'; p.target = this.targetFor(p.book, s); s.pushes++; s.retarget = 2;
+        if (p.target) { let i = 0; for (const u of all) if (u !== g.me && !u.pilot && u.order.type === 'guard') { u.order = { type: 'amove', x: p.target.pos.x + R(-3, 3), z: p.target.pos.z + R(-3, 3), path: this.pathFor(p.book, i++, s) }; } }
+        this.say(v ? 'Chorus Lead' : 'Alpha', B[p.book].go, ''); sfx.callout();
+        if (g.eco) this.incoming(s, p.book);
       }
     } else {
       const pushing = all.filter(u => u.order.type === 'amove');
-      if (!pushing.length || (pushing.length < 2 && all.length < 3)) { this.plan = null; this.nextPlan = now + 40; this.lastFailed = true; this.fails++; this.regroup(); this.say('Alpha', 'Push is spent. Pulling back to regroup.', 'al'); if (g.diff.enemy >= 1 && stones.length && !(g.mission && !g.mission.raids) && g.time > 300 && now - this.lastCounter > 150) { this.lastCounter = now; this.raidIn = Math.min(this.raidIn, 22); } }
+      // A building the push was walking to has fallen: on to the next one.
+      s.retarget -= dt; if (s.retarget <= 0 && g.eco) { s.retarget = 2; if (!p.target || !p.target.alive) { p.target = this.targetFor(p.book, s); if (p.target) for (const u of pushing) if (!u.target && !(u.order.path && u.order.path.length)) u.order = { type: 'amove', x: p.target.pos.x + R(-3, 3), z: p.target.pos.z + R(-3, 3) }; } }
+      if (!pushing.length || (pushing.length < 2 && all.length < 3)) {
+        s.plan = null; s.nextPlan = now + 40; s.lastFailed = true; s.fails++; this.regroup(false, s); this.say(v ? 'Chorus Lead' : 'Alpha', v ? 'The march is spent. Back to the Stones.' : 'Push is spent. Pulling back to regroup.', 'al');
+        if (g.eco) { const o = this.side(foeOf(s.team)); if (o.raidLive) { o.raidLive = false; this.say(o.team ? 'Watcher' : 'Alpha', o.team ? 'The Ironhold have gone home. The Stones still sing.' : 'Yard\'s clear. Somebody sweep up the purple.', ''); } }
+        else if (g.diff.enemy >= 1 && foes.length && !(g.mission && !g.mission.raids) && g.time > 300 && now - this.lastCounter > 150) { this.lastCounter = now; this.raidIn = Math.min(this.raidIn, 22); }
+      }
     }
+  }
+  /** One side has gone on the march: the other side's lookout calls it, and its squad comes home to meet it. */
+  incoming(s: Side, book: number) {
+    const o = this.side(foeOf(s.team)); if (o.plan?.phase === 'go') return; o.raidLive = true; o.plan = null; o.callout = null;
+    const north = book === 1; this.regroup(north && o.team === 0, o);
+    if (o.team === 0) { this.raidDir = north ? 'north' : 'east'; this.say('Lookout', north ? `Movement on the ${MAP.flankName}! The Chorus is coming round the back.` : `The Chorus is on the ${MAP.road}. A whole choir of them, coming this way.`, 'al'); sfx.alarm(); }
+    else this.say('Watcher', north ? `Boots on the ${MAP.flankName}. The Ironhold are circling round.` : 'Boots on the road. The Ironhold are coming for the Stones.', 'al');
   }
 
   /** The short to-do list shown while the player is still learning the ropes. */
@@ -336,9 +479,9 @@ export class Director {
     const g = this.g, o = g.obj, left = g.stones().length;
     if (g.mission) return g.mission.objectives.map(x => ({ text: x.text(g), done: !!x.done(g) }));
     if (g.myTeam) return [
-      { text: 'Jump between Veyl bodies (Tab or F)', done: o.jumped },
-      { text: 'Call a raid and march with it (G)', done: g.raidCall > 0 || !!o.called },
-      { text: `Keep a Choir Stone singing (${left} left)`, done: false },
+      { text: 'Hum 30 ore with a Tender', done: o.drilled >= 30 },
+      { text: 'Jump into another body (Tab or F)', done: o.jumped },
+      { text: 'Answer the Chorus Lead when they pitch a march', done: o.answered },
       { text: g.ownB('headframe').length > 1 ? `Break every Headframe (${g.ownB('headframe').length} standing)` : 'Break the Headframe', done: !g.ownB('headframe').length },
     ];
     return [

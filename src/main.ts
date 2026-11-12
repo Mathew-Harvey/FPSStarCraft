@@ -5,8 +5,8 @@ import * as MD from './models';
 import { Game } from './game';
 import { Hud } from './hud';
 import { initAudio, setVolume, setMusic, audioSeat, hush, soundsReady, sfx } from './audio';
-import { LocalMatch } from './split';
-import { UNIT, BLD, UPGRADES, TRAINS, UNIT_NEEDS, DIFFS, Kind, BKind, mapCode, validMap } from './data';
+import { LocalMatch, SplitMode } from './split';
+import { UNIT, BLD, UPGRADES, TRAINS, UNIT_NEEDS, DIFFS, Kind, BKind, mapCode, validMap, FACTION, isWorker } from './data';
 import { MISSIONS } from './campaign';
 import { Net, Lobby } from './net';
 
@@ -30,7 +30,7 @@ let freeMouse = false;
 function resize() {
   const w = window.innerWidth, h = window.innerHeight;
   const sc = Math.min(Math.min(window.devicePixelRatio || 1, 1.5), 1080 / h) * (gfxI === 1 ? .6 : gfxI === 2 ? .8 : gfxI === 3 ? 1 : quality);
-  if (split) {
+  if (split && game2) {
     const vw = splitSide ? w / 2 : w, vh = splitSide ? h : h / 2; pipe.resize(vw * sc, vh * sc, w * sc, h * sc);
     const W = pipe.w, H = pipe.h; view1.rect = splitSide ? [0, 0, W, H] : [0, pipe.ch - H, W, H]; view2.rect = splitSide ? [pipe.cw - W, 0, W, H] : [0, 0, W, H];
     hud.setSize(vw, vh); hud2.setSize(vw, vh, splitSide ? w / 2 : 0, splitSide ? 0 : h / 2); return;
@@ -43,7 +43,7 @@ function portraits() {
   const scene = new THREE.Scene(); scene.add(makeSky());
   const cam = new THREE.PerspectiveCamera(30, 1, .1, 4000);
   pipe.resize(236, 236);
-  for (const kind of ['rigger', 'linesman', 'breacher', 'gantry', 'longshot', 'patch', 'cantor', 'lancer', 'warden'] as Kind[]) {
+  for (const kind of ['rigger', 'linesman', 'breacher', 'gantry', 'longshot', 'patch', 'cantor', 'lancer', 'warden', 'tender'] as Kind[]) {
     const m = MD.unit(kind), st = UNIT[kind], y = st.headY * (kind === 'breacher' ? 1.0 : .97), dist = st.headY * 1.5 + (kind === 'warden' ? 2 : .3); m.obj.rotation.y = .5; scene.add(m.obj);
     if (m.rig.flash) m.rig.flash.visible = false; if (m.rig.pack) m.rig.pack.visible = false;
     cam.position.set(0, y + .15, dist); cam.lookAt(0, y, 0); cam.updateMatrixWorld();
@@ -64,9 +64,9 @@ const keyOf = (action: string) => binds[action] || action;
 const keyText = (code: string) => code.replace(/^Key|^Digit/, '').replace('ShiftLeft', 'Shift').replace('ShiftRight', 'R Shift').replace('ControlLeft', 'Ctrl').replace('AltLeft', 'Alt').replace(/^Arrow/, '').replace(/^Numpad/, 'Num ');
 /** The key a player pressed, as the action the game code listens for. A default key that has been given away does nothing. */
 function logical(code: string) { for (const a in binds) if (binds[a] === code) return a; return binds[code] ? 'Unbound' : code; }
-let diffI = 1, mapI = 0, sens = 1, vol = .5, mus = true, curX = .5, moved = false;
-try { const o = JSON.parse(localStorage.getItem('ore-else') || '{}'); if (o.d >= 0 && o.d < 3) diffI = o.d; if (validMap(o.map)) mapI = o.map; if (o.camp > 0) camp = Math.min(MISSIONS.length, o.camp); if (o.mp) mpOpen = true; if (o.mode === 'skirm') mode = 'skirm'; if (typeof o.name === 'string') pname = o.name.slice(0, 14); if (typeof o.srv === 'string') srv = o.srv.slice(0, 200); if (o.s > 0) sens = o.s; if (o.v >= 0) vol = o.v; if (o.m === false) mus = false; if (o.q >= 0 && o.q < 4) gfxI = o.q | 0; cbOn = !!o.cb; fpsOn = !!o.fps; splitSide = o.ss !== 0; if (o.k && typeof o.k === 'object') for (const [a] of ACTIONS) if (typeof o.k[a] === 'string' && o.k[a] !== a) binds[a] = o.k[a]; } catch (e) { /* storage is optional */ }
-const save = () => { try { localStorage.setItem('ore-else', JSON.stringify({ d: diffI, map: mapI, camp, mp: mpOpen, mode: mode === 'multi' ? 'camp' : mode, name: pname, srv, s: sens, v: vol, m: mus, q: gfxI, cb: cbOn, fps: fpsOn, ss: splitSide ? 1 : 0, k: binds })); } catch (e) { /* storage is optional */ } };
+let diffI = 1, mapI = 0, sideI = 0, sens = 1, vol = .5, mus = true, curX = .5, moved = false;
+try { const o = JSON.parse(localStorage.getItem('ore-else') || '{}'); if (o.d >= 0 && o.d < 3) diffI = o.d; if (validMap(o.map)) mapI = o.map; if (o.camp > 0) camp = Math.min(MISSIONS.length, o.camp); if (o.mp) mpOpen = true; if (o.mode === 'skirm') mode = 'skirm'; if (typeof o.name === 'string') pname = o.name.slice(0, 14); if (typeof o.srv === 'string') srv = o.srv.slice(0, 200); if (o.s > 0) sens = o.s; if (o.v >= 0) vol = o.v; if (o.m === false) mus = false; if (o.q >= 0 && o.q < 4) gfxI = o.q | 0; cbOn = !!o.cb; fpsOn = !!o.fps; splitSide = o.ss !== 0; if (o.side === 1) sideI = 1; if (o.k && typeof o.k === 'object') for (const [a] of ACTIONS) if (typeof o.k[a] === 'string' && o.k[a] !== a) binds[a] = o.k[a]; } catch (e) { /* storage is optional */ }
+const save = () => { try { localStorage.setItem('ore-else', JSON.stringify({ d: diffI, map: mapI, camp, mp: mpOpen, mode: mode === 'multi' ? 'camp' : mode, name: pname, srv, s: sens, v: vol, m: mus, q: gfxI, cb: cbOn, fps: fpsOn, ss: splitSide ? 1 : 0, side: sideI, k: binds })); } catch (e) { /* storage is optional */ } };
 jobI = Math.min(camp, MISSIONS.length - 1);
 const want = () => mode !== 'skirm' ? { d: DIFFS[MISSIONS[jobI].diff], map: MISSIONS[jobI].map, m: MISSIONS[jobI] } : { d: DIFFS[diffI], map: mapI, m: null };
 let game = new Game(pipe, hud, want().d, want().map, want().m); game.sens = sens;
@@ -84,7 +84,7 @@ chat.addEventListener('keyup', e => e.stopPropagation()); chat.addEventListener(
 addEventListener('keydown', e => {
   const code = logical(e.code);
   if (rebinding) return;
-  if (split && game2 && !padTwo && logical(e.code) === e.code && P2KEYS[e.code]) { if (live()) { e.preventDefault(); const k = P2KEYS[e.code]; if (k === 'Tool') { if (!e.repeat) game2.pressed.add(game2.myTeam ? 'Digit' + ((game2.verse + 1) % 3 + 1) : game2.tool === 2 ? 'Digit1' : 'Digit2'); } else if (k === 'Wheel-' || k === 'Wheel+') { if (!e.repeat) game2.wheel = k === 'Wheel+' ? 1 : -1; } else if (k === 'Mouse0' || k === 'Mouse2') { if (!e.repeat) game2.pressed.add(k); if (k === 'Mouse0') game2.lmb = true; else game2.rmb = true; } else if (k.startsWith('Look')) look2.add(k); else { if (!e.repeat) game2.pressed.add(k); game2.keys.add(k); } p2Seen = true; } return; }
+  if (split && game2 && !padTwo && logical(e.code) === e.code && P2KEYS[e.code]) { if (live()) { e.preventDefault(); const k = P2KEYS[e.code]; if (k === 'Tool') { if (!e.repeat) game2.pressed.add(game2.tool === 2 ? 'Digit1' : 'Digit2'); } else if (k === 'Wheel-' || k === 'Wheel+') { if (!e.repeat) game2.wheel = k === 'Wheel+' ? 1 : -1; } else if (k === 'Mouse0' || k === 'Mouse2') { if (!e.repeat) game2.pressed.add(k); if (k === 'Mouse0') game2.lmb = true; else game2.rmb = true; } else if (k.startsWith('Look')) look2.add(k); else { if (!e.repeat) game2.pressed.add(k); game2.keys.add(k); } p2Seen = true; } return; }
   if (game.net && !split && game.phase === 'play' && code === 'Enter') { e.preventDefault(); game.keys.clear(); chat.hidden = false; chat.focus(); return; }
   if (live()) { if (!e.ctrlKey && !e.metaKey && e.code !== 'Escape' && !/^F\d/.test(e.code)) e.preventDefault(); if (!e.repeat) game.pressed.add(code); game.keys.add(code); }
   if (e.code === 'Escape' && freeMouse) { if (game.phase === 'play' || game.phase === 'card') pause(); else if (game.phase === 'paused') resume(); }
@@ -103,22 +103,22 @@ document.addEventListener('pointerlockerror', () => { freeMouse = true; });
 document.addEventListener('pointerlockchange', () => { if (!locked() && live() && !freeMouse) pause(); });
 
 function fresh() { endSplit(); hush(); hud.reset(); const w = want(); game.dispose(); game = new Game(pipe, hud, w.d, w.map, w.m); game.sens = sens; ended = false; (window as any).__ore.game = game; }
-function start() { initAudio(); setVolume(vol); setMusic(mus); { const w = want(); if (game.diff !== w.d || game.mapI !== w.map || game.mission !== w.m || game.time > 0) fresh(); } $('menu').hidden = true; $('pause').hidden = true; $('end').hidden = true; hud.show(true); game.phase = 'play'; game.introT = 1.8; lock(); }
+function start() { if (mode === 'skirm' && sideI) { startVeyl(); return; } initAudio(); setVolume(vol); setMusic(mus); { const w = want(); if (game.diff !== w.d || game.mapI !== w.map || game.mission !== w.m || game.time > 0) fresh(); } $('menu').hidden = true; $('pause').hidden = true; $('end').hidden = true; hud.show(true); game.phase = 'play'; game.introT = 1.8; lock(); }
 /** The pause screen shows the whole tech tree: what is standing, what can be built next and what each building sells. */
 function showTree() {
-  const g = game, tiers: BKind[][] = [['headframe'], ['bunkhouse', 'depot'], ['watchpost', 'machineshop', 'assay'], ['foundry'], ['mast']];
+  const g = game, t = g.myTeam, tiers: BKind[][] = t ? [['choir'], ['hushwell', 'broodpit'], ['thornspire', 'wardpylon'], ['reedgate']] : [['headframe'], ['bunkhouse', 'depot'], ['watchpost', 'machineshop', 'assay'], ['foundry'], ['mast']], hq = FACTION[t].hq;
   $('tree').innerHTML = tiers.map(row => `<div class="tier">${row.map(k => {
-    const have = g.ownB(k, true).length > 0, miss = g.missing(k), off = !!g.mission && k !== 'headframe' && !g.mission.allow.includes(k);
-    const units = (TRAINS[k] || []).map(u => { const nb = UNIT_NEEDS[u], ok = have && (!nb || g.ownB(nb, true).length > 0); return `<li class="${ok ? 'ok' : ''}"><b>${UNIT[u].name}</b><small>${nb ? 'Needs ' + BLD[nb].name : 'Unit'} · ${UNIT[u].cost}</small></li>`; }).join('');
+    const have = g.ownB(k, true, t).length > 0, miss = g.missing(k, t), off = !!g.mission && k !== 'headframe' && !g.mission.allow.includes(k);
+    const units = (TRAINS[k] || []).map(u => { const nb = UNIT_NEEDS[u], ok = have && (!nb || g.ownB(nb, true, t).length > 0); return `<li class="${ok ? 'ok' : ''}"><b>${UNIT[u].name}</b><small>${nb ? 'Needs ' + BLD[nb].name : 'Unit'} · ${UNIT[u].cost}</small></li>`; }).join('');
     const ups = UPGRADES.filter(u => u.at === k).map(u => { const nu = u.needs ? UPGRADES.find(x => x.key === u.needs)! : null; return `<li class="${g.up[u.key] ? 'dn' : have && (!nu || g.up[nu.key]) ? 'ok' : ''}"><b>${u.name}</b><small>${g.up[u.key] ? 'Bought' : u.blurb + ' · ' + u.cost}${nu && !g.up[u.key] ? ' · after ' + nu.name : ''}</small></li>`; }).join('');
-    return `<div class="node ${have ? 'have' : off || miss.length ? 'lock' : 'can'}"><h4>${BLD[k].name}</h4><p>${have ? 'Standing' : off ? 'Not on this job' : miss.length ? 'Needs ' + miss.map(n => BLD[n].name).join(' and ') : k === 'headframe' ? '' : 'Ready to build · ' + BLD[k].cost}</p>${units || ups ? `<ul>${units}${ups}</ul>` : `<ul><li class="${have ? 'ok' : ''}"><small>${BLD[k].blurb}</small></li></ul>`}</div>`;
+    return `<div class="node ${have ? 'have' : off || miss.length ? 'lock' : 'can'}"><h4>${BLD[k].name}</h4><p>${have ? 'Standing' : off ? 'Not on this job' : miss.length ? 'Needs ' + miss.map(n => BLD[n].name).join(' and ') : k === hq ? '' : 'Ready to build · ' + BLD[k].cost}</p>${units || ups ? `<ul>${units}${ups}</ul>` : `<ul><li class="${have ? 'ok' : ''}"><small>${BLD[k].blurb}</small></li></ul>`}</div>`;
   }).join('')}</div>`).join('');
 }
 function pause() { if (game.phase !== 'play' && game.phase !== 'card') return; hush(); showTree(); for (const g of [game, game2]) if (g && g.phase === 'card') g.hud.titleCard('', '', ''); if (game2) { game2.phase = 'paused'; game2.keys.clear(); game2.lmb = game2.rmb = false; look2.clear(); } if (game.net) { game.phase = 'paused'; game.keys.clear(); game.lmb = game.rmb = false; $('pause').hidden = false; return; } game.phase = 'paused'; game.keys.clear(); game.lmb = game.rmb = false; $('pause').hidden = false; }
 function resume(byPad = false) { if (game.phase !== 'paused') return; initAudio(); $('pause').hidden = true; game.phase = 'play'; if (game2) game2.phase = 'play'; if (!byPad) lock(); }
 $('start').addEventListener('click', start);
 $('resume').addEventListener('click', () => resume());
-$('again').addEventListener('click', () => { if (split) { startSplit(splitVs); return; } if (game.net) { toMenu(); return; } if (game.mission && game.won && jobI < MISSIONS.length - 1) jobI++; fresh(); start(); });
+$('again').addEventListener('click', () => { if (split && !game2) { startVeyl(); return; } if (split) { startSplit(splitMode); return; } if (game.net) { toMenu(); return; } if (game.mission && game.won && jobI < MISSIONS.length - 1) jobI++; fresh(); start(); });
 $('startJob').addEventListener('click', start);
 function toMenu() { $('end').hidden = true; $('pause').hidden = true; hud.show(false); if (document.pointerLockElement) document.exitPointerLock(); showMode(); fresh(); $('menu').hidden = false; }
 $('toMenu').addEventListener('click', toMenu);
@@ -151,9 +151,9 @@ function padDrive(g: Game, p: Gamepad, slot: number, dt: number) {
     tap(0, 'Space'); tap(1, 'KeyC'); tap(2, 'KeyR'); tap(3, 'KeyE'); tap(5, 'KeyF'); tap(8, 'KeyV'); tap(11, 'Mouse1'); if (g.net && hit(11)) g.pressed.add('KeyB');
     hold('Tab', down(4));
     // the D-pad does whatever the screen is offering
-    const pr = g.prompt || '', train = /<b>[TYU]<\/b>/.test(pr), picking = g.tab || (g.tool === 2 && g.me?.kind === 'rigger'), call = !!g.dir.callout;
+    const pr = g.prompt || '', train = /<b>[TYU]<\/b>/.test(pr), picking = g.tab || (g.tool === 2 && !!g.me && isWorker(g.me.kind)), call = !!g.dir.side(g.myTeam).callout;
     if (train) { tap(14, 'KeyT'); tap(12, 'KeyY'); tap(15, 'KeyU'); }
-    else { if (picking) { if (hit(14)) g.wheel = -1; if (hit(15)) g.wheel = 1; } if (call) { tap(12, 'KeyZ'); tap(13, 'KeyX'); } else { if (hit(12) && g.myTeam) g.pressed.add('Digit' + ((g.verse + 1) % 3 + 1)); else if (hit(12) && g.me?.kind === 'rigger') g.pressed.add(g.tool === 2 ? 'Digit1' : 'Digit2'); tap(13, 'KeyQ'); } }
+    else { if (picking) { if (hit(14)) g.wheel = -1; if (hit(15)) g.wheel = 1; } if (call) { tap(12, 'KeyZ'); tap(13, 'KeyX'); } else { if (hit(12) && g.me && isWorker(g.me.kind)) g.pressed.add(g.tool === 2 ? 'Digit1' : 'Digit2'); tap(13, 'KeyQ'); } }
     if (hit(9)) pause();
   } else if (game.phase === 'paused' && hit(9)) resume(true);
   for (let i = 0; i < p.buttons.length; i++) was[i] = down(i);
@@ -173,21 +173,33 @@ function p2Labels() {
   hudEl2.querySelector('.jump .foot')!.innerHTML = padTwo ? 'D-pad left or right to pick · Let go of <span class="k">LB</span> to jump' : 'Comma or full stop to pick · Let go of <span class="k">\'</span> to jump';
   hudEl2.querySelector('#build p')!.textContent = padTwo ? 'D-pad left or right pick · X rotate · RT place · D-pad up puts it away' : 'Comma or full stop pick · N rotate · O place · / puts it away';
   $('p2join').innerHTML = padTwo ? '<b>Player two</b>Left stick moves · right stick looks · RT fires · LT aims · hold LB to jump bodies · D-pad up for the build menu' : padBlocked ? '<b>Player two</b>This page is not allowed to read controllers, so player two is on the keyboard: arrows move · I J K L look · O fires · P aims · H uses · / build menu' : '<b>Player two</b>Press any button on a controller to take over this half. No controller? Arrows move · I J K L look · O fires · P aims · H uses · / build menu';
-  if (game2 && game2.myTeam) $('p2join').innerHTML = $('p2join').innerHTML.replace(/H uses · \/ build menu/g, 'H calls the raid · / changes its verse').replace('D-pad up for the build menu', 'Y calls the raid · D-pad up changes its verse');
 }
-function startSplit(versus = splitVs) {
-  splitVs = versus === true; initAudio(); setVolume(vol); setMusic(mus); mode = 'skirm'; hud.reset(); hud2.reset();
-  const prev = split, m = split = new LocalMatch(mapI, diffI, 2, splitVs), mk = (i: number) => { const g = new Game(i ? view2 : view1, i ? hud2 : hud, DIFFS[diffI], mapI, null, m.seats[i]); g.sens = i ? 1 : sens; g.names = m.names; g.teams = m.teams; g.myTeam = m.teams[i + 1] || 0; g.phase = 'play'; g.introT = 1.8; return g; };
+/** The match a split screen or a solo Veyl run is playing: co-op, versus, or the Veyl side. */
+let splitMode: SplitMode = 'coop';
+function startSplit(how: SplitMode | boolean = splitMode) {
+  splitMode = how === true ? 'versus' : how === false ? 'coop' : how; splitVs = splitMode === 'versus'; initAudio(); setVolume(vol); setMusic(mus); mode = 'skirm'; hud.reset(); hud2.reset();
+  const prev = split, m = split = new LocalMatch(mapI, diffI, 2, splitMode), mk = (i: number) => { const g = new Game(i ? view2 : view1, i ? hud2 : hud, DIFFS[diffI], mapI, null, m.seats[i], m.host.eco); g.sens = i ? 1 : sens; g.names = m.names; g.teams = m.teams; g.myTeam = m.teams[i + 1] || 0; g.phase = 'play'; g.introT = 1.8; return g; };
   const old = [game, game2, prev?.host]; game = mk(0); game2 = mk(1); for (const g of old) if (g && g !== game) g.dispose(); view1.time = view2.time = pipe.time; ended = false; (window as any).__ore.game = game;
   padTwo = pads().length > 0; p2Seen = false; p2Hint = 0; padHeld[0].clear(); padHeld[1].clear(); look2.clear(); p2Labels();
   $('game').classList.add('split'); $('game').classList.toggle('stack', !splitSide);
   $('menu').hidden = true; $('pause').hidden = true; $('end').hidden = true; hud.show(true); hud2.show(true); resize(); lock();
 }
+/** A skirmish as the Veyl: the Ironhold bots run on a local host, and this screen is its only seat. */
+function startVeyl() {
+  endSplit(); splitMode = 'veyl'; splitVs = false; initAudio(); setVolume(vol); setMusic(mus); hush(); hud.reset();
+  const m = split = new LocalMatch(mapI, diffI, 1, 'veyl'), old = game;
+  game = new Game(pipe, hud, DIFFS[diffI], mapI, null, m.seats[0], true); game.sens = sens; game.names = m.names; game.teams = m.teams; game.myTeam = 1; game.phase = 'play'; game.introT = 1.8; old.dispose(); ended = false; (window as any).__ore.game = game;
+  $('menu').hidden = true; $('pause').hidden = true; $('end').hidden = true; hud.show(true); resize(); lock();
+}
 function endSplit() { if (!split && !game2) return; split?.host.dispose(); game2?.dispose(); split = null; game2 = null; hud2.show(false); $('game').classList.remove('split', 'stack'); pipe.w = 0; resize(); }
-$('startSplit').addEventListener('click', () => startSplit(false)); $('startSplitVs').addEventListener('click', () => startSplit(true));
+$('startSplit').addEventListener('click', () => startSplit(sideI ? 'veyl' : 'coop')); $('startSplitVs').addEventListener('click', () => startSplit(true));
 const splitBtns = Array.from($('splitDir').querySelectorAll('button')) as HTMLButtonElement[];
 const showSplit = () => splitBtns.forEach((b, i) => { const on = (i === 0) === splitSide; b.classList.toggle('on', on); b.setAttribute('aria-pressed', String(on)); });
 splitBtns.forEach((b, i) => b.addEventListener('click', () => { splitSide = i === 0; showSplit(); save(); })); showSplit();
+// ---- which side a skirmish plays
+const sideBtns = Array.from($('sides').querySelectorAll('button')) as HTMLButtonElement[];
+const showSide = () => { sideBtns.forEach((b, i) => { const on = i === sideI; b.classList.toggle('on', on); b.setAttribute('aria-pressed', String(on)); }); $('start').textContent = sideI ? 'Start singing' : 'Clock in'; $('startSplit').textContent = sideI ? 'Split screen co-op as the Veyl' : 'Split screen co-op'; };
+sideBtns.forEach((b, i) => b.addEventListener('click', () => { sideI = i; showSide(); save(); })); showSide();
 // ---- campaign and mode tabs
 let ended = false;
 const modeBtns = Array.from($('modes').querySelectorAll('button')) as HTMLButtonElement[];
@@ -220,7 +232,7 @@ function showLobby(l: Lobby) {
   $('mCodeShow').textContent = l.code; $('mHint').textContent = host ? 'Read the code out to your crew. You pick the map and start the shift when everyone is ready.' : 'Waiting for the host to start. Hit Ready when you are.';
   $('mPlayers').innerHTML = l.players.map(p => `<button type="button" disabled class="${p.ready || p.id === l.host ? 'dn' : ''}${p.team ? ' v' : ''}">${p.team ? 'Veyl Chorus' : p.id === l.host ? 'Host' : 'Crew'}<b>${p.name.replace(/[<>&]/g, '')}</b><small>${p.id === l.host ? 'Runs the shift' : p.ready ? 'Ready' : 'Not ready'}</small></button>`).join('');
   mDiffB.forEach((b, i) => { b.classList.toggle('on', i === l.diff); b.disabled = !host; }); lobMap = l.map; mMapB.forEach((b, i) => { b.classList.toggle('on', i === l.map % 10); b.disabled = !host; }); mSizeB.forEach(b => { b.classList.toggle('on', +(b.dataset.s || 0) === Math.floor(l.map / 10)); b.disabled = !host; });
-  $('mSide').textContent = me && me.team ? 'Play as Ironhold' : 'Play as the Veyl'; if (l.players.some(p => p.team)) $('mHint').textContent = (host ? 'Versus shift. ' : 'Versus shift. ') + 'Veyl players drive the raids against the Ironhold crew. ' + (host ? 'You start it when everyone is ready.' : 'Hit Ready when you are.');
+  $('mSide').textContent = me && me.team ? 'Play as Ironhold' : 'Play as the Veyl'; { const v = l.players.filter(p => p.team).length, c = l.players.length - v; if (v) $('mHint').textContent = (c ? 'Versus shift. Both sides dig, build and train, and any side with nobody on it is run by bots. ' : 'Everyone is on the Veyl. The Ironhold crew will be bots. ') + (host ? 'You start it when everyone is ready.' : 'Hit Ready when you are.'); }
   $('mStart').hidden = !host; $('mReady').hidden = host; $('mReady').textContent = me && me.ready ? 'Not ready' : 'Ready'; ($('mStart') as HTMLButtonElement).disabled = !l.players.every(p => p.ready || p.id === l.host);
 }
 async function mpConnect(then: (n: Net) => void) {
@@ -231,7 +243,7 @@ async function mpConnect(then: (n: Net) => void) {
   n.onLobby = l => { showLobby(l); if (l.code) { mErr(''); lastCode = l.code; } }; n.onError = m => mErr(m);
   n.onClose = () => { net = null; if (game.net === n) { game.net = null; toMenu(); } showMode(); if (lastCode) { mCode.value = lastCode; mErr('Lost the connection. Press Join to get back into lobby ' + lastCode + '.'); } else mErr('Lost the connection to the server.'); };
   n.onBegin = m => {
-    endSplit(); mode = 'multi'; hud.reset(); game.dispose(); game = new Game(pipe, hud, DIFFS[m.diff], m.map, null, n); game.sens = sens; game.names = m.names; game.myTeam = m.team || 0; game.teams = m.teams || {}; if (m.ph) { game.applying = true; for (const r of m.ph) { const q = game.props[r[0]]; if (q && q.alive && q.hp > r[1]) game.damageProp(q, q.hp - r[1], null); } game.applying = false; } ended = false; (window as any).__ore.game = game;
+    endSplit(); mode = 'multi'; hud.reset(); game.dispose(); game = new Game(pipe, hud, DIFFS[m.diff], m.map, null, n, !!m.eco); game.sens = sens; game.names = m.names; game.myTeam = m.team || 0; game.teams = m.teams || {}; if (m.ph) { game.applying = true; for (const r of m.ph) { const q = game.props[r[0]]; if (q && q.alive && q.hp > r[1]) game.damageProp(q, q.hp - r[1], null); } game.applying = false; } ended = false; (window as any).__ore.game = game;
     initAudio(); setVolume(vol); setMusic(mus); $('menu').hidden = true; $('pause').hidden = true; $('end').hidden = true; hud.show(true); game.phase = 'play'; game.introT = 1.8; lock();
   };
   try { await n.connect(srv); net = n; mErr(''); then(n); } catch (e) { mErr(String((e as Error).message || e) + ' Check the server address.'); }
@@ -292,8 +304,9 @@ function frame(now: number) {
     if (game.phase !== 'paused') split.frame(dt);
     padPoll(dt);
     audioSeat(.65, 0); game.update(dt); audioSeat(.65, 1); game2.update(dt); audioSeat(1, 0);
-  } else game.update(dt);
+  } else { if (split && game.phase !== 'paused') split.frame(dt); game.update(dt); }
   if (fpsOn) { fpsN++; fpsT += dt; fpsWorst = Math.max(fpsWorst, dt); if (fpsT >= .5) { const info = pipe.renderer.info.render; $('fps').textContent = `${Math.round(fpsN / fpsT)} fps · worst ${Math.round(fpsWorst * 1000)} ms · ${pipe.w | 0}×${pipe.h | 0} · ${game.units.length} units`; fpsN = 0; fpsT = 0; fpsWorst = 0; void info; } }
+  if (game.phase === 'over' && !ended && split && splitMode === 'veyl') { $('endTitle').textContent = game.won ? 'The Veyl take the valley' : 'The Chorus falls silent'; $('endTitle').className = 'logo sm'; $('endLine').textContent = game.won ? 'Every Headframe is down. The Ironhold dig somewhere else now.' : 'The last Choir Stone broke. The crew are already pricing the glass.'; }
   if (game.phase === 'over' && !ended && split && splitVs && game2) { $('endTitle').textContent = game.won ? 'Ironhold holds the valley' : 'The Veyl take the valley'; $('endTitle').className = 'logo sm'; $('endLine').textContent = game.won ? 'Player one broke every Choir Stone. Player two, the singing has stopped.' : 'Player two broke the Headframe. Player one, the Charter will be billing your next of kin.'; }
   if (game.phase === 'over' && !ended) { ended = true; const m = game.mission; if (m && game.won) { const i = MISSIONS.indexOf(m); camp = Math.max(camp, i + 1); if (camp >= MISSIONS.length) mpOpen = true; save(); } $('again').textContent = split ? 'Another shift' : game.net ? 'Back to the lobby' : m ? (game.won ? (MISSIONS.indexOf(m) < MISSIONS.length - 1 ? 'Next job' : 'Run it again') : 'Try that again') : 'Another shift'; }
   // Drop the render resolution if the machine can't keep up, and bring it back if it can.
@@ -304,5 +317,5 @@ function frame(now: number) {
   if (fast > 900 && quality < 1) { quality = Math.min(1, quality / .85); fast = 0; resize(); }
   requestAnimationFrame(frame);
 }
-(window as any).__ore = { sounds: { ready: soundsReady, sfx }, quit, atlasUsed: MD.atlasUsed, game, start, pipe, hud, hud2, startSplit, split: () => split, game2: () => game2, setFree: (v: boolean) => { freeMouse = v; }, pickMap, pickSize, unlock: () => { camp = MISSIONS.length; mpOpen = true; mode = 'multi'; showMode(); }, net: () => net, pickJob: (i: number) => { mode = 'camp'; camp = Math.max(camp, i); jobI = i; showMode(); fresh(); } };
+(window as any).__ore = { sounds: { ready: soundsReady, sfx }, quit, atlasUsed: MD.atlasUsed, game, start, pipe, hud, hud2, startSplit, startVeyl, split: () => split, game2: () => game2, setFree: (v: boolean) => { freeMouse = v; }, pickMap, pickSize, unlock: () => { camp = MISSIONS.length; mpOpen = true; mode = 'multi'; showMode(); }, net: () => net, pickJob: (i: number) => { mode = 'camp'; camp = Math.max(camp, i); jobI = i; showMode(); fresh(); } };
 requestAnimationFrame(frame);

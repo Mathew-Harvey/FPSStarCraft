@@ -56,7 +56,7 @@ export function atlasify<T extends THREE.Object3D>(root: T): T {
 }
 
 const MAKERS: Record<string, () => THREE.Group> = NEW;
-const HEIGHT: Record<string, number> = { rigger: 1.55, linesman: 1.6, breacher: 1.8, longshot: 1.6, patch: 1.6, gantry: 3.3, cantor: 2.3, lancer: 2.2, warden: 4.4 };
+const HEIGHT: Record<string, number> = { tender: 1.9, rigger: 1.55, linesman: 1.6, breacher: 1.8, longshot: 1.6, patch: 1.6, gantry: 3.3, cantor: 2.3, lancer: 2.2, warden: 4.4 };
 const protos: Record<string, THREE.Group> = {};
 /** A fresh copy of a unit model. Geometry is shared between copies. */
 export const atlasUsed = () => atlas ? atlas.cells.size : 0;
@@ -287,6 +287,17 @@ export function wardpylon(anim: ((t: number) => void)[]) {
   const core = mk(G.sph, M.cyan, [0, 4.6, 0], [1.0, 1.0, 1.0], 0, g); core.userData.dyn = true;
   const r1 = put(ring(1.3, .05, 1, 36), M.vG, g, [0, 4.6, 0], [H2, 0, 0]); r1.userData.dyn = true; const r2 = put(ring(1.0, .04, 1, 32), M.teal, g, [0, 4.6, 0]); r2.userData.dyn = true;
   anim.push(t => { const k = 1 + Math.sin(t * 3.4) * .1; core.scale.set(k, k, k); r1.rotation.z = t * .9; r2.rotation.y = t * 1.4; r2.rotation.x = t * .6; });
+  return bake(g);
+}
+/** Veyl supply: a quiet well. Four reeds arch over a dark pool, and a hush orb hangs above it, breathing. */
+export function hushwell(anim: ((t: number) => void)[]) {
+  const g = new THREE.Group();
+  put(lathe(spl([[2.4, 0], [2.3, .38], [1.95, .86], [1.62, 1.08], [1.42, .96]], 12), 22), M.vD, g); put(ring(1.62, .1, 1, 34), M.vG, g, [0, 1.06, 0], [H2, 0, 0]);
+  const pool = mk(G.disc, M.violet, [0, .92, 0], [1.46, 1.46, 1], [-Math.PI / 2, 0, 0], g); pool.userData.dyn = true;
+  for (let i = 0; i < 4; i++) { const a = i / 4 * 6.283 + .4, c = Math.cos(a), s = Math.sin(a); horn(g, [c * 2.05, .5, s * 2.05], [c * .55, 4.3, s * .55], .26, i % 2 ? M.vL : M.vI, .26); put(shard(.09, .5, 4, .3), M.vC, g, [c * 2.2, .3, s * 2.2], [s * .5, 0, -c * .5]); }
+  const orb = put(blob(.62, .62, .62), M.vM, g, [0, 2.7, 0]); orb.userData.dyn = true; const halo = put(ring(.78, .05, 1, 30), M.teal, g, [0, 2.7, 0], [H2, 0, 0]); halo.userData.dyn = true;
+  for (let i = 0; i < 3; i++) { const a = i / 3 * 6.283; put(shard(.12, .7, 5, .3), M.vC, g, [Math.cos(a) * 1.0, 1.0, Math.sin(a) * 1.0], [Math.sin(a) * .4, 0, -Math.cos(a) * .4]); }
+  anim.push(t => { const k = 1 + Math.sin(t * 1.3) * .08; orb.position.y = 2.7 + Math.sin(t * .9) * .18; orb.scale.set(k, k, k); halo.rotation.z = t * .5; halo.position.y = orb.position.y; const q = 1.46 * (1 + Math.sin(t * 1.3 + 1) * .04); pool.scale.set(q, q, 1); });
   return bake(g);
 }
 export function grenade() { const g = new THREE.Group(); mk(G.cyl, M.rust, [0, 0, 0], [.2, .3, .2], 0, g); mk(G.cyl, M.steelD, [0, .19, 0], [.1, .1, .1], 0, g); mk(G.box, M.hazard1, [0, 0, .1], [.12, .2, .03], 0, g); return bake(g); }

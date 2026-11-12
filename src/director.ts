@@ -15,7 +15,7 @@ const DEPOT_SLOTS = [[-13, 9], [-13, -9], [-19, 0], [-22, 12], [-26, -6], [-20, 
 const POST_SLOTS_0 = [[31, 20], [9, -31], [33, 5], [-8, 26]];
 /** Watchpost spots covering the road the raids walk down and the flank. Worked out from the map, so they face the Veyl on every map. */
 function postSlots(): number[][] {
-  if (MAP.base === 0 && MAP.size === 0) return POST_SLOTS_0;
+  if ((MAP.like ?? MAP.base) === 0 && MAP.size === 0) return POST_SLOTS_0;
   const e = MAP.flank[MAP.flank.length - 1], el = Math.hypot(e[0], e[1]) || 1, r = (p: [number, number]) => [Math.round(p[0]), Math.round(p[1])];
   return [r(roadPt(31, 6)), [Math.round(e[0] / el * 30), Math.round(e[1] / el * 30)], r(roadPt(33, -9)), r(roadPt(-8, 12))];
 }
@@ -214,6 +214,7 @@ export class Director implements Side {
   /** One squad or base order. In multiplayer the server runs this for whichever player sent it, with lead set to their body. */
   order(k: string, x = 0, z = 0, lead: Unit | null = this.g.me) {
     const g = this.g, s = this.side(lead ? lead.team : SIDE.home), v = fac(s.team) !== 0, squad = g.army(s.team).filter(u => u !== lead && !u.pilot), p = s.plan, who = v ? VG(s.team, 'Chorus Lead', 'Swarm Lead') : 'Alpha';
+    if (k === 'G' && g.mission?.lockAuto) { this.say('Quartermaster', 'Quartermaster offline. Re-forecasting. Please hold.', 'al', s.team); return; }
     if (k === 'G') { s.auto = !s.auto; this.say(v ? FACTION[s.team].voice : 'Quartermaster', v ? (s.auto ? VG(s.team, 'I will tend the Chorus again.', 'The Overgrowth tends itself again.') : VG(s.team, 'The Chorus is yours to tend. I will listen.', 'The swarm is yours to grow. I will watch.')) : s.auto ? 'Back on the clock. I\'ll handle the building.' : 'Fine. You build it. I\'ll watch.', ''); }
     else if (k === 'V') {
       if (squad.length) { const rel = this.following(s); squad.forEach((u, i) => { u.slot = i; const q = this.rallyAt(i, false, s); u.order = rel ? { type: 'guard', x: q.x, z: q.z } : { type: 'follow', x: 0, z: 0, lead: lead || undefined }; }); this.say(who, v ? (rel ? VG(s.team, 'Back to the Stones, then.', 'Back to the Bloom, then.') : VG(s.team, 'We follow your voice.', 'We run at your heels.')) : rel ? 'Back to the rally point. Finally, a sit-down.' : 'On you, boss. Try not to get us killed.', ''); s.plan = null; s.callout = null; s.nextPlan = g.time + (rel ? 25 : 60); sfx.callout(); } else sfx.deny();
@@ -291,7 +292,7 @@ export class Director implements Side {
     const stones = own('choir'), home = up('choir')[0] || stones[0]; if (!home) return;
     const wantWell = pits.length > 0 && free <= 3 && !sites.some(b => b.kind === 'hushwell') && own('hushwell').length < 6;
     const wantSpires = army >= 3 || g.human[foeOf(T)] ? 1 + (g.time > 420 ? 1 : 0) + (g.time > 840 ? 1 : 0) : 0;
-    const put = (k: BKind, slots: number[][], line: string) => { if (cash() < BLD[k].cost) return false; for (const [lx, lz] of slots) { const [x, z] = VP(lx, lz), at = this.freeSpot(k, Math.round(x), Math.round(z), T); if (at) { g.place(k, at[0], at[1], false, T); this.say('Conductor', line, '', T); return true; } } return false; };
+    const put = (k: BKind, slots: number[][], line: string) => { if (cash() < BLD[k].cost || (g.paper(T) && !g.paper(T)!.allow.includes(k) && k !== 'choir')) return false; for (const [lx, lz] of slots) { const [x, z] = VP(lx, lz), at = this.freeSpot(k, Math.round(x), Math.round(z), T); if (at) { g.place(k, at[0], at[1], false, T); this.say('Conductor', line, '', T); return true; } } return false; };
     const spare = (keys: string[]) => { for (const k of keys) { const u = UPGRADES.find(x => x.key === k)!; if (!U[u.key] && g.ownB(u.at, true, T).length && (!u.needs || U[u.needs]) && cash() >= u.cost + 120) return g.buyUpgrade(u.key, T); } return false; };
     const homeLeft = g.ores.filter(n => Math.hypot(n.pos.x - HX, n.pos.z - HZ) < 40).reduce((a, n) => [a[0] + n.amount, a[1] + n.max], [0, 0]);
     const wantStones = Math.min((MAP.sites || []).length + 1, 1 + (g.time > 480 || homeLeft[0] < homeLeft[1] * .5 ? 1 : 0) + (g.time > 960 ? 1 : 0) + (g.time > 1440 ? 1 : 0));
@@ -340,7 +341,7 @@ export class Director implements Side {
     const free = g.supplyCap(T) - g.supplyUsed(T), army = g.army(T).length, posts = g.ownB('watchpost', false, T).length, building = sites.length > 0;
     const wantDepot = bunk.length > 0 && free <= 3 && !sites.some(b => b.kind === 'depot') && g.ownB('depot', false, T).length < 6;
     // The planned spot can be taken: the player may have built there, or a fallen tower left rubble. Then the nearest free ground will do.
-    const put = (k: BKind, x: number, z: number, line: string, world = false) => { if (cash() < BLD[k].cost || (g.mission && !g.mission.allow.includes(k))) return false; if (!world) [x, z] = P(x, z); const at = this.freeSpot(k, x, z, T); if (!at) return false; g.place(k, at[0], at[1], false, T); this.say('Quartermaster', line, '', T); return true; };
+    const put = (k: BKind, x: number, z: number, line: string, world = false) => { if (cash() < BLD[k].cost || (g.paper(T) && !g.paper(T)!.allow.includes(k))) return false; if (!world) [x, z] = P(x, z); const at = this.freeSpot(k, x, z, T); if (!at) return false; g.place(k, at[0], at[1], false, T); this.say('Quartermaster', line, '', T); return true; };
     const wantPosts = army >= 3 || (g.eco && g.human[foeOf(T)]) ? 1 + (this.raidN >= 2 ? 1 : 0) + (this.raidN >= 4 ? 1 : 0) : 0;
     // One goal at a time, in priority order. While a goal is unpaid, training holds back a reserve so the goal gets bought.
     let saving = true, hold = 95;
@@ -362,12 +363,12 @@ export class Director implements Side {
     else if (exp.bare) { const [bx, bz] = exp.bare, rx = bx - HX, rz = bz - HZ, l = Math.hypot(rx, rz) || 1; spot('watchpost', [[Math.round(bx - rz / l * 9), Math.round(bz + rx / l * 9)], [Math.round(bx + rz / l * 9), Math.round(bz - rx / l * 9)]], 'Watchpost by the new Headframe. Out there it gets lonely.', true); }
     else if (shopUp && U.dmg && !fdy.length && army >= 7) { hold = 150; spot('foundry', [[-14, -14], [-15, 6], [15, -17], [-4, -28]], 'Foundry going up. Walkers, and the good plating.'); }
     else if (fdyB && army >= 6 && free >= 4 && g.own('gantry', T).length + fdyB.queue.length < (g.time > 660 ? 2 : 1)) { hold = UNIT.gantry.cost; if (cash() >= hold) g.train(fdyB, 'gantry'); }
-    else if (fdyB && !lab.length && army >= 6 && (!g.mission || g.mission.allow.includes('assay'))) spot('assay', [[-15, 6], [15, -17], [-16, 18], [14, 22]], 'Assay Office going up. Longshots, and people who read.');
+    else if (fdyB && !lab.length && army >= 6 && (!g.paper(T) || g.paper(T)!.allow.includes('assay'))) spot('assay', [[-15, 6], [15, -17], [-16, 18], [14, 22]], 'Assay Office going up. Longshots, and people who read.');
     else if (bunkUp.length === 1 && bunk.length === 1 && g.time > 230) put('bunkhouse', 4, 23, 'Second Bunkhouse. Twice the complaints.');
     else if (shopUp && !U.armor && army >= 6) g.buyUpgrade('armor', T);
     else if (fdyB && !U.dmg2 && army >= 9) { hold = 150; g.buyUpgrade('dmg2', T); }
     else if (fdyB && !U.armor2 && army >= 10) { hold = 150; g.buyUpgrade('armor2', T); }
-    else if (fdyB && labUp && !mast.length && U.dmg2 && army >= 10 && (!g.mission || g.mission.allow.includes('mast'))) { hold = 200; spot('mast', [[15, -17], [-4, -28], [-16, 18], [-24, -4], [14, 22]], 'Signal Mast going up. Head office wants to listen in, and they pay in kit.'); }
+    else if (fdyB && labUp && !mast.length && U.dmg2 && army >= 10 && (!g.paper(T) || g.paper(T)!.allow.includes('mast'))) { hold = 200; spot('mast', [[15, -17], [-4, -28], [-16, 18], [-24, -4], [14, 22]], 'Signal Mast going up. Head office wants to listen in, and they pay in kit.'); }
     else if (mastUp && !U.dmg3 && army >= 10) { hold = 200; g.buyUpgrade('dmg3', T); }
     else if (mastUp && !U.armor3 && army >= 11) { hold = 200; g.buyUpgrade('armor3', T); }
     else if (spare(['drill', 'post', 'pay', 'stitch', 'glass', 'beds', 'servo', 'weld', 'buckets', 'frag'])) saving = true;
@@ -542,6 +543,7 @@ export class Director implements Side {
   }
   objectives(): { text: string; done: boolean }[] {
     const g = this.g, o = g.obj, left = g.stones().length;
+    if (g.netObjs) return g.netObjs;
     if (g.mission) return g.mission.objectives.map(x => ({ text: x.text(g), done: !!x.done(g) }));
     const foe = foeOf(g.myTeam), fq = FACTION[foe].hq, n = g.ownB(fq, false, foe).length, hqName = BLD[fq].name, verb = ['Break', 'Silence', 'Squash'][fac(foe)];
     const breakAll = { text: n > 1 ? `${verb} every ${hqName} (${n} standing)` : `${verb} the ${hqName}`, done: !n };

@@ -168,15 +168,27 @@ Each map comes in three sizes, picked on the Skirmish tab or by the lobby host: 
 
 ## Campaign
 
-Five jobs teach the game one system at a time and finishing the last one unlocks multiplayer. Progress is saved in the browser, and returning players can skip straight to the unlock.
+The campaign is a story in four acts and 24 jobs, plus three side jobs. You play Rigger Nineteen, a new hire on the moon Tithe. Act 1 (Dig) plays the Ironhold Charter, Act 2 (Sing) the Veyl, Act 3 (Grow) the Gloam, and Act 4 (Or Else) one job for each side against Charter Security, the company's own troops in grey. Every job teaches part of one side, and cut scenes between jobs are drawn as comic panels in the game's own renderer. Finishing Act 1 unlocks multiplayer. Progress and the ore you bank across the campaign are saved in the browser.
 
-| Job | Teaches | Goal |
-| --- | --- | --- |
-| 1. First Shift | Moving, drilling, jumping bodies | Bank 250 ore and see off a probe |
-| 2. Payroll | Building, training, holding a line | Raise four Linesmen and hold through three raids |
-| 3. Tools of the Trade | Machine Shop, upgrades, squad orders | Break the Reed Gate |
-| 4. Heavy Metal | Foundry, Gantry, wrecking the map | Drop the Needle's Eye and cave in a Brood Pit |
-| 5. Ore Else | Everything, on Switchback | Level the whole Veyl base |
+| Act | Jobs | Plays | Maps |
+| --- | --- | --- | --- |
+| 1. Dig | 1 to 8 | Ironhold, against the Veyl | Needle's Eye, Switchback, Glass Flats |
+| 2. Sing | 9 to 15 | the Veyl, against the Gloam and Aggie's crew | The Crack, Glass Flats, Needle's Eye |
+| 3. Grow | 16 to 20 | the Gloam, against the Veyl and Charter Security | The Crack, Needle's Eye, First Stone, Drill Site |
+| 4. Or Else | 21 to 24 | each side in turn, against Charter Security | Switchback, Needle's Eye, Drill Site |
+
+Three maps exist only for the story: The Crack (Switchback after the canyon floor split), First Stone (the oldest Veyl site, behind old glass walls) and Drill Site (the Charter's drill tower and Deep Charge rigs on the Glass Flats at night). Jobs played from the outpost end run on the same hidden local host as a Veyl or Gloam skirmish, with the job's script running there. A ticked objective stays ticked, so losing a building later does not undo it; timed holds keep their own clocks.
+
+Cut scenes have a few things that come back across all four acts. The Quartermaster stamps NOTED on things and keeps Nineteen's balance in the corner of the panel. Moss only bets against people he likes, because he has never won a bet. Pim names a Veyl Cantor Gary on the first day, and Gary turns up in every act. The Veyl talk through the free version of Phrasebook 3, which counts the words it has left, until Pim pays for the full one. Every message from head office arrives forty minutes late. Each named character has a name tag over their head, because the crew share two body models. Job 15 ends on a choice the player makes in play: walk out from between the Choir Stones, or stay for the last minute of the verse and lose the yard.
+
+Tests: `node tools/run-ts.mjs test/story.ts` runs every job headless and checks the endings. `node tools/run-ts.mjs test/playthrough.ts` plays every job through to a win the way a player would (staking buildings where the build rules allow, training, buying upgrades, walking the body), with the fights skipped, to check that each objective is picked up. `node test/story.mjs` checks cut scenes, the outpost-end jobs and that a win is saved and leads into the next job in a browser.
+
+![Cut scene: arrival](docs/screenshots/story-arrival.jpg)
+![Cut scene: the last verse](docs/screenshots/story-lastverse.jpg)
+![Cut scene: Moss stays on the road](docs/screenshots/story-moss.jpg)
+![Cut scene: the Quartermaster notes it](docs/screenshots/story-noted.jpg)
+![Drill Site](docs/screenshots/story-drillsite.jpg)
+![First Stone](docs/screenshots/story-firststone.jpg)
 
 ![Campaign menu](docs/screenshots/campaign.jpg)
 
@@ -187,7 +199,7 @@ Five jobs teach the game one system at a time and finishing the last one unlocks
 
 Co-op for up to four players. Everyone shares one Ironhold base and fights the Veyl together, each driving their own body. Jump into any body nobody else is driving. The raids grow with the size of the crew.
 
-Finish campaign job two to unlock the Multiplayer tab. One player creates a lobby and reads out the five-letter code, the others join with it, the crew readies up and the host clocks everyone in.
+Finish Act 1 of the campaign to unlock the Multiplayer tab. One player creates a lobby and reads out the five-letter code, the others join with it, the crew readies up and the host clocks everyone in.
 
 In a match, press B to ping the spot you are looking at and Enter to type to the crew. A panel on the right shows who is driving what, with kills and ore mined. If someone drops, or turns up late, they join the running match with the same code.
 

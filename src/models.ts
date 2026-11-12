@@ -638,6 +638,7 @@ export function buildWorld(scene: THREE.Scene, props: Prop[], anim: ((t: number)
     mk(lathe(spl([[3.1, 0], [3.0, .9], [2.5, 1.9], [1.5, 2.55], [.5, 2.75], [0, 2.78]], 12), 20), M.vI, [0, 0, 0], 0, 0, g); mk(ring(2.76, .12, .5, 36), M.mag, [0, 1.5, 0], 0, [Math.PI / 2, 0, 0], g); mk(ring(1.9, .08, 1, 30), M.vG, [0, 2.32, 0], 0, [Math.PI / 2, 0, 0], g); mk(shard(.26, 2.2, 6, .2), M.vC, [0, 2.7, 0], 0, 0, g); mk(G.disc, M.violet, [0, 1.1, 2.86], [1.5, 1.9, 1], 0, g); mk(ring(.5, .12), M.vL, [0, 1.1, 2.8], [1.9, 2.4, 2], 0, g);
     for (let i = 0; i < 4; i++) { const a = i * 1.57 + .8; mk(shard(.2, 1.3, 5, .28), M.vC, [Math.cos(a) * 3, .4, Math.sin(a) * 3], 0, [R(-.4, .4), 0, R(-.4, .4)], g); } });
   for (const [x, z] of [[-20, -15], [22, -5], [10, 25], [-24, 11], [-6, 27], [20, -21]].map(([a, b]) => veylPt(a, b))) prop('veyl', GL ? 'Stalk stand' : 'Reed stand', x, z, 2.4, 9, 140, {}, g => { for (let k = 0; k < 6; k++) { const h = R(5, 11), rx = x + R(-2, 2), rz = z + R(-2, 2), lean = R(-.6, .6); const tz = rz + R(-.5, .5); mk(tube([[rx, 0, rz], [rx + lean * .2, h * .5, (rz + tz) / 2], [rx + lean, h, tz]], [.12, .09, .04], 6), (GL ? M.gB : M.vL), 0, 0, 0, g); mk(shard(.13, .8, 4, .35), (GL ? M.gS : M.teal), [rx + lean, h + .1, tz], 0, 0, g); } });
+  if (MAP.set) storySet(MAP.set, prop, w, scene, anim);
   if (!GL) { mk(G.hexT, M.indigoL, [OUTPOST.x, .06, OUTPOST.z], [11, .12, 11], 0, w); mk(G.torusF, M.teal, [OUTPOST.x, .16, OUTPOST.z], [4.6, 4.6, .6], [Math.PI / 2, 0, 0], w); } mk(G.torusF, GL ? M.gD : M.mag, [OUTPOST.x, .16, OUTPOST.z], [2.2, 2.2, .6], [Math.PI / 2, 0, 0], w);
   // Set dressing: the litter of a working frontier. Dry scrub, loose stones, scrap, old bones and spoil heaps, none of it in anybody's way.
   // It has its own dice, so adding to it never moves a mesa or a seam, and like everything else out here it can be shot or flattened.
@@ -679,4 +680,57 @@ export function buildWorld(scene: THREE.Scene, props: Prop[], anim: ((t: number)
   reseed((Math.random() * 2147483647) | 0);
 }
 const i3 = (x: number) => Math.round(x * 10) % 3 === 0;
+type PropFn = (kind: Prop['kind'], name: string, x: number, z: number, r: number, h: number, hp: number, o: { solid?: boolean; stages?: number; y0?: number; at?: [number, number, number] }, build?: (g: THREE.Group) => void) => Prop;
+/** The story maps' set pieces. Each is built from props, so all of it can be shot at, and the important pieces are named for the jobs to find. */
+function storySet(set: 'crack' | 'stone' | 'drill', prop: PropFn, w: THREE.Group, scene: THREE.Scene, anim: ((t: number) => void)[]) {
+  const ang = Math.atan2(ROAD.dz, ROAD.dx), nx = -ROAD.dz, nz = ROAD.dx;
+  if (set === 'crack') {
+    // The split in the canyon floor: a jagged line off the side of the road, glass layers broken open along both lips, and the Gloam pushing up through it.
+    const mid = roadPt(ROAD.len * .52, 34), pts: number[][] = [];
+    for (let i = 0; i <= 18; i++) { const t = i / 18 - .5, j = Math.sin(i * 1.7) * 3.2 + R(-1.2, 1.2); pts.push([mid[0] + ROAD.dx * t * 96 + nx * j, mid[1] + ROAD.dz * t * 96 + nz * j]); }
+    for (let i = 0; i < pts.length - 1; i++) {
+      const [ax, az] = pts[i], [bx, bz] = pts[i + 1], cx = (ax + bx) / 2, cz = (az + bz) / 2, l = Math.hypot(bx - ax, bz - az) + .6, a = -Math.atan2(bz - az, bx - ax), wd = 3.4 - Math.abs(i - 9) * .28;
+      mk(G.box, M.vL, [cx, .025, cz], [l, .05, wd * 1.25], [0, a, 0], w); mk(G.box, M.gMaw, [cx, .04, cz], [l, .06, wd * .85], [0, a, 0], w); mk(G.box, M.gGlow, [cx, .06, cz], [l * .7, .04, wd * .1], [0, a + R(-.05, .05), 0], w);
+      // the glass layers broken open along the lips, tipped up out of the floor
+      for (const sd of [-1, 1]) mk(slab(l * .9, .5, 1.1, .9, .2), sd > 0 ? M.vC : M.vIp, [cx + Math.sin(a) * sd * wd * .62, .12, cz + Math.cos(a) * sd * wd * .62], 0, [sd * R(.25, .5) * Math.sin(a), a, sd * R(.25, .5) * Math.cos(a)], w);
+      for (const sd of [-1, 1]) { const ex = cx + Math.sin(a) * sd * wd * .55, ez = cz + Math.cos(a) * sd * wd * .55;
+        prop('crystal', 'Broken glass', ex, ez, 1.1, 2.4, 160, {}, g => { for (let k = 0; k < 3; k++) mk(shard(.42, R(1.4, 3.2), 5, .3), k % 2 ? M.vC : M.vIp, [ex + R(-.8, .8), .5, ez + R(-.8, .8)], [1, 1, 1], [sd * R(.4, .9) * Math.cos(a), R(0, 3), sd * R(.4, .9) * Math.sin(-a)], g); mk(slab(1.8, .5, 1.2, 1, .3), M.vL, [ex, .2, ez], 0, [0, a, sd * .5], g); }); }
+      if (i % 2 === 0) prop('crystal', 'Fungus clump', cx, cz, 1.4, 4.4, 220, {}, g => { for (let k = 0; k < 3; k++) { const s = R(.9, 1.6), px = cx + R(-1.2, 1.2), pz = cz + R(-1.2, 1.2); mk(tube([[0, 0, 0], [.2, 1.4, .1], [.3, 2.6, .2]], [.22, .17, .14], 7), M.gB, [px, 0, pz], [s, s, s], 0, g); mk(lathe(spl([[.05, .5], [1.0, .32], [1.15, .05], [.9, -.08], [.2, -.05]], 7), 14), k % 2 ? M.gC : M.gCb, [px + .3 * s, 2.55 * s, pz + .2 * s], [s, s, s], [R(-.3, .3), R(0, 3), R(-.3, .3)], g); } });
+    }
+    // Pale Bloom streaks fanning out from the crack, and spore puffs drifting over it.
+    for (let i = 0; i < 40; i++) { const [px, pz] = pts[Math.floor(R(0, pts.length - .01))], a = R(0, 6.3), d = R(3, 16), l = R(2, 7); mk(G.box, i % 3 ? M.gH : M.gGlow, [px + Math.cos(a) * d, .025, pz + Math.sin(a) * d], [l, .03, .3], [0, -a, 0], w); }
+    for (let i = 0; i < 14; i++) { const [px, pz] = pts[i + 2] || pts[0], y0 = R(2, 7), m = mk(G.sph, i % 2 ? M.gS : M.gGlow, [px, y0, pz], [.3, .3, .3], 0, scene); anim.push(t => { m.position.y = y0 + ((t * .4 + i * .37) % 1) * 6; m.scale.setScalar(.3 * (1 - ((t * .4 + i * .37) % 1))); }); }
+  } else if (set === 'stone') {
+    // The First Stone: the oldest Choir site on Tithe, behind the yard, inside a ring of standing glass.
+    const sx = -40, sz = -4;
+    prop('crystal', 'First Stone', sx, sz, 5.5, 30, 12000, { solid: true, stages: 3 }, g => {
+      mk(crag(5, 7, 3, 12, rnd, 4), M.rockB, [sx, 1.2, sz], 0, 0, g); mk(G.hexT, M.indigoL, [sx, .1, sz], [18, .2, 18], 0, g); mk(G.torusF, M.teal, [sx, .2, sz], [8, 8, .7], [Math.PI / 2, 0, 0], g);
+      mk(shard(2.6, 26, 6, .22), M.vC, [sx, 13, sz], 0, [0, .3, 0], g); mk(shard(1.4, 16, 6, .25), M.vIp, [sx + 2.6, 8, sz + 1], 0, [.16, 1, -.1], g); mk(shard(1.2, 13, 5, .3), M.vL, [sx - 2.4, 6.5, sz - 1.2], 0, [-.2, 2, .14], g); mk(shard(1, 10, 5, .3), M.vC, [sx + .6, 5, sz - 2.8], 0, [-.12, 0, .22], g);
+      for (let k = 0; k < 3; k++) mk(ring(3.6 + k * 1.6, .1, 1, 40), M.mag, [sx, 6 + k * 6.5, sz], 0, [Math.PI / 2, 0, 0], g); });
+    for (let i = 0; i < 8; i++) { const a = i / 8 * 6.283, x = sx + Math.cos(a) * 17, z = sz + Math.sin(a) * 17, h = R(7, 11);
+      prop('crystal', 'Standing glass', x, z, 1.4, h, 1400, { solid: true, stages: 2 }, g => { mk(slab(2.2, h, 1, 1.6, .28), M.vC, [x, h / 2, z], 0, [0, -a, R(-.06, .06)], g); mk(G.box, M.mag, [x, h * .62, z], [2.3, .16, 1.05], [0, -a, 0], g); }); }
+    // Old glass walls across the road, with a gap in the middle for the road itself. The Veyl built them; Mulchers go through them.
+    for (const s0 of [ROAD.len * .38, ROAD.len * .66]) for (let k = -5; k <= 5; k++) { if (Math.abs(k) < 1) continue; const [x, z] = roadPt(s0, k * 3.4); if (Math.hypot(x, z) < 40) continue;
+      prop('crystal', 'Glass wall', x, z, 1.7, 4.2, 700, { solid: true, stages: 2 }, g => { mk(slab(1, 4.2, 3.4, .7, .25), k % 2 ? M.vC : M.vIp, [x, 2.1, z], 0, [0, -ang, 0], g); mk(G.box, M.vL, [x, 4.25, z], [1.1, .2, 3.5], [0, -ang, 0], g); }); }
+    // Glass monoliths standing out on the terraces.
+    for (let i = 0; i < 22; i++) { const a = R(0, 6.3), d = R(60, 170) * (MAP.k || 1), x = MAP.out[0] / 2 + Math.cos(a) * d, z = MAP.out[1] / 2 + Math.sin(a) * d * .8, h = R(6, 16); if (isClear(x, z, 6)) continue;
+      prop('crystal', 'Glass monolith', x, z, h * .12, h, 500 + h * 60, { solid: true, stages: 2 }, g => { mk(shard(h * .14, h, 5 + (i % 2), .25), i % 3 ? M.vC : M.vIp, [x, h * .48, z], 0, [R(-.1, .1), R(0, 3), R(-.1, .1)], g); mk(rocks(i), M.rockB, [x + .6, .4, z + .3], [h * .14, h * .08, h * .14], 0, g); }); }
+  } else {
+    // The Charter drill site: a lit lattice tower over a shaft in the glass, fenced, with three Deep Charge rigs sitting on the far fields.
+    const [tx, tz] = roadPt(ROAD.len * .3, -30);
+    prop('metal', 'Drill tower', tx, tz, 5, 34, 7000, { solid: true, stages: 2 }, g => {
+      mk(G.disc, M.gMaw, [tx, .04, tz], [9, 9, 1], [-Math.PI / 2, 0, 0], g); mk(G.box, M.concrete, [tx, .3, tz], [12, .6, 12], 0, g);
+      const c = [[-4, -4], [4, -4], [4, 4], [-4, 4]], top = 30;
+      for (const [x, z] of c) { beam([tx + x, .5, tz + z], [tx + x * .3, top, tz + z * .3], .32, M.steelD, g); }
+      for (let y = 4; y < top; y += 5) { const k = 1 - y / top * .7; for (let i = 0; i < 4; i++) { const [ax, az] = c[i], [bx, bz] = c[(i + 1) % 4]; beam([tx + ax * k, y, tz + az * k], [tx + bx * (k - .1), y + 5, tz + bz * (k - .1)], .12, M.steelD, g); beam([tx + ax * k, y, tz + az * k], [tx + bx * k, y, tz + bz * k], .14, M.hazard1, g); } }
+      mk(slab(4, 4, 4, 3.4, .1), M.wallY, [tx, top + 2, tz], 0, 0, g); mk(G.box, M.sign, [tx, top + 2.4, tz + 2.05], [3.2, 1, .1], 0, g); mk(G.cyl, M.steel, [tx, top / 2, tz], [.9, top + 4, .9], 0, g);
+      for (const [x, z] of c) mk(G.box, M.visor, [tx + x * .4, top + 4.4, tz + z * .4], [.8, .4, .8], 0, g); });
+    for (let i = 0; i < 12; i++) { const a = i / 12 * 6.283, x = tx + Math.cos(a) * 14, z = tz + Math.sin(a) * 14; prop('metal', 'Fence', x, z, .35, 2.2, 60, {}, g => { beam([x, 0, z], [x, 2.1, z], .08, M.steelD, g); beam([x, 1.8, z], [tx + Math.cos(a + .52) * 14, 1.8, tz + Math.sin(a + .52) * 14], .05, M.hazard1, g); }); }
+    for (const [x, z, r] of [[tx + 10, tz - 9, .6], [tx - 11, tz + 8, 2.4], [tx + 9, tz + 10, 4]] as P3[]) prop('metal', 'Floodlight', x, z, .4, 9, 160, {}, gg => { const g = new THREE.Group(); g.position.set(x, 0, z); g.rotation.y = r; gg.add(g); beam([0, 0, 0], [0, 8.4, 0], .14, M.steelD, g); mk(G.box, M.visor, [1.2, 8.6, 0], [1.4, .5, 1], [0, 0, -.5], g); mk(G.box, M.concrete, [0, .2, 0], [.9, .4, .9], 0, g); });
+    const sites = (MAP.sites || []).slice(1, 4);
+    sites.forEach(([sx0, sz0], i) => { const l = Math.hypot(sx0, sz0) || 1, x = sx0 - sx0 / l * 10, z = sz0 - sz0 / l * 10;
+      prop('metal', 'Deep Charge rig', x, z, 2.4, 6, 2200, { solid: true, stages: 1 }, g => { mk(can(1.8, 4.2, .2), M.steelD, [x, 2.1, z], 0, 0, g); for (const y of [1, 2.4, 3.8]) mk(ring(1.85, .14, 1, 28), M.red, [x, y, z], 0, [Math.PI / 2, 0, 0], g); mk(G.box, M.hazard, [x, 4.6, z], [2.6, .6, 2.6], 0, g); for (let k = 0; k < 3; k++) { const a = k * 2.1; beam([x + Math.cos(a) * 1.8, 0, z + Math.sin(a) * 1.8], [x + Math.cos(a) * 4, 0, z + Math.sin(a) * 4], .16, M.rubber, g); } });
+      const lamp = mk(G.sph, M.red, [x, 5.4, z], [.6, .6, .6], 0, scene); anim.push(t => { lamp.visible = Math.sin(t * 5 + i) > 0; }); });
+  }
+}
 export { V3 };

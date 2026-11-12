@@ -49,9 +49,9 @@ def sheet(c, w, h, R=None, t=.06, corr=0.0, pitch=.42, seed=1.0, dent=.035, peel
     return f
 
 
-def clad(fig, tag, o, R, w, h, mats, seed, holes=(), group='body', voxel=.028, out=-.085, rows=True, wide=(1.5, 2.7), corr=0.0, tris=1.0):
+def clad(fig, tag, o, R, w, h, mats, seed, holes=(), group='body', voxel=.028, out=-.085, rows=True, wide=(1.5, 2.7), corr=0.0, tris=1.0, curl=(.3, .03, .07)):
     """Covers a wall with lapped sheets of scrap. o is the middle of the wall's bottom edge, R the way it faces, and the
-    sheets fill w across and h up. holes are (x0, x1, y0, y1) openings in the wall's own coordinates (x from the middle,
+    sheets fill w across and h up. curl is (how often, least, most) a sheet's corner has come away. holes are (x0, x1, y0, y1) openings in the wall's own coordinates (x from the middle,
     y from the bottom). The sheets stop just short of the wall's nominal face, so what the game hangs there still shows."""
     o = V(o)
     rng = np.random.default_rng(int(seed * 1000) + 7)
@@ -74,7 +74,7 @@ def clad(fig, tag, o, R, w, h, mats, seed, holes=(), group='body', voxel=.028, o
             lift = out + .03 * ((i + j) % 2) + rng.uniform(0, .01)
             Rs = (R @ rot(0, 0, rng.uniform(-.022, .022))).astype(F)
             c = o + R @ V((x0 + x1) / 2, y0 + sh / 2, lift)
-            peel = (int(rng.choice([-1, 1])), int(rng.choice([-1, 1])), float(rng.uniform(.03, .07))) if rng.random() < .3 else None
+            peel = (int(rng.choice([-1, 1])), int(rng.choice([-1, 1])), float(rng.uniform(curl[1], curl[2]))) if rng.random() < curl[0] else None
             wavy = mat in CORR
             f = sheet(c, sw, sh, Rs, corr=corr if wavy else 0, seed=seed * 7 + n, dent=float(rng.uniform(.04, .08)), peel=peel)
             for a, b, c0, c1 in holes:
@@ -197,7 +197,7 @@ def stack(fig, tag, c, r, h, mats=('wallR', 'nD'), lean=(0.0, 0.0), seed=1.0, gr
     pipe = S.union(*[S.cyl(pts[i], pts[i + 1] + (pts[i + 1] - pts[i]) * .03, rr[i], .02) for i in range(n)])
     top = pts[-1]
     pipe = S.cut(pipe, S.cyl(top - V(0, .8, 0), top + V(0, .4, 0), rr[n - 1] * .8))
-    fig.add(tag + 'pipe', group, mats[0], knocked(pipe, seed, .05, 1.1), int(420 * tris), voxel=voxel, uv=('cyl', c + V(0, h / 2, 0), (0, 1, 0)), sharp=40)
+    fig.add(tag + 'pipe', group, mats[0], knocked(pipe, seed, .05, 1.1), int(420 * tris), voxel=voxel, uv=('cyl', c + V(0, h / 2, 0), (0, 1, 0)), sharp=40, planar=5, cull=False)
     collars = [S.torus(pts[i], rr[i] + .02, .07, squash=1.3) for i in range(1, n)] + [S.torus(top - V(0, .07, 0), rr[n - 1] + .04, .09)]
     if cap:                                                       # a rain cap on three stays
         collars.append(S.both(S.ellipsoid(top + V(0, .42, 0), (r * 1.5, .3, r * 1.5)), S.above(top[1] + .4)))
@@ -240,4 +240,5 @@ def roof(fig, tag, c, w, d, mats, seed, pitch=0.0, sag=.0, group='body', over=.2
     c = V(c)
     R = (rot(pitch, 0, 0) @ FLAT).astype(F)
     o = c + R @ V(0, -(d / 2 + over), 0)
+    kw.setdefault('curl', (.25, .01, .022))                   # a roof sheet lifts a little at a corner; any more and two of them make a tent
     clad(fig, tag, o, R, w + over * 2, d + over * 2, mats, seed, group=group, out=.04, rows=True, **kw)

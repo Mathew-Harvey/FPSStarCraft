@@ -28,9 +28,10 @@ TINT = {'fabT': '#a8744a', 'fab': '#4d577c', 'fabG': '#6f7a55', 'fabR': '#b3362b
 
 
 class Part:
-    def __init__(self, name, group, mat, fn, tris, voxel=.003, uv=('cyl',), sharp=42.0, lo=None, hi=None, planar=0.0):
-        """planar (degrees) is for flat-sided things: faces that lie within that angle of each other are merged first, so plate stays plate."""
-        self.name, self.group, self.mat, self.fn, self.tris, self.voxel, self.uv, self.sharp, self.lo, self.hi, self.planar = name, group, mat, fn, tris, voxel, uv, sharp, lo, hi, planar
+    def __init__(self, name, group, mat, fn, tris, voxel=.003, uv=('cyl',), sharp=42.0, lo=None, hi=None, planar=0.0, cull=True):
+        """planar (degrees) is for flat-sided things: faces that lie within that angle of each other are merged first, so plate stays plate.
+        cull=False keeps the faces a neighbour buries: a pipe cut into open lengths under its own collars falls apart when it is thinned."""
+        self.name, self.group, self.mat, self.fn, self.tris, self.voxel, self.uv, self.sharp, self.lo, self.hi, self.planar, self.cull = name, group, mat, fn, tris, voxel, uv, sharp, lo, hi, planar, cull
 
 
 def field(fn, lo, hi, voxel):
@@ -266,7 +267,8 @@ class Figure:
         for part in self.parts:
             t0 = time.time()
             v, f = surface(part)
-            f = self.hidden(part, v, f)
+            if part.cull:
+                f = self.hidden(part, v, f)
             ob = mesh_object(part, v, f)
             me = ob.data
             n = len(me.vertices)

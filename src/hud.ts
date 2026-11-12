@@ -58,7 +58,9 @@ export class Hud {
     const life = cls === 'ko' || cls === 'kobad' ? 1.1 : .75; this.floats.push({ el, pos: pos.clone().add(V.set((Math.random() - .5) * .5, 0, (Math.random() - .5) * .5)), t: life, life });
   }
   hurt(ang: number | null) { this.hurtA = Math.min(1, this.hurtA + .55); if (ang !== null) { this.dirA = 1; this.$('hurtDir').style.transform = `rotate(${(-ang).toFixed(2)}rad)`; } }
-  hitmark(crit: boolean) { this.hitT = .14; this.cls('hitm', crit ? 'hitm crit' : 'hitm'); }
+  /** The mark over the crosshair when a shot lands. A kill gets a bigger one that an ordinary hit in the same breath does not replace. */
+  hitmark(crit: boolean, kill = false) { if (!kill && this.killMark && this.hitT > .08) return; this.killMark = kill; this.hitT = kill ? .3 : .15; this.hitFlip = !this.hitFlip; this.cls('hitm', 'hitm' + (kill ? ' kill' : crit ? ' crit' : '') + (this.hitFlip ? ' a' : ' b')); }
+  private killMark = false; private hitFlip = false;
   streak(text: string) { const e = this.$('streak'); e.textContent = text; e.hidden = false; e.style.animation = 'none'; void e.offsetWidth; e.style.animation = ''; clearTimeout(this.streakTimer); this.streakTimer = setTimeout(() => { e.hidden = true; }, 1300) as any; }
   private streakTimer = 0;
   ping(p: THREE.Vector3) { this.pingPos.copy(p); this.pingT = 3; }

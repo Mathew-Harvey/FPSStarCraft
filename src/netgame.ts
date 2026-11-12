@@ -124,7 +124,7 @@ export function applySnap(g: Game, s: any) {
     let u = g.uById.get(r[0]); if (u && !u.alive) continue;
     if (!u) { u = g.spawn(KINDS[r[1]], r[2], r[3], r[4], r[0]); g.uById.set(u.id, u); }
     seen.add(u.id); u.nx = r[3]; u.nz = r[4]; u.maxHp = r[7]; if (g.eco && UNIT[u.kind].shield) u.maxShield = UNIT[u.kind].shield * g.armorMul(u.team);   // Veyl glass upgrades thicken shields too
-    if (r[8] < u.shield - 1) g.bubble(u); u.hp = r[6]; u.shield = u.maxShield ? Math.min(r[8], u.maxShield) : r[8]; (u as any).nf = r[9]; u.wind = r[12] / 10;
+    if (r[8] < u.shield - 1) g.bubble(u); if (r[6] < u.hp - .5 || r[8] < u.shield - 1) g.fx.remote(u, Math.max(1, u.hp - r[6], u.shield - r[8]), r[8] < u.shield - 1); u.hp = r[6]; u.shield = u.maxShield ? Math.min(r[8], u.maxShield) : r[8]; (u as any).nf = r[9]; u.wind = r[12] / 10;
     if (u !== g.me) { u.yaw = r[5] / 100; u.pitch = r[11] / 100; u.pilot = r[10]; } else if (r[10] === net.id || s.time > g.possT + 1.5) u.pilot = r[10];
   }
   for (const u of g.units) if (u.alive && !seen.has(u.id)) { u.alive = false; g.scene.remove(u.obj); if (u === g.me) g.staticT = .2; }

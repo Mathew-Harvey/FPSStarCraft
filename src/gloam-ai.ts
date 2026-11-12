@@ -47,7 +47,7 @@ export function overgrowth(D: Director, dt: number, V: Side = D.vs) {
   // A building costs a Grazer as well as ore. Never root the last few: the belly of the swarm comes first.
   const canRoot = grazers.length > 5;
   const put = (k: BKind, line: string) => {
-    if (cash() < BLD[k].cost || !canRoot) return false;
+    if (cash() < BLD[k].cost || !canRoot || (g.paper(T) && !g.paper(T)!.allow.includes(k))) return false;
     for (const [lx, lz] of SLOT[k] || []) { const [x, z] = endPt(T, ...veylPt(lx, lz), false), at = D.freeSpot(k, Math.round(x), Math.round(z), T); if (at && g.place(k, at[0], at[1], false, T, null)) { D.say('Overgrowth', line, '', T); return true; } }
     return false;
   };

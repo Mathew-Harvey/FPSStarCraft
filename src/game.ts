@@ -6,7 +6,7 @@ import * as MD from './models';
 import { sfx, drillSound, setMood, babble } from './audio';
 import type { Hud } from './hud';
 import { Fog } from './fog';
-import { Kind, BKind, UNIT, BLD, BUILDABLE, UPGRADES, TRAINS, UNIT_NEEDS, UpKey, Unit, Building, Prop, OreNode, Difficulty, DIFFS, OUTPOST, GATE, MAP, MAPS, ROAD, VHOME, FACTION, SIDE, setMap, veylPt, isUnit, isSoldier, isWorker, isFighter, foeOf, fac, MIRROR, atHome, endPt, swapEnd } from './data';
+import { Kind, BKind, UNIT, BLD, BUILDABLE, UPGRADES, TRAINS, UNIT_NEEDS, UpKey, Unit, Building, Prop, OreNode, Difficulty, DIFFS, OUTPOST, GATE, MAP, MAPS, ROAD, VHOME, FACTION, SIDE, setMap, veylPt, isUnit, isSoldier, isWorker, isFighter, foeOf, fac, MIRROR, atHome, endPt, swapEnd , STORY } from './data';
 import { Director } from './director';
 import type { Mission } from './campaign';
 import type { Net } from './net';
@@ -20,9 +20,12 @@ const TMP = V3(), TMP2 = V3(), UP = V3(0, 1, 0), QT = new THREE.Quaternion();
  *  Every material on the body is swapped for a copy with its colour shifted; the copies share every other uniform (shadows, fog, time). */
 const MIRROR_TINT = [new THREE.Color(.62, .82, 1.35), new THREE.Color(1.35, .78, .7), new THREE.Color(1.15, .68, 1.3)], tinted = new Map<THREE.Material, THREE.Material>();
 function tintMirror(obj: THREE.Object3D, team: number) {
-  if (team < MIRROR) return; const tint = MIRROR_TINT[fac(team)];
-  obj.traverse(o => { const m = o as THREE.Mesh; if (!m.isMesh) return; const swap = (mat: THREE.Material) => { const sm = mat as THREE.ShaderMaterial; if (!sm.uniforms?.uColor) return mat; let c = tinted.get(mat); if (!c) { const t = sm.clone(); t.uniforms = { ...sm.uniforms, uColor: { value: (sm.uniforms.uColor.value as THREE.Color).clone().multiply(tint) } }; tinted.set(mat, c = t); } return c; }; m.material = Array.isArray(m.material) ? m.material.map(swap) : swap(m.material); });
+  const corp = team === STORY.charter; if ((team < MIRROR || STORY.charter >= 0) && !corp) return; const tint = MIRROR_TINT[fac(team)], cache = corp ? greyed : tinted;
+  // Charter Security wear company grey: the same kit with most of the colour taken out and a cold blue left in.
+  const shift = (c: THREE.Color) => { if (!corp) return c.clone().multiply(tint); const l = c.r * .3 + c.g * .59 + c.b * .11; return new THREE.Color(l, l, l).lerp(c, .18).multiply(GREY); };
+  obj.traverse(o => { const m = o as THREE.Mesh; if (!m.isMesh) return; const swap = (mat: THREE.Material) => { const sm = mat as THREE.ShaderMaterial; if (!sm.uniforms?.uColor) return mat; let c = cache.get(mat); if (!c) { const t = sm.clone(); t.uniforms = { ...sm.uniforms, uColor: { value: shift(sm.uniforms.uColor.value as THREE.Color) } }; cache.set(mat, c = t); } return c; }; m.material = Array.isArray(m.material) ? m.material.map(swap) : swap(m.material); });
 }
+const GREY = new THREE.Color(.86, .93, 1.08), greyed = new Map<THREE.Material, THREE.Material>();
 /** The yard's home seams: x, z, crystals, size. */
 const YARD_SEAMS = [[17, -15, 9, 1.2], [21, -10, 7, 1.0], [23, -18, 8, 1.3], [15, -21, 6, .9], [-18, -24, 8, 1.1], [-24, -19, 7, 1.0]];
 export const beamMat = new THREE.MeshBasicMaterial({ color: 0x6dfff0, depthWrite: false });
@@ -62,7 +65,9 @@ export class Game {
   carpet: Bloom = new Bloom(null);
   /** Gloam player: how far the jaws are open, and a Mulcher's charge still running. */
   jaw = 0; chargeT = 0;
-  time = 0; phase: 'menu' | 'play' | 'paused' | 'card' | 'over' = 'menu'; won = false;
+  time = 0; phase: 'menu' | 'play' | 'paused' | 'card' | 'over' | 'cut' = 'menu';
+  /** A cut scene's camera: where it stands, what it looks at, and its lens. The world keeps moving under it when `cutSim` is on. */
+  shot: { pos: THREE.Vector3; look: THREE.Vector3; fov: number } | null = null; cutSim = false; cutSat = 1; /** Fixed light for a cut scene. */ duskFix: number | undefined = undefined; won = false;
   /** Research bought, by team. In a mirror match both sides have the same keys, so each team keeps its own list. */
   ups: Record<UpKey, boolean>[] = [0, 1, 2, 3, 4, 5].map(() => Object.fromEntries(UPGRADES.map(u => [u.key, false])) as Record<UpKey, boolean>);
   /** What a team has researched. */
@@ -135,7 +140,7 @@ export class Game {
     for (const [x, z] of [[-12, -11.5], [-12, 13]]) V('thornspire', x, z);
     V('wardpylon', -10.5, 1); }
     this.fog = new Fog();
-    this.dir = new Director(this); if (mission) { this.dir.auto = mission.auto; mission.setup?.(this); }
+    this.dir = new Director(this); this.story = mission; if (mission) { this.dir.side(mission.out ? SIDE.out : SIDE.home).auto = mission.auto; if (!net) mission.setup?.(this); }
     if (!net) { this.me = this.units[0]; this.possess(this.me, true); } this.yaw = Math.atan2(ROAD.dx - .4, ROAD.dz - .4);
   }
 
@@ -205,7 +210,15 @@ export class Game {
   /** The buildings still missing before this one can be staked out. */
   missing(k: BKind, team = 0) { return (BLD[k].needs || []).filter(n => !this.ownB(n, true, team).length); }
   ms: Record<string, number> = {};
-  unlocked(k: BKind, team = 0) { if (this.mission && !this.mission.allow.includes(k)) return false; return FACTION[team].builds.includes(k) && !this.missing(k, team).length; }
+  /** The campaign job this screen is showing. The same as `mission` except on a seat of a local match, where the hidden host runs the job. */
+  story: Mission | null = null;
+  /** Objectives as the host last sent them, for a seat of a local match. */
+  netObjs: { text: string; done: boolean }[] | null = null;
+  /** Nobody shoots: towers hold fire and bodies do not pick targets. Job 14 walks up the road under it. */
+  truce = false;
+  /** The job's paperwork, for the side the player is on. The other side builds whatever it likes. */
+  paper(team: number) { const m = this.story; return m && team === (m.out ? SIDE.out : SIDE.home) ? m : null; }
+  unlocked(k: BKind, team = 0) { const m = this.paper(team); if (m && k !== FACTION[team].hq && !m.allow.includes(k)) return false; return FACTION[team].builds.includes(k) && !this.missing(k, team).length; }
 
   // ------------------------------------------------------------ helpers
   distToBox(b: Building, x: number, z: number) { const dx = Math.max(Math.abs(x - b.pos.x) - b.hx, 0), dz = Math.max(Math.abs(z - b.pos.z) - b.hz, 0); return Math.hypot(dx, dz); }
@@ -358,7 +371,8 @@ export class Game {
     if (fac(b.team) === 2) this.carpet.drop(b);
     if (this.net) return;
     this.dir.buildingLost(b);
-    if (b.team === SIDE.out && b.kind === FACTION[SIDE.out].hq && !(this.eco ? this.ownB(FACTION[SIDE.out].hq, true, SIDE.out) : this.stones()).length && !this.mission) { this.endT = 2.4; this.endWon = true; this.pipe.flash = 1; } else if (b.team === SIDE.home && b.kind === FACTION[SIDE.home].hq && !this.ownB(b.kind, true, SIDE.home).length) { this.endT = 2.4; this.endWon = false; this.pipe.flash = 1; }
+    if (this.mission) { const mine = this.mission.out ? SIDE.out : SIDE.home; if (b.team === mine && b.kind === FACTION[mine].hq && !this.ownB(b.kind, true, mine).length && !this.mission.noHq) { this.endT = 2.4; this.endWon = false; this.pipe.flash = 1; } }
+    else if (b.team === SIDE.out && b.kind === FACTION[SIDE.out].hq && !(this.eco ? this.ownB(FACTION[SIDE.out].hq, true, SIDE.out) : this.stones()).length) { this.endT = 2.4; this.endWon = true; this.pipe.flash = 1; } else if (b.team === SIDE.home && b.kind === FACTION[SIDE.home].hq && !this.ownB(b.kind, true, SIDE.home).length) { this.endT = 2.4; this.endWon = false; this.pipe.flash = 1; }
   }
   end(won: boolean) { if (this.phase === 'over') return; this.phase = 'over'; this.won = won; won ? sfx.win() : sfx.lose(); drillSound(false, false); setMood(0); this.hud.showEnd(this); if (document.pointerLockElement) document.exitPointerLock(); }
   nearestStone(p: { x: number; z: number }) { let best: Building | null = null, bd = 1e9; for (const b of this.stones()) { const d = Math.hypot(b.pos.x - p.x, b.pos.z - p.z); if (d < bd) { bd = d; best = b; } } return best; }
@@ -450,10 +464,11 @@ export class Game {
       else if (this.me?.alive && !this.tab) this.updatePlayer(dt, P);
       if (SIDE.out === 2) gloamFx(this, dt);
       if (this.net) { netTick(this, dt); this.poseUnits(dt); this.updateProjs(dt); this.updateChunks(dt); this.updateWrecks(dt); this.updateFx(dt); } else {
-      if (this.mission && this.endT <= 0) { this.mission.tick?.(this, this.ms, dt); if (this.mission.objectives.every(o => o.done(this))) { this.endT = 2.4; this.endWon = true; this.pipe.flash = 1; } }
+      if (this.mission && this.endT <= 0) { this.mission.tick?.(this, this.ms, dt); if (this.ms.lose) { this.endT = 2.4; this.endWon = false; this.pipe.flash = 1; } else if (this.mission.objectives.every(o => o.done(this))) { this.endT = 2.4; this.endWon = true; this.pipe.flash = 1; } }
       this.updateUnits(dt); this.updateBuildings(dt); this.updateProjs(dt); this.updateChunks(dt); this.updateWrecks(dt); this.dir.update(dt);
       this.updateFx(dt); }
-    } else { const live = !!this.net && (this.phase === 'paused' || this.phase === 'card'); /* an online match does not stop for a pause screen or a title card */ if (live) { netTick(this, dtReal); this.poseUnits(dtReal); this.updateProjs(dtReal); this.updateChunks(dtReal); this.updateWrecks(dtReal); } this.updateFx(this.phase === 'menu' || live ? dtReal : 0); }
+    } else if (this.phase === 'cut') { const dt = Math.min(dtReal, .05); this.time += dt; if (this.cutSim) { this.updateUnits(dt); this.updateBuildings(dt); this.updateProjs(dt); this.updateChunks(dt); this.updateWrecks(dt); } this.updateFx(dt); }
+    else { const live = !!this.net && (this.phase === 'paused' || this.phase === 'card'); /* an online match does not stop for a pause screen or a title card */ if (live) { netTick(this, dtReal); this.poseUnits(dtReal); this.updateProjs(dtReal); this.updateChunks(dtReal); this.updateWrecks(dtReal); } this.updateFx(this.phase === 'menu' || live ? dtReal : 0); }
     const t = this.pipe.time; for (const f of this.anim) f(t);
     this.shake = Math.max(0, this.shake - dtReal * 2.5); this.pipe.flash = Math.max(0, this.pipe.flash - dtReal * 2.6);
     this.units = this.units.filter(u => u.alive); this.buildings = this.buildings.filter(b => b.alive);
@@ -502,6 +517,8 @@ export class Game {
   // ------------------------------------------------------------ the player
   updatePlayer(dt: number, P: Set<string>) {
     const me = this.me!, K = this.keys, gun = GUNS[me.kind];
+    // A job that locks weapons: the trigger, the grenade or ability key and the ability wheel do nothing. Walking and dashing still work.
+    if (this.story?.noFire && !isWorker(me.kind)) { if (this.lmb && P.has('Mouse0')) this.feed(fac(this.myTeam) ? FACTION[this.myTeam].voice : 'Quartermaster', 'Weapons are locked for this job. Walk.', 'al'); this.lmb = false; P.delete('Mouse0'); P.delete('KeyC'); K.delete('KeyC'); }
     const aiming = !!gun && this.rmb && this.reloadT <= 0; this.brace = me.kind === 'breacher' && aiming;
     this.ads += ((aiming ? 1 : 0) - this.ads) * Math.min(1, dt * 14);
     const sens = .0023 * this.sens * (1 - this.ads * (SHOT[me.kind]?.sens ?? .2));
@@ -599,9 +616,9 @@ export class Game {
   }
   train(b: Building, k: Kind, manual = false) {
     const st = UNIT[k];
+    const pp = this.paper(b.team); if (pp && !isWorker(k) && !pp.units.includes(k)) { if (manual) { sfx.deny(); this.feed(FACTION[b.team].voice, fac(b.team) ? `No ${st.name}s on this job. Later.` : `No ${st.name}s on this job's paperwork. Later.`, 'al'); } return false; }
     if (this.net) { this.net.cmd('tn', b.id, k); sfx.blip(); return true; }
     const t = b.team, v = FACTION[t].voice, n = fac(t) === 2 && G_PAIR[k as keyof typeof G_PAIR] ? 2 : 1, bud = b.kind === 'mothercap';
-    if (this.mission && k !== 'rigger' && !this.mission.units.includes(k)) { if (manual) { sfx.deny(); this.feed('Quartermaster', `No ${st.name}s on this job's paperwork. Later.`, 'al'); } return false; }
     if (bud && !(b.buds! > 0)) { if (manual) { sfx.deny(); this.feed(v, 'No Bud is ripe on this Cap. Give it a moment, or grow another Mother Cap.', 'al', t); } return false; }
     if (this.cash(t) < st.cost * n) { if (manual) { sfx.deny(); this.feed(v, fac(t) === 2 ? 'The Overgrowth is hungry. Send the Grazers to chew.' : fac(t) ? 'The Chorus is out of ore. Send the Tenders to the seams.' : 'Can\'t. We\'re broke. Go hit a rock.', 'al', t); } return false; }
     if (this.supplyUsed(t) + st.supply * n > this.supplyCap(t)) { if (manual) { sfx.deny(); this.feed(v, fac(t) === 2 ? 'No room to grow. Root a Spore Sac first.' : fac(t) ? 'No room in the song. Grow a Hush Well first.' : 'No beds. Build a Depot first.', 'al', t); } return false; }
@@ -978,6 +995,7 @@ export class Game {
     else if (u.state === 'toHQ') { if (!hq) { u.state = 'wait'; return; } if (this.distToBox(hq, u.pos.x, u.pos.z) < 1.7) { this.purse[side] += u.carrying * this.oreK(side); if (!atHome(side)) this.stats.minedV += u.carrying; else this.stats.mined += u.carrying; u.carrying = 0; if (u.rig.pack) u.rig.pack.visible = false; u.state = 'idle'; } else { /* Walk to the near face of the home building, so neither end of the map has a longer walk round it than the other. */ const x = Math.max(hq.pos.x - hq.hx - .8, Math.min(hq.pos.x + hq.hx + .8, u.pos.x)), z = Math.max(hq.pos.z - hq.hz - .8, Math.min(hq.pos.z + hq.hz + .8, u.pos.z)); this.moveTo(u, x, z, dt, .3); } }
   }
   acquire(u: Unit, range: number, bRange: number) {
+    if (this.truce) return null;
     let best: Unit | Building | null = null, bd = range;
     // Not simply the nearest: fighters go for healers, marksmen and the wounded first, and think twice about a raised shield.
     let bs = 1e9;
@@ -1128,6 +1146,7 @@ export class Game {
       // A Mother Cap ripens every Bud at once; everything else trains one at a time.
       if (b.kind === 'mothercap') { for (let i = b.queue.length - 1; i >= 0; i--) { const q = b.queue[i]; q.t -= dt; if (q.t > 0) continue; b.queue.splice(i, 1); const a = R(0, 6.283), u = this.spawn(q.kind, b.team, b.pos.x + Math.cos(a) * (b.hx + 1.2), b.pos.z + Math.sin(a) * (b.hz + 1.2)); this.puff(TMP.copy(u.pos).setY(1), 4, .8, M.gS); if (this.vol(b.pos) > .2) sfx.blip(); this.dir.trained(u); } }
       else if (b.queue.length) { const q = b.queue[0]; q.t -= dt; if (q.t <= 0) { b.queue.shift(); const side = b.kind === 'bunkhouse' && !b.rot; const u = this.spawn(q.kind, b.team, b.pos.x + (side ? b.hx + 1.2 : R(-1, 3)), b.pos.z + (side ? R(-.5, .5) : b.hz + 1.2)); this.puff(TMP.copy(u.pos).setY(1), 4, .8, fac(b.team) ? M.violet : M.dust); if (this.vol(b.pos) > .2) sfx.blip(); this.dir.trained(u); } }
+      if (this.truce) continue;
       if (b.kind === 'watchpost') {
         b.cd -= dt; let tgt: Unit | null = null, bd = this.upOf(b.team).post ? 42 : 34; for (const o of this.units) { if (!o.alive || o.team === b.team) continue; const d = o.pos.distanceTo(b.pos); if (d < bd) { bd = d; tgt = o; } }
         if (tgt) { const gun = b.obj.userData.gun; gun.rotation.y = Math.atan2(tgt.pos.x - b.pos.x, tgt.pos.z - b.pos.z) - b.obj.rotation.y; if (b.cd <= 0) { b.cd = this.upOf(b.team).post ? .3 : .45; const a = V3(b.pos.x, 6, b.pos.z), e = V3(tgt.pos.x, UNIT[tgt.kind].bodyY, tgt.pos.z); this.tracer(a, e, tracerMat, .1); sfx.turret(this.vol(b.pos) * .6); this.damage(tgt, 10 * this.gunMul(b.team), b); } }
@@ -1151,7 +1170,7 @@ export class Game {
   // ------------------------------------------------------------ render
   render(dt: number) {
     const me = this.me, cam = this.cam, pipe = this.pipe, vm = this.vm; this.drawT = Math.max(0, this.drawT - dt);
-    cam.aspect = pipe.w / pipe.h; pipe.setDusk(Math.min(1, MAP.dusk + Math.max(0, (this.time - 120) / 780)));
+    cam.aspect = pipe.w / pipe.h; const fix = this.duskFix ?? this.story?.dusk; pipe.setDusk(fix !== undefined ? fix : Math.min(1, MAP.dusk + Math.max(0, (this.time - 120) / 780)));
     const build = this.phase !== 'menu' && this.tool === 2 && !!me && isWorker(me.kind) && me.alive && !this.tab && this.staticT <= 0, blist = FACTION[me?.team || 0].builds;
     for (const k in this.ghost) { const on = build && blist[this.buildSel] === k; this.ghost[k].visible = on && this.placeOK; this.ghostBad[k].visible = on && !this.placeOK; if (on) { const g = this.placeOK ? this.ghost[k] : this.ghostBad[k]; g.position.copy(this.placePos); g.rotation.y = this.buildRot ? Math.PI / 2 : 0; } }
     holoOK.opacity = .3 + Math.sin(pipe.time * 3) * .07; warnMat.opacity = .6 + Math.sin(pipe.time * 30) * .3;
@@ -1163,6 +1182,10 @@ export class Game {
       const a = pipe.time * .07; cam.fov = 46; cam.position.set(Math.sin(a) * 36 + 4, 8 + Math.sin(a * 2) * 2, Math.cos(a) * 36); cam.lookAt(2, 5.5, 0); if (me) this.bodyLayer(me, false);
       this.menuPos.copy(cam.position); this.menuQuat.copy(cam.quaternion);
       cam.updateProjectionMatrix(); cam.updateMatrixWorld(); pipe.draw(this.scene, cam, V3(0, 0, 0), 120); return;
+    }
+    if (this.phase === 'cut' && this.shot) {
+      pipe.sat = this.cutSat; const sh = this.shake * .05; cam.fov = this.shot.fov; cam.position.copy(this.shot.pos).add(TMP2.set(R(-sh, sh), R(-sh, sh), R(-sh, sh))); cam.lookAt(this.shot.look); if (me) this.bodyLayer(me, false);
+      cam.updateProjectionMatrix(); cam.updateMatrixWorld(); pipe.draw(this.scene, cam, this.shot.look, 130); return;
     }
     if (this.tab && me) {
       const iso = this.iso, h = 30, w = h * pipe.w / pipe.h; iso.left = -w; iso.right = w; iso.top = h; iso.bottom = -h; iso.updateProjectionMatrix();

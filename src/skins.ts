@@ -2,7 +2,7 @@
 // laid down with a loaded brush, a dark pen line where the form turns away, a dry light stroke on
 // the edge that catches the sun, a few bunches of hatching, then chips, seams and stencils.
 import * as THREE from 'three';
-import { INK, INK_W, R, rnd, T, M, TX, EXTRA, paint, tone, stencil } from './gfx';
+import { INK, INK_W, R, rnd, T, M, TX, EXTRA, paint, tone, stencil, grime } from './gfx';
 import type { Ctx, ToonOpts } from './gfx';
 
 /** A pen stroke with pressure: it swells in the middle and tapers to nothing at the ends. */
@@ -29,6 +29,38 @@ export function hatch(g: Ctx, x: number, y: number, len: number, ang: number, n:
     const k = 1 - Math.abs(i / (n - 1 || 1) - .45) * .9, l = len * k * R(.6, 1.05), o = R(-.12, .12) * len, sx = x + px * i * gap + dx * o, sy = y + py * i * gap + dy * o;
     pen(g, [[sx, sy], [sx + dx * l * .5 + R(-2, 2), sy + dy * l * .5 + R(-2, 2)], [sx + dx * l, sy + dy * l]], w * R(.7, 1.2), col);
   }
+}
+/** A capital alphabet as pen strokes on a grid four wide and six tall, so signs and posters are lettered by hand and never wait on a font. */
+const GLYPH: Record<string, string> = {
+  A: '062046 1434', B: '0006 003041423303 3344453606', C: '4130100105163645', D: '0006 003041453606', E: '40000646 0333', F: '400006 0333', G: '41301001051636454323',
+  H: '0006 4046 0343', I: '1030 2026 1636', J: '1040 3035261605', K: '0006 400346', L: '000646', M: '0600234046', N: '06004640', O: '103041453616050110', P: '06003041423303',
+  Q: '103041453616050110 2446', R: '06003041423303 2346', S: '413010010213334445361605', T: '0040 2026', U: '000516364540', V: '002640', W: '0016233640', X: '0046 4006', Y: '002340 2326', Z: '00400646',
+  0: '103041453616050110 3511', 1: '112026 1636', 2: '01103041420646', 3: '0110304142334445361605 1333', 4: '300444 3036', 5: '400003334445361605', 6: '4130100105163645443303', 7: '004026',
+  8: '103041423313020110 1304051636454433', 9: '4313020110304145361605', '.': '2526', '!': '2024 2526', '-': '1343', "'": '2022', '?': '01103041422324 2526', '/': '4006', '+': '2125 0343', ':': '2122 2526', ',': '2516',
+};
+const THIN = "I1!.':,";
+/**
+ * Writes `txt` by hand, centred on (x, y) and `h` tall: every letter gets its own size, lean and baseline, the way a sign painter's does.
+ * `wk` is the stroke width as a share of the height. Returns the left and right ends, for anything that wants to cross it out.
+ */
+export function scrawl(g: Ctx, txt: string, x: number, y: number, h: number, col: string = INK, wk = .15, jit = 1, fit = 0): [number, number] {
+  let u = h / 6; const adv = (c: string) => (c === ' ' ? 3 : THIN.includes(c) ? 3.6 : 5.3) * u;
+  let W = 0; for (const c of txt) W += adv(c);
+  if (fit && W > fit) { h *= fit / W; u = h / 6; W = fit; }
+  let cx = x - W / 2; const x0 = cx, w = h * wk / (1.9 * INK_W(col));
+  for (const c of txt) {
+    const gl = GLYPH[c];
+    if (gl) {
+      const k = 1 + R(-.07, .07) * jit, dy = R(-.3, .3) * u * jit, rot = R(-.07, .07) * jit, co = Math.cos(rot), si = Math.sin(rot), ox = THIN.includes(c) ? -.85 : 0;
+      for (const st of gl.split(' ')) {
+        const pts: number[][] = [];
+        for (let i = 0; i < st.length; i += 2) { const px = (+st[i] + ox - 2) * u * k, py = (+st[i + 1] - 3) * u * k; pts.push([cx + (2 + ox * .5) * u + px * co - py * si, y + dy + px * si + py * co]); }
+        pen(g, pts, w * R(.85, 1.15), col, .4);
+      }
+    }
+    cx += adv(c);
+  }
+  return [x0, cx];
 }
 /** Broad, half-dry brush strokes that leave the paint uneven. */
 export function brush(g: Ctx, s: number, base: string, n: number, ang = 0) {
@@ -153,6 +185,7 @@ EXTRA.push(() => {
   S('fab', cloth('#4d577c'));
   S('fabT', cloth('#a8744a'));
   S('fabG', cloth('#6f7a55', { folds: 10 }));
+  S('fabR', cloth('#b3362b', { folds: 8 }));
   S('straw', cloth('#c9a352', { folds: 8, kind: 'none' }));
   S('lea', cloth('#6a4230', { kind: 'box', folds: 2 }));
   S('leaB', cloth('#6a4230', { kind: 'band', folds: 3 }));
@@ -183,6 +216,91 @@ EXTRA.push(() => {
   S('doorP', paint('#33313d', (g, s) => { for (let i = 0; i < 8; i++) seam(g, s, (i + .5) / 8, 5); g.fillStyle = yel; g.beginPath(); g.moveTo(s * .5, s * .3); g.lineTo(s * .68, s * .62); g.lineTo(s * .32, s * .62); g.closePath(); g.fill(); pen(g, [[s * .5, s * .3], [s * .68, s * .62], [s * .32, s * .62], [s * .5, s * .3]], 5, INK, .2); chevrons(g, s, .88, 1); frame(g, s, '#33313d', 'box', 10); }, { blot: 30 }));
   S('fireP', paint('#ffb23a', (g, s) => { const gr = g.createLinearGradient(0, 0, 0, s); gr.addColorStop(0, '#fff3b0'); gr.addColorStop(.5, '#ffae30'); gr.addColorStop(1, '#e8501c'); g.fillStyle = gr; g.fillRect(0, 0, s, s); for (let i = 0; i < 7; i++) { const x = R(.1, .9) * s; pen(g, [[x, s], [x + R(-30, 30), s * .5], [x + R(-50, 50), s * .1]], R(10, 26), 'rgba(255,250,210,.7)'); } }, { blot: 0 }), { emis: 1 });
   S('rockB', paint('#b0553a', (g, s) => { brush(g, s, '#b0553a', 30, .2); sky(g, s, 1.2); for (let i = 0; i < 6; i++) { const y = R(.05, .95) * s; pen(g, [[0, y], [s * .3, y + R(-18, 18)], [s * .7, y + R(-18, 18)], [s, y]], R(2.5, 5), INK, .5); } for (let i = 0; i < 5; i++) { const x = R(0, s), y = R(0, s * .5); pen(g, [[x, y], [x + R(-20, 20), y + R(40, 90)], [x + R(-30, 30), y + R(100, 200)]], R(2, 4), INK); } for (let i = 0; i < 5; i++) hatch(g, R(0, .7) * s, R(.3, .8) * s, s * R(.14, .3), -1.0, 5, s * .04, s * .009); nicks(g, s, 12, '#f0a078', 60, 4); }, { blot: 60 }));
+  // ---- Marks made by hand: four posters and four boards. Each is drawn once, on purpose, and none of it comes from a font or a rule.
+  const cream = '#f0e6cc', crayon = '#b8342a';
+  const ell = (x: number, y: number, rx: number, ry: number, a0 = 0, a1 = 6.283, n = 14) => Array.from({ length: n + 1 }, (_, i) => { const a = a0 + (a1 - a0) * i / n; return [x + Math.cos(a) * rx, y + Math.sin(a) * ry]; });
+  const fillP = (g: Ctx, pts: number[][], col: string) => { g.fillStyle = col; g.beginPath(); pts.forEach((q, i) => i ? g.lineTo(q[0], q[1]) : g.moveTo(q[0], q[1])); g.closePath(); g.fill(); };
+  const runs = (g: Ctx, x0: number, x1: number, y: number, n: number, col: string, len: number) => { for (let i = 0; i < n; i++) { const x = R(x0, x1), l = R(.3, 1) * len; pen(g, [[x, y], [x + R(-2, 2), y + l * .5], [x, y + l]], R(2, 4), col, .8); g.fillStyle = col; g.beginPath(); g.arc(x, y + l, R(2.5, 4.5), 0, 7); g.fill(); } };
+  const paper = (base: string, draw: (g: Ctx, s: number) => void) => paint(base, (g, s) => {
+    brush(g, s, base, 12, .2); draw(g, s);
+    g.globalAlpha = .3; for (const t of [.34, .67]) pen(g, [[0, s * t], [s * .5, s * t + R(-5, 5)], [s, s * t]], 2.5, tone(base, .55), .1); g.globalAlpha = 1;
+    grime(g, s, 7); drip(g, s, 3); nicks(g, s, 10, tone(base, .6), 40, 3);
+    for (const [x, y, a] of [[.12, .045, -.5], [.88, .05, .45]]) { g.save(); g.translate(x * s, y * s); g.rotate(a + R(-.15, .15)); g.fillStyle = 'rgba(236,224,170,.9)'; g.fillRect(-s * .09, -s * .028, s * .18, s * .056); g.strokeStyle = INK; g.lineWidth = 2; g.strokeRect(-s * .09, -s * .028, s * .18, s * .056); g.restore(); }
+    { const c = s * R(.1, .16); fillP(g, [[s, s], [s - c, s], [s, s - c]], tone(base, .45)); fillP(g, [[s - c, s], [s, s - c], [s - c * .9, s - c * .9]], tone(base, 1.25)); pen(g, [[s - c, s], [s - c * .9, s - c * .9], [s, s - c]], 2.5); }
+    pen(g, [[3, 3], [s - 3, 3], [s - 3, s - 3], [3, s - 3], [3, 3]], 4, INK, .1);
+  }, { blot: 30 });
+  // "Dig or else": the ore, big and a bit wrong, on a red sunburst.
+  S('post1', paper('#e9dcb8', (g, s) => {
+    const cx = s * .5, cy = s * .58;
+    for (let i = 0; i < 14; i++) { const a = i / 14 * 6.283 + .1, b = a + .22; fillP(g, [[cx, cy], [cx + Math.cos(a) * s, cy + Math.sin(a) * s], [cx + Math.cos(b) * s, cy + Math.sin(b) * s]], i % 2 ? '#c8402c' : '#d9583a'); }
+    g.fillStyle = '#e9dcb8'; g.fillRect(0, 0, s, s * .29); g.fillRect(0, s * .81, s, s * .19);
+    const P = [[.5, .33], [.65, .46], [.6, .74], [.43, .77], [.35, .55]].map(q => [q[0] * s, q[1] * s]), m = [s * .48, s * .55];
+    fillP(g, P, '#9be36a'); fillP(g, [P[0], m, P[4]], '#e4ffc8'); fillP(g, [P[1], P[2], m], '#5fae48');
+    for (let i = 0; i < 5; i++) pen(g, [P[i], P[(i + 1) % 5]], 5.5, INK, .3);
+    for (const q of [P[0], P[1], P[2], P[4]]) pen(g, [m, q], 3);
+    hatch(g, s * .53, s * .6, s * .09, 1.1, 5, s * .016, s * .006);
+    for (const [x, y] of [[.3, .4], [.72, .36], [.74, .66]]) { pen(g, [[x * s - 14, y * s], [x * s + 14, y * s]], 3); pen(g, [[x * s, y * s - 14], [x * s, y * s + 14]], 3); }
+    scrawl(g, 'DIG', cx, s * .155, s * .2, INK, .17); scrawl(g, 'OR ELSE', cx, s * .905, s * .1, crayon, .16);
+  }));
+  // "The shift never ends": a skull under a hard hat over crossed picks.
+  S('post2', paper('#b23a2c', (g, s) => {
+    const cx = s * .5, cy = s * .53, bone = '#eadfc4';
+    for (const k of [-1, 1]) { pen(g, [[cx - k * s * .32, s * .8], [cx + k * s * .3, s * .27]], 8, INK, .1); pen(g, [[cx + k * s * .16, s * .24], [cx + k * s * .3, s * .27], [cx + k * s * .39, s * .38]], 10, INK, .5); }
+    g.fillStyle = bone; g.beginPath(); g.ellipse(cx, cy, s * .17, s * .16, 0, 0, 7); g.fill(); g.fillRect(cx - s * .1, cy + s * .08, s * .2, s * .13);
+    pen(g, ell(cx, cy, s * .17, s * .16, 2.5, 6.92), 5, INK, .2); pen(g, [[cx - s * .1, cy + s * .13], [cx - s * .1, cy + s * .21], [cx + s * .1, cy + s * .21], [cx + s * .1, cy + s * .13]], 5, INK, .2);
+    g.fillStyle = INK; g.beginPath(); g.ellipse(cx - s * .07, cy + s * .012, s * .05, s * .056, .2, 0, 7); g.fill(); g.beginPath(); g.ellipse(cx + s * .075, cy, s * .04, s * .05, -.2, 0, 7); g.fill();
+    fillP(g, [[cx, cy + s * .05], [cx - s * .02, cy + s * .1], [cx + s * .022, cy + s * .1]], INK);
+    for (let i = -2; i <= 2; i++) pen(g, [[cx + i * s * .036, cy + s * .13], [cx + i * s * .036 + R(-2, 2), cy + s * .205]], 3);
+    g.fillStyle = '#f2b824'; g.beginPath(); g.ellipse(cx, cy - s * .09, s * .185, s * .135, 0, Math.PI, Math.PI * 2); g.fill(); g.fillRect(cx - s * .23, cy - s * .1, s * .46, s * .036);
+    pen(g, ell(cx, cy - s * .09, s * .185, s * .135, Math.PI, 6.283), 5, INK, .2); pen(g, [[cx - s * .23, cy - s * .1], [cx + s * .23, cy - s * .1]], 4, INK, .2); pen(g, [[cx - s * .23, cy - s * .064], [cx + s * .23, cy - s * .064]], 5, INK, .2); pen(g, [[cx, cy - s * .225], [cx, cy - s * .1]], 4);
+    hatch(g, cx + s * .06, cy - s * .19, s * .07, 1.2, 4, s * .018, s * .005);
+    scrawl(g, 'THE SHIFT', cx, s * .125, s * .1, bone, .16); scrawl(g, 'NEVER ENDS', cx, s * .9, s * .09, bone, .16);
+  }));
+  // The foreman's notice, with his tally and his stamp.
+  S('post3', paper('#e2b23a', (g, s) => {
+    g.fillStyle = INK; g.fillRect(0, s * .07, s, s * .17); scrawl(g, 'NOTICE', s * .5, s * .155, s * .11, '#e2b23a', .17);
+    scrawl(g, 'NO ORE', s * .4, s * .345, s * .085, INK, .15, 1.5); scrawl(g, 'NO PAY', s * .47, s * .485, s * .085, INK, .15, 1.5); scrawl(g, 'NO WHINING', s * .5, s * .62, s * .068, crayon, .16, 1.8);
+    pen(g, [[s * .14, s * .685], [s * .5, s * .7], [s * .86, s * .675]], 4, crayon);
+    for (let i = 0; i < 9; i++) { const x = s * (.13 + i * .034 + (i > 4 ? .045 : 0)); pen(g, [[x, s * .76], [x + R(-3, 3), s * .86]], 3.5); } pen(g, [[s * .11, s * .845], [s * .285, s * .775]], 3.5);
+    g.globalAlpha = .8; pen(g, ell(s * .74, s * .82, s * .095, s * .09, .3, 6.5, 18), 4, crayon, .3); pen(g, ell(s * .74, s * .82, s * .075, s * .07, 1, 7, 18), 2, crayon, .3); scrawl(g, 'IHC', s * .74, s * .822, s * .055, crayon, .17); g.globalAlpha = 1;
+  }));
+  // Wanted: a Veyl mask, drawn from memory, and somebody has added a moustache.
+  S('post4', paper('#b9cdb4', (g, s) => {
+    const cx = s * .5, cy = s * .5, mask = [[0, -.27], [.1, -.2], [.135, -.02], [.085, .16], [0, .25], [-.08, .16], [-.13, -.02], [-.1, -.2], [0, -.27]].map(q => [cx + q[0] * s, cy + q[1] * s]);
+    scrawl(g, 'WANTED', cx, s * .13, s * .125, INK, .18);
+    fillP(g, mask, '#efe9f6'); fillP(g, [mask[1], mask[2], mask[3], mask[4], [cx + s * .02, cy]], '#cfc6e6'); pen(g, mask, 5, INK, .15);
+    for (const [x, y, ry, a] of [[-.055, -.04, .02, .35], [.058, -.045, .02, -.35], [0, -.14, .014, 0]]) { g.fillStyle = '#6a55e6'; g.beginPath(); g.ellipse(cx + x * s, cy + y * s, s * .036, s * ry, a, 0, 7); g.fill(); pen(g, [[cx + (x - .04) * s, cy + (y - a * .03) * s], [cx + x * s, cy + (y - ry) * s], [cx + (x + .04) * s, cy + (y + a * .03) * s]], 3); }
+    pen(g, [[cx, cy + s * .02], [cx - s * .008, cy + s * .2]], 3); hatch(g, cx + s * .04, cy + s * .02, s * .08, 1.3, 5, s * .015, s * .005);
+    pen(g, [[cx - s * .08, cy + s * .115], [cx - s * .035, cy + s * .075], [cx, cy + s * .095], [cx + s * .035, cy + s * .07], [cx + s * .09, cy + s * .12]], 5.5, crayon);
+    scrawl(g, '40 ORE A HEAD', cx, s * .885, s * .066, crayon, .16);
+  }));
+  // Boards: sawn planks, painted by whoever was nearest. `k` is how many times wider than tall the board hangs.
+  const board = (k: number, draw: (g: Ctx, w: number, h: number) => void) => paint('#8a6846', (g, s) => {
+    g.save(); g.scale(1 / k, 1); const w = s * k;
+    for (let i = 0; i < 46; i++) { g.globalAlpha = R(.15, .4); const y = R(0, s), x = R(-.1, 1) * w; pen(g, [[x, y], [x + R(.1, .4) * w, y + R(-6, 6)]], R(2, 5), rnd() < .5 ? '#5e4630' : '#a88560', .7); } g.globalAlpha = 1;
+    for (const t of [.33, .68]) pen(g, [[0, s * t], [w * .5, s * t + R(-5, 5)], [w, s * t]], 5, INK, .1);
+    draw(g, w, s);
+    for (const x of [18, w - 18]) for (const y of [.16, .5, .85]) { g.fillStyle = INK; g.beginPath(); g.arc(x, s * y, 7, 0, 7); g.fill(); g.fillStyle = 'rgba(255,255,255,.5)'; g.beginPath(); g.arc(x - 2, s * y - 2, 2.4, 0, 7); g.fill(); }
+    pen(g, [[4, 4], [w - 4, 4], [w - 4, s - 4], [4, s - 4], [4, 4]], 6, INK, .1);
+    g.restore(); grime(g, s, 6);
+  }, { blot: 0 });
+  S('wood', board(1, () => {}));
+  S('signDep', board(2.4, (g, w, h) => {
+    const a = scrawl(g, 'DEPOT', w * .5, h * .33, h * .38, cream, .16); runs(g, a[0], a[1], h * .5, 4, cream, h * .12);
+    scrawl(g, '8 BEDS', w * .27, h * .79, h * .17, cream, .15); const no = scrawl(g, 'NO', w * .57, h * .79, h * .17, cream, .15); scrawl(g, 'BUGS', w * .8, h * .79, h * .17, cream, .15);
+    pen(g, [[no[0] - 10, h * .82], [no[1] + 10, h * .76]], 5, crayon); pen(g, [[no[0] - 6, h * .75], [no[1] + 12, h * .83]], 4, crayon);
+  }));
+  S('signShop', board(1.6, (g, w, h) => {
+    const a = scrawl(g, 'MACHINE', w * .5, h * .22, h * .25, cream, .16); scrawl(g, 'SHOP', w * .5, h * .54, h * .27, cream, .17); runs(g, a[0], a[1], h * .34, 3, cream, h * .08);
+    scrawl(g, 'WE FIX IT.', w * .36, h * .85, h * .1, cream, .15); scrawl(g, 'MOSTLY', w * .78, h * .86, h * .1, crayon, .17, 1.8);
+  }));
+  S('signAssay', board(3.6, (g, w, h) => {
+    scrawl(g, 'ASSAY OFFICE', w * .5, h * .32, h * .4, cream, .16, 1, w * .9);
+    const f = scrawl(g, 'FAIR', w * .34, h * .8, h * .18, cream, .15); scrawl(g, 'WEIGHTS', w * .6, h * .8, h * .18, cream, .15);
+    pen(g, [[f[0] - 12, h * .81], [f[1] + 10, h * .78]], 5, crayon); scrawl(g, 'ROUGH', w * .3, h * .63, h * .13, crayon, .17, 2);
+  }));
+  S('signKeep', board(2.4, (g, w, h) => { scrawl(g, 'KEEP OUT', w * .5, h * .36, h * .42, cream, .17, 1, w * .88); scrawl(g, 'THIS MEANS YOU', w * .5, h * .82, h * .15, crayon, .17, 1.6); }));
+  S('signMine', board(2.4, (g, w, h) => { const a = scrawl(g, 'MINE', w * .33, h * .4, h * .44, cream, .17); runs(g, a[0], a[1], h * .64, 3, cream, h * .14); scrawl(g, 'NOT', w * .8, h * .28, h * .19, crayon, .18, 1.6); scrawl(g, 'YOURS', w * .8, h * .6, h * .18, crayon, .18, 1.6); }));
   // ---- Veyl: grown, not built. Shell with glowing veins, pale mask bone, wound gold, cut crystal.
   const vein = (g: Ctx, s: number, n: number, col: string) => { for (let i = 0; i < n; i++) { let x = R(0, s), y = 0; const pts = [[x, y]]; while (y < s) { y += R(40, 90); x += R(-44, 44); pts.push([x, y]); if (rnd() < .3) pen(g, [[x, y], [x + R(-60, 60), y + R(20, 60)]], R(2, 4), col); } g.globalAlpha = .35; pen(g, pts, R(10, 16), col, .4); g.globalAlpha = 1; pen(g, pts, R(3, 5.5), col, .5); pen(g, pts.map(p => [p[0] + 5, p[1] + 2]), 2.2, INK, .6); } };
   const shell = (base: string, kind: 'box' | 'band', veins: number) => paint(base, (g, s) => {

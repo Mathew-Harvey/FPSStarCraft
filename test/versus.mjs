@@ -14,14 +14,14 @@ try {
   await sleep(1200);
   const b = await chromium.launch({ args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist', '--enable-webgl'] });
   const open = async name => { const p = await b.newPage({ viewport: { width: 1280, height: 720 } }); p.setDefaultTimeout(120000); p.on('pageerror', e => { console.log(`[${name} pageerror]`, e.message.slice(0, 400)); fail.push(name + ' page error'); }); await p.goto(URL); await p.waitForFunction('window.__ore'); await p.evaluate(n => { __ore.setFree(true); __ore.game.noRender = true; __ore.unlock(); document.getElementById('mName').value = n; }, name); return p; };
-  // A page drawing its menu makes the next page load about five times slower (70 s against 15 s here), enough to time out on a busy runner, so the first one holds still.
-  const A = await open('Ada'); await A.evaluate(() => { __ore.game.noRender = true; }); const V = await open('Vex'); await A.evaluate(() => { __ore.game.noRender = false; });
+  // Two pages drawing at once starve each other under software rendering: a menu alone made the next page load five times slower, and a kick-off could stall long enough to drop the connection. Both hold still until a check needs a picture.
+  const A = await open('Ada'); await A.evaluate(() => { __ore.hold(true); }); const V = await open('Vex'); await V.evaluate(() => { __ore.hold(true); });
   await A.click('#mCreate'); await A.waitForFunction(() => document.getElementById('mCodeShow').textContent.length === 5);
   const code = await A.evaluate(() => document.getElementById('mCodeShow').textContent);
   await V.fill('#mCode', code); await V.click('#mJoinBtn'); await V.waitForFunction(() => !document.getElementById('mLobby').hidden);
   await V.click('#mSide'); await A.waitForFunction(() => /Veyl Chorus/.test(document.getElementById('mPlayers').textContent)); check(true, 'Vex picks the Veyl side and Ada sees it in the lobby');
   await A.click('#mDiff button:nth-child(1)'); await V.click('#mReady'); await A.waitForFunction(() => !document.getElementById('mStart').disabled); await A.click('#mStart');
-  for (const p of [A, V]) { await p.waitForFunction(() => __ore.game.net && __ore.game.me && __ore.game.units.length > 6); await p.evaluate(() => { __ore.game.noRender = true; }); }
+  for (const p of [A, V]) { await p.waitForFunction(() => __ore.game.net && __ore.game.me && __ore.game.units.length > 6); await p.evaluate(() => { __ore.game.noRender = true; __ore.hold(false); }); }
   const st = p => p.evaluate(() => { const g = __ore.game; return { me: g.me && g.me.id, team: g.me && g.me.team, kind: g.me && g.me.kind, my: g.myTeam, ore: g.ore, bld: g.buildings.filter(b => b.alive).length, hq: g.ownB('headframe')[0]?.hp, phase: g.phase, won: g.won, raidIn: g.dir.raidIn }; });
   let a = await st(A), v = await st(V);
   check(a.team === 0 && v.team === 1 && v.my === 1, `Ada is a ${a.kind} for Ironhold and Vex is a ${v.kind} for the Veyl`);

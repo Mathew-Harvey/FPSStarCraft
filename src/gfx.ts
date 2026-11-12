@@ -109,11 +109,11 @@ export const DUSK = { value: 0 };
 const DUSKFOG = new THREE.Color('#f09a84');
 export const NOISE = `float hash(vec2 p){return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453);}
 float vnoise(vec2 p){vec2 i=floor(p),f=fract(p);f=f*f*(3.-2.*f);return mix(mix(hash(i),hash(i+vec2(1,0)),f.x),mix(hash(i+vec2(0,1)),hash(i+vec2(1,1)),f.x),f.y);}`;
-const TOON_VS = `uniform vec3 uL; uniform vec2 uRep; attribute float aEm; varying vec3 vN,vL,vP,vW,vWn,vO,vOn; varying vec2 vUv; varying float vEm;
-void main(){ vUv=uv*uRep; vEm=aEm; vO=position*length(modelMatrix[0].xyz); vOn=normal; vec4 w=modelMatrix*vec4(position,1.); vW=w.xyz; vec4 mv=viewMatrix*w; vP=mv.xyz; vN=normalize(normalMatrix*normal); vWn=normalize(mat3(modelMatrix)*normal); vL=(viewMatrix*vec4(uL,0.)).xyz; gl_Position=projectionMatrix*mv; }`;
+const TOON_VS = `uniform vec3 uL; uniform vec2 uRep; attribute float aEm; varying vec3 vN,vL,vP,vW,vWn,vO,vOn; varying vec2 vUv; varying float vEm,vSh;
+void main(){ vUv=uv*uRep; float sq=floor(aEm*.5+.001); vEm=aEm-2.*sq; vSh=sq*.1; vO=position*length(modelMatrix[0].xyz); vOn=normal; vec4 w=modelMatrix*vec4(position,1.); vW=w.xyz; vec4 mv=viewMatrix*w; vP=mv.xyz; vN=normalize(normalMatrix*normal); vWn=normalize(mat3(modelMatrix)*normal); vL=(viewMatrix*vec4(uL,0.)).xyz; gl_Position=projectionMatrix*mv; }`;
 const TOON_FS = `precision highp float;
-uniform vec3 uColor,uFog; uniform sampler2D uMap,uShadow; uniform mat4 uShadowMat; uniform float uEmis,uOpacity,uHatch,uFogK,uFlat,uPx,uShadowTex;
-varying vec3 vN,vL,vP,vW,vWn,vO,vOn; varying vec2 vUv; varying float vEm;
+uniform vec3 uColor,uFog; uniform sampler2D uMap,uShadow; uniform mat4 uShadowMat; uniform float uEmis,uOpacity,uHatch,uFogK,uFlat,uPx,uShadowTex,uGrit,uShine;
+varying vec3 vN,vL,vP,vW,vWn,vO,vOn; varying vec2 vUv; varying float vEm,vSh;
 ${NOISE}
 float shadowAt(vec3 wp){
   vec4 sc=uShadowMat*vec4(wp,1.); vec3 p=sc.xyz/sc.w*.5+.5;
@@ -254,8 +254,11 @@ void main(){
   vec3 n=normalize(vN); vec3 wn=normalize(vWn); if(!gl_FrontFacing){ n=-n; wn=-wn; }
 #ifdef GROUND
   vec3 base=uColor*groundAt(vW.xz);
+  // Under the grade the ground goes dusty: paler and a third less orange, so the dark things standing on it read against it.
+  base=mix(base,vec3(dot(base,vec3(.3,.59,.11)))*vec3(1.12,1.03,.93),.34*uGrit)*mix(vec3(1.),vec3(.97,.95,.95),uGrit);
 #elif defined(CLIFF)
   vec3 base=uColor*cliffAt(vW,wn);
+  base=mix(base,vec3(dot(base,vec3(.3,.59,.11)))*vec3(1.08,1.,.95),.3*uGrit)*mix(vec3(1.),vec3(.84,.79,.8),uGrit);
 #elif defined(BLOOM)
   float be=vUv.x+(vnoise(vW.xz*.5)-.5)*.2+(vnoise(vW.xz*1.6+4.)-.5)*.1+(vnoise(vW.xz*5.+9.)-.5)*.035, bfe=max(fwidth(be),1e-4), ba=clamp((1.-be)/bfe+.5,0.,1.);
   if(ba<=0.) discard;
@@ -277,10 +280,15 @@ void main(){
   float sh=shadowAt(vW+wn*.07);
 #endif
   float lit=smoothstep(-.03,.03,t)*smoothstep(.3,.7,sh), hi=smoothstep(.74,.78,t)*sh, deep=1.-smoothstep(-.6,-.54,t);
-  vec3 shc=base*vec3(.36,.3,.48)+vec3(.02,.01,.055);
+  vec3 shc=base*mix(vec3(.36,.3,.48),vec3(.27,.228,.325),uGrit)+mix(vec3(.02,.01,.055),vec3(.016,.01,.036),uGrit);
   vec3 col=mix(shc,base*vec3(.8,.75,.8),lit);
   col=mix(col,base,smoothstep(.3,.36,t)*lit);
   col=mix(col,min(base*1.2+vec3(.08,.07,.03),vec3(1.)),hi*.75*(1.-uFlat));
+  // Inside each flat tone the form still turns a little, the way their painters grade a panel by hand, and hard things take a
+  // streak of shine where the sun glances off them.
+  { float soft=smoothstep(-.55,.95,t); col*=mix(1.,.66+.46*soft,uGrit*(1.-uFlat));
+    float shn=uShine+vSh; vec3 hv=normalize(normalize(vL)+normalize(-vP)); float sp=pow(max(dot(n,hv),0.),mix(6.,70.,shn));
+    col+=smoothstep(.3,.62,sp)*lit*shn*uGrit*(1.-uFlat)*(base*.45+vec3(.3,.28,.22)); }
   // Shading strokes are drawn on the thing, not on the screen, so they stay put when it or you move. They are laid out in its own
   // space on whichever side faces most squarely, and step down a size with distance so they stay about nine pixels apart.
   vec3 an=abs(vOn); vec2 hc=an.y>an.x&&an.y>an.z?vO.xz:an.x>an.z?vO.zy:vO.xy;
@@ -313,16 +321,17 @@ void main(){
 #ifdef BLOOM
   gl_FragColor=vec4(col,ba);
 #else
-  gl_FragColor=vec4(col,uOpacity);
+  // an opaque thing that glows says so in alpha, which nothing else reads; the post pass lets it spill light
+  gl_FragColor=vec4(col,uOpacity*(1.-min(em,1.)*.9));
 #endif
 }`;
 const WHITE = new THREE.DataTexture(new Uint8Array([255, 255, 255, 255]), 1, 1, THREE.RGBAFormat); WHITE.needsUpdate = true;
 // Uniforms shared by every toon material so the shadow map and pixel scale update in one place.
-export const SHARED = { uShadow: { value: WHITE as THREE.Texture }, uShadowMat: { value: new THREE.Matrix4() }, uShadowTex: { value: 1 / 2048 }, uPx: { value: 1 }, uL: { value: LIGHT }, uFog: { value: FOG } };
-export interface ToonOpts { color?: string; emis?: number; hatch?: number; fog?: number; flat?: number; rx?: number; ry?: number; side?: THREE.Side; ground?: boolean; cliff?: boolean; bloom?: boolean }
+export const SHARED = { uShadow: { value: WHITE as THREE.Texture }, uShadowMat: { value: new THREE.Matrix4() }, uShadowTex: { value: 1 / 2048 }, uPx: { value: 1 }, uL: { value: LIGHT }, uFog: { value: FOG }, uGrit: { value: 1 } };
+export interface ToonOpts { color?: string; emis?: number; hatch?: number; fog?: number; flat?: number; rx?: number; ry?: number; side?: THREE.Side; ground?: boolean; cliff?: boolean; bloom?: boolean; /** 0 is chalk, 1 is polished metal. */ shine?: number }
 export function T(map?: THREE.Texture | null, o: ToonOpts = {}) {
   return new THREE.ShaderMaterial({
-    uniforms: { uColor: { value: new THREE.Color(o.color || '#ffffff') }, uMap: { value: map || WHITE }, uEmis: { value: o.emis || 0 }, uOpacity: { value: 1 }, uHatch: { value: o.hatch === undefined ? 1 : o.hatch }, uFogK: { value: o.fog === undefined ? .0032 : o.fog }, uFlat: { value: o.flat || 0 }, uRep: { value: new THREE.Vector2(o.rx || 1, o.ry || 1) }, ...(o.ground ? { uRoad: { value: new THREE.Vector4() }, uRoadW: { value: 0 } } : {}), ...SHARED },
+    uniforms: { uColor: { value: new THREE.Color(o.color || '#ffffff') }, uMap: { value: map || WHITE }, uEmis: { value: o.emis || 0 }, uOpacity: { value: 1 }, uHatch: { value: o.hatch === undefined ? 1 : o.hatch }, uFogK: { value: o.fog === undefined ? .0032 : o.fog }, uFlat: { value: o.flat || 0 }, uShine: { value: o.shine === undefined ? .2 : o.shine }, uRep: { value: new THREE.Vector2(o.rx || 1, o.ry || 1) }, ...(o.ground ? { uRoad: { value: new THREE.Vector4() }, uRoadW: { value: 0 } } : {}), ...SHARED },
     vertexShader: TOON_VS, fragmentShader: TOON_FS, side: o.side || THREE.FrontSide, defines: o.ground ? { GROUND: 1 } : o.cliff ? { CLIFF: 1 } : o.bloom ? { BLOOM: 1 } : {},
   });
 }
@@ -427,7 +436,7 @@ export function makeSky() {
 }
 
 // ---------------------------------------------------------------- pipeline
-const POST_FS = `precision highp float; varying vec2 vUv; uniform sampler2D tC,tD,tN; uniform vec2 uRes; uniform float uNear,uFar,uOrtho,uPx,uSat,uStatic,uTime,uFlash,uDusk,uBold,uProj,uAO; ${NOISE}
+const POST_FS = `precision highp float; varying vec2 vUv; uniform sampler2D tC,tD,tN; uniform vec2 uRes; uniform sampler2D tB; uniform vec2 uSun; uniform float uNear,uFar,uOrtho,uPx,uSat,uStatic,uTime,uFlash,uDusk,uBold,uProj,uAO,uGrit,uGlow; ${NOISE}
 float lin(vec2 uv){ float d=texture2D(tD,uv).x; if(uOrtho>.5) return uNear+d*(uFar-uNear); float z=d*2.-1.; return 2.*uNear*uFar/(uFar+uNear-z*(uFar-uNear)); }
 vec3 nrm(vec2 uv){ return texture2D(tN,uv).xyz*2.-1.; }
 float edgeAt(vec2 u, vec2 sp){
@@ -467,25 +476,48 @@ void main(){
   vec2 sp=vUv*uRes/uPx;
   vec2 wobv=(vec2(vnoise(sp/30.),vnoise(sp/30.+31.))-.5)*2.6*uPx/uRes;
   vec2 u=vUv+wobv; vec2 h=.3/uRes;
-  float edge=(edgeAt(u+h,sp)+edgeAt(u-h,sp)+edgeAt(u+h*vec2(1.,-1.),sp)+edgeAt(u+h*vec2(-1.,1.),sp))*.25;
+  // Four looks a third of a pixel apart smooth the line. Most of the page has no line near it, and there two looks are enough to know.
+  float eA=edgeAt(u+h,sp), eB=edgeAt(u-h,sp), edge=(eA+eB)*.5;
+  if(eA+eB>0.) edge=(eA+eB+edgeAt(u+h*vec2(1.,-1.),sp)+edgeAt(u+h*vec2(-1.,1.),sp))*.25;
   vec3 col=texture2D(tC,vUv).rgb;
   if(uOrtho<.5&&uAO>0.){ float d0=lin(vUv); if(d0<140.){ float oc=hollow(vUv,d0)*uAO; col*=mix(vec3(1.),vec3(.42,.36,.56),oc); } }
+  // Worn edges: a light line just inside the ink on the side that faces the sun, along an outside edge or a ridge.
+  if(uOrtho<.5&&uGrit>0.){ float d0=lin(vUv); if(d0<60.){
+    vec2 o=uSun*2.5*uPx/uRes*clamp(1.5/(1.+d0/14.),.45,1.4); vec3 n0=nrm(vUv), n1=nrm(vUv+o); float d1=lin(vUv+o), d2=lin(vUv-o);
+    float same=1.-smoothstep(.03,.08,abs(d2-d0)/d0), rimE=smoothstep(.06,.14,(d1-d0)/d0);
+    float ridge=smoothstep(.45,.8,length(n1-n0))*(1.-smoothstep(.02,.06,abs(d1-d0)/d0))*smoothstep(0.,.004,((d1+d2)*.5-d0)/d0);
+    float wear=max(rimE,ridge)*same*(1.-min(1.,edge*1.4))*(1.-smoothstep(25.,60.,d0))*(.6+.4*vnoise(sp/7.));
+    col=mix(col,min(col*1.5+vec3(.1,.09,.06),vec3(1.)),wear*.5*uGrit); } }
   col=mix(col,vec3(.05,.045,.075),min(1.,edge*.95));
   col=mix(col,col*vec3(1.1,.8,.84)+vec3(.03,0.,.07),uDusk*.75);
+  // Lights spill: lamps, visors, fire and crystals glow into the air round them.
+  if(uGlow>0.) col+=texture2D(tB,vUv).rgb*uGlow;
+  // The sky steps back: paler and less teal under the grade, so it is a backdrop and not the loudest thing in the frame.
+  if(uOrtho<.5&&uGrit>0.&&lin(vUv)>900.){ float sl=dot(col,vec3(.3,.59,.11)); col=mix(col,mix(vec3(sl),col,.6)*vec3(1.,.99,1.02)+vec3(.04,.035,.045),uGrit); }
   col=mix(vec3(dot(col,vec3(.3,.59,.11))),col,1.18*uSat);
+  // The grade: a firmer curve so darks go properly dark, colour held back a little, cool shadows under warm lights.
+  { vec3 g=clamp(col,0.,1.); float l=dot(g,vec3(.3,.59,.11)); g=mix(g,g*g*(3.-2.*g),.75); g=mix(vec3(dot(g,vec3(.3,.59,.11))),g,.9);
+    g*=mix(vec3(.9,.93,1.08),vec3(1.05,1.,.93),smoothstep(.08,.6,l)); col=mix(col,g,uGrit); }
   col*=.95+.08*vnoise(sp*.5);
-  float v=smoothstep(1.3,.5,length((vUv-.5)*vec2(1.25,1.))); col*=mix(.8,1.,v);
+  float v=smoothstep(1.3,.5,length((vUv-.5)*vec2(1.25,1.))); col*=mix(mix(.8,.68,uGrit),1.,v);
   col=mix(col,vec3(1.,.97,.86),uFlash);
   if(uStatic>0.){ float s=hash(floor(sp/3.)+uTime*60.); float bar=step(.92,fract(vUv.y*6.+uTime*3.)); col=mix(col,vec3(s)*.9+bar*.1,uStatic); }
   gl_FragColor=vec4(col,1.);
 }`;
 
+// Glow: the bright pass keeps what a material marked as glowing (alpha below one) and anything white-hot, at a quarter size; two blurs spread it.
+const GLOW_PICK = `precision highp float; varying vec2 vUv; uniform sampler2D tC; uniform vec2 uT;
+void main(){ vec3 a=vec3(0.); for(int i=0;i<4;i++){ vec2 o=vec2(i==0||i==2?-1.:1.,i<2?-1.:1.)*uT; vec4 c=texture2D(tC,vUv+o); float k=max(1.-c.a,smoothstep(.9,1.,min(c.r,min(c.g,c.b)))*.3); a+=c.rgb*k; } gl_FragColor=vec4(a*.25,1.); }`;
+const GLOW_BLUR = `precision highp float; varying vec2 vUv; uniform sampler2D tC; uniform vec2 uT;
+void main(){ vec3 a=texture2D(tC,vUv).rgb*.2; a+=(texture2D(tC,vUv+uT*1.45).rgb+texture2D(tC,vUv-uT*1.45).rgb)*.17; a+=(texture2D(tC,vUv+uT*3.4).rgb+texture2D(tC,vUv-uT*3.4).rgb)*.125; a+=(texture2D(tC,vUv+uT*5.35).rgb+texture2D(tC,vUv-uT*5.35).rgb)*.07; a+=(texture2D(tC,vUv+uT*7.3).rgb+texture2D(tC,vUv-uT*7.3).rgb)*.035; gl_FragColor=vec4(a,1.); }`;
+const SUNV = new THREE.Vector3();
 export class Pipeline {
   renderer: THREE.WebGLRenderer;
   w = 1; h = 1; px = 1;
   private rtC: THREE.WebGLRenderTarget; private rtN: THREE.WebGLRenderTarget; private rtS: THREE.WebGLRenderTarget;
   private normalMat = new THREE.MeshNormalMaterial({ side: THREE.DoubleSide });
   private depthMat = new THREE.MeshBasicMaterial({ colorWrite: false, side: THREE.DoubleSide });
+  private rtG: THREE.WebGLRenderTarget[] = []; private glowMat: THREE.ShaderMaterial; private blurMat: THREE.ShaderMaterial; private fsq: THREE.Mesh;
   private postMat: THREE.ShaderMaterial; private postScene = new THREE.Scene(); private postCam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
   private sun = new THREE.OrthographicCamera(-50, 50, 50, -50, 1, 500);
   sat = 1; static = 0; time = 0; flash = 0; private aaNow = -1;
@@ -494,7 +526,11 @@ export class Pipeline {
   /** Samples per pixel when drawing the colour picture, so slanted edges come out clean rather than stepped. 0 turns it off. */
   aa = 4;
   /** How much heavier the outside line of a thing is than the lines inside it, close up. 0 is one pen for everything. */
-  bold = 1;
+  bold = .5;
+  /** The moody grade: soft shading and shine, deeper darks, held-back colour, worn edges. 0 is the bright flat comic look. */
+  grit = 1;
+  /** How far lights spill into the air round them. 0 turns the glow off (Low picture quality does). */
+  glow = 1;
   /** Strength of the contact shading under and between things. Low picture quality turns it off. */
   ao = 1;
   /** Size of the canvas itself. It is larger than `w` by `h` only when the screen is split into views. */
@@ -507,6 +543,8 @@ export class Pipeline {
     this.renderer.outputColorSpace = THREE.LinearSRGBColorSpace;
     this.renderer.setPixelRatio(1);
     makeTextures(); makeMaterials();
+    // What is hard and polished takes a sharp streak of shine; painted plate and leather a duller one; cloth, rock and skin stay matt.
+    for (const k in M) { const u = (M[k] as THREE.ShaderMaterial).uniforms; if (!u || !u.uShine) continue; u.uShine.value = /^(gun|steel|tank|drill|lens|vis|bS|bD|pS|nS|nD|helm|hard|chest|shield|rib$)/.test(k) ? .62 : /^(lea|glove|sole|[pbcn][A-Z]$|haz|wall|door)/.test(k) ? .36 : /^(fab|straw|post|sign|wood|rock|mesa|ground|skin|stache|vest|conc|dust|soot|g[A-Z])/.test(k) ? .08 : u.uShine.value; }
     const S = 2048;
     this.rtS = new THREE.WebGLRenderTarget(S, S, { minFilter: THREE.NearestFilter, magFilter: THREE.NearestFilter });
     this.rtS.depthTexture = new THREE.DepthTexture(S, S); this.rtS.depthTexture.type = THREE.UnsignedIntType;
@@ -514,10 +552,12 @@ export class Pipeline {
     SHARED.uShadow.value = this.rtS.depthTexture; SHARED.uShadowTex.value = 1 / S;
     this.rtC = new THREE.WebGLRenderTarget(4, 4); this.rtN = new THREE.WebGLRenderTarget(4, 4);
     this.postMat = new THREE.ShaderMaterial({
-      uniforms: { tC: { value: null }, tD: { value: null }, tN: { value: null }, uRes: { value: new THREE.Vector2(1, 1) }, uNear: { value: .06 }, uFar: { value: 4000 }, uOrtho: { value: 0 }, uPx: SHARED.uPx, uSat: { value: 1 }, uFlash: { value: 0 }, uStatic: { value: 0 }, uTime: { value: 0 }, uDusk: DUSK, uBold: { value: 1 }, uProj: { value: 1 }, uAO: { value: 1 } },
+      uniforms: { tC: { value: null }, tD: { value: null }, tN: { value: null }, uRes: { value: new THREE.Vector2(1, 1) }, uNear: { value: .06 }, uFar: { value: 4000 }, uOrtho: { value: 0 }, uPx: SHARED.uPx, uSat: { value: 1 }, uFlash: { value: 0 }, uStatic: { value: 0 }, uTime: { value: 0 }, uDusk: DUSK, uBold: { value: 1 }, uProj: { value: 1 }, uAO: { value: 1 }, uGrit: SHARED.uGrit, uGlow: { value: 1 }, uSun: { value: new THREE.Vector2(-.6, .8) }, tB: { value: null } },
       vertexShader: `varying vec2 vUv; void main(){ vUv=uv; gl_Position=vec4(position.xy,0.,1.); }`, fragmentShader: POST_FS, depthTest: false, depthWrite: false,
     });
-    this.postScene.add(new THREE.Mesh(new THREE.PlaneGeometry(2, 2), this.postMat));
+    this.postScene.add(this.fsq = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), this.postMat));
+    const quad = (fs: string) => new THREE.ShaderMaterial({ uniforms: { tC: { value: null }, uT: { value: new THREE.Vector2() } }, vertexShader: `varying vec2 vUv; void main(){ vUv=uv; gl_Position=vec4(position.xy,0.,1.); }`, fragmentShader: fs, depthTest: false, depthWrite: false });
+    this.glowMat = quad(GLOW_PICK); this.blurMat = quad(GLOW_BLUR);
   }
 
   /** `w` by `h` is the size of one view. `cw` by `ch` is the whole canvas, when that is bigger because the screen is split. */
@@ -530,7 +570,9 @@ export class Pipeline {
     this.rtC = new THREE.WebGLRenderTarget(w, h, { minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter, samples: this.aa });
     this.rtC.depthTexture = new THREE.DepthTexture(w, h); this.rtC.depthTexture.type = THREE.UnsignedIntType;
     this.rtN = new THREE.WebGLRenderTarget(w, h, { minFilter: THREE.NearestFilter, magFilter: THREE.NearestFilter });
-    const u = this.postMat.uniforms; u.tC.value = this.rtC.texture; u.tD.value = this.rtC.depthTexture; u.tN.value = this.rtN.texture; u.uRes.value.set(w, h);
+    for (const t of this.rtG) t.dispose(); const gw = Math.max(2, w >> 2), gh = Math.max(2, h >> 2);
+    this.rtG = [0, 1].map(() => new THREE.WebGLRenderTarget(gw, gh, { minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter, depthBuffer: false }));
+    const u = this.postMat.uniforms; u.tC.value = this.rtC.texture; u.tD.value = this.rtC.depthTexture; u.tN.value = this.rtN.texture; u.uRes.value.set(w, h); u.tB.value = this.rtG[0].texture;
   }
 
   /** Moves the sun toward the horizon and warms the grade. 0 is midday, 1 is sunset. */
@@ -552,6 +594,11 @@ export class Pipeline {
     r.setRenderTarget(this.rtN); r.setClearColor(0x8080ff, 1); r.clear(); r.render(scene, cam); scene.overrideMaterial = null;
 
     const u = this.postMat.uniforms; u.uOrtho.value = (cam as any).isOrthographicCamera ? 1 : 0; u.uProj.value = cam.projectionMatrix.elements[5]; u.uBold.value = this.bold; u.uAO.value = this.ao; u.uNear.value = cam.near; u.uFar.value = cam.far; u.uSat.value = this.sat; u.uFlash.value = this.flash; u.uStatic.value = this.static; u.uTime.value = this.time;
+    SHARED.uGrit.value = this.grit; u.uGlow.value = this.glow * .9; SUNV.copy(LIGHT).transformDirection(cam.matrixWorldInverse); u.uSun.value.set(SUNV.x, SUNV.y); if (u.uSun.value.lengthSq() < 1e-4) u.uSun.value.set(0, 1); u.uSun.value.normalize();
+    if (this.glow > 0) { const [a, b] = this.rtG, g = this.glowMat, bl = this.blurMat;
+      this.fsq.material = g; g.uniforms.tC.value = this.rtC.texture; g.uniforms.uT.value.set(1 / this.w, 1 / this.h); r.setRenderTarget(a); r.render(this.postScene, this.postCam);
+      this.fsq.material = bl; bl.uniforms.tC.value = a.texture; bl.uniforms.uT.value.set(1 / a.width, 0); r.setRenderTarget(b); r.render(this.postScene, this.postCam);
+      bl.uniforms.tC.value = b.texture; bl.uniforms.uT.value.set(0, 1 / a.height); r.setRenderTarget(a); r.render(this.postScene, this.postCam); this.fsq.material = this.postMat; }
     r.setRenderTarget(null);
     if (this.rect) { const q = this.rect; r.setViewport(q[0], q[1], q[2], q[3]); r.setScissor(q[0], q[1], q[2], q[3]); r.setScissorTest(true); r.render(this.postScene, this.postCam); r.setScissorTest(false); r.setViewport(0, 0, this.cw, this.ch); }
     else r.render(this.postScene, this.postCam);

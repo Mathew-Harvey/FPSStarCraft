@@ -11,7 +11,7 @@ import { GLOAM_UNITS, GLOAM_HEIGHT, GLOAM_BUILDINGS, vmGloam } from './gloam-art
 /** A Gloam body's first-person mandibles, tusks or snout. */
 export const vmG = (k: string) => vmGloam(k, bake, L_VM);
 export const gloamB = (k: string, anim: ((t: number) => void)[]) => GLOAM_BUILDINGS[k](anim);
-import { lathe, hard, spl, capsule, rbox, blob, tube, plate, rrect, ring, shard, slab, warp, crag, boulder } from './sculpt';
+import { lathe, hard, spl, capsule, rbox, blob, nub, rod, blade, tube, plate, rrect, ring, shard, slab, warp, crag, boulder } from './sculpt';
 
 export interface Rig { body: THREE.Object3D; head?: THREE.Object3D; arms?: THREE.Object3D; armL?: THREE.Object3D; armR?: THREE.Object3D; legL?: THREE.Object3D; legR?: THREE.Object3D; flash?: THREE.Object3D; halo?: THREE.Object3D; pack?: THREE.Object3D; height: number }
 export interface Model { obj: THREE.Group; rig: Rig }
@@ -37,7 +37,7 @@ export function bake<T extends THREE.Object3D>(root: T): T {
 const CELL = 320, PAD = 12, COLS = 12, ROWS = 8;
 let atlas: { ctx: CanvasRenderingContext2D; tex: THREE.CanvasTexture; mat: THREE.ShaderMaterial; cells: Map<THREE.Material, number> } | null = null;
 function atlasCell(m: THREE.ShaderMaterial) {
-  if (!atlas) { const c = document.createElement('canvas'); c.width = CELL * COLS; c.height = CELL * ROWS; const tex = new THREE.CanvasTexture(c); tex.anisotropy = 4; atlas = { ctx: c.getContext('2d')!, tex, mat: toonMaterial(tex), cells: new Map() }; }
+  if (!atlas) { const c = document.createElement('canvas'); c.width = CELL * COLS; c.height = CELL * ROWS; const tex = new THREE.CanvasTexture(c); tex.anisotropy = 4; atlas = { ctx: c.getContext('2d')!, tex, mat: toonMaterial(tex), cells: new Map() }; atlas.mat.uniforms.uShine.value = 0; /* each part brings its own shine, packed beside its glow in aEm */ }
   let i = atlas.cells.get(m); if (i !== undefined) return i;
   i = atlas.cells.size; if (i >= COLS * ROWS) return -1; atlas.cells.set(m, i);
   const g = atlas.ctx, x = (i % COLS) * CELL, y = Math.floor(i / COLS) * CELL, img = (m.uniforms.uMap.value as THREE.Texture).image as HTMLCanvasElement;
@@ -52,7 +52,7 @@ export function atlasify<T extends THREE.Object3D>(root: T): T {
     const m = o as THREE.Mesh, mat = m.material as THREE.ShaderMaterial; if (!m.isMesh || o.userData.dyn || !plain.has(mat) || mat.side !== THREE.FrontSide || (o.layers.mask & 1) === 0) return;
     const u = mat.uniforms; if (u.uRep.value.x !== 1 || u.uRep.value.y !== 1 || u.uHatch.value !== 1 || u.uFlat.value !== 0) return;
     const i = atlasCell(mat); if (i < 0) return;
-    const geo = m.geometry, uv = geo.attributes.uv as THREE.BufferAttribute, n = uv.count, em = new Float32Array(n).fill(u.uEmis.value), cx = i % COLS, cy = Math.floor(i / COLS), k = (CELL - PAD * 2) / CELL;
+    const geo = m.geometry, uv = geo.attributes.uv as THREE.BufferAttribute, n = uv.count, em = new Float32Array(n).fill(Math.min(1, u.uEmis.value) + 2 * Math.round(u.uShine.value * 10)), cx = i % COLS, cy = Math.floor(i / COLS), k = (CELL - PAD * 2) / CELL;
     for (let j = 0; j < n; j++) { const a = Math.min(1, Math.max(0, uv.getX(j))), b = Math.min(1, Math.max(0, uv.getY(j))); uv.setXY(j, (cx + PAD / CELL + a * k) / COLS, 1 - (cy + PAD / CELL + (1 - b) * k) / ROWS); }
     uv.needsUpdate = true; geo.setAttribute('aEm', new THREE.BufferAttribute(em, 1)); m.material = atlas!.mat;
   });
@@ -85,6 +85,7 @@ export function headframe(anim: ((t: number) => void)[]) {
   put(plate(rrect(3.2, 3, .12), .2, .05), M.doorP, g, [1.6, 1.6, 3.5]); put(slab(3.8, .36, .3, 1.9, .06), M.pY, g, [1.6, 3.3, 3.56]);
   for (const sx of [-1, 1]) put(slab(.3, 3.1, .3, 3, .06), M.pY, g, [1.6 + sx * 1.75, 1.6, 3.56]);
   win(g, [-2.7, 2.7, 3.5], 1.7, .8); win(g, [-2.7, 1.3, 3.5], 1.7, .8);
+  poster(g, [-.95, 2.75, 3.53], 0, .85, 1.12, M.post2, .04); poster(g, [-1.05, 1.5, 3.53], 0, .7, .92, M.post1, -.06); poster(g, [4.3, 1.55, 3.53], 0, .8, 1.05, M.post3, .05); poster(g, [5.03, 2.0, 1.5], H2, .8, 1.05, M.post4, .04);
   for (let i = 0; i < 2; i++) { const x = -3.2 + i * 6.4; put(can(1.2, 1.6, .08), M.bS, g, [x, 5.6, -1.6]); put(lathe([...hard([[1.2, 0], [1.26, .04]]), ...spl([[1.24, .1], [1.0, .5], [.5, .76], [0, .82]], 8)], 20), M.cY, g, [x, 6.4, -1.6]); put(ring(1.21, .06), M.nD, g, [x, 5.3, -1.6], [H2, 0, 0]); }
   pipe(g, [[-3.2, 6.9, -1.6], [-3.2, 7.5, -1.6], [0, 7.5, -1.6], [3.2, 7.5, -1.6], [3.2, 6.9, -1.6]], .12); pipe(g, [[-4.6, 5.4, -1.6], [-5.3, 5.4, -1.6], [-5.3, 2.4, -1.6]], .14, M.bY);
   const top = 14.2;
@@ -120,6 +121,67 @@ export function bunkhouse() {
   for (const [x, y, z] of [[2.4, .22, 2.5], [2.9, .22, 2.6], [2.65, .5, 2.55]]) put(blob(.7, .34, .44), M.fabT, g, [x, y, z], [0, x, 0]);
   return bake(g);
 }
+// ---------------------------------------------------------------- bolted on
+// Ironhold builds nothing twice and takes nothing down. These are the parts every crew adds as it passes through: roofing iron on crooked
+// poles, a shack on the roof, a tank on stilts, a patch over a hole, a board somebody lettered by hand, paper on any flat wall.
+/** Empties a posed group into its parent, so the parts bake with everything else and cost no draw calls of their own. */
+function melt(c: THREE.Object3D) { const p = c.parent!; c.updateMatrix(); for (const k of [...c.children]) { k.updateMatrix(); k.applyMatrix4(c.matrix); p.add(k); } p.remove(c); }
+const bar = (a: P3, b: P3, r: number, mat: THREE.Material, g: THREE.Object3D) => put(rod(a, b, r), mat, g);
+const posed = (g: THREE.Object3D, p: P3, r: P3 = [0, 0, 0]) => { const c = new THREE.Group(); c.position.set(p[0], p[1], p[2]); c.rotation.set(r[0], r[1], r[2]); g.add(c); return c; };
+/** A sheet of roofing iron hung off a wall at `p`. It runs `w` along the wall and reaches `out` from it. `legs` stands it on two crooked poles that long; without them it hangs on stays. */
+function awning(g: THREE.Object3D, p: P3, ry: number, w: number, out: number, mat: THREE.Material, legs = 0, drop = .4, tilt = .04) {
+  const c = posed(g, p, [0, ry, tilt]), a = Math.atan2(drop, out), l = Math.hypot(drop, out);
+  put(slab(w, .07, l, 1.6, .02), mat, c, [0, -drop / 2, out / 2], [a, 0, 0]);
+  bar([-w / 2 - .06, -drop - .02, out], [w / 2 + .06, -drop - .02, out], .04, M.nD, c);
+  for (const sx of [-1, 1]) { const x = sx * (w / 2 - .14); if (legs) bar([x + sx * .1, -legs, out - .16 + sx * .07], [x, -drop, out - .12], .05, M.wood, c); else bar([x, .55, .02], [x, -drop + .03, out - .1], .022, M.nD, c); }
+  melt(c);
+}
+/** A lettered board, never quite level. `posts` stands it on two posts that far below its bottom edge with a prop behind; without them it hangs on two stays. */
+function signboard(g: THREE.Object3D, p: P3, r: P3, w: number, h: number, mat: THREE.Material, posts = 0) {
+  const c = posed(g, p, r);
+  put(plate(rrect(w, h, .04), .08, .02), mat, c);
+  for (const sx of [-1, 1]) { const x = sx * (w / 2 - .25); if (posts) { bar([x, -h / 2 - posts, -.09], [x + sx * .03, h / 2 - .1, -.09], .05, M.wood, c); bar([x, h * .2, -.12], [x - sx * .1, -h / 2 - posts, -.9], .035, M.wood, c); } else bar([x, h / 2, 0], [x - sx * .12, h / 2 + .5, -.03], .018, M.nD, c); }
+  melt(c);
+}
+/** A sheet of paper pasted to a wall, a little squint. */
+function poster(g: THREE.Object3D, p: P3, ry: number, w: number, h: number, mat: THREE.Material, rz = 0) { put(plate(rrect(w, h, .01, 1), .03, 0), mat, g, p, [0, ry, rz]); }
+/** A patch riveted over a hole, in whatever plate was lying about. */
+function patch(g: THREE.Object3D, p: P3, ry: number, w: number, h: number, mat: THREE.Material, rz = 0) {
+  const c = posed(g, p, [0, ry, rz]); put(rbox(w, h, .05, .012), mat, c);
+  for (const sx of [-1, 1]) for (const sy of [-1, 1]) put(nub(.07, .07, .05), M.nS, c, [sx * (w / 2 - .07), sy * (h / 2 - .07), .03]);
+  melt(c);
+}
+/** A stove pipe that was knocked once and never straightened, with a rain cap. */
+function stovepipe(g: THREE.Object3D, p: P3, h: number, lean: number, r = .09) {
+  const c = posed(g, p), k = h * .55, x1 = lean * k, x2 = x1 + lean * (h - k) * 2.2;
+  put(tube([[0, 0, 0], [x1 * .6, k * .6, 0], [x1, k, 0], [x2, h, 0]], r, 7), M.bD, c);
+  put(ring(r + .012, .022, 1, 10), M.nS, c, [x1, k, 0], [H2, 0, 0]);
+  put(lathe(hard([[r * 2.1, 0], [r * 1.9, .03], [0, r * 1.6]]), 8), M.cD, c, [x2, h + .1, 0], [0, 0, -lean * 1.6]);
+  for (const s of [-1, 1]) bar([x2 + s * r * .8, h - .02, 0], [x2 + s * r * 1.4, h + .1, 0], .012, M.nD, c);
+  melt(c);
+}
+/** A cage lamp on a hook. */
+function lamp(g: THREE.Object3D, p: P3, hang = .3) {
+  bar([p[0], p[1] + hang, p[2]], [p[0], p[1] + .12, p[2]], .012, M.nD, g); put(lathe(hard([[.11, 0], [.09, .04], [0, .09]]), 8), M.cD, g, [p[0], p[1] + .08, p[2]]);
+  put(nub(.15, .2, .15, undefined, '', 8, 6), M.visG, g, [p[0], p[1] - .02, p[2]]); put(ring(.08, .012, 1, 10), M.nD, g, [p[0], p[1] - .02, p[2]], [H2, 0, 0]);
+}
+/** A water tank on splayed legs. */
+function stiltTank(g: THREE.Object3D, p: P3, r: number, h: number, legs: number, mat: THREE.Material, ry = 0) {
+  const c = posed(g, p, [0, ry, .03]);
+  put(can(r, h, .05), mat, c, [0, legs + h / 2, 0]); put(lathe(hard([[r + .03, 0], [r * .9, .08], [0, r * .5]]), 12), M.cD, c, [0, legs + h, 0]);
+  for (const y of [.2, .8]) put(ring(r + .012, .03, 1, 14), M.nD, c, [0, legs + h * y, 0], [H2, 0, 0]);
+  for (let i = 0; i < 4; i++) { const a = i * H2 + .78, a2 = a + H2, x = Math.cos(a), z = Math.sin(a); bar([x * r * 1.25, 0, z * r * 1.25], [x * r * .8, legs + .05, z * r * .8], .045, M.nD, c); bar([x * r * 1.2, .1, z * r * 1.2], [Math.cos(a2) * r * .85, legs - .05, Math.sin(a2) * r * .85], .02, M.nS, c); }
+  bar([r * .7, legs + .1, 0], [r * .9, .3, .1], .03, M.bD, c);
+  melt(c);
+}
+/** A line of washing between two points. */
+function washline(g: THREE.Object3D, a: P3, b: P3, sag = .3) {
+  put(tube([a, [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2 - sag, (a[2] + b[2]) / 2], b], .012, -3, 1, false, 6), M.nD, g);
+  const mats = [M.fab, M.fabT, M.fabG, M.straw], ry = Math.atan2(-(b[2] - a[2]), b[0] - a[0]);
+  for (let i = 0; i < 4; i++) { const t = .2 + i * .2, k = 4 * t * (1 - t), h = .34 + (i % 3) * .12; put(plate(rrect(.3 + (i % 2) * .12, h, .03, 1), .025, 0), mats[i], g, [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t - sag * k - h / 2 - .01, a[2] + (b[2] - a[2]) * t], [0, ry, (i - 1.5) * .05]); }
+}
+/** A stack of tyres. */
+function tyres(g: THREE.Object3D, p: P3, n: number) { for (let i = 0; i < n; i++) put(ring(.33, .15, 1, 14), M.rib, g, [p[0] + Math.sin(i * 2.3) * .05, p[1] + .15 + i * .29, p[2] + Math.cos(i * 1.7) * .05], [H2, 0, 0]); }
 /** A shipping container with door bars on one end. */
 function container(g: THREE.Object3D, mat: THREE.Material, p: P3, ry: number) {
   const c = new THREE.Group(); c.position.set(p[0], p[1], p[2]); c.rotation.y = ry; g.add(c);
@@ -130,6 +192,16 @@ export function depot() {
   const g = new THREE.Group();
   container(g, M.wallR, [0, 1.15, -1.2], 0); container(g, M.wallT, [.2, 1.15, 1.25], .06); container(g, M.wallY, [.1, 3.45, 0], -.12);
   put(tube([[-2, 4.62, -.6], [0, 4.7, .9], [2.2, 4.62, -.5]], .05, 6), M.leaB, g); put(blob(1.6, .5, 1.2), M.fabT, g, [-.6, 4.7, .1]);
+  // Lived in. The board hangs off the top box, the doors get a roof, and the top is somebody's yard.
+  signboard(g, [-.3, 3.72, 1.17], [0, -.12, .045], 2.6, 1.08, M.signDep);
+  awning(g, [2.58, 2.5, .1], H2, 3.6, 1.0, M.wallS, 0, .35, -.05); lamp(g, [3.42, 1.86, 1.2], .28);
+  stiltTank(g, [1.45, 4.6, -.2], .5, .9, .7, M.wallT, .3); stovepipe(g, [-1.95, 4.6, .55], 1.5, .12);
+  bar([2.3, 4.6, .9], [2.38, 6.5, .95], .03, M.nD, g); washline(g, [2.38, 6.2, .95], [-1.6, 5.75, .5], .45);
+  put(can(.3, .8, .03), M.bY, g, [-1.9, 2.7, 1.9]); put(ring(.31, .03, 1, 12), M.nD, g, [-1.9, 2.85, 1.9], [H2, 0, 0]); put(slab(.8, .5, .6, 1, .05), M.wood, g, [-.9, 2.55, 1.9], [0, .3, 0]);
+  put(blob(.7, .3, .36), M.fabT, g, [1.2, 2.45, 1.85], [0, .4, 0]); put(blob(.6, .28, .34), M.fabG, g, [1.75, 2.44, 2.05], [0, -.3, 0]); tyres(g, [-1.5, 2.3, -1.8], 3);
+  poster(g, [-1.5, 1.3, 2.52], .06, .8, 1.05, M.post1, .05); poster(g, [-.55, 1.12, 2.47], .06, .7, .92, M.post3, -.07); patch(g, [1.3, 1.4, 2.36], .06, 1.0, .7, M.pD, .08);
+  poster(g, [-2.54, 1.3, -1.2], -H2, .75, 1.0, M.post4, .04); patch(g, [-2.54, 3.5, .2], -H2, .9, .8, M.pS, -.06);
+  for (const sx of [-1, 1]) bar([-2.15 + sx * .2, .05, 2.64], [-2.1 + sx * .2, 2.7, 2.56], .035, M.nD, g); for (let i = 0; i < 6; i++) bar([-2.34, .4 + i * .4, 2.62], [-1.92, .4 + i * .4, 2.62], .025, M.nS, g);
   return bake(g);
 }
 export function watchpost() {
@@ -187,6 +259,14 @@ export function assay(anim: ((t: number) => void)[]) {
   // sample stack and pipework round the side
   put(can(.55, 2.6, .05), M.bS, g, [2.1, 4.7, -1.7]); put(lathe([...hard([[.55, 0], [.6, .04]]), ...spl([[.58, .1], [.4, .36], [0, .46]], 6)], 14), M.cO, g, [2.1, 6.0, -1.7]); put(ring(.57, .05), M.nD, g, [2.1, 4.4, -1.7], [H2, 0, 0]);
   pipe(g, [[2.1, 3.9, -1.1], [2.1, 3.9, .2], [2.6, 3.2, .8]], .09);
+  // The clever end of the yard still leaks: a porch on poles, the clerk's loft, the board, and a bench for the queue.
+  signboard(g, [.5, 4.12, 2.05], [-.07, 0, .035], 3.9, 1.08, M.signAssay, .12);
+  awning(g, [-1.6, 3.05, 2.02], 0, 2.3, 1.05, M.wallR, 2.85, .4, -.04); lamp(g, [-1.6, 2.3, 2.95], .3);
+  poster(g, [2.48, 2.05, 2.04], 0, .66, .88, M.post1, .06); poster(g, [2.45, 1.1, 2.04], 0, .6, .8, M.post4, -.05);
+  { const c = posed(g, [-1.5, 3.5, -1.85], [0, -.1, -.025]); put(slab(1.8, 1.25, 1.3, 1.6, .08), M.wallS, c, [0, .62, 0]); put(slab(2.1, .07, 1.7, 1.6, .02), M.wallR, c, [0, 1.36, .08], [.16, 0, 0]); win(c, [.3, .7, .66], .6, .45); melt(c); }
+  stovepipe(g, [-2.1, 4.82, -2.0], 1.1, .13); bar([-.8, 4.75, -1.9], [-.7, 6.6, -1.95], .025, M.nD, g); put(tube([[-.7, 6.4, -1.95], [.7, 5.5, -1.8], [2.1, 5.95, -1.7]], .012, -3, 1, false, 6), M.nD, g);
+  put(slab(1.7, .08, .4, 1.6, .02), M.wood, g, [1.0, .7, 2.5], [0, .04, 0]); for (const sx of [-1, 1]) put(slab(.3, .46, .34, 1, .03), M.conc, g, [1.0 + sx * .6, .43, 2.5]);
+  pipe(g, [[2.85, 3.3, 2.1], [2.98, 3.0, 2.14], [2.98, .3, 2.14]], .06); patch(g, [-2.93, 1.2, .8], -H2, 1.0, .8, M.pD, .07);
   put(slab(1.0, 1.0, 1.0, 1, .07), M.wallY, g, [2.9, .6, 2.6], [0, .4, 0]); put(can(.38, 1.1, .04), M.bS, g, [-3.1, .6, 2.5]); put(ring(.39, .035), M.nD, g, [-3.1, .85, 2.5], [H2, 0, 0]);
   return bake(g);
 }
@@ -221,6 +301,14 @@ export function machineshop(anim: ((t: number) => void)[]) {
   const hook = grp('hook', g, [-1.2, 5.4, 2.2]); tb([0, 0, 0], [0, -1.6, 0], .03, M.nD, hook, 5); put(rbox(.3, .26, .3, .05), M.pY, hook, [0, -.1, 0]); put(tube([[0, -1.6, 0], [.18, -1.82, 0], [0, -2.04, 0], [-.16, -1.86, 0]], [.05, .06, .05, .02], 6), M.nD, hook); anim.push(t => { hook.position.x = -.4 + Math.sin(t * .5) * 1.1; });
   const gear = grp('gear', g, [-.6, 4.9, -.4]); put(can(1.1, .4, .05), M.bY, gear); for (let i = 0; i < 8; i++) { const a = i / 8 * 6.283; put(rbox(.5, .4, .4, .06), M.pY, gear, [Math.cos(a) * 1.2, 0, Math.sin(a) * 1.2], [0, -a, 0]); } put(can(.4, .5, .04), M.bD, gear, [0, .1, 0]);
   gear.rotation.x = .25; anim.push(t => { gear.rotation.y = t * .8; });
+  // Bolted on over the years: a shack on the roof, a lean-to by the door, the board, and paper on every flat wall.
+  { const c = posed(g, [-3.05, 4.0, -1.3], [0, .14, .03]); put(slab(1.8, 1.5, 1.8, 1.6, .08), M.wallY, c, [0, .75, 0]); put(slab(2.2, .08, 2.2, 1.6, .02), M.wallS, c, [0, 1.62, .05], [.14, 0, 0]); win(c, [.36, .9, .9], .6, .45); put(plate(rrect(.56, 1.1, .04), .1, .02), M.doorP, c, [-.48, .6, .9]); melt(c); }
+  stovepipe(g, [-3.5, 5.55, -1.7], 1.3, -.14);
+  signboard(g, [-2.75, 4.97, 1.75], [-.06, .03, -.05], 2.5, 1.56, M.signShop, .2);
+  awning(g, [-3.2, 3.3, 2.12], 0, 1.5, 1.25, M.wallT, 3.1, .45, .05); lamp(g, [-3.2, 2.42, 3.2], .3); lamp(g, [-.6, 2.62, 2.44], .22);
+  poster(g, [1.85, 2.3, 2.13], 0, .8, 1.05, M.post2, -.04); poster(g, [2.2, 1.22, 2.13], 0, .62, .82, M.post3, .08);
+  patch(g, [-3.83, 2.4, -1.2], -H2, 1.3, .9, M.pS, .06); patch(g, [-3.83, 1.2, .5], -H2, .9, 1.0, M.wallT, -.05); poster(g, [-3.83, 2.3, .9], -H2, .75, 1.0, M.post4, .05);
+  tyres(g, [2.95, .2, 3.05], 3); put(ring(.33, .15, 1, 14), M.rib, g, [3.75, .52, 2.9], [.25, .5, 0]);
   put(slab(1.1, 1.1, 1.1, 1.1, .07), M.wallT, g, [-3.6, .6, 2.9], [0, .3, 0]); put(can(.4, 1.2, .04), M.wallR, g, [2.2, .6, 2.9]); put(can(.4, 1.2, .04), M.bY, g, [1.3, .6, 3.1]); for (const [x, z] of [[2.2, 2.9], [1.3, 3.1]]) put(ring(.41, .035), M.nD, g, [x, .9, z], [H2, 0, 0]);
   return bake(g);
 }
@@ -456,9 +544,11 @@ function flora(g: THREE.Object3D, x: number, z: number, s: number) {
 let tuftPool: THREE.BufferGeometry[][] | null = null;
 function tufts() {
   if (tuftPool) return tuftPool; let s = 4177; const D = (a: number, b: number) => { s = (s * 16807) % 2147483647; return a + (b - a) * s / 2147483647; };
-  return tuftPool = [0, 1, 2, 3, 4, 5].map(() => { const n = 5 + Math.floor(D(0, 4)), out: THREE.BufferGeometry[] = [];
-    for (let k = 0; k < n; k++) { const a = k / n * 6.28 + D(-.4, .4), l = D(.45, 1.05), o = D(.25, .7); out.push(tube([[Math.cos(a) * .08, 0, Math.sin(a) * .08], [Math.cos(a) * l * o * .45, l * .62, Math.sin(a) * l * o * .45], [Math.cos(a) * l * o, l * .92, Math.sin(a) * l * o]], [.085, .07, .012], 5, .45)); }
-    return out; });
+  // A clump is a couple of dozen thin three-sided blades: tall ones leaning out from the middle and a skirt of short ones round the foot, so it reads as dry grass and not as a handful of straws.
+  return tuftPool = [0, 1, 2, 3, 4, 5].map(() => { const n = 13 + Math.floor(D(0, 7)), m = 8 + Math.floor(D(0, 5)), out: THREE.BufferGeometry[] = [];
+    for (let k = 0; k < n; k++) { const a = k / n * 6.28 + D(-.5, .5), l = D(.5, 1.15), o = D(.12, .6), d = D(0, .12), ca = Math.cos(a), sa = Math.sin(a), bend = D(-.12, .12); out.push(blade([ca * d, 0, sa * d], [ca * (d + l * o * .4) - sa * bend, l * .6, sa * (d + l * o * .4) + ca * bend], [ca * (d + l * o), l * D(.9, 1), sa * (d + l * o)], D(.028, .042))); }
+    for (let k = 0; k < m; k++) { const a = k / m * 6.28 + D(-.5, .5), l = D(.2, .5), o = D(.5, 1.2), d = D(.08, .26), ca = Math.cos(a), sa = Math.sin(a); out.push(blade([ca * d, 0, sa * d], [ca * (d + l * o * .5), l * .6, sa * (d + l * o * .5)], [ca * (d + l * o), l * .85, sa * (d + l * o)], D(.022, .032))); }
+    return [mergeGeometries(out)]; });
 }
 export function buildWorld(scene: THREE.Scene, props: Prop[], anim: ((t: number) => void)[]) {
   const w = new THREE.Group(); scene.add(w); reseed(7919 + Math.round(MAP.out[0] * 31 + MAP.out[1] * 17));
@@ -549,7 +639,7 @@ export function buildWorld(scene: THREE.Scene, props: Prop[], anim: ((t: number)
       else if (t === 3) dress('metal', 'Pipe offcuts', x, z, 1.1, .5, 60, g => { beam([-1.2, .2, 0], [1.3, .2, .3], .2, M.steelD, g); beam([-.9, .2, .5], [1.0, .2, .9], .2, M.steelD, g); beam([-.6, .55, .25], [.8, .55, .6], .2, M.bS, g); });
       else if (t === 4) dress('metal', 'Sunk crate', x, z, .8, .9, 60, g => { mk(slab(1.15, 1.15, 1.15, 1.2, .07), wm, [0, .32, 0], 0, [.24, 0, .17], g); mk(rocks(i), M.rockB, [.8, .12, .3], [.5, .3, .5], 0, g); });
       else if (t === 5) dress('metal', 'Survey stake', x, z, .3, 1.8, 20, g => { beam([0, 0, 0], [.06, 1.7, 0], .035, M.steelD, g); mk(G.box, M.red, [.3, 1.5, 0], [.5, .3, .03], [0, 0, -.08], g); mk(rocks(i), M.rockB, [.1, .08, .15], [.3, .2, .3], 0, g); });
-      else dress('metal', 'Claim sign', x, z, .7, 2, 40, g => { beam([-.5, 0, 0], [-.46, 1.7, 0], .05, M.steelD, g); beam([.5, 0, 0], [.52, 1.5, 0], .05, M.steelD, g); mk(G.box, M.hazard1, [0, 1.3, .03], [1.3, .55, .05], [0, 0, -.1], g); });
+      else dress('metal', 'Claim sign', x, z, .7, 2, 40, g => { beam([-.5, 0, 0], [-.46, 1.7, 0], .05, M.steelD, g); beam([.5, 0, 0], [.52, 1.5, 0], .05, M.steelD, g); mk(G.box, [M.signKeep, M.hazard1, M.signMine][i % 3], [0, 1.3, .03], [1.3, .55, .05], [0, 0, -.1], g); });
     };
     for (let i = 0; i < 54 * K; i++) { let x: number, z: number; if (i % 3 === 0) { const q = roadPt(D(10, ROAD.len - 8), (D() < .5 ? -1 : 1) * D(7, 15)); x = q[0]; z = q[1]; } else if (i % 3 === 1) { const a = D(0, 6.28), d = D(30, 60); x = Math.cos(a) * d; z = Math.sin(a) * d; } else[x, z] = spot();
       if (!free(x, z, .6) || isClear(x, z, -34)) continue; junk(Math.floor(D(0, 7)), i, x, z); }

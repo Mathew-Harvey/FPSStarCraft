@@ -50,6 +50,7 @@ try {
   check(await until(p, () => __ore.split().host.units.filter(u => u.alive && u.kind === 'snapper').length >= 2, null, 30000), 'the pair hatches');
   check(await until(p, () => __ore.game.buildings.find(b => b.kind === 'mothercap')?.buds === __ore.split().host.buildings.find(b => b.kind === 'mothercap')?.buds, null, 20000), 'the player sees the Bud count');
   // jump into a Snapper and bite: the attack crosses to the host
+  await until(p, () => __ore.game.units.some(u => u.alive && u.kind === 'snapper' && u.team === 2), null, 20000);   // the hatch is on the host first; wait for the player's copy
   const jumped = await p.evaluate(() => { const g = __ore.game, s = g.units.find(u => u.kind === 'snapper' && u.team === 2); if (!s) return false; g.possess(s, true); return true; });
   check(jumped && await until(p, () => __ore.game.me && __ore.game.me.kind === 'snapper', null, 20000), 'the player can drive a Snapper');
   // research at the Warren

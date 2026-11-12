@@ -43,10 +43,16 @@ try {
   check(!/(cantor|lancer|warden)!/.test(kinds), 'every Veyl fighter has its second move on right click');
   if (SHOTS) { await V.evaluate(() => { const g = __ore.game; g.noRender = false; g.pitch = 0; }); await sleep(2500); await V.screenshot({ path: `${SHOTS}/versus-vex.jpg`, type: 'jpeg', quality: 88 }); await V.evaluate(() => { __ore.game.noRender = true; }); }
   // each side hurts the other through the server
-  v = await st(V);
-  const hpV = await A.evaluate(id => { const g = __ore.game, u = g.uById.get(id); g.net.cmd('dm', id, 20, 0); return u.hp + u.shield; }, v.me);
+  // Letting go of Tab above jumps Vex into the listed body, and on a slow runner that jump can land after this point,
+  // so the shot is aimed at whichever body Vex is in and fired again if Vex has moved on.
   await V.evaluate(() => { const g = __ore.game, h = g.ownB('headframe')[0]; g.net.cmd('dm', h.id, 300, 0); });
-  check(await until(V, was => { const g = __ore.game; return !g.me.alive || g.me.hp + g.me.shield < was; }, hpV), "Ada's shot lands on the body Vex is driving");
+  let hit = false;
+  for (let i = 0; i < 4 && !hit; i++) {
+    v = await st(V);
+    const hpV = await A.evaluate(id => { const g = __ore.game, u = g.uById.get(id); if (!u) return -1; g.net.cmd('dm', id, 20, 0); return u.hp + u.shield; }, v.me);
+    hit = hpV >= 0 && await until(V, ([id, was]) => { const g = __ore.game, u = g.uById.get(id); return g.me === u && (!u.alive || u.hp + u.shield < was); }, [v.me, hpV], 4000);
+  }
+  check(hit, "Ada's shot lands on the body Vex is driving");
   check(await until(A, () => __ore.game.ownB('headframe')[0].hp <= 2100), "Vex's blow lands on the Headframe");
   a = await st(A); await A.evaluate(() => { const g = __ore.game; g.net.cmd('dm', g.ownB('headframe')[0].id, 300, 0); }); await sleep(1500);
   check((await st(A)).hq === a.hq, 'Ada cannot damage her own side');

@@ -69,7 +69,7 @@ export function hatchPatch(g: Ctx, s: number, n: number) {
   for (let i = 0; i < n; i++) { const x = R(0, s), y = R(0, s), w = R(20, 70); g.globalAlpha = .7; for (let k = 0; k < 6; k++) wob(g, [[x + k * 7, y], [x + k * 7 - w * .4, y + w * .5]], 1.8); }
   g.globalAlpha = 1;
 }
-export function stencil(g: Ctx, txt: string, x: number, y: number, px: number, col: string, rot = 0) { g.save(); g.translate(x, y); g.rotate(rot); g.font = '900 ' + px + 'px Impact, "Arial Narrow", sans-serif'; g.fillStyle = col; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(txt, 0, 0); g.restore(); }
+export function stencil(g: Ctx, txt: string, x: number, y: number, px: number, col: string, rot = 0) { g.save(); g.translate(x, y); g.rotate(rot); g.font = '900 ' + px + 'px Impact, "Arial Narrow", sans-serif'; g.fillStyle = col; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(txt, 0, 0, g.canvas.width * .9); g.restore(); }
 export function ribs(g: Ctx, s: number, n: number) { for (let i = 0; i < n; i++) wob(g, [[i * s / n, 0], [i * s / n, s]], 3.5); }
 
 export const TX: Record<string, THREE.Texture> = {};

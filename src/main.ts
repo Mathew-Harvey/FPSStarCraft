@@ -61,8 +61,9 @@ function portraits() {
 
 portraits(); hud2.portraits = hud.portraits;
 pipe.w = 0; resize();
-let camp = 0, sideDone = 0, mpOpen = false, mode = 'camp', jobI = 0, pname = '', srv = '';
-/** Story jobs it takes to open multiplayer: the end of Act 1. */
+// Multiplayer is open from the first launch: friends who want to play together should not have to finish the story first.
+let camp = 0, sideDone = 0, mpOpen = true, mode = 'camp', jobI = 0, pname = '', srv = '';
+/** Story jobs after which an old save that still had multiplayer locked opens it: the end of Act 1. */
 const MP_AFTER = 8;
 let net: Net | null = null;
 /** Rebindable actions: [what the game code listens for, label]. A player's choice is stored as action code to physical key. */
@@ -279,7 +280,7 @@ function showJobs() {
 function showMode() {
   modeBtns.forEach(b => { const on = optsOpen ? b.dataset.m === 'opts' : b.dataset.m === mode; b.classList.toggle('on', on); b.setAttribute('aria-selected', String(on)); });
   $('pOpts').hidden = !optsOpen; $('pCamp').hidden = optsOpen || mode !== 'camp'; $('pSkirm').hidden = optsOpen || mode !== 'skirm'; $('pMulti').hidden = optsOpen || mode !== 'multi';
-  $('multiBtn').classList.toggle('locked', !mpOpen); $('multiNote').textContent = mpOpen ? 'Unlocked' : 'Locked. Finish Act 1.';
+  $('multiBtn').classList.toggle('locked', !mpOpen); $('multiNote').textContent = mpOpen ? 'Online or one screen' : 'Locked. Finish Act 1.';
   $('mLocked').hidden = mpOpen; $('mJoin').hidden = !mpOpen || !!(net && net.lobby && net.lobby.code); $('mLobby').hidden = !mpOpen || !(net && net.lobby && net.lobby.code);
   $('mTitle').textContent = mpOpen ? 'Joint operations: cleared' : 'Joint operations: locked';
   $('mText').textContent = mpOpen ? 'You are cleared for multiplayer. Make a lobby and read its code out to your crew, or join one with theirs. Two players on one machine can play split screen from the Skirmish tab.' : 'The Charter does not let strangers share a payroll. Finish Act 1 of the campaign to unlock multiplayer, or use the unlock button on the Campaign tab if you have done them before.';
@@ -397,6 +398,9 @@ function frame(now: number) {
   if (dt > .034) { slow++; fast = 0; } else if (dt < .02) { fast++; slow = Math.max(0, slow - 1); }
   if (gfxI === 0)
   if (slow > 50 && quality > .5) { quality = Math.max(.5, quality * .85); slow = 0; resize(); }
+  // Resolution is the only thing the Auto setting gave up, but a phone that is still slow at half resolution is short of geometry, not pixels:
+  // the shadow pass draws the whole scene a third time. At the floor, Auto redraws shadows every third frame, the same as Low.
+  if (gfxI === 0) { const every = quality <= .5 ? 3 : 1; if (pipe.shadowEvery !== every && (every === 3 ? slow > 50 : fast > 900)) { pipe.shadowEvery = every; slow = fast = 0; } }
   if (gfxI === 0)
   if (fast > 900 && quality < 1) { quality = Math.min(1, quality / .85); fast = 0; resize(); }
   requestAnimationFrame(frame);

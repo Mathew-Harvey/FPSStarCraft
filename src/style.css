@@ -67,6 +67,14 @@ body{background:var(--bg);color:var(--paper);font-family:var(--cond);font-size:1
   -webkit-mask:radial-gradient(circle,transparent 9px,#000 10px);mask:radial-gradient(circle,transparent 9px,#000 10px)}
 .hitm.crit{filter:drop-shadow(0 0 0 var(--red)) hue-rotate(0);background:
   linear-gradient(45deg,transparent 44%,var(--red) 44% 56%,transparent 56%),linear-gradient(-45deg,transparent 44%,var(--red) 44% 56%,transparent 56%)}
+/* The mark snaps in big and settles, so a hit is felt as well as seen. A kill is larger, red, and opens outward. */
+.hitm.a{animation:hitA .15s cubic-bezier(.2,.9,.3,1)}.hitm.b{animation:hitB .15s cubic-bezier(.2,.9,.3,1)}
+.hitm.kill{width:64px;height:64px;margin:-32px 0 0 -32px;background:
+  linear-gradient(45deg,transparent 43%,var(--red) 43% 57%,transparent 57%),linear-gradient(-45deg,transparent 43%,var(--red) 43% 57%,transparent 57%);
+  -webkit-mask:radial-gradient(circle,transparent 12px,#000 13px);mask:radial-gradient(circle,transparent 12px,#000 13px)}
+.hitm.kill.a{animation:killA .3s cubic-bezier(.2,.9,.3,1)}.hitm.kill.b{animation:killB .3s cubic-bezier(.2,.9,.3,1)}
+@keyframes hitA{0%{transform:scale(1.7) rotate(8deg)}100%{transform:none}}@keyframes hitB{0%{transform:scale(1.7) rotate(-8deg)}100%{transform:none}}
+@keyframes killA{0%{transform:scale(.6)}35%{transform:scale(1.45) rotate(10deg)}100%{transform:scale(1.15)}}@keyframes killB{0%{transform:scale(.6)}35%{transform:scale(1.45) rotate(-10deg)}100%{transform:scale(1.15)}}
 .prompt{left:50%;top:548px;transform:translateX(-50%);font-size:22px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;white-space:nowrap;background:rgba(14,13,20,.8);padding:5px 14px 7px;border:3px solid var(--ink)}
 .prompt b{margin-right:8px}
 

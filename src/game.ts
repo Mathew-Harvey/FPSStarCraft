@@ -10,6 +10,7 @@ import { Kind, BKind, UNIT, BLD, BUILDABLE, UPGRADES, TRAINS, UNIT_NEEDS, UpKey,
 import { Director } from './director';
 import type { Mission } from './campaign';
 import type { Net } from './net';
+import { HitFx, Surface } from './hitfx';
 import { applySnap, netTick } from './netgame';
 import { Bloom, G_PAIR, G_TUNE, GBKind } from './gloam';
 import { poseLegs } from './gloam-art';
@@ -35,7 +36,6 @@ let nextId = 1;
 type Hit = { unit?: Unit; b?: Building; ore?: OreNode; prop?: Prop; dist: number; head?: boolean };
 interface Proj { obj: THREE.Object3D; pos: THREE.Vector3; vel: THREE.Vector3; team: number; dmg: number; nade: boolean; life: number; from: Unit | null; ghost: number }
 const r1 = (v: number) => Math.round(v * 10) / 10;
-interface Corpse { obj: THREE.Object3D; t: number; veyl: boolean; ax: number; az: number; s: number }
 interface Weapon { name: string; mag: number; cd: number; reload: number }
 const GUNS: Record<string, Weapon> = { linesman: { name: 'Rifle', mag: 24, cd: .12, reload: 1.5 }, breacher: { name: 'Scattergun', mag: 6, cd: .78, reload: 2.1 }, gantry: { name: 'Autocannon', mag: 12, cd: .36, reload: 2.4 }, longshot: { name: 'Long Rifle', mag: 5, cd: 1.15, reload: 2.4 }, patch: { name: 'Rivet Pistol', mag: 14, cd: .2, reload: 1.3 } };
 /** Tuning for the aimed, single-bullet guns. */
@@ -87,8 +87,10 @@ export class Game {
   bits: { m: THREE.Mesh; t: number; v: THREE.Vector3; spin: number }[] = []; scorch: { m: THREE.Mesh; t: number; s: number }[] = [];
   bursts: { g: THREE.Group; t: number; s: number; rot: number; mats: THREE.MeshBasicMaterial[] }[] = [];
   bubbles: { m: THREE.Mesh; t: number; u: Unit | null }[] = []; warns: { m: THREE.Mesh; t: number; life: number; r: number }[] = [];
-  projs: Proj[] = []; corpses: Corpse[] = []; boltProto = MD.bolt(); nadeProto = MD.grenade();
+  projs: Proj[] = []; boltProto = MD.bolt(); nadeProto = MD.grenade();
   shake = 0; noRender = false; alertT = 0; mood = 0;
+  /** Hit reactions, deaths and what a bullet does where it lands. All of it is for show. */
+  fx!: HitFx;
   introT = 0; menuPos = V3(); menuQuat = new THREE.Quaternion(); hitStop = 0; streak = 0; streakT = 0; kick = 0; stepPhase = 0; dustT = 0; hopT = 0; hopCd = 0; hopX = 0; hopZ = 0; endT = 0; endWon = false;
 
   constructor(public pipe: Pipeline | ViewPipe, public hud: Hud, public diff: Difficulty = DIFFS[1], public mapI = 0, public mission: Mission | null = null, public net: Net | null = null, /** The Veyl run a real economy (Tenders, building, training) instead of breeding raids for free. On whenever somebody plays the Veyl. */ public eco = false) {
@@ -112,6 +114,7 @@ export class Game {
     for (let i = 0; i < 6; i++) { const g = new THREE.Group(), mats = [0x0e0d14, 0xffb23a, 0xfff6c0].map(c => new THREE.MeshBasicMaterial({ color: c, transparent: true, depthWrite: false })); mats.forEach((m, j) => { const k = [1, .86, .5][j]; mk(G.burst, m, [0, 0, j * .03], [k, k, 1], [0, 0, j === 2 ? .24 : 0], g).renderOrder = 5 + j; }); setLayer(g, L_FX); g.visible = false; s.add(g); this.bursts.push({ g, t: 0, s: 1, rot: 0, mats }); }
     this.bubbles = pool(10, G.sph, bubbleMat, true).map(m => ({ m, t: 0, u: null }));
     this.warns = pool(6, G.ringG, warnMat, true).map(m => { m.rotation.x = -Math.PI / 2; return { m, t: 0, life: 1, r: 1 }; });
+    this.fx = new HitFx(this);
     const field = (list: number[][], amount: number) => { for (const [x, z, n, sc] of list) { const obj = MD.oreCluster(n, sc); obj.position.set(x, 0, z); s.add(obj); this.ores.push({ pos: V3(x, 0, z), amount, max: amount, obj }); } };
     field(YARD_SEAMS, 900);
     // the rich seam, then the other fields out on the map, each with room for a new Headframe on the side facing the yard
@@ -278,7 +281,7 @@ export class Game {
   bubble(u: Unit) { if (this.evq) return; const b = this.bubbles.find(x => x.t <= 0); if (!b) return; b.u = u; b.t = .18; b.m.visible = true; const s = UNIT[u.kind].rad * 3.4; b.m.scale.set(s, UNIT[u.kind].headY * 1.15, s); }
   warn(x: number, z: number, r: number, life: number) { if (this.evq) { this.evq.push(['wn', r1(x), r1(z), r, life]); return; } const w = this.warns.find(x => x.t <= 0); if (!w) return; w.m.position.set(x, .12, z); w.r = r; w.t = w.life = life; w.m.visible = true; }
   explode(p: THREE.Vector3, team: number, dmg: number, radius: number, from: Unit | null, mode: boolean | number = false) {
-    const veyl = !!mode, acid = mode === 2;
+    const veyl = !!mode, acid = mode === 2; this.fx.blastAt(p, radius);
     if (this.evq) this.evq.push(['ex', r1(p.x), r1(p.y), r1(p.z), radius, +mode]);
     for (const u of this.units) { if (!u.alive || u.team === team) continue; const d = Math.hypot(u.pos.x - p.x, u.pos.z - p.z); if (d > radius + UNIT[u.kind].rad) continue; const k = 1 - .6 * Math.min(1, d / radius); this.damage(u, dmg * k, from); if (d > .1) { u.kx += (u.pos.x - p.x) / d * 9 * k; u.kz += (u.pos.z - p.z) / d * 9 * k; } }
     for (const b of this.buildings) { if (!b.alive || b.team === team) continue; if (this.distToBox(b, p.x, p.z) < radius * .7) this.damage(b, dmg * 1.4, from); }
@@ -291,7 +294,7 @@ export class Game {
   damage(t: Unit | Building, amt: number, from: Unit | Building | null, crit = false) {
     if (this.net) {   // multiplayer client: only the server changes health. Report what this player hit and show the number now.
       if (from !== this.me || !this.me || !t.alive || amt <= 0) return;
-      this.net.cmd('dm', t.id, Math.round(amt * 10) / 10, crit ? 1 : 0); if (isUnit(t)) t.pop = 1;
+      this.net.cmd('dm', t.id, Math.round(amt * 10) / 10, crit ? 1 : 0); if (isUnit(t)) { t.pop = 1; this.fx.hit(t, amt, from, crit, t.shield > 0); }
       if (!this.quiet) this.hud.damage(V3(t.pos.x, isUnit(t) ? UNIT[t.kind].headY + .4 : t.h * .7, t.pos.z), (crit ? 'CRIT ' : '') + Math.max(1, Math.round(amt)), crit ? 'crit' : isUnit(t) && t.shield > 0 ? 'shield' : '');
       return;
     }
@@ -306,7 +309,7 @@ export class Game {
     const dealt = amt, shielded = (!!u && u.shield > 0) || warded;
     // A paid-for Veyl body the AI drives shrugs off part of each hit (see vBoost). A body a player drives takes hits at face value, the same as an Ironhold one.
     if (u && fac(u.team) === 1 && this.eco && !u.pilot && u.kind !== 'tender') amt /= this.vBoost.hp;
-    if (u) { u.pop = 1; if (u.shield > 0) { const a = Math.min(u.shield, amt); u.shield -= a; amt -= a; this.bubble(u); } }
+    if (u) { u.pop = 1; this.fx.hit(u, dealt, from, crit, shielded); if (u.shield > 0) { const a = Math.min(u.shield, amt); u.shield -= a; amt -= a; this.bubble(u); } }
     // A hit from a body somebody is driving lands with weight: the target is shoved back and loses a beat.
     if (u && u.kind !== 'warden' && u.kind !== 'gantry' && !u.pilot && from && isUnit(from) && from.team !== u.team && (from === me || from.pilot) && dealt >= 5) { const sx = u.pos.x - from.pos.x, sz = u.pos.z - from.pos.z, sd = Math.hypot(sx, sz) || 1, k = from.kind === 'rigger' ? 14 : Math.min(10, dealt * .16); u.kx += sx / sd * k; u.kz += sz / sd * k; u.cd = Math.max(u.cd, Math.min(.5, dealt * .012)); }
     t.hp -= amt;
@@ -336,13 +339,12 @@ export class Game {
   killUnit(u: Unit, from: Unit | Building | null) {
     if (this.evq) { this.evq.push(['ku', u.id, from ? from.id : 0]); const kp = from && (from as Unit).pilot; if (kp && u.team !== from!.team && this.score[kp]) this.score[kp][0]++; }
     if (u.kind === 'gantry' && u.alive && !this.net) { u.alive = false; this.explode(V3(u.pos.x, 0, u.pos.z), u.team, 40, 6, null); u.alive = true; }
-    u.alive = false; const veyl = fac(u.team) !== 0, away = u.team !== SIDE.home, v = this.vol(u.pos), st = UNIT[u.kind], c = V3(u.pos.x, st.bodyY, u.pos.z);
-    const gl = fac(u.team) === 2; this.puff(c, veyl ? 6 : 4, st.rad * 1.4, gl ? M.gS : veyl ? M.teal : M.dust); this.debris(c, veyl ? 7 : 3, .22, gl ? M.gB : veyl ? M.crys : M.steelD, 5); sfx.ko(v, veyl);
+    u.alive = false; const away = u.team !== SIDE.home, v = this.vol(u.pos), st = UNIT[u.kind];
     this.hud.damage(V3(u.pos.x, st.headY + .4, u.pos.z), u.kind === 'warden' ? 'KRAKA-THOOM!' : 'KO!', u.team !== this.myTeam ? 'ko' : 'kobad');
     u.ring.visible = false; if (u.rig.flash) u.rig.flash.visible = false; this.bodyLayer(u, false);
-    let ax = R(-1, 1), az = R(-1, 1); if (from) { ax = u.pos.x - from.pos.x; az = u.pos.z - from.pos.z; } const al = Math.hypot(ax, az) || 1;
-    this.corpses.push({ obj: u.obj, t: 0, veyl, ax: ax / al, az: az / al, s: u.obj.scale.x });
-    if (u.team !== this.myTeam && from === this.me && this.me) { sfx.kill(); this.hitStop = u.kind === 'warden' ? .25 : this.me.kind === 'longshot' ? .12 : .06; this.streak = this.time < this.streakT ? this.streak + 1 : 1; this.streakT = this.time + 4; if (this.streak >= 2) { this.hud.streak(['', '', 'DOUBLE KO!', 'TRIPLE!', 'OVERTIME!', 'RAMPAGE!'][Math.min(5, this.streak)]); sfx.streak(this.streak); } }
+    R(-1, 1); R(-1, 1);   // two draws the old fall used: kept so the match's seeded random numbers run exactly as before
+    this.fx.kill(u, from);
+    if (u.team !== this.myTeam && from === this.me && this.me) { sfx.kill(); this.hud.hitmark(false, true); this.hitStop = u.kind === 'warden' ? .25 : this.me.kind === 'longshot' ? .12 : .06; this.streak = this.time < this.streakT ? this.streak + 1 : 1; this.streakT = this.time + 4; if (this.streak >= 2) { this.hud.streak(['', '', 'DOUBLE KO!', 'TRIPLE!', 'OVERTIME!', 'RAMPAGE!'][Math.min(5, this.streak)]); sfx.streak(this.streak); } }
     if (away) { const kk = from ? from.kind : 'other'; this.stats.lostToV[kk] = (this.stats.lostToV[kk] || 0) + 1; }
     if (away) { this.stats.kills++; if (u.kind === 'warden' && fac(SIDE.home) === 0) { this.shake = Math.max(this.shake, v); this.feed('Alpha', 'Warden down! Did everybody see that? I did that.', '', SIDE.home); } else if (from && isUnit(from) && from.team !== u.team && from !== this.me && Math.random() < .12) this.dir.bark(from, 'kill'); if (this.eco && u !== this.me && isFighter(u) && Math.random() < .3) this.dir.bark(u, 'down'); }
     else { this.stats.lost++; { const kk = from ? from.kind : 'other'; this.stats.lostTo[kk] = (this.stats.lostTo[kk] || 0) + 1; } if (u !== this.me && isFighter(u) && Math.random() < .35) this.dir.bark(u, 'down'); if (this.eco && from && isUnit(from) && from.team !== u.team && from !== this.me && Math.random() < .12) this.dir.bark(from, 'kill'); }
@@ -491,15 +493,7 @@ export class Game {
     for (const b of this.bursts) if (b.t > 0) { b.t -= dt; const k = 1 - Math.max(0, b.t) / .2; b.g.scale.setScalar(b.s * (.5 + .8 * Math.sqrt(k))); b.g.quaternion.copy(this.cam.quaternion); b.g.rotateZ(b.rot); if (b.t <= 0) b.g.visible = false; }
     for (const b of this.bubbles) if (b.t > 0) { b.t -= dt; if (b.u) b.m.position.set(b.u.pos.x, UNIT[b.u.kind].bodyY, b.u.pos.z); if (b.t <= 0) b.m.visible = false; }
     for (const w of this.warns) if (w.t > 0) { w.t -= dt; const k = 1 - w.t / w.life, s = w.r * 2 * (.3 + .7 * k); w.m.scale.set(s, s, 1); if (w.t <= 0) w.m.visible = false; }
-    for (let i = this.corpses.length - 1; i >= 0; i--) {
-      const c = this.corpses[i]; c.t += dt; const o = c.obj;
-      if (c.veyl) { const k = Math.min(1, c.t / .7); o.position.y += dt * 1.6; o.rotation.y += dt * 9; o.scale.setScalar(c.s * Math.max(.001, 1 - k * k)); if (k >= 1) { this.scene.remove(o); this.corpses.splice(i, 1); } }
-      else {
-        const k = Math.min(1, c.t / .45), fall = k * k * 1.5, yaw = o.rotation.y, fx = c.ax * Math.cos(yaw) - c.az * Math.sin(yaw), fz = c.ax * Math.sin(yaw) + c.az * Math.cos(yaw);
-        o.rotation.x = fall * fz; o.rotation.z = -fall * fx; o.position.x += c.ax * dt * 3 * (1 - k); o.position.z += c.az * dt * 3 * (1 - k); o.position.y = Math.sin(k * Math.PI) * .25 + (k >= 1 ? .22 : 0);
-        if (c.t > 2.6) { o.position.y -= (c.t - 2.6) * 1.2; o.scale.setScalar(c.s * Math.max(.001, 1 - (c.t - 2.6) / .8)); } if (c.t > 3.4) { this.scene.remove(o); this.corpses.splice(i, 1); }
-      }
-    }
+    this.fx.update(dt);
   }
 
   /** How much ore a driven Rigger's pack holds before it has to be walked to the Headframe. */
@@ -732,7 +726,7 @@ export class Game {
           let hit = this.ray(eye, d, 34, -1, me); if (hit && ((hit.unit && hit.unit.team === me.team) || (hit.b && hit.b.team === me.team && hit.dist < 3))) hit = this.ray(eye, d, 34, foeOf(me.team), me);
           const dist = hit ? hit.dist : 34, end = V3().copy(eye).addScaledVector(d, dist); if (i % 2 === 0) this.tracer(muzzle, end);
           const fall = dist < 10 ? 1 : Math.max(.3, 1 - (dist - 10) / 24), tgt = hit && (hit.unit && hit.unit.team === foeOf(me.team) ? hit.unit : hit.b && hit.b.team === foeOf(me.team) ? hit.b : null);
-          if (tgt) { const dm = (hit!.head ? 9 : 6) * fall * mul * (1 + pay * .8); total += dm; hits++; last = tgt; crit = crit || !!hit!.head; this.damage(tgt, dm, me); if (i % 3 === 0) this.puff(end, 1, .4, M.teal, .6); } else this.impact(eye, d, hit, end, 6 * fall * mul);
+          if (tgt) { const dm = (hit!.head ? 9 : 6) * fall * mul * (1 + pay * .8); total += dm; hits++; last = tgt; crit = crit || !!hit!.head; this.fx.aim(end, d); this.damage(tgt, dm, me); if (!isUnit(tgt) && i % 3 === 0) this.fx.surface(end, d, this.surfOf(tgt), .8); } else this.impact(eye, d, hit, end, 6 * fall * mul);
         }
         this.quiet = false;
         if (last) { this.hud.hitmark(crit); sfx.hit(); this.hud.damage(V3(last.pos.x, (isUnit(last) ? UNIT[last.kind].headY : last.h * .6) + .4, last.pos.z), String(Math.round(total)), hits >= 7 ? 'crit' : ''); }
@@ -749,10 +743,10 @@ export class Game {
         if (hit && ((hit.unit && hit.unit.team === me.team) || (hit.b && hit.b.team === me.team && hit.dist < 3))) hit = this.ray(eye, d, 150, foeOf(me.team), me);
         const dist = hit ? hit.dist : 150, end = V3().copy(eye).addScaledVector(d, dist);
         // The Long Rifle goes through: up to two more bodies behind the first, each for a little less.
-        if (long && hit?.unit && hit.unit.team === foeOf(me.team)) { let from = hit.unit, at = dist, n = 1, fall = .7; for (let i = 0; i < 2; i++) { const h2 = this.ray(V3().copy(eye).addScaledVector(d, at + .4), d, 60, foeOf(me.team), from); if (!h2?.unit || h2.unit.team !== foeOf(me.team)) break; this.damage(h2.unit, S.body * mul * fall, me); at += .4 + h2.dist; from = h2.unit; fall *= .7; n++; this.puff(V3().copy(eye).addScaledVector(d, at), 2, .35, M.teal, .6); } if (n > 1) { end.copy(eye).addScaledVector(d, at); this.hud.streak(n > 2 ? 'TRIPLE THREAD!' : 'THREADED!'); sfx.crit(); } }
+        if (long && hit?.unit && hit.unit.team === foeOf(me.team)) { let from = hit.unit, at = dist, n = 1, fall = .7; for (let i = 0; i < 2; i++) { const h2 = this.ray(V3().copy(eye).addScaledVector(d, at + .4), d, 60, foeOf(me.team), from); if (!h2?.unit || h2.unit.team !== foeOf(me.team)) break; this.damage(h2.unit, S.body * mul * fall, me); at += .4 + h2.dist; from = h2.unit; fall *= .7; n++; } if (n > 1) { end.copy(eye).addScaledVector(d, at); this.hud.streak(n > 2 ? 'TRIPLE THREAD!' : 'THREADED!'); sfx.crit(); } }
         this.tracer(muzzle, end, tracerMat, long ? .14 : .07);
-        if (hit?.unit && hit.unit.team === foeOf(me.team)) { const sh = hit.unit.shield > 0; this.damage(hit.unit, (hit.head ? S.head : S.body) * mul, me, !!hit.head); hit.head ? sfx.crit() : sfx.hit(); this.hud.hitmark(!!hit.head); this.puff(end, 2, .35, sh ? M.cyan : M.teal, .6); this.debris(end, 1, .07, M.crys, 3); }
-        else if (hit?.b && hit.b.team === foeOf(me.team)) { this.damage(hit.b, S.bld * mul, me); this.hud.hitmark(false); this.puff(end, 1, .5, M.teal, .6); this.debris(end, 2, .1, M.indigo, 4); }
+        if (hit?.unit && hit.unit.team === foeOf(me.team)) { this.fx.aim(end, d); this.damage(hit.unit, (hit.head ? S.head : S.body) * mul, me, !!hit.head); hit.head ? sfx.crit() : sfx.hit(); this.hud.hitmark(!!hit.head); }
+        else if (hit?.b && hit.b.team === foeOf(me.team)) { this.damage(hit.b, S.bld * mul, me); this.hud.hitmark(false); this.fx.surface(end, d, this.surfOf(hit.b)); }
         else this.impact(eye, d, hit, end, S.bld * mul);
         const f = this.bits.find(x => x.t <= 0); if (f) { f.m.material = M.spark; f.m.position.copy(muzzle).addScaledVector(dir, -.5); f.v.set(-Math.cos(this.yaw) * 2.5 + R(-.5, .5), 2.5, Math.sin(this.yaw) * 2.5 + R(-.5, .5)); f.m.scale.set(.03, .03, .07); f.spin = 20; f.t = .8; f.m.visible = true; }
       }
@@ -895,14 +889,18 @@ export class Game {
       let dist = hit ? hit.dist : 140; if (!hit && d.y < 0) dist = Math.min(dist, -eye.y / d.y);
       const end = V3().copy(eye).addScaledVector(d, dist); this.tracer(muzzle, end, tracerMat, .16);
       const tgt = hit && (hit.unit && hit.unit.team === foeOf(me.team) ? hit.unit : hit.b && hit.b.team === foeOf(me.team) ? hit.b : null);
-      if (tgt) { this.damage(tgt, (hit!.head ? 34 : 22) * mul, me, !!hit!.head); this.hud.hitmark(!!hit!.head); hit!.head ? sfx.crit() : sfx.hit(); }
+      if (tgt) { this.fx.aim(end, d); this.damage(tgt, (hit!.head ? 34 : 22) * mul, me, !!hit!.head); this.hud.hitmark(!!hit!.head); hit!.head ? sfx.crit() : sfx.hit(); }
       if (hit?.prop) this.damageProp(hit.prop, 22 * mul, me, end);
       if (dist < 139) this.burst(end, 14 * mul, 3.2, me, tgt);
     }
   }
   impact(eye: THREE.Vector3, d: THREE.Vector3, hit: Hit | null, end: THREE.Vector3, dmg = 7) {
-    if (hit?.prop) { this.damageProp(hit.prop, dmg, this.me, end); return; }
-    if (!hit && d.y < 0) { const t = -eye.y / d.y; if (t < 150) end.copy(eye).addScaledVector(d, t); else return; } else if (!hit) return; this.puff(end, 1, .35, M.dust, .6); this.debris(end, 1, .07, M.rock, 3); }
+    if (hit?.prop) { this.fx.surface(end, d, this.surfOf(hit.prop)); this.damageProp(hit.prop, dmg, this.me, end); return; }
+    if (!hit && d.y < 0) { const t = -eye.y / d.y; if (t < 150) end.copy(eye).addScaledVector(d, t); else return; } else if (!hit) return;
+    this.fx.surface(end, d, !hit ? 'dirt' : hit.ore ? 'rock' : hit.b ? this.surfOf(hit.b) : 'metal');
+  }
+  /** What a bullet finds when it lands on a building or a piece of scenery. */
+  surfOf(x: Building | Prop): Surface { if ('ranges' in x) { const k = (x.owner || x).kind; return k === 'metal' || k === 'barrel' ? 'metal' : k === 'crystal' || k === 'veyl' ? 'crystal' : k === 'plant' ? 'plant' : 'rock'; } const f = fac(x.team); return f === 2 ? 'flesh' : f === 1 ? 'crystal' : 'metal'; }
   shoot(pos: THREE.Vector3, vel: THREE.Vector3, team: number, dmg: number, nade: boolean, from: Unit | null, ghost = 0) {
     const pk = () => [r1(pos.x), r1(pos.y), r1(pos.z), r1(vel.x), r1(vel.y), r1(vel.z), team, nade ? 1 : 0];
     if (this.evq && !ghost) this.evq.push(['pj', ...pk(), 1]); else if (this.net && !this.applying) this.net.cmd('pj', ...pk());
@@ -944,7 +942,7 @@ export class Game {
   }
   /** Turns each unit's state into a pose: legs, arms, bob and muzzle flash. */
   poseUnits(dt: number) {
-    const us = this.units, t = this.time;
+    const us = this.units, t = this.time; this.fx.pre();
     for (const u of us) {
       if (!u.alive) continue; const r = u.rig, o = u.obj; o.position.x = u.pos.x; o.position.z = u.pos.z;
       let dy = u.yaw - o.rotation.y; dy = Math.atan2(Math.sin(dy), Math.cos(dy)); o.rotation.y += dy * Math.min(1, dt * 12);
@@ -973,6 +971,7 @@ export class Game {
         if (big && r.armL && r.armR) { const k = u.wind > 0 ? Math.min(1, (1 - u.wind / .9) * 1.4) : 0; const a = u.wind > 0 ? -2.4 * k : u.swing * .9; r.armL.rotation.x += (a - r.armL.rotation.x) * Math.min(1, dt * 18); r.armR.rotation.x = r.armL.rotation.x; }
       }
     }
+    this.fx.post(dt);
   }
   /** A worker the AI drives: a Rigger or a Tender. Builds what it was sent to, otherwise mines the best seam and carries the ore home. */
   aiRigger(u: Unit, dt: number) {
@@ -1203,7 +1202,7 @@ export class Game {
       if (me.alive) this.bodyLayer(me, true);
       const sprint = this.keys.has('ShiftLeft') && me.moving && this.ads < .3, fovT = (this.hopT > 0 ? 82 : sprint ? 75 : 68) - this.ads * (SHOT[me.kind]?.zoom ?? 6) + this.recoil * 1.5 * (1 - this.ads); cam.fov += (this.fitFov(fovT) - cam.fov) * Math.min(1, dt * 10);
       const bobY = me.moving ? Math.sin(this.bob) * .035 * (1 - this.ads * .7) : 0, sh = this.shake * .03;
-      cam.position.set(me.pos.x + R(-sh, sh), UNIT[me.kind].eye + bobY + R(-sh, sh), me.pos.z + R(-sh, sh)); cam.rotation.set(this.pitch + this.recoil * .012, this.yaw + Math.PI, Math.sin(this.bob * .5) * (me.moving ? .004 : 0) - this.swayX * .6, 'YXZ');
+      cam.position.set(me.pos.x + R(-sh, sh), UNIT[me.kind].eye + bobY + R(-sh, sh), me.pos.z + R(-sh, sh)); cam.rotation.set(this.pitch + this.recoil * .012, this.yaw + Math.PI, Math.sin(this.bob * .5) * (me.moving ? .004 : 0) - this.swayX * .6, 'YXZ'); this.fx.view(cam, dt);
       const intro = this.introT > 0 ? 1 - this.introT / 1.8 : 1;
       if (intro < 1) { const k = intro * intro * (3 - 2 * intro), q = cam.quaternion.clone(); TMP2.copy(cam.position); cam.position.lerpVectors(this.menuPos, TMP2, k); cam.quaternion.slerpQuaternions(this.menuQuat, q, k); cam.fov = 46 + (68 - 46) * k; if (me.alive) this.bodyLayer(me, k > .9); }
       if (me.alive && this.staticT <= 0 && intro > .92) {

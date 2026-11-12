@@ -22,19 +22,20 @@ try {
   await V.click('#mSide'); await A.waitForFunction(() => /Veyl Chorus/.test(document.getElementById('mPlayers').textContent)); check(true, 'Vex picks the Veyl side and Ada sees it in the lobby');
   await A.click('#mDiff button:nth-child(1)'); await V.click('#mReady'); await A.waitForFunction(() => !document.getElementById('mStart').disabled); await A.click('#mStart');
   for (const p of [A, V]) { await p.waitForFunction(() => __ore.game.net && __ore.game.me && __ore.game.units.length > 6); await p.evaluate(() => { __ore.game.noRender = true; __ore.hold(false); }); }
-  const st = p => p.evaluate(() => { const g = __ore.game; return { me: g.me && g.me.id, team: g.me && g.me.team, kind: g.me && g.me.kind, my: g.myTeam, ore: g.ore, bld: g.buildings.filter(b => b.alive).length, hq: g.ownB('headframe')[0]?.hp, phase: g.phase, won: g.won, raidIn: g.dir.raidIn }; });
+  const st = p => p.evaluate(() => { const g = __ore.game; return { me: g.me && g.me.id, team: g.me && g.me.team, kind: g.me && g.me.kind, my: g.myTeam, ore: g.ore, mined: g.stats.mined, bld: g.buildings.filter(b => b.alive).length, hq: g.ownB('headframe')[0]?.hp, phase: g.phase, won: g.won, raidIn: g.dir.raidIn }; });
   let a = await st(A), v = await st(V);
   check(a.team === 0 && v.team === 1 && v.my === 1, `Ada is a ${a.kind} for Ironhold and Vex is a ${v.kind} for the Veyl`);
   check(v.kind === 'tender' && await A.evaluate(() => __ore.game.eco), 'a Veyl player starts as a Tender in a match with a Veyl economy');
   // Vex tries Ironhold business and is refused, then sings up a Hushwell of their own
-  // Ironhold's own crew banks a pack or the Quartermaster buys something now and then, so one noisy window proves nothing: a real leak would show in every window.
-  let a2 = a, kept = false;
-  for (let i = 0; i < 3 && !kept; i++) {
-    a = await st(A);
-    await V.evaluate(() => { const g = __ore.game; for (let i = 0; i < 10; i++) g.net.cmd('mn', 0, 3); g.net.cmd('pl', 'depot', 14, 20, 0); g.net.cmd('pl', 'headframe', 30, 20, 0); });
-    await sleep(1500); a2 = await st(A); kept = Math.abs(a2.ore - a.ore) < 12 && a2.bld === a.bld;
-  }
-  check(kept, 'a Veyl player cannot mine or build for Ironhold');
+  await V.evaluate(() => { const g = __ore.game; for (let i = 0; i < 10; i++) g.net.cmd('mn', 0, 3); g.net.cmd('pl', 'depot', 14, 20, 0); g.net.cmd('pl', 'headframe', 30, 20, 0); });
+  await sleep(1500); const a2 = await st(A);
+  // The match may be twenty seconds old by now on a slow runner. Ada's Riggers bank a load every second or so and her Quartermaster spends,
+  // so her ore and her building count move by themselves. What Vex could have caused is ore that her crew did not bank, or a building on the spots Vex named.
+  const stray = (a2.ore - a2.mined) - (a.ore - a.mined);
+  const squat = await A.evaluate(() => __ore.game.buildings.filter(b => b.alive && Math.abs(b.pos.z - 20) < 2 && (Math.abs(b.pos.x - 14) < 2 || Math.abs(b.pos.x - 30) < 2)).length);
+  check(stray < 3 && !squat, `a Veyl player cannot mine or build for Ironhold (${stray} ore her crew did not bank, ${squat} buildings where Vex asked)`);
+  // By then the Conductor may also have spent the opening purse (a Brood Pit at about twenty seconds), so Vex waits until the Veyl can pay for a well.
+  await until(V, () => __ore.game.cash(1) >= 100, null, 150000);
   const well = await V.evaluate(() => { const g = __ore.game, st = g.buildings.find(b => b.alive && b.team === 1 && b.kind === 'choir'); for (let r = 14; r < 40; r += 3) for (let t = 0; t < 6.28; t += .4) { const x = st.pos.x + Math.cos(t) * r, z = st.pos.z + Math.sin(t) * r; if (g.canPlace('hushwell', x, z, false, 1)) { g.place('hushwell', x, z, false, 1); return true; } } return false; });
   check(well && await until(A, () => __ore.game.buildings.some(b => b.alive && b.team === 1 && b.kind === 'hushwell')), 'Vex lays out a Hushwell and Ada sees it go up');
   // every Veyl body works in first person, with the picture on

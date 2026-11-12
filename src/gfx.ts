@@ -109,11 +109,11 @@ export const DUSK = { value: 0 };
 const DUSKFOG = new THREE.Color('#f09a84');
 export const NOISE = `float hash(vec2 p){return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453);}
 float vnoise(vec2 p){vec2 i=floor(p),f=fract(p);f=f*f*(3.-2.*f);return mix(mix(hash(i),hash(i+vec2(1,0)),f.x),mix(hash(i+vec2(0,1)),hash(i+vec2(1,1)),f.x),f.y);}`;
-const TOON_VS = `uniform vec3 uL; uniform vec2 uRep; attribute float aEm; varying vec3 vN,vL,vP,vW,vWn; varying vec2 vUv; varying float vEm;
-void main(){ vUv=uv*uRep; vEm=aEm; vec4 w=modelMatrix*vec4(position,1.); vW=w.xyz; vec4 mv=viewMatrix*w; vP=mv.xyz; vN=normalize(normalMatrix*normal); vWn=normalize(mat3(modelMatrix)*normal); vL=(viewMatrix*vec4(uL,0.)).xyz; gl_Position=projectionMatrix*mv; }`;
+const TOON_VS = `uniform vec3 uL; uniform vec2 uRep; attribute float aEm; varying vec3 vN,vL,vP,vW,vWn,vO,vOn; varying vec2 vUv; varying float vEm;
+void main(){ vUv=uv*uRep; vEm=aEm; vO=position*length(modelMatrix[0].xyz); vOn=normal; vec4 w=modelMatrix*vec4(position,1.); vW=w.xyz; vec4 mv=viewMatrix*w; vP=mv.xyz; vN=normalize(normalMatrix*normal); vWn=normalize(mat3(modelMatrix)*normal); vL=(viewMatrix*vec4(uL,0.)).xyz; gl_Position=projectionMatrix*mv; }`;
 const TOON_FS = `precision highp float;
 uniform vec3 uColor,uFog; uniform sampler2D uMap,uShadow; uniform mat4 uShadowMat; uniform float uEmis,uOpacity,uHatch,uFogK,uFlat,uPx,uShadowTex;
-varying vec3 vN,vL,vP,vW,vWn; varying vec2 vUv; varying float vEm;
+varying vec3 vN,vL,vP,vW,vWn,vO,vOn; varying vec2 vUv; varying float vEm;
 ${NOISE}
 float shadowAt(vec3 wp){
   vec4 sc=uShadowMat*vec4(wp,1.); vec3 p=sc.xyz/sc.w*.5+.5;
@@ -125,8 +125,7 @@ float shadowAt(vec3 wp){
   float r2=mix(step(z,texture2D(uShadow,c+vec2(-t,t)).x),step(z,texture2D(uShadow,c+vec2(0.,t)).x),f.x)+mix(step(z,texture2D(uShadow,c+vec2(0.,t)).x),step(z,texture2D(uShadow,c+vec2(t,t)).x),f.x);
   return (mix(r0,r1,f.y)+mix(r1,r2,f.y))*.25;
 }
-#ifdef GROUND
-uniform vec4 uRoad; uniform float uRoadW;
+#if defined(GROUND)||defined(BLOOM)
 vec2 h2(vec2 p){ return fract(sin(vec2(dot(p,vec2(127.1,311.7)),dot(p,vec2(269.5,183.3))))*43758.5453); }
 // Distance to the nearest edge of a field of cracked plates, and a random number for the plate.
 vec2 crackle(vec2 p){
@@ -136,6 +135,9 @@ vec2 crackle(vec2 p){
   for(int y=-2;y<=2;y++) for(int x=-2;x<=2;x++){ vec2 g=mg+vec2(float(x),float(y)); vec2 r=g+h2(i+g)-f; vec2 dr=r-mr; if(dot(dr,dr)>.00001) md=min(md,dot(.5*(mr+r),normalize(dr))); }
   return vec2(md,hash(i+mg));
 }
+#endif
+#ifdef GROUND
+uniform vec4 uRoad; uniform float uRoadW;
 // The desert floor is painted here rather than in a tiled picture, so it never repeats and stays crisp underfoot:
 // big two-tone patches with a broken pen contour, wind-bleached drifts, cracked plates, pebbles, and the road with its ruts.
 vec3 groundAt(vec2 p){
@@ -143,7 +145,7 @@ vec3 groundAt(vec2 p){
   vec2 w=p+(vec2(vnoise(p*.13),vnoise(p*.13+17.))-.5)*9.;
   float n1=vnoise(w*.028)*.62+vnoise(w*.075+3.)*.38, a1=fwidth(n1)+.0004;
   float dr=vnoise(vec2(w.x*.02+w.y*.012,w.y*.11-w.x*.05)+60.), a2=fwidth(dr)+.0004;
-  vec3 sand=vec3(.71,.53,.375), earth=vec3(.59,.4,.285), deep=vec3(.47,.31,.235), pale=vec3(.79,.63,.455), inkc=vec3(.2,.1,.09);
+  vec3 sand=vec3(.75,.56,.4), earth=vec3(.63,.43,.305), deep=vec3(.47,.31,.235), pale=vec3(.79,.63,.455), inkc=vec3(.2,.1,.09);
   float eM=smoothstep(.55-a1,.55+a1,n1), dM=smoothstep(.68-a1,.68+a1,n1), pM=smoothstep(.74-a2,.74+a2,dr)*(1.-eM);
   vec3 c=mix(mix(mix(sand,earth,eM),deep,dM),pale,pM); float ink=0.;
   // a pen line round each patch, lifted off the page here and there
@@ -155,7 +157,7 @@ vec3 groundAt(vec2 p){
   c=mix(c,deep*.9,lip*.55); c=mix(c,pale,(1.-smoothstep(0.,.1+fw,-dM1))*step(dM1,0.)*(1.-brk)*.5*clamp(.2/fw,0.,1.));
   // dry-brush scribble: bunches of short slanted strokes, as an inker roughs in dirt. Far off they settle into a flat tone.
   { vec2 pw2=p+(vec2(vnoise(p*.7+5.),vnoise(p*.7+25.))-.5)*.5; float hv=(pw2.x+pw2.y*.8)/.2, hu=pw2.x*.8-pw2.y, bun=smoothstep(.6,.66,vnoise(p*.42+41.)+lip*.3), near=clamp((.04-lod)/.02,0.,1.);
-    float st=(1.-smoothstep(.06,.06+fw/.2,abs(fract(hv)-.5)))*smoothstep(.5,.6,vnoise(vec2(hu*2.4,floor(hv)*3.7)));
+    float st=(1.-smoothstep(.06,.06+fw/.2,abs(fract(hv)-.5)))*smoothstep(.52,.6,vnoise(vec2(hu*3.6,floor(hv)*3.7)));
     ink=max(ink,st*bun*near*.42*clamp(.03/fw,0.,1.)); c*=1.-bun*(1.-near)*.05; }
   // the road: packed earth, ragged at the edges, two ruts with tread marks
   vec2 ab=uRoad.zw-uRoad.xy; float len=max(length(ab),.01); vec2 ad=ab/len, rp=p-uRoad.xy; float along=clamp(dot(rp,ad),0.,len), side=dot(rp,vec2(-ad.y,ad.x)), rd=length(rp-ad*along);
@@ -180,51 +182,156 @@ vec3 groundAt(vec2 p){
     vec2 dd=(fract(q)-(.22+.56*hh))*vec2(1.,1.4+hh.x)/1.15; float r=length(dd), rad=.03+.065*hh.y;
     float sr=length(dd-vec2(.5,-.5)*rad); c=mix(c,deep*.72,(1.-smoothstep(rad*.95-fw*.5,rad*.95+fw*.5,sr))*pf*on*.8);
     c=mix(c,hh.x>.5?pale*1.04:earth*.92,(1.-smoothstep(rad-fw*.5,rad+fw*.5,r))*pf*on);
-    ink=max(ink,(1.-smoothstep(.014,.014+fw,abs(r-rad)))*pf*on*clamp(.03/fw,0.,1.)); }
+    ink=max(ink,(1.-smoothstep(.014,.014+fw,abs(r-rad)))*pf*on*clamp(.03/fw,0.,1.)*(.35+.65*smoothstep(-.2,.6,dd.x-dd.y)/1.)); }
   c*=(.97+.06*vnoise(p*3.1))*(.91+.18*vnoise(p*.011+5.));
   return mix(c,inkc,ink*.78);
+}
+#endif
+#ifdef CLIFF
+// Cliffs are painted in place too: beds of rock in four tones, an inked line along each bed, a scribbled shadow under the ledges,
+// cracks running down through a bed, and a dusty cap. It is drawn in metres, so a mesa eighty metres wide is as crisp as a boulder.
+vec3 cliffAt(vec3 w, vec3 wn){
+  float u=abs(wn.x)>abs(wn.z)?w.z:w.x, fy=max(fwidth(w.y),1e-4), fu=min(max(fwidth(u),1e-4),4.), fm=max(fy,fu);
+  float yy=w.y+(vnoise(w.xz*.045)-.5)*5.+(vnoise(vec2(u*.3,w.y*.2))-.5)*.7, b=yy/4.2, id=floor(b), f=fract(b);
+  float r1=hash(vec2(id,3.)), r2=hash(vec2(id,9.));
+  vec3 col=r1<.25?vec3(.66,.3,.2):r1<.5?vec3(.8,.42,.25):r1<.8?vec3(.87,.53,.32):vec3(.58,.26,.185), inkc=vec3(.2,.08,.07);
+  float far=clamp(.5/fm,0.,1.), ink=0.;
+  // the line along the top of each bed, lifted here and there, and a finer seam inside it
+  float lw=.045+.05*r1, d=min(f,1.-f)*4.2;
+  ink=max(ink,(1.-smoothstep(lw,lw+fy,d))*smoothstep(.22,.34,vnoise(vec2(u*.11,id*5.3)))*clamp(lw*3./fy,.25,1.));
+  ink=max(ink,(1.-smoothstep(.022,.022+fy,abs(f-(.3+.4*r2))*4.2))*smoothstep(.5,.6,vnoise(vec2(u*.2,id*3.1+40.)))*.7*clamp(.07/fy,0.,1.));
+  // under a ledge: a band of shade with slanted strokes
+  float led=smoothstep(.66,.98,f)*step(.42,hash(vec2(id+1.,5.)));
+  col*=1.-led*.2;
+  { float hv=(u+w.y*.8)/.42, st=(1.-smoothstep(.09,.09+fm/.42,abs(fract(hv)-.5)))*smoothstep(.35,.5,vnoise(vec2((u-w.y)*1.3,floor(hv)*2.3)));
+    ink=max(ink,st*led*.6*clamp(.05/fm,0.,1.)); col*=1.-led*.1*(1.-clamp(.05/fm,0.,1.)); }
+  // cracks that run down through one bed
+  { float cu=floor((u+id*2.6)/7.), cx=(hash(vec2(cu,id))*.6+.2)*7., du=abs(mod(u+id*2.6,7.)-cx+(vnoise(vec2(w.y*.7,cu))-.5)*.9);
+    float on=step(.5,hash(vec2(cu,id+11.)))*smoothstep(0.,.12,f)*smoothstep(0.,.3,1.-f), cw=.035+.03*r2;
+    ink=max(ink,(1.-smoothstep(cw,cw+fu,du))*on*clamp(cw*3./fu,0.,1.));
+    // a chip of shade on one side of the crack
+    col*=1.-on*.14*(1.-smoothstep(0.,.5,mod(u+id*2.6,7.)-cx))*step(cx,mod(u+id*2.6,7.)); }
+  // weather: grain, and long stains running down
+  col*=(.93+.14*vnoise(vec2(u*.9,w.y*2.4)))*(.9+.2*vnoise(vec2(u*.45,w.y*.05)+3.));
+  col=mix(col,vec3(.86,.62,.42)*(.95+.1*vnoise(w.xz*1.3)),smoothstep(.55,.75,wn.y));
+  return mix(col,inkc,ink*.85*(.4+.6*far));
+}
+#endif
+#ifdef BLOOM
+// The Gloam's carpet is painted in place as well: fat moss pads with an inked gap between them, each one cushioned,
+// tufted up close, glowing spore freckles, and a dark lip that creeps over the sand in fingers instead of ending in a clean circle.
+// Returns the colour, with the glow of the freckles in w. e runs from 0 at the middle to 1 at the ragged lip.
+vec4 bloomAt(vec2 p, float e){
+  float fw=max(length(fwidth(p)),1e-4), near=clamp(.05/fw,0.,1.);
+  vec2 w=p+(vec2(vnoise(p*.3),vnoise(p*.3+11.))-.5)*1.7+(vec2(vnoise(p*2.3+2.),vnoise(p*2.3+31.))-.5)*.34;
+  vec2 c=crackle(w*.85);
+  vec3 deep=vec3(.115,.215,.085), mid=vec3(.25,.43,.125), lite=vec3(.37,.56,.15), inkc=vec3(.04,.085,.045);
+  vec3 col=c.y<.2?deep*1.5:c.y<.62?mid:lite;
+  // each pad is a little cushion: darker down at its gap, lighter on its crown
+  col*=.84+.24*smoothstep(0.,.3,c.x)*near+.1*(1.-near);
+  col*=.9+.2*vnoise(p*.16+3.);
+  float gn=vnoise(w*1.1+7.), gw=.018+.045*gn, g=(1.-smoothstep(gw,gw+fw*.6,c.x))*clamp(gw*5./(fw*.6),0.,1.);
+  col=mix(col,inkc,g*(.35+.6*smoothstep(.3,.55,gn)));
+  // short veins on the bigger pads
+  { vec2 q=w*2.6; float v=abs(fract(q.x+q.y*.4+vnoise(q*.7)*1.3)-.5), on=step(.55,c.y)*smoothstep(.1,.2,c.x)*smoothstep(.45,.6,vnoise(q*.45+20.));
+    col=mix(col,col*.62,(1.-smoothstep(.035,.035+fw*2.6,v))*on*near); }
+  // up close each pad is tufted: short curved nicks, as an inker flicks in moss
+  { vec2 q=w*5.5, qi=floor(q), qf=fract(q)-.5, o=(h2(qi+7.)-.5)*.5; float h=hash(qi+1.), an=h*6.283; vec2 d=qf-o, r=vec2(d.x*cos(an)+d.y*sin(an),-d.x*sin(an)+d.y*cos(an));
+    float nick=(1.-smoothstep(.03,.03+fw*5.5,abs(r.y-r.x*r.x*2.)))*step(abs(r.x),.2)*step(.45,h)*smoothstep(.08,.16,c.x);
+    col=mix(col,col*.6,nick*clamp(.012/fw,0.,1.)); }
+  // the lip: darker, thinner growth creeping outward, then the inked edge
+  float lip=smoothstep(.8,.97,e); col=mix(col,deep*.8,lip*.8);
+  float fe=max(fwidth(e),1e-4); col=mix(col,inkc,smoothstep(1.-max(.035,fe*2.5),1.-max(.02,fe*1.2),e));
+  // spore freckles that glow
+  vec2 q=w*1.7, qi=floor(q), o=(h2(qi)-.5)*.6; float h=hash(qi+3.), dd=length(fract(q)-.5-o), r=.05+.07*h;
+  float sp=step(.72,h)*(1.-smoothstep(r,r+fw*1.7,dd))*(1.-lip)*clamp(r*3./(fw*1.7),0.,1.);
+  col=mix(col,inkc,step(.72,h)*(1.-smoothstep(r+.035,r+.035+fw*1.7,dd))*(1.-lip)*near*.8);
+  col=mix(col,vec3(.8,1.,.32),sp);
+  return vec4(col,sp);
 }
 #endif
 void main(){
   vec3 n=normalize(vN); vec3 wn=normalize(vWn); if(!gl_FrontFacing){ n=-n; wn=-wn; }
 #ifdef GROUND
   vec3 base=uColor*groundAt(vW.xz);
+#elif defined(CLIFF)
+  vec3 base=uColor*cliffAt(vW,wn);
+#elif defined(BLOOM)
+  float be=vUv.x+(vnoise(vW.xz*.5)-.5)*.2+(vnoise(vW.xz*1.6+4.)-.5)*.1+(vnoise(vW.xz*5.+9.)-.5)*.035, bfe=max(fwidth(be),1e-4), ba=clamp((1.-be)/bfe+.5,0.,1.);
+  if(ba<=0.) discard;
+  vec4 bl=bloomAt(vW.xz,be); vec3 base=uColor*bl.rgb;
 #else
   vec3 base=uColor*texture2D(uMap,vUv).rgb;
 #endif
+#ifdef CLIFF
+  // A mesa is one huge slow curve, so a fine wobble on its shadow edge turns into a field of speckle. Break it in big brush shapes instead.
+  float nz=(vnoise(vW.xz*.16+vW.y*.21)-.5)*.8+(vnoise(vW.xz*.55+vW.y*.7+3.)-.5)*.3;
+#else
   float nz=vnoise(vW.xz*2.3+vW.y*1.9)-.5;
+#endif
   float t=dot(n,normalize(vL))+nz*.24; t=mix(t,1.,uFlat*.6);
+#ifdef VM
+  // The thing in your hands is lit like a hero prop: its own light over your left shoulder, and your own body never shades it.
+  float sh=1.; t=dot(n,normalize(vec3(-.5,.72,.48)))+nz*.12;
+#else
   float sh=shadowAt(vW+wn*.07);
+#endif
   float lit=smoothstep(-.03,.03,t)*smoothstep(.3,.7,sh), hi=smoothstep(.74,.78,t)*sh, deep=1.-smoothstep(-.6,-.54,t);
   vec3 shc=base*vec3(.36,.3,.48)+vec3(.02,.01,.055);
   vec3 col=mix(shc,base*vec3(.8,.75,.8),lit);
   col=mix(col,base,smoothstep(.3,.36,t)*lit);
   col=mix(col,min(base*1.2+vec3(.08,.07,.03),vec3(1.)),hi*.75*(1.-uFlat));
-  vec2 fc=gl_FragCoord.xy/uPx+(vnoise(gl_FragCoord.xy/uPx*.045)-.5)*7.;
-  float a1=(fc.x+fc.y)/9., a2=(fc.x-fc.y)/9.;
-  float br1=smoothstep(.3,.5,vnoise(vec2(a2*.11,floor(a1)*7.3))), br2=smoothstep(.36,.56,vnoise(vec2(a1*.11,floor(a2)*5.1)+9.));
-  float l1=smoothstep(.6,.8,abs(fract(a1)-.5)*2.)*br1;
-  float l2=smoothstep(.6,.8,abs(fract(a2)-.5)*2.)*br2;
+  // Shading strokes are drawn on the thing, not on the screen, so they stay put when it or you move. They are laid out in its own
+  // space on whichever side faces most squarely, and step down a size with distance so they stay about nine pixels apart.
+  vec3 an=abs(vOn); vec2 hc=an.y>an.x&&an.y>an.z?vO.xz:an.x>an.z?vO.zy:vO.xy;
+  hc+=(vec2(vnoise(hc*2.1),vnoise(hc*2.1+7.))-.5)*.05;
+  float wpp=max(length(fwidth(hc))*.7,1e-5), ls=log2(9.*uPx*wpp), s0=exp2(floor(ls)), fr=fract(ls);
+  float q1=(hc.x+hc.y)/s0, q2=(hc.x-hc.y)/s0, i1=floor(q1+.5), i2=floor(q2+.5), aw=fwidth(q1)*.9+.02;
+  float k1=i1*s0, k2=i2*s0, u1=(hc.x-hc.y), u2=(hc.x+hc.y);
+  float br1=mix(smoothstep(.3,.5,vnoise(vec2(u1/s0*.13,k1*41.7))),smoothstep(.3,.5,vnoise(vec2(u1/s0*.065,k1*41.7))),fr);
+  float br2=mix(smoothstep(.36,.56,vnoise(vec2(u2/s0*.13,k2*37.1)+9.)),smoothstep(.36,.56,vnoise(vec2(u2/s0*.065,k2*37.1)+9.)),fr);
+  float l1=(1.-smoothstep(.13,.13+aw,abs(q1-i1)))*br1*mix(1.,1.-fr,mod(i1,2.));
+  float l2=(1.-smoothstep(.13,.13+aw,abs(q2-i2)))*br2*mix(1.,1.-fr,mod(i2,2.));
   float term=smoothstep(-.42,-.3,t)*(1.-smoothstep(-.05,.03,t));
   float cst=smoothstep(-.03,.03,t)*(1.-smoothstep(.3,.7,sh));
   float hatch=term*l1*.62+deep*(l1*.5+l2*.5)+cst*l1*.2;
   col=mix(col,col*.4,clamp(hatch,0.,1.)*uHatch);
+  // and where a form turns right away from the sun the inker fills it in: a pool of near black, as comics spot their blacks
+  col=mix(col,col*.34+vec3(.012,.008,.03),(1.-smoothstep(-.86,-.78,t))*uHatch*(1.-uFlat));
   float fres=1.-max(dot(n,normalize(-vP)),0.);
   col=mix(col,min(base*1.22+vec3(.1,.09,.06),vec3(1.)),smoothstep(.7,.78,fres)*lit*.45*(1.-uFlat)*uHatch);
   float rim=pow(1.-max(dot(n,normalize(-vP)),0.),3.)*(1.-lit)*.4; col+=rim*vec3(.45,.6,.95);
-  float em=min(1.,uEmis+vEm); col=mix(col,base*1.08,em);
+#ifdef BLOOM
+  float em=min(1.,uEmis+vEm+bl.a*.8);
+#else
+  float em=min(1.,uEmis+vEm);
+#endif
+  col=mix(col,base*1.08,em);
+#ifndef VM
   float d=length(vP); col=mix(col,uFog,(1.-exp(-d*uFogK))*.92*(1.-em*.6));
+#endif
+#ifdef BLOOM
+  gl_FragColor=vec4(col,ba);
+#else
   gl_FragColor=vec4(col,uOpacity);
+#endif
 }`;
 const WHITE = new THREE.DataTexture(new Uint8Array([255, 255, 255, 255]), 1, 1, THREE.RGBAFormat); WHITE.needsUpdate = true;
 // Uniforms shared by every toon material so the shadow map and pixel scale update in one place.
 export const SHARED = { uShadow: { value: WHITE as THREE.Texture }, uShadowMat: { value: new THREE.Matrix4() }, uShadowTex: { value: 1 / 2048 }, uPx: { value: 1 }, uL: { value: LIGHT }, uFog: { value: FOG } };
-export interface ToonOpts { color?: string; emis?: number; hatch?: number; fog?: number; flat?: number; rx?: number; ry?: number; side?: THREE.Side; ground?: boolean }
+export interface ToonOpts { color?: string; emis?: number; hatch?: number; fog?: number; flat?: number; rx?: number; ry?: number; side?: THREE.Side; ground?: boolean; cliff?: boolean; bloom?: boolean }
 export function T(map?: THREE.Texture | null, o: ToonOpts = {}) {
   return new THREE.ShaderMaterial({
     uniforms: { uColor: { value: new THREE.Color(o.color || '#ffffff') }, uMap: { value: map || WHITE }, uEmis: { value: o.emis || 0 }, uOpacity: { value: 1 }, uHatch: { value: o.hatch === undefined ? 1 : o.hatch }, uFogK: { value: o.fog === undefined ? .0032 : o.fog }, uFlat: { value: o.flat || 0 }, uRep: { value: new THREE.Vector2(o.rx || 1, o.ry || 1) }, ...(o.ground ? { uRoad: { value: new THREE.Vector4() }, uRoadW: { value: 0 } } : {}), ...SHARED },
-    vertexShader: TOON_VS, fragmentShader: TOON_FS, side: o.side || THREE.FrontSide, defines: o.ground ? { GROUND: 1 } : {},
+    vertexShader: TOON_VS, fragmentShader: TOON_FS, side: o.side || THREE.FrontSide, defines: o.ground ? { GROUND: 1 } : o.cliff ? { CLIFF: 1 } : o.bloom ? { BLOOM: 1 } : {},
   });
+}
+/** A copy of a toon material for things held in the hand: see VM in the shader. Copies are kept, one per material. */
+const HELD = new Map<THREE.Material, THREE.ShaderMaterial>();
+export function heldMaterial(m: THREE.Material) {
+  const src = m as THREE.ShaderMaterial; if (!src.isShaderMaterial || !src.uniforms || !src.uniforms.uShadow) return m;
+  let c = HELD.get(m); if (!c) { c = src.clone(); c.defines = { ...src.defines, VM: 1 }; for (const k of Object.keys(SHARED)) (c.uniforms as any)[k] = (SHARED as any)[k]; c.uniforms.uMap.value = src.uniforms.uMap.value; HELD.set(m, c); }
+  return c;
 }
 export const M: Record<string, THREE.ShaderMaterial> = {};
 /** Other modules add their materials here; they are built together with the rest. */
@@ -235,7 +342,7 @@ function makeMaterials() {
     steel: T(TX.steel), steelD: T(TX.steelD), yellow: T(TX.yellow), yellowP: T(TX.yellowP), hazard: T(TX.hazard, { rx: 3 }), hazard1: T(TX.hazard),
     rubber: T(TX.rubber), cloth: T(TX.cloth), vest: T(TX.vest), gun: T(TX.gun), helmet: T(TX.helmet), hardhat: T(TX.hardhat), skin: T(TX.skin),
     corr: T(TX.corr, { rx: 2 }), rust: T(TX.rust), tealC: T(TX.tealC), door: T(TX.door), concrete: T(TX.concrete, { rx: 2, ry: 2 }),
-    rock: T(TX.rock), mesa: T(TX.mesa, { rx: 3, ry: 1 }), ground: T(null, { hatch: .55, flat: 1, ground: true }), ore: T(TX.ore, { emis: .35 }), oreDead: T(TX.rock, { color: '#b9b0a8' }),
+    rock: T(TX.rock), mesa: T(null, { cliff: true }), ground: T(null, { hatch: .55, flat: 1, ground: true }), ore: T(TX.ore, { emis: .35 }), oreDead: T(TX.rock, { color: '#b9b0a8' }),
     indigo: T(TX.indigo), indigoL: T(TX.indigo, { color: '#c9c2ff' }), indigoD: T(TX.indigoD), smoke: T(TX.smoke, { hatch: .5 }), soot: T(TX.smoke, { color: '#6d5f68' }), dust: T(TX.smoke, { hatch: .3, color: '#f0b98a' }),
     visor: T(null, { color: '#ffe27a', emis: 1 }), cyan: T(null, { color: '#8ff2ff', emis: 1 }), teal: T(null, { color: '#35e0c8', emis: .9 }), mag: T(null, { color: '#ff4f9a', emis: .9 }), red: T(null, { color: '#ff4b3a', emis: 1 }),
     planet: T(TX.planet, { fog: 0, hatch: .4 }), ring: T(null, { color: '#ffe9c4', emis: .8, fog: 0, side: THREE.DoubleSide }),

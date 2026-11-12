@@ -311,8 +311,9 @@ const musEl = $('mus') as HTMLInputElement; musEl.checked = mus; musEl.addEventL
 // ---- options tab
 const sens2 = $('sens2') as HTMLInputElement, vol2 = $('vol2') as HTMLInputElement, mus2 = $('mus2') as HTMLInputElement, cbEl = $('cb') as HTMLInputElement, gfxB = Array.from($('gfx').querySelectorAll('button')) as HTMLButtonElement[];
 // Edge smoothing is the first thing to go when Auto has had to drop the resolution.
+const aoFor = () => gfxI === 1 || (gfxI === 0 && quality < .75) ? 0 : 1;
 const aaFor = () => gfxI === 1 || (gfxI === 0 && quality < 1) ? 0 : 4;
-function applyOpts() { document.body.classList.toggle('cb', cbOn); hud.cb = hud2.cb = cbOn; pipe.shadowEvery = gfxI === 1 ? 3 : 1; pipe.aa = aaFor(); pipe.w = 0; hud.relabel(touchOn ? k => TOUCHKEYS[k] ?? k : Object.keys(binds).length ? k => keyText(keyOf(k === 'Tab' || k === 'Space' ? k : 'Key' + k)) : null); resize(); }
+function applyOpts() { document.body.classList.toggle('cb', cbOn); hud.cb = hud2.cb = cbOn; pipe.shadowEvery = gfxI === 1 ? 3 : 1; pipe.aa = aaFor(); pipe.ao = aoFor(); pipe.w = 0; hud.relabel(touchOn ? k => TOUCHKEYS[k] ?? k : Object.keys(binds).length ? k => keyText(keyOf(k === 'Tab' || k === 'Space' ? k : 'Key' + k)) : null); resize(); }
 /** On a touch screen the HUD names the on-screen buttons instead of keys. */
 const TOUCHKEYS: Record<string, string> = { RMB: 'Aim', MMB: 'Send', TAB: 'Jump', Tab: 'Jump', Space: 'Dash', C: 'Ability', Q: 'Back', V: 'Squad', G: 'QM', R: 'Reload' };
 function syncOpts() { sens2.value = sensEl.value = String(sens); vol2.value = volEl.value = String(vol); mus2.checked = musEl.checked = mus; cbEl.checked = cbOn; gfxB.forEach((b, i) => b.classList.toggle('on', i === gfxI)); }
@@ -361,9 +362,9 @@ function frame(now: number) {
   // Drop the render resolution if the machine can't keep up, and bring it back if it can.
   if (dt > .034) { slow++; fast = 0; } else if (dt < .02) { fast++; slow = Math.max(0, slow - 1); }
   if (gfxI === 0)
-  if (slow > 50 && quality > .5) { quality = Math.max(.5, quality * .85); slow = 0; pipe.aa = aaFor(); resize(); }
+  if (slow > 50 && quality > .5) { quality = Math.max(.5, quality * .85); slow = 0; pipe.aa = aaFor(); pipe.ao = aoFor(); resize(); }
   if (gfxI === 0)
-  if (fast > 900 && quality < 1) { quality = Math.min(1, quality / .85); fast = 0; pipe.aa = aaFor(); resize(); }
+  if (fast > 900 && quality < 1) { quality = Math.min(1, quality / .85); fast = 0; pipe.aa = aaFor(); pipe.ao = aoFor(); resize(); }
   requestAnimationFrame(frame);
 }
 (window as any).__ore = { models: MD, gloamB: GLOAM_BUILDINGS, gloamBloom: bloomPatch, sounds: { ready: soundsReady, sfx }, quit, atlasUsed: MD.atlasUsed, game, start, pipe, hud, hud2, startSplit, startVeyl, split: () => split, game2: () => game2, setFree: (v: boolean) => { freeMouse = v; }, pickMap, pickSize, pickSide: (s: number, f = 0) => { mode = "skirm"; sideI = s; foeI = s ? s - 1 : f; showSide(); fresh(); }, unlock: () => { camp = MISSIONS.length; mpOpen = true; mode = 'multi'; showMode(); }, net: () => net, pickJob: (i: number) => { mode = 'camp'; camp = Math.max(camp, i); jobI = i; showMode(); fresh(); } };

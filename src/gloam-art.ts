@@ -58,13 +58,6 @@ const glow = () => paint(GLOW, (g, s) => {
   for (let i = 0; i < 6; i++) { let x = R(0, s), y = R(0, s); const pts = [[x, y]]; for (let k = 0; k < 4; k++) { x += R(-40, 40); y += R(-40, 40); pts.push([x, y]); } g.globalAlpha = .5; pen(g, pts, R(3, 6), '#3d6a12', .5); g.globalAlpha = 1; }
   pen(g, [[s * .2, s * .66], [s * .4, s * .32], [s * .7, s * .22]], 22, 'rgba(255,255,255,.8)');
 }, { blot: 0 });
-/** The living carpet the Gloam grow on. Tiled across a disc, so it is drawn to wrap. */
-const bloomTex = () => paint('#4d6a2a', (g, s) => {
-  brush(g, s, '#4d6a2a', 40, 0); lichen(g, s, 120, '#2c3f18', '#88a64a');
-  // Veins of root thread, each with a few lime nodes.
-  for (let i = 0; i < 10; i++) { let x = R(0, s), y = R(0, s); const pts = [[x, y]]; for (let k = 0; k < 6; k++) { x += R(-60, 60); y += R(-60, 60); pts.push([x, y]); } pen(g, pts, R(3, 7), '#22320f', .5); g.globalAlpha = .6; pen(g, pts.map(p => [p[0] - 3, p[1] - 3]), R(1.5, 3), '#b4d468', .5); g.globalAlpha = 1; }
-  for (let i = 0; i < 14; i++) { const x = R(0, s), y = R(0, s), r = R(4, 9); g.fillStyle = GLOW; g.beginPath(); g.arc(x, y, r, 0, 7); g.fill(); pen(g, [[x - r, y + r * .4], [x, y + r], [x + r, y + r * .4]], 2.5, INK, .6); }
-}, { blot: 0 });
 
 EXTRA.push(() => {
   const S = (n: string, tex: THREE.Texture, o: { emis?: number; rx?: number; ry?: number; hatch?: number; flat?: number } = {}) => { TX[n] = tex; M[n] = T(tex, o); };
@@ -77,10 +70,9 @@ EXTRA.push(() => {
   S('gS', glow(), { emis: .78 });
   S('gEye', paint('#ffb43a', (g, s) => { const gr = g.createRadialGradient(s * .4, s * .38, 6, s * .5, s * .5, s * .6); gr.addColorStop(0, '#fff6d0'); gr.addColorStop(.45, '#ffb43a'); gr.addColorStop(1, '#a8400c'); g.fillStyle = gr; g.fillRect(0, 0, s, s); g.fillStyle = INK; g.fillRect(s * .44, s * .12, s * .12, s * .76); }, { blot: 0 }), { emis: .9 });
   S('gMaw', paint('#3a1420', (g, s) => { g.fillStyle = '#3a1420'; g.fillRect(0, 0, s, s); for (let i = 0; i < 9; i++) { const y = (i + .5) / 9 * s; g.globalAlpha = .5; pen(g, [[0, y], [s, y + R(-6, 6)]], R(3, 6), '#8a2a3a', .3); g.globalAlpha = 1; } }, { blot: 0 }));
-  S('gBloom', bloomTex(), { hatch: .4 });
   M.gS.uniforms.uEmis.value = .78; M.gGlow = T(null, { color: GLOW, emis: 1 });
-  M.gBloomRim = T(null, { color: '#22320f', hatch: 0 });
-  for (const m of [M.gBloom, M.gBloomRim]) { m.polygonOffset = true; m.polygonOffsetFactor = -4; m.polygonOffsetUnits = -4; }
+  // The carpet is painted in the shader (see BLOOM in gfx.ts), so it never tiles and its lip is ragged.
+  M.gBloom = T(null, { bloom: true, flat: 1, hatch: 0 }); M.gBloom.polygonOffset = true; M.gBloom.polygonOffsetFactor = -4; M.gBloom.polygonOffsetUnits = -4; M.gBloom.alphaToCoverage = true;
   M.gSpit = T(null, { color: '#d8ff6a', emis: 1 });
 });
 
@@ -346,12 +338,13 @@ export function bloomPatch(seed: number, rad: number) {
   let s = seed * 7919 + 13; const rr = () => { s = (s * 16807) % 2147483647; return s / 2147483647; };
   const k = [rr() * 6, rr() * 6, rr() * 6], edge = (a: number) => .88 + Math.sin(a * 3 + k[0]) * .06 + Math.sin(a * 7 + k[1]) * .04 + Math.sin(a * 13 + k[2]) * .025;
   const disc = (scale: number, mat: THREE.Material, y: number) => {
-    const pos: number[] = [0, y, 0], uv: number[] = [.5, .5], idx: number[] = [];
-    for (let i = 0; i <= n; i++) { const a = i / n * TAU, r = edge(a) * rad * scale; pos.push(Math.cos(a) * r, y, Math.sin(a) * r); uv.push(.5 + Math.cos(a) * r / 6, .5 + Math.sin(a) * r / 6); if (i) idx.push(0, i + 1, i); }
+    const pos: number[] = [0, y, 0], uv: number[] = [0, 0], idx: number[] = [];
+    for (let i = 0; i <= n; i++) { const a = i / n * TAU, r = edge(a) * rad * scale; pos.push(Math.cos(a) * r, y, Math.sin(a) * r); uv.push(1, 0); if (i) idx.push(0, i + 1, i); }
     const geo = new THREE.BufferGeometry(); geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); geo.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2)); geo.setIndex(idx); geo.computeVertexNormals();
     const m = new THREE.Mesh(geo, mat); m.name = 'bloom'; grow.add(m); return m;
   };
-  disc(1.035, M.gBloomRim, 0); disc(1, M.gBloom, .006);
+  // one sheet, a little oversize: the shader frays its lip. uv.x runs 0 at the middle to 1 at the lip
+  disc(1.1, M.gBloom, .006);
   // Lime spore buds dotted near the rim.
   for (let i = 0; i < Math.round(4 + rad * .6); i++) { const a = rr() * TAU, e = edge(a) * rad * (.55 + rr() * .4), k = .18 + rr() * .2; put(blob(k, k * .7, k), M.gS, grow, [Math.cos(a) * e, .04, Math.sin(a) * e]); }
   return g;

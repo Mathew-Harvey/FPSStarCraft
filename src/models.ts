@@ -338,7 +338,11 @@ export function vmDrill() {
   bake(g); g.scale.setScalar(.62); g.userData.bit = bit; g.userData.rest = [.3, -.25, -.56, .14, .5, .06];
   return setLayer(g, L_VM) as THREE.Group;
 }
-function vmFlash(g: THREE.Object3D, p: P3, s: number) { const flash = grp('flash', g, p); for (let i = 0; i < 3; i++) mk(G.cone4, M.flash, [0, 0, 0], [.2 * s, .5 * s, .04 * s], [-Math.PI / 2, 0, i * Math.PI / 3], flash); mk(G.sph, M.flash, [0, 0, .14 * s], [.16 * s, .16 * s, .16 * s], 0, flash); flash.visible = false; return flash; }
+const FLASH_INK = new THREE.MeshBasicMaterial({ color: 0x0d0c13, side: THREE.DoubleSide }), FLASH_MID = new THREE.MeshBasicMaterial({ color: 0xffa62e, side: THREE.DoubleSide });
+function vmFlash(g: THREE.Object3D, p: P3, s: number) { const flash = grp('flash', g, p);
+  // an inked star facing you, as a comic draws a shot: black behind, orange, then a white-hot middle, with one long spike down the barrel
+  mk(G.burst, FLASH_INK, [0, 0, -.012 * s], [.66 * s, .66 * s, 1], 0, flash); mk(G.burst, FLASH_MID, [0, 0, 0], [.54 * s, .54 * s, 1], 0, flash); mk(G.burst, M.flash, [0, 0, .012 * s], [.32 * s, .32 * s, 1], [0, 0, .5], flash);
+  mk(G.cone4, M.flash, [0, 0, -.22 * s], [.1 * s, .46 * s, .1 * s], [-Math.PI / 2, 0, 0], flash); flash.visible = false; return flash; }
 export function vmRifle() {
   const g = new THREE.Group();
   put(rbox(.1, .155, .5, .03), M.gunm, g, [0, 0, .05]); put(rbox(.125, .125, .3, .035), M.pY, g, [0, .005, -.26]);
@@ -538,19 +542,26 @@ export function buildWorld(scene: THREE.Scene, props: Prop[], anim: ((t: number)
       dress('plant', 'Dry scrub', x, z, .5 * sc, .9 * sc, 6, g => { for (const b of blades) mk(b, mat, 0, [sc, sc, sc], 0, g); }); }
     for (let i = 0; i < 110 * K; i++) { const [x, z] = spot(); if (!free(x, z, 0)) continue; const n = 3 + Math.floor(D(0, 4));
       dress('rock', 'Loose stones', x, z, .9, .5, 24, g => { for (let k = 0; k < n; k++) { const sc = D(.18, .6), a = D(0, 6.28), d = k ? D(.3, 1.3) : 0; mk(rocks(i + k), M.rockB, [Math.cos(a) * d, sc * .22, Math.sin(a) * d], [sc * 1.2, sc * D(.6, .9), sc], [0, D(0, 3), 0], g); } }); }
-    for (let i = 0; i < 54 * K; i++) { let x: number, z: number; if (i % 3 === 0) { const q = roadPt(D(10, ROAD.len - 8), (D() < .5 ? -1 : 1) * D(7, 15)); x = q[0]; z = q[1]; } else if (i % 3 === 1) { const a = D(0, 6.28), d = D(30, 60); x = Math.cos(a) * d; z = Math.sin(a) * d; } else[x, z] = spot();
-      if (!free(x, z, .6) || isClear(x, z, -34)) continue; const t = Math.floor(D(0, 7)), wm = [M.wallR, M.wallT, M.wallD, M.wallY][i % 4];
+    const junk = (t: number, i: number, x: number, z: number) => { const wm = [M.wallR, M.wallT, M.wallD, M.wallY][i % 4];
       if (t === 0) dress('metal', 'Old tyres', x, z, .8, 1.1, 50, g => { const n = 1 + Math.floor(D(0, 3)); for (let k = 0; k < n; k++) mk(ring(.46, .19, 1, 14), M.rib, [D(-.06, .06), .19 + k * .36, D(-.06, .06)], 0, [H2, 0, 0], g); mk(ring(.46, .19, 1, 14), M.rib, [.95, .5, .1], 0, [0, D(-.4, .4), .28], g); });
       else if (t === 1) dress('metal', 'Scrap sheet', x, z, .9, 1.1, 50, g => { mk(slab(1.7, 1.15, .07, 1.3, .02), wm, [0, .5, 0], 0, [-.42, 0, D(-.12, .12)], g); mk(slab(1.1, .8, .06, 1.3, .02), M.wallD, [.5, .05, .7], 0, [-H2 + .06, .5, 0], g); beam([-.6, 0, -.3], [-.55, 1.0, -.1], .04, M.steelD, g); });
       else if (t === 2) dress('barrel', 'Dead drum', x, z, .7, .9, 40, g => { mk(can(.4, 1.2, .04), i % 2 ? M.wallR : M.bS, [0, .38, 0], 0, [H2, 0, D(0, 3)], g); mk(blob(.5, .12, .7), M.nD, [.1, .03, .8], 0, 0, g); });
       else if (t === 3) dress('metal', 'Pipe offcuts', x, z, 1.1, .5, 60, g => { beam([-1.2, .2, 0], [1.3, .2, .3], .2, M.steelD, g); beam([-.9, .2, .5], [1.0, .2, .9], .2, M.steelD, g); beam([-.6, .55, .25], [.8, .55, .6], .2, M.bS, g); });
       else if (t === 4) dress('metal', 'Sunk crate', x, z, .8, .9, 60, g => { mk(slab(1.15, 1.15, 1.15, 1.2, .07), wm, [0, .32, 0], 0, [.24, 0, .17], g); mk(rocks(i), M.rockB, [.8, .12, .3], [.5, .3, .5], 0, g); });
       else if (t === 5) dress('metal', 'Survey stake', x, z, .3, 1.8, 20, g => { beam([0, 0, 0], [.06, 1.7, 0], .035, M.steelD, g); mk(G.box, M.red, [.3, 1.5, 0], [.5, .3, .03], [0, 0, -.08], g); mk(rocks(i), M.rockB, [.1, .08, .15], [.3, .2, .3], 0, g); });
-      else dress('metal', 'Claim sign', x, z, .7, 2, 40, g => { beam([-.5, 0, 0], [-.46, 1.7, 0], .05, M.steelD, g); beam([.5, 0, 0], [.52, 1.5, 0], .05, M.steelD, g); mk(G.box, M.hazard1, [0, 1.3, .03], [1.3, .55, .05], [0, 0, -.1], g); }); }
+      else dress('metal', 'Claim sign', x, z, .7, 2, 40, g => { beam([-.5, 0, 0], [-.46, 1.7, 0], .05, M.steelD, g); beam([.5, 0, 0], [.52, 1.5, 0], .05, M.steelD, g); mk(G.box, M.hazard1, [0, 1.3, .03], [1.3, .55, .05], [0, 0, -.1], g); });
+    };
+    for (let i = 0; i < 54 * K; i++) { let x: number, z: number; if (i % 3 === 0) { const q = roadPt(D(10, ROAD.len - 8), (D() < .5 ? -1 : 1) * D(7, 15)); x = q[0]; z = q[1]; } else if (i % 3 === 1) { const a = D(0, 6.28), d = D(30, 60); x = Math.cos(a) * d; z = Math.sin(a) * d; } else[x, z] = spot();
+      if (!free(x, z, .6) || isClear(x, z, -34)) continue; junk(Math.floor(D(0, 7)), i, x, z); }
     for (let i = 0; i < 6 * K; i++) { const [x, z] = spot(); if (!free(x, z, 2) || isClear(x, z, -10)) continue;
       dress('rock', 'Old bones', x, z, 1.6, 1.4, 60, g => { for (let k = 0; k < 5; k++) mk(G.arc, M.nW, [0, 0, -1.4 + k * .62], [2.0 - k * .16, (2.3 - k * .24) * (k === 2 ? .7 : 1), 1.1], [0, 0, D(-.12, .12)], g); beam([0, .12, -1.8], [0, .16, 1.6], .09, M.nW, g); mk(blob(.62, .5, .85), M.nW, [0, .3, 2.4], 0, [-.2, D(-.5, .5), 0], g); for (const sx of [-1, 1]) mk(shard(.1, .8, 5, .3), M.nW, [sx * .42, .62, 2.3], 0, [-.5, 0, -sx * .9], g); }); }
     for (let i = 0; i < 7; i++) { const a = i / 7 * 6.28 + D(-.3, .3), d = D(34, 47), x = Math.cos(a) * d, z = Math.sin(a) * d; if (!free(x, z, 2) || isClear(x, z, -40)) continue; const r = 1.8 + (i % 3) * .5, h = r * .62;
       dress('rock', 'Spoil heap', x, z, r, h, 160, g => { mk(lathe(spl([[r, 0], [r * .82, h * .36], [r * .4, h * .84], [0, h]], 8), 10), M.rockB, 0, 0, 0, g); for (let k = 0; k < 3; k++) { const b = D(0, 6.28); mk(shard(.12, .5, 5, .3), M.ore, [Math.cos(b) * r * .55, h * .5, Math.sin(b) * r * .55], 0, [D(-.8, .8), 0, D(-.8, .8)], g); mk(rocks(i + k), M.rockB, [Math.cos(b + 2) * r, .12, Math.sin(b + 2) * r], [.5, .3, .45], 0, g); } }); }
+    // A few places where somebody camped and left: a cold fire ring with their junk pulled up round it.
+    for (let i = 0; i < 5 * K; i++) { const [x, z] = spot(); if (!free(x, z, 3.8) || isClear(x, z, -34)) continue;
+      dress('rock', 'Cold camp fire', x, z, .9, .5, 40, g => { for (let k = 0; k < 7; k++) { const a = k / 7 * 6.28; mk(rocks(i + k), M.rockB, [Math.cos(a) * .72, .1, Math.sin(a) * .72], [.3, .22, .3], [0, D(0, 3), 0], g); } beam([-.4, .1, -.1], [.45, .17, .2], .07, M.nD, g); beam([-.2, .1, .35], [.3, .2, -.4], .06, M.nD, g); mk(blob(.5, .06, .5), M.nD, [0, .03, 0], 0, 0, g); });
+      const n = 4 + Math.floor(D(0, 3)), a0 = D(0, 6.28);
+      for (let k = 0; k < n; k++) { const a = a0 + k / n * 6.28 + D(-.3, .3), d = D(2.2, 3.7), px = x + Math.cos(a) * d, pz = z + Math.sin(a) * d; if (free(px, pz, .3)) junk(k === 0 ? 1 : k === 1 ? 0 : k === 2 ? 4 : Math.floor(D(0, 7)), i + k, px, pz); } }
   }
   bake(w);
   for (const [mat, b] of batches) { const geo = b.geos.length > 1 ? mergeGeometries(b.geos) : b.geos[0], mesh = new THREE.Mesh(geo, mat); mesh.frustumCulled = false; w.add(mesh); const attr = geo.attributes.position as THREE.BufferAttribute; for (const r of b.recs) r.p.ranges.push({ attr, start: r.start, count: r.count }); }

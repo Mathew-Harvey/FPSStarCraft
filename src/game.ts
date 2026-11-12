@@ -1,7 +1,7 @@
 // The simulation and the player: entities, combat, effects, the first-person bodies,
 // and jumping between them. Strategy (economy AI, raids, squad plans) lives in director.ts.
 import * as THREE from 'three';
-import { Pipeline, ViewPipe, V3, M, G, R, mk, setLayer, L_FX, L_SELF, holoOK, holoBad, ringMat, tracerMat, makeSky } from './gfx';
+import { Pipeline, ViewPipe, V3, M, G, R, mk, setLayer, L_FX, L_SELF, holoOK, holoBad, ringMat, tracerMat, makeSky, heldMaterial } from './gfx';
 import * as MD from './models';
 import { sfx, drillSound, setMood, babble } from './audio';
 import type { Hud } from './hud';
@@ -95,10 +95,10 @@ export class Game {
     this.vm = { drill: MD.vmDrill(), rifle: MD.vmRifle(), scatter: MD.vmScatter(), shield: MD.vmShield(), cannon: MD.vmCannon(), long: MD.vmLong(), pistol: MD.vmPistol(), veyl: MD.vmVeyl() };
     if (fac(SIDE.home) === 2 || fac(SIDE.out) === 2) for (const k of ['grazer', 'snapper', 'quillback', 'blister', 'mulcher']) this.vm['g_' + k] = MD.vmG(k);
     this.carpet = new Bloom(s);
-    for (const k in this.vm) { this.vm[k].visible = false; this.cam.add(this.vm[k]); }
+    for (const k in this.vm) { this.vm[k].visible = false; this.cam.add(this.vm[k]); this.vm[k].traverse(o => { const m = o as THREE.Mesh; if (m.isMesh && !Array.isArray(m.material)) m.material = heldMaterial(m.material); }); }
     for (const k of new Set([...BUILDABLE, ...FACTION[SIDE.home].builds, ...FACTION[SIDE.out].builds])) { const src = this.model(k); this.ghost[k] = MD.hologram(src, holoOK); this.ghostBad[k] = MD.hologram(src, holoBad); this.ghost[k].visible = this.ghostBad[k].visible = false; s.add(this.ghost[k], this.ghostBad[k]); }
     const pool = (n: number, geo: THREE.BufferGeometry, mat: THREE.Material, fx: boolean) => { const out: THREE.Mesh[] = []; for (let i = 0; i < n; i++) { const m = mk(geo, mat, 0, 0, 0, s); if (fx) m.layers.set(L_FX); m.visible = false; out.push(m); } return out; };
-    this.tracers = pool(36, G.cyl8, tracerMat, true).map(m => ({ m, t: 0 }));
+    this.tracers = pool(36, G.oct, tracerMat, true).map(m => ({ m, t: 0 }));
     this.puffs = pool(96, G.cloud, M.dust, false).map(m => ({ m, t: 0, life: 1, v: V3(), s: 1 }));
     this.bits = pool(90, G.box, M.rust, false).map(m => ({ m, t: 0, v: V3(), spin: 0 }));
     this.chunks = pool(240, G.dod, M.rock, false).map(m => ({ m, t: 0, v: V3(), w: V3(), s: 1, rest: false }));
@@ -248,7 +248,7 @@ export class Game {
     if (this.evq) { this.evq.push(['tr', r1(a.x), r1(a.y), r1(a.z), r1(b.x), r1(b.y), r1(b.z), mat === tracerMat ? 0 : 1, w]); return; }
     if (this.net && !this.applying) this.net.cmd('tr', r1(a.x), r1(a.y), r1(a.z), r1(b.x), r1(b.y), r1(b.z), mat === tracerMat ? 0 : 1, w);
     const tr = this.tracers.find(t => t.t <= 0); if (!tr) return; const d = TMP.copy(b).sub(a), len = d.length(); if (len < .1) return;
-    tr.m.material = mat; tr.m.scale.set(w, len, w); tr.m.position.copy(a).addScaledVector(d, .5); tr.m.quaternion.setFromUnitVectors(UP, d.normalize()); tr.m.visible = true; tr.t = mat === tracerMat ? .06 : .16;
+    tr.m.material = mat; tr.m.scale.set(w * 1.7, len, w * 1.7); tr.m.position.copy(a).addScaledVector(d, .5); tr.m.quaternion.setFromUnitVectors(UP, d.normalize()); tr.m.visible = true; tr.t = mat === tracerMat ? .06 : .16;
   }
   puff(p: THREE.Vector3, n: number, size: number, mat: THREE.Material = M.dust, up = 1.2, spread = 1, life = 1) {
     if (this.evq) return;

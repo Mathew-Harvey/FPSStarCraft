@@ -1063,7 +1063,10 @@ export class Game {
         // closing on someone with a gun, a Cantor weaves instead of running down the barrel
         let wx = 0, wz = 0; if (!isB && d > 7 && u.dashT <= 0) { const k = Math.sin(this.time * 3.1 + u.id * 1.7) * Math.min(4.5, d * .3), nx = -(t.pos.z - u.pos.z) / d, nz = (t.pos.x - u.pos.x) / d; wx = nx * k; wz = nz * k; }
         this.moveTo(u, t.pos.x + wx, t.pos.z + wz, dt, .5, u.dashT > 0 ? 2.6 : 1); }
-      else { u.yaw = Math.atan2(t.pos.x - u.pos.x, t.pos.z - u.pos.z); if (u.cd <= 0) { u.cd = .95; u.swing = 1; sfx.slash(this.vol(u.pos)); this.damage(t, (isB ? 10 : 13) * this.vMul(u.team), u); } }
+      else { u.yaw = Math.atan2(t.pos.x - u.pos.x, t.pos.z - u.pos.z); if (u.cd <= 0) { u.cd = .95; u.swing = 1; sfx.slash(this.vol(u.pos)); const d = (isB ? 10 : 13) * this.vMul(u.team); this.damage(t, d, u);
+        // The sweep carries on through whatever is pressed up against the target: half the cut to two more bodies inside the arc. Against a spread
+        // rifle line it finds nobody; against a swarm at its ankles it is the only thing that keeps a Cantor worth its ore.
+        if (!isB) { let n = 0; for (const o of this.units) { if (n >= 2) break; if (o === t || !o.alive || o.team === u.team || Math.hypot(o.pos.x - t.pos.x, o.pos.z - t.pos.z) > 1.9 || Math.hypot(o.pos.x - u.pos.x, o.pos.z - u.pos.z) > 3.4) continue; n++; this.damage(o, d * .5, u); } } } }
       return;
     }
     this.vIdle(u, dt, u.order.type === 'raid' ? 3 : 1.5, u.order.type !== 'guard' || this.dir.alarmT > 0 ? 1 : .6);

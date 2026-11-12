@@ -58,7 +58,7 @@ export const VOICE_SIDE: Record<string, number> = { Conductor: 1, Chorus: 1, 'Ch
  *  Any faction can hold either end. A mirror match puts the same faction at both ends, the outpost side as team faction + 3. Set before a Game is made. */
 export const SIDE = { home: 0, out: 1 };
 /** Sets who holds each end from the two factions, and returns the two teams. */
-export const setSides = (homeFac: number, outFac: number) => { SIDE.home = homeFac; SIDE.out = outFac === homeFac ? outFac + MIRROR : outFac; return [SIDE.home, SIDE.out]; };
+export const setSides = (homeFac: number, outFac: number) => { SIDE.home = homeFac; SIDE.out = outFac === homeFac ? outFac + MIRROR : outFac; layoutSites(); return [SIDE.home, SIDE.out]; };
 /** A match code for the lobby and the menus: home faction times 3 plus outpost faction. The old codes 1 and 2 (Ironhold against the Veyl or the Gloam) still mean the same. */
 export const sidesCode = () => fac(SIDE.home) * 3 + fac(SIDE.out);
 export const setSidesCode = (code: number) => { const c = Number.isInteger(code) && code >= 0 && code < 9 ? code : 1; return setSides(Math.floor(c / 3), c % 3); };
@@ -155,7 +155,7 @@ export interface MapDef {
   /** Which of the three maps, and the size it was scaled to (see SIZES). */
   base?: number; size?: number; k?: number;
   /** Ore fields away from the yard, for new bases. Worked out by setMap; the first is the rich seam. */
-  sites?: number[][];
+  sites?: number[][]; /** The map code this layout was built from. */ code?: number;
   name: string; blurb: string; out: [number, number]; flank: number[][]; road: string; flankName: string; exp: [number, number]; arch: number; wreck: [number, number] | null;
   rocks: number; spireEvery: number; buttes: number; crystals: number; ground: number[]; mesa: number[]; rock: number[]; dusk: number;
 }
@@ -200,14 +200,25 @@ export function setMap(code: number) {
   NORTH_PATH.length = 0; for (const p of MAP.flank) NORTH_PATH.push([p[0], p[1]]);
   const e = MAP.flank[MAP.flank.length - 1], el = Math.hypot(e[0], e[1]) || 1; RALLY_N.x = e[0] - e[0] / el * 7; RALLY_N.z = e[1] - e[1] / el * 7;
   const vr = roadPt(ROAD.len - 24, 3); VRALLY.x = vr[0]; VRALLY.z = vr[1]; const f0 = MAP.flank[0]; VRALLY_N.x = ox + (f0[0] - ox) * .5; VRALLY_N.z = oz + (f0[1] - oz) * .5; const vh = veylPt(8, 1); VHOME.x = vh[0]; VHOME.z = vh[1];
-  // Ore fields for new bases: the old rich seam first, then spots spread around the map, clear of the yard, the outpost and both routes.
+  MAP.code = code; layoutSites();
+}
+const SITES = new Map<string, number[][]>();
+/** Ore fields for new bases: the old rich seam near the yard first, then spots spread around the map, clear of the yard, the outpost and both
+ *  routes. The rich seam sits a short walk from the yard, which suits the classic match (Ironhold at the yard against an outpost). In every other
+ *  pairing the outpost gets the same seam turned round, so neither end has the nearer first field. */
+function layoutSites() {
+  if (!MAP || MAP.code === undefined) return;
+  const even = !(fac(SIDE.home) === 0 && fac(SIDE.out) !== 0), key = MAP.code + (even ? 'e' : 'c'), had = SITES.get(key); if (had) { MAP.sites = had; return; }
+  const k = MAP.k, S = SIZES[MAP.size], [ox, oz] = MAP.out;
   const sites: number[][] = [[MAP.exp[0], MAP.exp[1]]], cx = ox / 2, cz = oz / 2, end = roadPt(ROAD.len + 6);
+  if (even) sites.push(swapEnd(MAP.exp[0], MAP.exp[1]).map(Math.round));
   const ok = (x: number, z: number) => { if (Math.hypot(x, z) < 52 * k || Math.hypot(x - ox, z - oz) < 58 * k || Math.hypot(x - cx, z - cz) > 168 * k) return false; if (segD(x, z, ROAD.x, ROAD.z, end[0], end[1]) < 20) return false;
     let qx = ox, qz = oz; for (const [fx, fz] of MAP.flank) { if (segD(x, z, qx, qz, fx, fz) < 16) return false; qx = fx; qz = fz; } return segD(x, z, qx, qz, 0, 0) >= 16; };
   const cand: number[][] = []; for (let a = 0; a < 32; a++) for (const f of [.5, .72, .95]) { const x = Math.round(cx + Math.cos(a / 32 * 6.2832) * f * 150 * k), z = Math.round(cz + Math.sin(a / 32 * 6.2832) * f * 120 * k); if (ok(x, z)) cand.push([x, z]); }
   while (sites.length < S.sites && cand.length) { let best = -1, bd = -1; cand.forEach(([x, z], i) => { const d = Math.min(Math.hypot(x, z) * .8, ...sites.map(s => Math.hypot(x - s[0], z - s[1]))); if (d > bd) { bd = d; best = i; } }); if (bd < 34) break; sites.push(cand.splice(best, 1)[0]); }
-  MAP.sites = sites;
+  MAP.sites = sites; SITES.set(key, sites);
 }
+
 export const isUnit = (t: any): t is Unit => !!t && t.rig !== undefined;
 export const isSoldier = (u: Unit) => u.kind === 'linesman' || u.kind === 'breacher' || u.kind === 'gantry' || u.kind === 'longshot' || u.kind === 'patch';
 /** A fighting body on either side: anything that is not a worker. */

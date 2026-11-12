@@ -18,6 +18,9 @@ setMap(map); const [H, out] = setSides(spec.home ?? 0, spec.out ?? 1);
 const g = new Game(noPipe(), noHud, DIFFS[diff], map, null, null, true);
 g.noRender = true; g.evq = []; g.me = null; g.phase = 'play';
 for (const u of g.units) u.pilot = 0;
+// The match's own dice are seeded by the map, so two runs of one map would be the same match. The seed shuffles where each starting worker stands
+// and when each side's brain first thinks, which is enough to send every run down its own road.
+for (const u of g.units) { u.pos.x += (Math.random() - .5) * 4; u.pos.z += (Math.random() - .5) * 4; } g.dir.qmT = Math.random(); g.dir.vs.qmT = Math.random(); if (spec.purse) { g.purse[H] += Math.floor(Math.random() * spec.purse); g.purse[out] += Math.floor(Math.random() * spec.purse); }
 g.human = g.human.map(() => false); g.human[H] = !!spec.human?.[0]; g.human[out] = !!spec.human?.[1];
 const nades = { n: 0, dmg: 0, kills: 0 }; { const ex = g.explode.bind(g); (g as any).explode = (p: any, team: number, dmg: number, r: number, from: any, mode: any) => { if (from && from.kind === 'linesman' && dmg > 0) { nades.n++; const before = g.units.filter(u => u.alive && u.team !== 0).reduce((a, u) => a + u.hp, 0), alive = g.units.filter(u => u.alive && u.team !== 0).length; ex(p, team, dmg, r, from, mode); nades.dmg += before - g.units.filter(u => u.alive && u.team !== 0).reduce((a, u) => a + u.hp, 0); nades.kills += alive - g.units.filter(u => u.alive && u.team !== 0).length; return; } return ex(p, team, dmg, r, from, mode); }; }
 const bad: Record<string, number> = {}, note = (k: string) => { bad[k] = (bad[k] || 0) + 1; };

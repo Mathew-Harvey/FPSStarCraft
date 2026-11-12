@@ -137,6 +137,20 @@ for (const f of [0, 1, 2]) {
   check(g2.phase === 'over' && !g2.won, `${n} mirror: and breaking the yard wins it for the outpost`);
 }
 
+// 12b. Balance fixes from the bot tables. A Cantor's sweep clips the bodies pressed against its target, and outside the classic pairing the
+// outpost has an ore field as near as the yard's.
+{
+  const g = match(2, 0, 1), c = g.spawn('cantor', SIDE.home, 40, 60), pack = [[41.6, 60], [42.2, 60.9], [42.2, 59.1]].map(([x, z]) => { const u = g.spawn('snapper', SIDE.out, x, z); u.hp = u.maxHp = 5000; u.order = { type: 'guard', x, z }; return u; });
+  c.hp = c.maxHp = 5000; c.order = { type: 'guard', x: 40, z: 60 };
+  let hurt: number[] = []; run(g, 6, () => { if (!hurt.length && pack.some(u => u.hp < u.maxHp)) hurt = pack.map(u => u.maxHp - u.hp); });
+  check(hurt.filter(d => d > 0).length === 3 && hurt.filter(d => d > 0 && d < Math.max(...hurt) * .75).length === 2, `a Cantor's sweep cuts its target and half as deep into two more beside it (${hurt.map(d => d.toFixed(1)).join(', ')})`);
+  for (const m of [0, 1, 2, 10, 20]) {
+    const near = (x: number, z: number) => Math.min(...MAP.sites!.map(s => Math.hypot(s[0] - x, s[1] - z)));
+    setMap(m); setSides(0, 0); const even = [near(0, 0), near(VHOME.x, VHOME.z), MAP.sites!.length]; setSides(0, 1); const classic = [near(0, 0), near(VHOME.x, VHOME.z), MAP.sites!.length];
+    check(Math.abs(even[0] - even[1]) < 3 && even[2] === classic[2] && classic[1] >= classic[0], `map ${m}: in a mirror the outpost's nearest ore field is as near as the yard's (${Math.round(even[0])} m and ${Math.round(even[1])} m; classic ${Math.round(classic[0])} and ${Math.round(classic[1])})`);
+  }
+}
+
 // 13. Every pairing, bots on both sides, plays out to a result without the stalemates the sweep found.
 for (const [home, out, map] of [[0, 1, 2], [0, 2, 20], [0, 0, 1], [1, 1, 0], [2, 2, 10], [1, 2, 0]]) {
   const g = match(out, map, home), H = SIDE.home, O = SIDE.out, tag = `${FACTION[H].short} vs ${NAME(O)} on map ${map}`; let bad = '';

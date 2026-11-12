@@ -23,7 +23,7 @@ export interface Mission {
   /** What the squad should go for when it pushes, if not the usual. */
   target?: (g: Game) => Building | null;
   objectives: Objective[]; setup?: (g: Game) => void; tick?: (g: Game, s: Record<string, number>, dt: number) => void;
-  outro: string; /** The end screen line when the job is lost, if not the usual. */ fail?: string;
+  outro: string; /** The end screen line when the job is lost, if not the usual. */ fail?: string | ((g: Game) => string);
   /** Cut scenes before the job starts and after it is won (see cutscene.ts). */ cutIn?: string[]; cutOut?: string[];
   /** A side job opens once this many story jobs are done. */ opens?: number;
 }
@@ -129,7 +129,7 @@ const ACT1: Mission[] = [
     tick: (g, s, dt) => {
       s.best = Math.max(s.best || 0, own(g, 'linesman'));
       once(g, s, 'l1', has(g, 'bunkhouse'), QM, 'Bunkhouse approved. Cost added to your balance. Noted.');
-      if (!s.go && (s.best >= 4 || g.time > 300)) { s.go = 1; s.t = 20; say(g, PIM, 'They know we\'re hiring. First raid in twenty seconds. The big one in front is Gary. I named him.', 'al'); }
+      if (!s.go && (s.best >= 4 || g.time > 300)) { s.go = 1; s.t = 20; say(g, PIM, 'They know we\'re hiring. First raid in twenty seconds. The one in front is Gary. Try not to hit Gary.', 'al'); }
       if (!s.go) return;
       if (s.live) { if (!raiders(g)) { s.live = 0; s.cleared = (s.cleared || 0) + 1; s.t = 45; if (s.cleared === 1) say(g, MO, 'That one was on the house. A Watchpost by the road would earn its keep.'); else if (s.cleared === 2) say(g, PIM, 'Fifteen seconds after this one, they come back with more. Gary looks upset.', 'al'); } return; }
       if ((s.cleared || 0) >= 3) return;
@@ -263,7 +263,7 @@ const ACT1: Mission[] = [
         say(g, PIM, 'What is that? Nineteen, the canyon floor is splitting. Everybody back to the yard!', 'al');
         for (let i = 0; i < 3; i++) send(g, 1, ['warden', 'cantor', 'cantor', 'cantor'], 'chase', [0, 0]);
       }
-      if (s.erupt === 1) { g.shake = Math.max(g.shake, .35); once(g, s, 'l2', (s.clock ?? 90) < 80, MO, 'I\'ll cover the road. Go! I had money on this, you know.', 'al'); once(g, s, 'l3', (s.clock ?? 90) < 40, PIM, 'I can\'t raise Moss. He was on the road when it went.', 'al'); if (countdown(g, s, dt, 90, true)) { s.safe = 1; s.erupt = 2; } }
+      if (s.erupt === 1) { g.shake = Math.max(g.shake, .35); once(g, s, 'l2', (s.clock ?? 90) < 80, MO, 'I\'ll hold the road. Go! Fifty says you make it out.', 'al'); once(g, s, 'l2b', (s.clock ?? 90) < 70, PIM, 'Moss, you bet ON Nineteen? You never win!', 'al'); once(g, s, 'l3', (s.clock ?? 90) < 40, PIM, 'I can\'t raise Moss. He was on the road when it went.', 'al'); if (countdown(g, s, dt, 90, true)) { s.safe = 1; s.erupt = 2; } }
     },
     target: g => g.buildings.find(b => b.alive && b.kind === 'wardpylon') || (g.stones().length ? null : g.pits()[0] || g.gate()),
     outro: 'The yard held. Moss didn\'t come back. Down the canyon the floor has split open, and pale fungus is pushing up out of the crack.',
@@ -288,7 +288,7 @@ const ACT2: Mission[] = [
     tick: (g, s, dt) => {
       s.t0 = (s.t0 || 0) + dt;
       once(g, s, 'l1', s.t0 > 2, H5, 'YOU BROKE OUR STONES. NOW YOU WILL HELP US FIX THEM. THAT IS FAIR.');
-      once(g, s, 'l2', s.t0 > 14, PB, '[PAID VERSION] PUT THE ORE IN THE SLING. WALK IT TO THE STONE. YES, WALK. WE DO NOT HAVE TRUCKS.');
+      once(g, s, 'l2', s.t0 > 14, PB, '[FREE VERSION] ORE. SLING. STONE. WALK. [WORDS LEFT THIS MONTH: 2]');
       once(g, s, 'l3', s.t0 > 60, PIM, '(on the radio, faint) Nineteen? Anybody? Is anybody on this channel?');
       if (!s.wave && nU(g, 'tender') >= 8) { s.wave = 1; send(g, SIDE.home, ['snapper', 'snapper', 'snapper', 'snapper'], 'w'); say(g, H5, 'THE GLOAM SMELLS THE STONE GETTING WELL. TENDERS CAN FIGHT. HIT AND STEP BACK. YOUR SHIELD GROWS BACK IF NOTHING HITS IT.', 'al'); }
       if (s.wave === 1 && !left(g, 'w')) s.wave = 2;
@@ -309,7 +309,7 @@ const ACT2: Mission[] = [
     tick: (g, s, dt) => {
       s.best = Math.max(s.best || 0, army(g)); s.t0 = (s.t0 || 0) + dt;
       once(g, s, 'l1', nU(g, 'cantor') > 0, H5, 'HIT THEM AND GET OUT. IF YOU STAND STILL, THEY BITE.');
-      if (!s.w1 && s.t0 > 150) { s.w1 = 1; send(g, SIDE.home, ['snapper', 'snapper', 'blister', 'blister'], 'w'); say(g, PB, 'BLISTERS COMING. STAND FURTHER APART. THIS IS NOT AN INSULT. IT IS PARTLY AN INSULT.', 'al'); }
+      if (!s.w1 && s.t0 > 150) { s.w1 = 1; send(g, SIDE.home, ['snapper', 'snapper', 'blister', 'blister'], 'w'); say(g, PB, '[FREE VERSION] BLISTERS. [WORDS LEFT THIS MONTH: 1]', 'al'); }
       if (!s.w2 && s.t0 > 330) { s.w2 = 1; send(g, SIDE.home, ['snapper', 'snapper', 'snapper', 'quillback', 'quillback', 'blister'], 'w'); }
       once(g, s, 'l2', s.t0 > 240, 'Static', '...four to one...', '');
     },
@@ -328,7 +328,7 @@ const ACT2: Mission[] = [
     tick: (g, s, dt) => {
       s.t0 = (s.t0 || 0) + dt;
       once(g, s, 'l1', s.t0 > 4, H5, 'WE HAVE SUNG HERE FOR NINE HUNDRED YEARS. YOU ARRIVED LAST WEEK. FOLLOW ME.');
-      once(g, s, 'l2', standing(g, 'c1') < 2 || standing(g, 'c2') < 3, PB, 'KILL THE BUILDING AND ITS CARPET DIES. SO KILL THE BUILDINGS.');
+      once(g, s, 'l2', standing(g, 'c1') < 2 || standing(g, 'c2') < 3, H5, 'KILL A GLOAM BUILDING AND ITS CARPET DIES. SO KILL THE BUILDINGS.');
       once(g, s, 'l3', nB(g, 'choir') >= 2, H5, 'WE SANG THE GROUND INTO GLASS TO KEEP THE GLOAM DOWN THERE. WE HAVE SUNG EVERY NIGHT SINCE, TO KEEP THE GLASS THICK.');
     },
     outro: 'Both camps are dead and the new Stone is singing. Held Fifth has told you how the glass was made.',
@@ -340,7 +340,7 @@ const ACT2: Mission[] = [
     allow: ['hushwell', 'broodpit', 'thornspire', 'wardpylon', 'choir'], units: ['tender', 'cantor', 'lancer'], raids: false, auto: false,
     objectives: [
       { text: () => 'Raise a Ward Pylon', done: g => nB(g, 'wardpylon') > 0 },
-      { text: () => 'Learn a song at a Brood Pit (Keener Edges or Thicker Glass)', done: g => upped(g) },
+      { text: () => 'Learn a song at the Ward Pylon (Keener Edges or Thicker Glass)', done: g => upped(g) },
       { text: g => `Hold off three attacks from the yard (${Math.min(3, g.ms.done || 0)}/3)`, done: g => (g.ms.done || 0) >= 3 },
     ],
     setup: g => { hush(g, SIDE.home); },
@@ -348,7 +348,7 @@ const ACT2: Mission[] = [
       s.t0 = (s.t0 || 0) + dt;
       const waves: Kind[][] = [['linesman', 'linesman', 'linesman', 'linesman'], ['linesman', 'linesman', 'breacher', 'breacher', 'patch', 'linesman'], ['breacher', 'breacher', 'linesman', 'linesman', 'linesman', 'patch', 'longshot', 'longshot']];
       const n = s.done || 0;
-      if (!s.live && n < 3 && s.t0 > (s.next || 120)) { s.live = 1; send(g, SIDE.home, waves[n], 'yard'); say(g, 'Watcher', n === 2 ? 'IRONHOLD ON THE ROAD. MANY OF THEM. LOUD BOOTS. SHIELDS IN FRONT.' : 'IRONHOLD ON THE ROAD. LOUD BOOTS.', 'al'); if (n === 0) say(g, AG, '(on the yard channel) Push them! They took Moss!', 'al'); if (n === 1) say(g, PIM, 'That Lancer walks like Nineteen. Why does it walk like Nineteen?'); }
+      if (!s.live && n < 3 && s.t0 > (s.next || 120)) { s.live = 1; send(g, SIDE.home, waves[n], 'yard'); say(g, 'Watcher', n === 2 ? 'IRONHOLD ON THE ROAD. MANY OF THEM. LOUD BOOTS. SHIELDS IN FRONT.' : 'IRONHOLD ON THE ROAD. LOUD BOOTS.', 'al'); if (n === 0) say(g, AG, '(on the yard channel) Push them! They took Moss!', 'al'); if (n === 1) say(g, PIM, 'That Lancer walks like Nineteen. Why does it walk like Nineteen?'); if (n === 2) say(g, PIM, 'I can see Gary up there. Hi, Gary.'); }
       if (s.live && !left(g, 'yard')) { s.live = 0; s.done = n + 1; s.next = s.t0 + 90; }
     },
     outro: 'The crew went home three times. Pim kept calling your name on the old frequency.',
@@ -389,34 +389,49 @@ const ACT2: Mission[] = [
       if (near(b, ROAD.x, ROAD.z, 26)) s.gate = 1;
       once(g, s, 'l2', !!s.gate, PIM, 'Don\'t shoot! Nobody shoot! Aggie, it\'s standing the way Nineteen stands!', 'al');
       if (s.gate) held(s, 'stand', dt, near(b, 0, 0, 16));
-      if ((s.stand || 0) >= 10 && !s.talk) { s.talk = s.t0; say(g, PIM, 'I paid for the full phrasebook. Here is what the Veyl said thirty-one years ago. All of it.'); }
-      if (s.talk && s.t0 > s.talk + 6 && !s.w1) { s.w1 = 1; say(g, PB, '...LEAVE THE GLASS IN THE GROUND, OR ELSE THE GLOAM GETS OUT...'); }
-      if (s.talk && s.t0 > s.talk + 12 && !s.w2) { s.w2 = 1; say(g, PB, '...TAKE ONLY WHAT GROWS BACK.'); }
-      if (s.talk && s.t0 > s.talk + 18 && !s.heard) { s.heard = 1; say(g, AG, 'It was a warning. I only read them two words.'); }
+      if ((s.stand || 0) >= 10 && !s.talk) { s.talk = s.t0; say(g, PIM, 'I paid for the full phrasebook. Everybody put your guns down and listen to this.'); }
+      if (s.talk && s.t0 > s.talk + 5 && !s.heard) { s.heard = 1; say(g, PB, '[PAID VERSION] PLAYING MESSAGE ONE OF ONE. RECEIVED THIRTY-ONE YEARS AGO.'); }
     },
     outro: 'The yard has stood down. Aggie heard the whole warning for the first time, thirty-one years late.',
     cutOut: ['warning', 'clause9queue'],
   }),
   job(15, 2, {
-    name: 'The Last Verse', side: 1, foe: 2, map: 23, diff: 2, dusk: .3, teaches: 'Everything Veyl on a large map, holding three Choir Stones at once',
-    brief: 'The Chorus is going to sing the crack shut. Raise a Choir Stone on each of the three marked spots around the crack, then keep all three standing for four minutes while the Gloam attacks with everything it has.',
-    allow: [...VEYL_ALL, 'choir'], units: VEYL_UNITS, raids: false, auto: true,
+    name: 'The Last Verse', side: 1, foe: 2, map: 23, diff: 2, dusk: .3, teaches: 'Everything Veyl on a large map, holding three Choir Stones at once, and one choice',
+    brief: 'The Chorus is going to sing the crack shut. Raise a Choir Stone on each of the three marked spots around the crack. The song needs your voice too, so stand between the Stones and keep all three standing for three minutes while the Gloam attacks with everything it has.',
+    allow: [...VEYL_ALL, 'choir'], units: VEYL_UNITS, raids: false, auto: true, clockLabel: 'The verse ends in',
     objectives: [
       { text: g => `Raise a Choir Stone on each marked spot (${spots(g)}/3)`, done: g => (g.ms.raised || 0) > 0 },
-      { text: g => g.ms.raised ? `Hold all three for the closing verse (${mmss(240 - (g.ms.hold || 0))})` : 'Hold all three for the closing verse', done: g => (g.ms.hold || 0) >= 240 },
+      { text: g => g.ms.raised ? `Stand between the Stones and hold all three (${mmss(180 - (g.ms.hold || 0))})` : 'Stand between the Stones and hold all three', done: g => (g.ms.hold || 0) >= 180 },
+      { text: g => g.ms.turn ? 'Stop singing: walk out from between the Stones' : 'Finish the verse', done: g => g.ms.out === 1 },
     ],
     setup: g => { hush(g, SIDE.home, 300); },
     tick: (g, s, dt) => {
+      const c = roadPt(ROAD.len * .52, 34), b = body(g), inRing = near(b, c[0], c[1], 55);
       if (spots(g) >= 3) s.raised = 1;
-      if (s.raised) held(s, 'hold', dt, spots(g) >= 3);
+      if (s.raised && !s.turn) held(s, 'hold', dt, spots(g) >= 3 && inRing);
       s.t0 = (s.t0 || 0) + dt;
-      once(g, s, 'l1', s.t0 > 3, H5, 'THREE STONES AROUND THE CRACK. THREE VOICES. THEN THE GLASS CLOSES.');
+      once(g, s, 'l1', s.t0 > 3, H5, 'THREE STONES AROUND THE CRACK. EVERY VOICE WE HAVE. THEN THE GLASS CLOSES.');
       once(g, s, 'l2', !!s.raised, QM, '(on the yard channel) The claim is impaired. Clause 9 is in the queue.', 'al');
+      once(g, s, 'lr', !!s.raised && !s.turn && !!b && !inRing && (s.hold || 0) > 5, H5, 'THE SONG NEEDS YOUR VOICE. STAND BETWEEN THE STONES.', 'al');
       if (s.raised && !s.p) { s.p = 1; hush(g, SIDE.home, g.time + 20); }
-      once(g, s, 'l3', (s.hold || 0) > 180, H5, 'NOW WE TURN ALL THE OPEN GROUND TO GLASS. ALL OF IT. THE YARD TOO.');
-      once(g, s, 'l4', (s.hold || 0) > 200, PB, '...AND THE SMALL LOUD ONES [TRANSLATION: HUMANS] GO UNDER THE GLASS WITH THE REST.', 'al');
+      // The turn. The verse has a minute left, and Held Fifth says where the glass stops: nowhere. Staying finishes the verse and buries the yard.
+      if ((s.hold || 0) >= 180 && !s.turn) { s.turn = 1; s.tt = 0; s.away = 0; say(g, H5, 'ONE MINUTE MORE. THEN ALL THE OPEN GROUND TURNS TO GLASS. ALL OF IT. THE YARD TOO.', 'al'); }
+      if (s.turn === 1) {
+        s.tt += dt;
+        once(g, s, 'l4', s.tt > 6, PB, '[PAID VERSION] ...AND THE SMALL LOUD ONES [TRANSLATION: HUMANS] GO UNDER THE GLASS WITH THE REST.', 'al');
+        once(g, s, 'l5', s.tt > 14, PIM, '(on the radio, faint) Nineteen? The ground by the fence has gone hard and shiny. Aggie wants to know if that\'s you.', 'al');
+        once(g, s, 'l6', s.tt > 30, H5, 'STAY. HOLD THE NOTE. IT IS NEARLY DONE.', 'al');
+        countdown(g, s, dt, 60);
+        if (b && !inRing) s.away += dt; else s.away = 0;
+        if (s.away >= 2) {
+          s.turn = 2; s.out = 1; s.lose = 0; g.shake = 1; g.pipe.flash = 1;
+          const st = g.ownB('choir', false, me(g)).sort((p, q) => Math.hypot(p.pos.x - b!.pos.x, p.pos.z - b!.pos.z) - Math.hypot(q.pos.x - b!.pos.x, q.pos.z - b!.pos.z))[0]; if (st && g.ownB('choir', false, me(g)).length > 1) g.damage(st, 1e7, null);
+          say(g, H5, 'YOU HAVE LEFT THE SONG. COME BACK.', 'al');
+        }
+      }
     },
-    outro: 'The crack started to close. Then Held Fifth told you the yard would go under the glass too, and while you hesitated the Gloam took the Stone you were standing on.',
+    outro: 'You walked out of the song, and the glass stopped short of the yard. Held Fifth did not follow you. The Gloam came up through the gap and took the nearest Stone, and your body with it.',
+    fail: g => g.ms.clock !== undefined && g.ms.clock <= 1 ? 'The verse finished. The glass closed over the crack, the canyon and the yard. Aggie and Pim are under it.' : 'The Stones fell. The crack is still open.',
     cutOut: ['lastverse'],
   }),
 ];
@@ -436,12 +451,13 @@ const ACT3: Mission[] = [
       { text: g => g.ms.used ? 'Let the Mother Cap ripen a new set of Buds' : 'Hatch the Buds on the Mother Cap (press E at the Cap)', done: g => g.ms.full === 1 },
       { text: g => `Root a Mother Cap on a second field (${Math.min(2, nB(g, 'mothercap'))}/2)`, done: g => nB(g, 'mothercap') >= 2 },
     ],
-    setup: g => { hush(g, SIDE.home); },
+    // Snappers come from a Warren, which this job does not have yet, so the Gloam starts the player with four of its own.
+    setup: g => { hush(g, SIDE.home); const [x, z] = homeOf(g, SIDE.out); for (let i = 0; i < 4; i++) { const u = g.spawn('snapper', SIDE.out, x - 6 + i * 2, z + 8); u.order = { type: 'guard', x: u.pos.x, z: u.pos.z }; } },
     tick: (g, s, dt) => {
       s.t0 = (s.t0 || 0) + dt;
-      const caps = g.ownB('mothercap', true, me(g)); if (caps.some(b => (b.buds || 0) < 3)) s.used = 1; if (s.used && caps.some(b => (b.buds || 0) >= 3 && b.queue.length === 0)) s.full = 1;
-      once(g, s, 'l1', s.t0 > 2, MO, 'Hello, Nineteen. Long shift? Even money says you get used to this.');
-      once(g, s, 'l2', s.t0 > 16, GL, 'A CLEAN YARD IS A SAFE YARD. HELLO. WE HAVE BEEN UNDER FOR NINE HUNDRED YEARS.');
+      const caps = g.ownB('mothercap', true, me(g)); if (caps.some(b => b.buds !== undefined && b.buds < 3)) s.used = 1; if (s.used && caps.some(b => (b.buds || 0) >= 3 && b.queue.length === 0)) s.full = 1;
+      once(g, s, 'l1', s.t0 > 2, MO, 'Chewing is the same as drilling. Walk it to the Cap, same as the Headframe. You\'ll pick it up.');
+      once(g, s, 'l2', s.t0 > 16, GL, 'MIND YOUR STEP. LIFT WITH YOUR LEGS. YOU HAVE SIX.');
       once(g, s, 'l3', !!s.full, MO, 'Everything hatches together down here. Nobody waits in a queue. I like it.');
       if (!s.w && s.t0 > 200) { s.w = 1; send(g, SIDE.home, ['cantor', 'cantor', 'lancer'], 'w'); say(g, MO, 'Three Veyl coming to burn us out. Snappers bite. Go on.', 'al'); }
     },
@@ -540,7 +556,7 @@ const ACT4: Mission[] = [
     ],
     tick: (g, s, dt) => {
       s.t0 = (s.t0 || 0) + dt;
-      once(g, s, 'l1', s.t0 > 3, AG, 'New drill. Same debt. Welcome back.');
+      once(g, s, 'l1', s.t0 > 3, AG, 'They\'re in grey, they\'re fresh, and the Quartermaster has your old build order. Open a different way this time.');
       once(g, s, 'l2', s.t0 > 40, QM, 'I have your opening on file, Nineteen. It was very efficient.', 'al');
       once(g, s, 'l3', hq(g, them(g)).length === 1, PIM, 'One Headframe left. Moss would have had a book on this.');
     },
@@ -579,7 +595,7 @@ const ACT4: Mission[] = [
       countdown(g, s, dt, 1260); s.t0 = (s.t0 || 0) + dt; const up = propUp(g, 'Deep Charge rig');
       once(g, s, 'l1', s.t0 > 3, MO, 'Three rigs. I\'ve got you at four to one, same as day one.');
       once(g, s, 'l2', up === 1, QM, 'Rig two offline. Noted. Rig three, please carry on.', 'al');
-      once(g, s, 'l3', up === 0, MO, 'I\'m staying, Nineteen. The odds are good down here.');
+      once(g, s, 'l3', up === 0, MO, 'That\'s the third rig. Come and see me before you go back up, Nineteen.');
     },
     outro: 'All three rigs are wrecked and the charge can\'t be armed from here. Moss is staying with the Gloam.',
     fail: 'The charge is armed.', cutOut: ['mossstays'],
@@ -596,7 +612,8 @@ const ACT4: Mission[] = [
       countdown(g, s, dt, 2400); s.t0 = (s.t0 || 0) + dt;
       const h = (g as any)._first as Building | undefined; if (h && !h.alive) s.first = 1;
       once(g, s, 'l1', s.t0 > 3, QM, 'Liquidation is scheduled for fourteen twenty. I\'ve put the kettle on.', 'al');
-      once(g, s, 'l2', s.t0 > 30, AG, 'That Headframe is where you banked your first pack. Go and get it back.');
+      once(g, s, 'l2', s.t0 > 30, AG, 'That Headframe is where you banked your first pack. I poured its footings myself, so I know it can be broken. Go.');
+      once(g, s, 'l2b', s.t0 > 600, QM, 'I don\'t want anything, Nineteen. I count things. Somebody else decides what the count is for.');
       once(g, s, 'l3', s.t0 > 900, H5, 'THE CHORUS IS ON THE NORTH RIDGE. WE SING FOR YOU NOW.');
       once(g, s, 'l4', s.t0 > 1200, MO, 'The swarm is on the road behind you. Don\'t look round, you won\'t like it.');
       once(g, s, 'l5', !!h && h.hp < h.maxHp * .3, QM, 'Closing balance requested. Please hold.', 'al');
@@ -611,7 +628,7 @@ const ACT4: Mission[] = [
 // ================================================================ side jobs
 const SIDES: Mission[] = [
   { name: 'Moss\'s Book', tag: 'Side job', act: 0, opens: 4, side: 0, foe: 1, out: false, map: 0, diff: 1, dusk: DAY, teaches: 'A skirmish on Moss\'s terms',
-    brief: 'Moss has a bet on you: win the classic fight without building a single Watchpost. Break all three Choir Stones. If a Watchpost goes up, the bet is off and the job is lost.',
+    brief: 'Moss has a bet on you: win the classic fight without a single Watchpost. Break all three Choir Stones. Watchposts are off the build menu for this one, so nobody can cheat.',
     allow: IRON_ALL.filter(k => k !== 'watchpost'), units: IRON_UNITS, raids: true, auto: false,
     objectives: [{ text: g => `Smash the Choir Stones without a Watchpost (${3 - g.stones().length}/3)`, done: g => !g.stones().length }],
     tick: (g, s, dt) => { s.t0 = (s.t0 || 0) + dt; once(g, s, 'l1', s.t0 > 3, MO, 'No Watchposts. Not one. Five to one says you crack and build one.'); },
@@ -632,6 +649,10 @@ const SIDES: Mission[] = [
 
 /** The 24 story jobs in order, then the side jobs. `STORY_JOBS` story jobs make up the main campaign. */
 export const MISSIONS: Mission[] = [...ACT1, ...ACT2, ...ACT3, ...ACT4, ...SIDES];
+// An objective stays ticked once it is done. Without this a job could not finish when something done earlier was undone later: Tenders
+// killed after the eighth was woken, a Bunkhouse burnt down, a Machine Shop lost in a raid. Timed holds keep their own clocks, so a
+// hold that breaks still has to be held again. The first two seconds don't count, while the map and the set are still going up.
+for (const m of MISSIONS) m.objectives = m.objectives.map((o, i) => ({ text: o.text, done: (g: Game) => { const k = '_o' + i; if (g.ms[k]) return true; const d = !!o.done(g); if (d && g.time > 2) g.ms[k] = 1; return d; } }));
 export const STORY_JOBS = ACT1.length + ACT2.length + ACT3.length + ACT4.length;
 export const ACTS = [
   { n: 1, name: 'Dig', side: 'Ironhold Charter' }, { n: 2, name: 'Sing', side: 'Veyl Chorus' }, { n: 3, name: 'Grow', side: 'The Gloam' }, { n: 4, name: 'Or Else', side: 'All three' },

@@ -76,7 +76,8 @@ export class LocalMatch {
     }
     g.update(TICK); this.tick++;
     if (this.tick % 2 === 0) { const snap = JSON.stringify(buildSnap(g)); for (const s of this.seats) { s.lastSnap = performance.now(); s.inbox.push(JSON.parse(snap)); } }
-    if (g.phase === 'over') { this.done = true; const st = g.stats; for (const s of this.seats) this.say(s, { t: 'over', won: g.won, stats: [Math.floor(st.mined), st.built, st.kills, st.lost, Math.floor(st.minedV)], time: g.time }); }
+    // `won` on the wire means the yard end won. A story job played from the outpost end counts its own result in the player's terms, so it is turned round here.
+    if (g.phase === 'over') { this.done = true; const st = g.stats; for (const s of this.seats) this.say(s, { t: 'over', won: g.mission?.out ? !g.won : g.won, stats: [Math.floor(st.mined), st.built, st.kills, st.lost, Math.floor(st.minedV)], time: g.time }); }
   }
   /** Runs the match forward by one screen frame. The match itself ticks thirty times a second, like the server. */
   frame(dt: number) {

@@ -44,6 +44,29 @@ try {
   const f = await p.evaluate(() => { const g = __ore.game, h = __ore.split().host; return { team: g.myTeam, kind: g.me.kind, yard: h.buildings.filter(b => b.alive && b.team === 0 && b.kind === 'headframe').length, clock: g.ms.clock }; });
   check(f.team === 3 && f.kind === 'rigger' && f.yard === 1, `the player is an Ironhold Rigger at the outpost end, and the Charter holds the yard (${JSON.stringify(f)})`);
   check(await until(() => __ore.game.ms.clock > 2300 && __ore.game.ms.clock <= 2400), 'the forty-minute clock reaches the screen');
+  // winning a job is picked up: progress moves on, the button offers the next job, and the closing scene plays before it
+  const win = g => { for (let i = 0; i < g.mission.objectives.length; i++) g.ms['_o' + i] = 1; };
+  await p.evaluate(() => __ore.startStory(4));
+  check(await until(() => __ore.game.phase === 'play' && __ore.game.mission && __ore.game.mission.name === 'Core Sample'), 'job 5 starts');
+  await p.evaluate(`(${win})(__ore.game)`);
+  check(await until(() => __ore.game.phase === 'over' && __ore.game.won && !document.getElementById('end').hidden), 'ticking every objective on job 5 wins it');
+  const e5 = await p.evaluate(() => ({ btn: document.getElementById('again').textContent, save: JSON.parse(localStorage.getItem('ore-else') || '{}').camp }));
+  check(e5.btn === 'Next job' && e5.save >= 5, `the win is saved and the end screen offers the next job (${JSON.stringify(e5)})`);
+  await p.evaluate(() => document.getElementById('again').click());
+  check(await until(() => __ore.game.phase === 'cut' && /Ring inside ring/.test(document.querySelector('#cut .ctitle').textContent)), "job 5's closing scene plays after the win");
+  await p.keyboard.press('Escape');
+  check(await until(() => __ore.game.phase === 'play' && __ore.game.mission && __ore.game.mission.name === 'Heavy Metal'), 'skipping it starts job 6');
+  // and from the outpost end, where the job runs on the local host
+  await p.evaluate(() => __ore.startStory(9));
+  check(await until(() => __ore.split() && __ore.split().host.mission && __ore.game.me), 'job 10 starts on a local host');
+  // drawing is the slow part on a software renderer, and the checks from here on only read state
+  await p.evaluate(`__ore.game.noRender = true; (${win})(__ore.split().host)`);
+  check(await until(() => __ore.game.phase === 'over' && __ore.game.won, undefined, 150000), 'a win on the host reaches the player at the outpost end');
+  check(await p.evaluate(() => /Next job/.test(document.getElementById('again').textContent) && /ridge is clear/.test(document.getElementById('endLine').textContent)), "the end screen shows the job's closing line and offers the next job");
+  // and a loss there reads as a loss
+  await p.evaluate(() => __ore.startStory(9)); await until(() => __ore.split() && __ore.split().host.mission && __ore.game.me && __ore.game.phase === 'play');
+  await p.evaluate(() => { __ore.game.noRender = true; __ore.split().host.ms.lose = 1; });
+  check(await until(() => __ore.game.phase === 'over' && !__ore.game.won && /Try that again/.test(document.getElementById('again').textContent), undefined, 150000), 'a lost job at the outpost end reads as lost');
 } finally { await b.close(); }
 console.log(fail.length ? `\n${fail.length} failed` : '\nall passed');
 process.exit(fail.length ? 1 : 0);

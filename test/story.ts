@@ -4,7 +4,7 @@
 import { noHud, noPipe } from '../server/shim';
 import { Game } from '../src/game';
 import { initHeadless } from '../src/gfx';
-import { DIFFS, SIDE, STORY, setMap, setSides } from '../src/data';
+import { DIFFS, ROAD, SIDE, STORY, roadPt, setMap, setSides } from '../src/data';
 import { MISSIONS, missionSides, charterTeam, Mission } from '../src/campaign';
 
 initHeadless();
@@ -46,6 +46,9 @@ if (!only.length) {
   { const { g } = host(job(8)); run(g, 2); for (const b of g.buildings.filter(b => b.team === SIDE.out)) g.damage(b, 1e7, null); run(g, 2); for (const b of g.ownB('headframe', false, SIDE.home)) g.damage(b, 1e7, null); check(ended(g) === 'lost', 'job 8: losing the Headframe in the hold loses it'); }
   { const { g } = host(job(14)); run(g, 2); const b = g.units.find(u => u.alive && u.pilot === 1)!; check(b && b.kind === 'lancer', 'job 14: the player has one Lancer'); b.pos.set(2, 0, 9); run(g, 40);
     check(ended(g) === 'won' && g.ms.heard === 1, 'job 14: standing at the Headframe plays the warning and wins'); check(g.units.every(u => u.hp > 0), 'job 14: nobody was shot'); }
+  { const { g } = host(job(15)); run(g, 2); const c = roadPt(ROAD.len * .52, 34); g.ms.raised = 1; g.ms.hold = 180; const stay = () => { const b = g.units.find(u => u.alive && u.pilot === 1); if (b) { b.pos.x = c[0]; b.pos.z = c[1]; b.hp = b.maxHp; } };
+    for (let k = 0; k < 64 / T && g.endT <= 0; k++) { stay(); for (const b of g.buildings) if (b.team === SIDE.out) b.hp = b.maxHp; g.update(T); }
+    check(ended(g) === 'lost' && /yard/.test((job(15).fail as any)(g)), 'job 15: staying in the song to the end of the verse loses it, and the end screen says the yard is under the glass'); }
   { const { g } = host(job(20)); run(g, 2); for (const q of g.props.filter(q => q.alive && q.name === 'Drill tower')) g.damageProp(q, 1e7, null); run(g, 1);
     check(!g.props.some(q => q.alive && q.name === 'Drill tower'), 'job 20: the drill tower can be broken'); }
   { const { g } = host(job(23)); run(g, 2); check(g.props.filter(q => q.alive && q.name === 'Deep Charge rig').length === 3, 'job 23: three Deep Charge rigs stand on the Drill Site');

@@ -177,10 +177,16 @@ The campaign is a story in four acts and 24 jobs, plus three side jobs. You play
 | 3. Grow | 16 to 20 | the Gloam, against the Veyl and Charter Security | The Crack, Needle's Eye, First Stone, Drill Site |
 | 4. Or Else | 21 to 24 | each side in turn, against Charter Security | Switchback, Needle's Eye, Drill Site |
 
-Three maps exist only for the story: The Crack (Switchback after the canyon floor split), First Stone (the oldest Veyl site, behind old glass walls) and Drill Site (the Charter's drill tower and Deep Charge rigs on the Glass Flats at night). Jobs played from the outpost end run on the same hidden local host as a Veyl or Gloam skirmish, with the job's script running there. `node tools/run-ts.mjs test/story.ts` runs every job headless and checks the endings; `node test/story.mjs` checks cut scenes and the outpost-end jobs in a browser.
+Three maps exist only for the story: The Crack (Switchback after the canyon floor split), First Stone (the oldest Veyl site, behind old glass walls) and Drill Site (the Charter's drill tower and Deep Charge rigs on the Glass Flats at night). Jobs played from the outpost end run on the same hidden local host as a Veyl or Gloam skirmish, with the job's script running there. A ticked objective stays ticked, so losing a building later does not undo it; timed holds keep their own clocks.
+
+Cut scenes have a few things that come back across all four acts. The Quartermaster stamps NOTED on things and keeps Nineteen's balance in the corner of the panel. Moss only bets against people he likes, because he has never won a bet. Pim names a Veyl Cantor Gary on the first day, and Gary turns up in every act. The Veyl talk through the free version of Phrasebook 3, which counts the words it has left, until Pim pays for the full one. Every message from head office arrives forty minutes late. Each named character has a name tag over their head, because the crew share two body models. Job 15 ends on a choice the player makes in play: walk out from between the Choir Stones, or stay for the last minute of the verse and lose the yard.
+
+Tests: `node tools/run-ts.mjs test/story.ts` runs every job headless and checks the endings. `node tools/run-ts.mjs test/playthrough.ts` plays every job through to a win the way a player would (staking buildings where the build rules allow, training, buying upgrades, walking the body), with the fights skipped, to check that each objective is picked up. `node test/story.mjs` checks cut scenes, the outpost-end jobs and that a win is saved and leads into the next job in a browser.
 
 ![Cut scene: arrival](docs/screenshots/story-arrival.jpg)
 ![Cut scene: the last verse](docs/screenshots/story-lastverse.jpg)
+![Cut scene: Moss stays on the road](docs/screenshots/story-moss.jpg)
+![Cut scene: the Quartermaster notes it](docs/screenshots/story-noted.jpg)
 ![Drill Site](docs/screenshots/story-drillsite.jpg)
 ![First Stone](docs/screenshots/story-firststone.jpg)
 

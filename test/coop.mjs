@@ -32,8 +32,11 @@ try {
   // Ada walks, drills and stakes out a Bunkhouse. Bo jumps into another Rigger.
   // She switches the Quartermaster off first, so the only new building is hers. The server only pays for drilling at a seam, a few ore at a time, and only once the pack reaches the Headframe.
   const ax = await A.evaluate(async () => { const g = __ore.game, n = g.ores[0], sleep = ms => new Promise(r => setTimeout(r, ms)); g.net.cmd('or', 'G');
-    // a driven Rigger's pack holds 15 ore, so it takes trips: fill it at the seam, then walk it to the Headframe
-    for (let trip = 0; trip < 5; trip++) { g.me.pos.x = n.pos.x + 3; g.me.pos.z = n.pos.z; await sleep(2500); for (let i = 0; i < 5; i++) { g.net.cmd('mn', 0, 3); await sleep(250); } g.me.pos.x = 0; g.me.pos.z = 7; await sleep(2500); }
+    // a driven Rigger's pack holds 15 ore, so it takes trips: fill it at the seam, then walk it to the Headframe.
+    // The server walks the body there at its own pace from the positions this page reports, and a page on a slow runner reports few of them,
+    // so a trip can come back empty: she keeps going until the scoreboard has her 60 ore, nine trips at most.
+    const mined = () => (g.score[g.net.id] || [0, 0])[1];
+    for (let trip = 0; trip < 9 && (trip < 5 || mined() < 60); trip++) { g.me.pos.x = n.pos.x + 3; g.me.pos.z = n.pos.z; await sleep(2500); for (let i = 0; i < 5; i++) { g.net.cmd('mn', 0, 3); await sleep(250); } g.me.pos.x = 0; g.me.pos.z = 7; await sleep(2500); }
     g.net.cmd('pl', 'bunkhouse', -14, 10, 0); return g.me.pos.x; });
   const bo = await B.evaluate(() => { const g = __ore.game; const u = g.units.find(u => u.team === 0 && !u.pilot && u.kind === 'rigger'); g.possess(u, true); return u.id; });
   const built = () => __ore.game.buildings.filter(b => b.alive).length === 11;

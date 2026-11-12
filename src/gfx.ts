@@ -69,7 +69,7 @@ export function hatchPatch(g: Ctx, s: number, n: number) {
   for (let i = 0; i < n; i++) { const x = R(0, s), y = R(0, s), w = R(20, 70); g.globalAlpha = .7; for (let k = 0; k < 6; k++) wob(g, [[x + k * 7, y], [x + k * 7 - w * .4, y + w * .5]], 1.8); }
   g.globalAlpha = 1;
 }
-export function stencil(g: Ctx, txt: string, x: number, y: number, px: number, col: string, rot = 0) { g.save(); g.translate(x, y); g.rotate(rot); g.font = '900 ' + px + 'px Impact, "Arial Narrow", sans-serif'; g.fillStyle = col; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(txt, 0, 0); g.restore(); }
+export function stencil(g: Ctx, txt: string, x: number, y: number, px: number, col: string, rot = 0) { g.save(); g.translate(x, y); g.rotate(rot); g.font = '900 ' + px + 'px Impact, "Arial Narrow", sans-serif'; g.fillStyle = col; g.textAlign = 'center'; g.textBaseline = 'middle'; const w = g.measureText(txt).width, max = g.canvas.width * .84; if (w > max) g.scale(max / w, 1); g.fillText(txt, 0, 0); g.restore(); }
 export function ribs(g: Ctx, s: number, n: number) { for (let i = 0; i < n; i++) wob(g, [[i * s / n, 0], [i * s / n, s]], 3.5); }
 
 export const TX: Record<string, THREE.Texture> = {};
@@ -92,14 +92,7 @@ function makeTextures() {
   TX.door = paint('#33313d', (g, s) => { for (let i = 0; i < 10; i++) wob(g, [[0, i * s / 10], [s, i * s / 10]], 5, '#121118'); scratches(g, s, 40, '#8088a0'); stencil(g, '▲', s * .5, s * .5, 120, '#ffc21a'); });
   TX.concrete = paint('#9a8f86', (g, s) => { scratches(g, s, 40, INK, 60); grime(g, s, 20); chips(g, s, 10, '#6f655e', 24); });
   TX.rock = paint('#b0553a', (g, s) => { for (let i = 0; i < 9; i++) { const y = R(0, s); wob(g, [[0, y], [s * .3, y + R(-14, 14)], [s * .7, y + R(-14, 14)], [s, y]], R(2, 5)); } for (let i = 0; i < 14; i++) { const x = R(0, s), y = R(0, s); wob(g, [[x, y], [x + R(-20, 20), y + R(20, 60)], [x + R(-30, 30), y + R(60, 120)]], R(2, 4)); } hatchPatch(g, s, 14); scratches(g, s, 30, '#f0a078'); });
-  TX.mesa = paint('#c8653c', (g, s) => { const cols = ['#d97a48', '#a94a30', '#e09058', '#8e3d2c']; for (let i = 0; i < 9; i++) { g.globalAlpha = .55; g.fillStyle = cols[i % 4]; const y = i * s / 9 + R(-8, 8); g.fillRect(0, y, s, R(14, 40)); g.globalAlpha = 1; wob(g, [[0, y], [s * .25, y + R(-6, 6)], [s * .5, y + R(-6, 6)], [s * .75, y + R(-6, 6)], [s, y]], R(2.5, 5)); } for (let i = 0; i < 12; i++) { const x = R(0, s); wob(g, [[x, R(0, s * .3)], [x + R(-12, 12), R(s * .4, s)]], R(2, 4)); } hatchPatch(g, s, 10); });
-  TX.ground = paint('#c9743f', (g, s) => {
-    for (let i = 0; i < 46; i++) { let x = R(0, s), y = R(0, s); const pts = [[x, y]]; for (let k = 0; k < 5; k++) { x += R(-50, 50); y += R(-50, 50); pts.push([x, y]); } g.globalAlpha = R(.35, .8); wob(g, pts, R(1.6, 3.6), '#4a2218'); }
-    g.globalAlpha = 1;
-    for (let i = 0; i < 160; i++) { const x = R(0, s), y = R(0, s), r = R(2, 7); g.fillStyle = rnd() < .5 ? '#8f4a2c' : '#e39a62'; g.beginPath(); g.ellipse(x, y, r * 1.4, r, R(0, 3), 0, 7); g.fill(); g.strokeStyle = '#4a2218'; g.lineWidth = 1.4; g.stroke(); }
-    hatchPatch(g, s, 26);
-  }, { size: 1024, blot: 420 });
-  TX.road = paint('#8f5a3c', (g, s) => { for (const y of [.2, .36, .64, .8]) { for (let i = 0; i < 26; i++) { const x = i * s / 26; wob(g, [[x, s * y - 16], [x + 8, s * y + 16]], 5, '#4a2218'); } } scratches(g, s, 40, '#4a2218', 60); }, { blot: 200 });
+  TX.mesa = paint('#c8653c', (g, s) => { const cols = ['#d97a48', '#a94a30', '#e09058', '#8e3d2c']; for (let i = 0; i < 9; i++) { g.globalAlpha = .55; g.fillStyle = cols[i % 4]; const y = i * s / 9 + R(-8, 8); g.fillRect(0, y, s, R(14, 40)); g.globalAlpha = 1; wob(g, [[0, y], [s * .25, y + R(-6, 6)], [s * .5, y + R(-6, 6)], [s * .75, y + R(-6, 6)], [s, y]], R(2.5, 5)); } for (let i = 0; i < 9; i++) { const x = R(0, s), y = R(0, s * .8), l = R(.1, .3) * s, mx = x + R(-14, 14); wob(g, [[x, y], [mx, y + l * .5], [mx + R(-12, 12), y + l]], R(2, 3.6)); if (i % 3 === 0) wob(g, [[mx, y + l * .5], [mx + R(14, 30) * (i % 2 ? 1 : -1), y + l * .78]], 2); } hatchPatch(g, s, 12); });
   TX.ore = paint('#b8f58c', (g, s) => { for (let i = 0; i < 12; i++) { const x = R(0, s); g.globalAlpha = .6; g.fillStyle = '#f2ffe0'; g.beginPath(); g.moveTo(x, 0); g.lineTo(x + R(20, 60), 0); g.lineTo(x + R(-40, 40), s); g.fill(); g.globalAlpha = 1; wob(g, [[x, 0], [x + R(-40, 40), s]], 3, '#3c7a3a'); } }, { blot: 60 });
   TX.indigo = paint('#4433b8', (g, s) => { for (let i = 0; i < 14; i++) { let x = R(0, s), y = 0; const pts = [[x, y]]; while (y < s) { y += R(30, 70); x += R(-36, 36); pts.push([x, y]); } wob(g, pts, R(2, 4), '#35e0c8'); } scratches(g, s, 30, INK, 26); hatchPatch(g, s, 8); });
   TX.indigoD = paint('#2a1f78', (g, s) => { scratches(g, s, 40, '#6a5ae0', 30); hatchPatch(g, s, 10); });
@@ -131,9 +124,65 @@ float shadowAt(vec3 wp){
   float r2=mix(step(z,texture2D(uShadow,c+vec2(-t,t)).x),step(z,texture2D(uShadow,c+vec2(0.,t)).x),f.x)+mix(step(z,texture2D(uShadow,c+vec2(0.,t)).x),step(z,texture2D(uShadow,c+vec2(t,t)).x),f.x);
   return (mix(r0,r1,f.y)+mix(r1,r2,f.y))*.25;
 }
+#ifdef GROUND
+uniform vec4 uRoad; uniform float uRoadW;
+vec2 h2(vec2 p){ return fract(sin(vec2(dot(p,vec2(127.1,311.7)),dot(p,vec2(269.5,183.3))))*43758.5453); }
+// Distance to the nearest edge of a field of cracked plates, and a random number for the plate.
+vec2 crackle(vec2 p){
+  vec2 i=floor(p), f=fract(p), mg=vec2(0.), mr=vec2(0.); float md=8.;
+  for(int y=-1;y<=1;y++) for(int x=-1;x<=1;x++){ vec2 g=vec2(float(x),float(y)); vec2 r=g+h2(i+g)-f; float d=dot(r,r); if(d<md){ md=d; mr=r; mg=g; } }
+  md=8.;
+  for(int y=-2;y<=2;y++) for(int x=-2;x<=2;x++){ vec2 g=mg+vec2(float(x),float(y)); vec2 r=g+h2(i+g)-f; vec2 dr=r-mr; if(dot(dr,dr)>.00001) md=min(md,dot(.5*(mr+r),normalize(dr))); }
+  return vec2(md,hash(i+mg));
+}
+// The desert floor is painted here rather than in a tiled picture, so it never repeats and stays crisp underfoot:
+// big two-tone patches with a broken pen contour, wind-bleached drifts, cracked plates, pebbles, and the road with its ruts.
+vec3 groundAt(vec2 p){
+  vec2 gx=dFdx(p), gy=dFdy(p); float fw=max((length(gx)+length(gy))*.5,1e-4), lod=max(min(length(gx),length(gy)),1e-4);
+  vec2 w=p+(vec2(vnoise(p*.13),vnoise(p*.13+17.))-.5)*9.;
+  float n1=vnoise(w*.028)*.62+vnoise(w*.075+3.)*.38, a1=fwidth(n1)+.0004;
+  float dr=vnoise(vec2(w.x*.02+w.y*.012,w.y*.11-w.x*.05)+60.), a2=fwidth(dr)+.0004;
+  vec3 sand=vec3(.8,.52,.33), earth=vec3(.7,.4,.24), deep=vec3(.61,.33,.205), pale=vec3(.88,.63,.42), inkc=vec3(.27,.12,.09);
+  float eM=smoothstep(.55-a1,.55+a1,n1), dM=smoothstep(.68-a1,.68+a1,n1), pM=smoothstep(.7-a2,.7+a2,dr)*(1.-eM);
+  vec3 c=mix(mix(mix(sand,earth,eM),deep,dM),pale,pM); float ink=0.;
+  // a pen line round each patch, lifted off the page here and there
+  float brk=smoothstep(.36,.5,vnoise(p*.21+9.));
+  ink=max(ink,(1.-smoothstep(.05,.05+fw,abs(n1-.55)/a1*fw))*brk*clamp(.1/fw,0.,1.));
+  ink=max(ink,(1.-smoothstep(.03,.03+fw,abs(dr-.7)/a2*fw))*(1.-brk)*(1.-eM)*.5*clamp(.06/fw,0.,1.));
+  // the road: packed earth, ragged at the edges, two ruts with tread marks
+  vec2 ab=uRoad.zw-uRoad.xy; float len=max(length(ab),.01); vec2 ad=ab/len, rp=p-uRoad.xy; float along=clamp(dot(rp,ad),0.,len), side=dot(rp,vec2(-ad.y,ad.x)), rd=length(rp-ad*along);
+  float re=uRoadW+(vnoise(p*.33)-.5)*1.5+(vnoise(p*1.9)-.5)*.3, rm=(1.-smoothstep(re-fw,re+fw,rd))*step(.5,uRoadW);
+  float rut=1.-smoothstep(.24,.3+fw,abs(abs(side)-1.2));
+  vec3 rc=mix(vec3(.62,.39,.27),vec3(.5,.29,.21),rut*.8); rc=mix(rc,rc*1.12,smoothstep(.5,.7,vnoise(p*vec2(.9,.9)+ad*along*.2)));
+  c=mix(c,rc,rm);
+  ink*=1.-rm;
+  ink=max(ink,rm*rut*(1.-smoothstep(.03,.03+fw,abs(fract(along/.52+side*.35)-.5)*.52))*.5*smoothstep(.42,.58,vnoise(vec2(along*.5,side*2.)+70.))*clamp((.09-lod)/.05,0.,1.));
+  ink=max(ink,(1.-smoothstep(.055,.055+fw,abs(rd-re)))*smoothstep(.38,.52,vnoise(p*.3+4.))*clamp(.11/fw,0.,1.)*step(.5,uRoadW));
+  // cracked plates inside the darker earth
+  float cm=eM*(1.-rm)*smoothstep(.46,.6,vnoise(p*.07+21.))*clamp((.16-lod)/.08,0.,1.);
+  if(cm>.01){ vec2 v=crackle(p*.4+(vnoise(p*.9)-.5)*.5); float d=v.x/.4, cw=.02+.03*v.y;
+    c=mix(c,c*(.88+.22*v.y),cm); ink=max(ink,(1.-smoothstep(cw,cw+fw,d))*cm*clamp(cw*2.5/fw,0.,1.)); }
+  // wind ripples, pencilled across the open sand in bunches
+  float rf=clamp((.06-lod)/.03,0.,1.)*(1.-eM)*(1.-rm);
+  if(rf>.01){ float rv=p.x*.42+p.y*.9+(vnoise(p*.35+13.)-.5)*3.2, rl=abs(fract(rv/1.6)-.5)*1.6;
+    ink=max(ink,(1.-smoothstep(.016,.016+fw,rl))*rf*smoothstep(.55,.68,vnoise(p*vec2(.18,.5)+33.))*.45*clamp(.03/fw,0.,1.)); }
+  // pebbles
+  float pf=clamp((.07-lod)/.035,0.,1.);
+  if(pf>.01){ vec2 q=p*1.15, ci=floor(q), hh=h2(ci); float on=step(.66,hash(ci+5.));
+    vec2 dd=(fract(q)-(.22+.56*hh))*vec2(1.,1.4+hh.x)/1.15; float r=length(dd), rad=.03+.065*hh.y;
+    c=mix(c,hh.x>.5?pale*1.04:deep*.86,(1.-smoothstep(rad-fw*.5,rad+fw*.5,r))*pf*on);
+    ink=max(ink,(1.-smoothstep(.014,.014+fw,abs(r-rad)))*pf*on*clamp(.03/fw,0.,1.)); }
+  c*=.97+.06*vnoise(p*3.1);
+  return mix(c,inkc,ink*.78);
+}
+#endif
 void main(){
   vec3 n=normalize(vN); vec3 wn=normalize(vWn); if(!gl_FrontFacing){ n=-n; wn=-wn; }
+#ifdef GROUND
+  vec3 base=uColor*groundAt(vW.xz);
+#else
   vec3 base=uColor*texture2D(uMap,vUv).rgb;
+#endif
   float nz=vnoise(vW.xz*2.3+vW.y*1.9)-.5;
   float t=dot(n,normalize(vL))+nz*.24; t=mix(t,1.,uFlat*.6);
   float sh=shadowAt(vW+wn*.07);
@@ -161,11 +210,11 @@ void main(){
 const WHITE = new THREE.DataTexture(new Uint8Array([255, 255, 255, 255]), 1, 1, THREE.RGBAFormat); WHITE.needsUpdate = true;
 // Uniforms shared by every toon material so the shadow map and pixel scale update in one place.
 export const SHARED = { uShadow: { value: WHITE as THREE.Texture }, uShadowMat: { value: new THREE.Matrix4() }, uShadowTex: { value: 1 / 2048 }, uPx: { value: 1 }, uL: { value: LIGHT }, uFog: { value: FOG } };
-export interface ToonOpts { color?: string; emis?: number; hatch?: number; fog?: number; flat?: number; rx?: number; ry?: number; side?: THREE.Side }
+export interface ToonOpts { color?: string; emis?: number; hatch?: number; fog?: number; flat?: number; rx?: number; ry?: number; side?: THREE.Side; ground?: boolean }
 export function T(map?: THREE.Texture | null, o: ToonOpts = {}) {
   return new THREE.ShaderMaterial({
-    uniforms: { uColor: { value: new THREE.Color(o.color || '#ffffff') }, uMap: { value: map || WHITE }, uEmis: { value: o.emis || 0 }, uOpacity: { value: 1 }, uHatch: { value: o.hatch === undefined ? 1 : o.hatch }, uFogK: { value: o.fog === undefined ? .0026 : o.fog }, uFlat: { value: o.flat || 0 }, uRep: { value: new THREE.Vector2(o.rx || 1, o.ry || 1) }, ...SHARED },
-    vertexShader: TOON_VS, fragmentShader: TOON_FS, side: o.side || THREE.FrontSide,
+    uniforms: { uColor: { value: new THREE.Color(o.color || '#ffffff') }, uMap: { value: map || WHITE }, uEmis: { value: o.emis || 0 }, uOpacity: { value: 1 }, uHatch: { value: o.hatch === undefined ? 1 : o.hatch }, uFogK: { value: o.fog === undefined ? .0026 : o.fog }, uFlat: { value: o.flat || 0 }, uRep: { value: new THREE.Vector2(o.rx || 1, o.ry || 1) }, ...(o.ground ? { uRoad: { value: new THREE.Vector4() }, uRoadW: { value: 0 } } : {}), ...SHARED },
+    vertexShader: TOON_VS, fragmentShader: TOON_FS, side: o.side || THREE.FrontSide, defines: o.ground ? { GROUND: 1 } : {},
   });
 }
 export const M: Record<string, THREE.ShaderMaterial> = {};
@@ -177,7 +226,7 @@ function makeMaterials() {
     steel: T(TX.steel), steelD: T(TX.steelD), yellow: T(TX.yellow), yellowP: T(TX.yellowP), hazard: T(TX.hazard, { rx: 3 }), hazard1: T(TX.hazard),
     rubber: T(TX.rubber), cloth: T(TX.cloth), vest: T(TX.vest), gun: T(TX.gun), helmet: T(TX.helmet), hardhat: T(TX.hardhat), skin: T(TX.skin),
     corr: T(TX.corr, { rx: 2 }), rust: T(TX.rust), tealC: T(TX.tealC), door: T(TX.door), concrete: T(TX.concrete, { rx: 2, ry: 2 }),
-    rock: T(TX.rock), mesa: T(TX.mesa, { rx: 3, ry: 1 }), ground: T(TX.ground, { rx: 70, ry: 70, hatch: .55, flat: 1 }), road: T(TX.road, { rx: 30, ry: 1, hatch: .55, flat: 1 }), ore: T(TX.ore, { emis: .35 }), oreDead: T(TX.rock, { color: '#b9b0a8' }),
+    rock: T(TX.rock), mesa: T(TX.mesa, { rx: 3, ry: 1 }), ground: T(null, { hatch: .55, flat: 1, ground: true }), ore: T(TX.ore, { emis: .35 }), oreDead: T(TX.rock, { color: '#b9b0a8' }),
     indigo: T(TX.indigo), indigoL: T(TX.indigo, { color: '#c9c2ff' }), indigoD: T(TX.indigoD), smoke: T(TX.smoke, { hatch: .5 }), dust: T(TX.smoke, { hatch: .3, color: '#f0b98a' }),
     visor: T(null, { color: '#ffe27a', emis: 1 }), cyan: T(null, { color: '#8ff2ff', emis: 1 }), teal: T(null, { color: '#35e0c8', emis: .9 }), mag: T(null, { color: '#ff4f9a', emis: .9 }), red: T(null, { color: '#ff4b3a', emis: 1 }),
     planet: T(TX.planet, { fog: 0, hatch: .4 }), ring: T(null, { color: '#ffe9c4', emis: .8, fog: 0, side: THREE.DoubleSide }),
@@ -187,10 +236,9 @@ function makeMaterials() {
   });
   for (const f of EXTRA) f();
   M.scorch.polygonOffset = true; M.scorch.polygonOffsetFactor = -3; M.scorch.polygonOffsetUnits = -3;
-  M.road.polygonOffset = true; M.road.polygonOffsetFactor = -2; M.road.polygonOffsetUnits = -2;
 }
-export const holoOK = new THREE.MeshBasicMaterial({ color: 0x35d6ff, transparent: true, opacity: .3, depthWrite: false, side: THREE.DoubleSide });
-export const holoBad = new THREE.MeshBasicMaterial({ color: 0xff4b3a, transparent: true, opacity: .34, depthWrite: false, side: THREE.DoubleSide });
+export const holoOK = new THREE.MeshBasicMaterial({ color: 0x35d6ff, transparent: true, opacity: .2, depthWrite: false, side: THREE.DoubleSide });
+export const holoBad = new THREE.MeshBasicMaterial({ color: 0xff4b3a, transparent: true, opacity: .13, depthWrite: false, side: THREE.DoubleSide });
 export const holoLine = new THREE.LineBasicMaterial({ color: 0xc8fbff, transparent: true, depthWrite: false });
 export const ringMat = new THREE.MeshBasicMaterial({ color: 0x8be04e, transparent: true, opacity: .95, depthWrite: false, side: THREE.DoubleSide });
 export const tracerMat = new THREE.MeshBasicMaterial({ color: 0xfff3a8, depthWrite: false });
@@ -202,13 +250,23 @@ export const G: Record<string, THREE.BufferGeometry> = {
   hemi: new THREE.SphereGeometry(.5, 20, 10, 0, Math.PI * 2, 0, Math.PI / 2), torus: new THREE.TorusGeometry(.5, .06, 8, 28), torusF: new THREE.TorusGeometry(.5, .12, 8, 28), arc: new THREE.TorusGeometry(.5, .1, 8, 16, Math.PI),
   oct: new THREE.OctahedronGeometry(.5), dod: new THREE.DodecahedronGeometry(.5), half: new THREE.CylinderGeometry(.5, .5, 1, 18, 1, false, 0, Math.PI), disc: new THREE.CircleGeometry(.5, 24), ringG: new THREE.RingGeometry(.42, .5, 28),
 };
+/** A flat shape from a ring of radii, like CircleGeometry but with a drawn edge. Uses its own random numbers so the map layout is not disturbed. */
+function ragged(n: number, rad: (i: number, r: () => number) => number) {
+  let q = 4242 + n; const r = () => { q = (q * 16807) % 2147483647; return q / 2147483647; };
+  const pos: number[] = [0, 0, 0], uv: number[] = [.5, .5], idx: number[] = [];
+  for (let i = 0; i < n; i++) { const a = i / n * Math.PI * 2, d = rad(i, r); pos.push(Math.cos(a) * d, Math.sin(a) * d, 0); uv.push(.5 + Math.cos(a) * d, .5 + Math.sin(a) * d); idx.push(0, i + 1, (i + 1) % n + 1); }
+  const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2)); g.setIndex(idx); g.computeVertexNormals(); return g;
+}
+/** An ink blot for scorch marks, and a comic starburst for the flash of a blast. */
+G.blot = ragged(36, (i, r) => i % 3 === 0 ? .36 + r() * .14 : .27 + r() * .1);
+G.burst = ragged(26, (i, r) => i % 2 ? .19 + r() * .07 : .36 + r() * .14);
 type P3 = [number, number, number];
 export function mk(geo: THREE.BufferGeometry, mat: THREE.Material, p: P3 | 0, s: P3 | 0, r: P3 | 0, parent: THREE.Object3D) {
   const m = new THREE.Mesh(geo, mat); if (p) m.position.set(p[0], p[1], p[2]); if (s) m.scale.set(s[0], s[1], s[2]); if (r) m.rotation.set(r[0], r[1], r[2]); parent.add(m); return m;
 }
 const UP = V3(0, 1, 0);
 export function beam(a: P3, b: P3, r: number, mat: THREE.Material, parent: THREE.Object3D) {
-  const A = V3(...a), B = V3(...b), d = B.clone().sub(A); const m = new THREE.Mesh(G.cyl8, mat); m.scale.set(r * 2, d.length(), r * 2); m.position.copy(A).add(B).multiplyScalar(.5); m.quaternion.setFromUnitVectors(UP, d.normalize()); parent.add(m); return m;
+  const A = V3(...a), B = V3(...b), d = B.clone().sub(A); const m = new THREE.Mesh(r >= .1 ? G.cyl : G.cyl8, mat); m.scale.set(r * 2, d.length(), r * 2); m.position.copy(A).add(B).multiplyScalar(.5); m.quaternion.setFromUnitVectors(UP, d.normalize()); parent.add(m); return m;
 }
 export function setLayer(o: THREE.Object3D, layer: number) { o.traverse(x => x.layers.set(layer)); return o; }
 
@@ -269,15 +327,15 @@ float edgeAt(vec2 u, vec2 sp){
 }
 void main(){
   vec2 sp=vUv*uRes/uPx;
-  vec2 wobv=(vec2(vnoise(sp/9.),vnoise(sp/9.+31.))-.5)*2.2*uPx/uRes;
+  vec2 wobv=(vec2(vnoise(sp/30.),vnoise(sp/30.+31.))-.5)*2.6*uPx/uRes;
   vec2 u=vUv+wobv; vec2 h=.3/uRes;
   float edge=(edgeAt(u+h,sp)+edgeAt(u-h,sp)+edgeAt(u+h*vec2(1.,-1.),sp)+edgeAt(u+h*vec2(-1.,1.),sp))*.25;
   vec3 col=texture2D(tC,vUv).rgb;
-  col=mix(col,vec3(.055,.05,.08),edge*.85);
+  col=mix(col,vec3(.05,.045,.075),min(1.,edge*.95));
   col=mix(col,col*vec3(1.1,.8,.84)+vec3(.03,0.,.07),uDusk*.75);
   col=mix(vec3(dot(col,vec3(.3,.59,.11))),col,1.18*uSat);
   col*=.95+.08*vnoise(sp*.5);
-  float v=smoothstep(1.3,.5,length((vUv-.5)*vec2(1.25,1.))); col*=mix(.7,1.,v);
+  float v=smoothstep(1.3,.5,length((vUv-.5)*vec2(1.25,1.))); col*=mix(.8,1.,v);
   col=mix(col,vec3(1.,.97,.86),uFlash);
   if(uStatic>0.){ float s=hash(floor(sp/3.)+uTime*60.); float bar=step(.92,fract(vUv.y*6.+uTime*3.)); col=mix(col,vec3(s)*.9+bar*.1,uStatic); }
   gl_FragColor=vec4(col,1.);
@@ -291,9 +349,11 @@ export class Pipeline {
   private depthMat = new THREE.MeshBasicMaterial({ colorWrite: false, side: THREE.DoubleSide });
   private postMat: THREE.ShaderMaterial; private postScene = new THREE.Scene(); private postCam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
   private sun = new THREE.OrthographicCamera(-50, 50, 50, -50, 1, 500);
-  sat = 1; static = 0; time = 0; flash = 0;
+  sat = 1; static = 0; time = 0; flash = 0; private aaNow = -1;
   /** Redraw the shadow map every Nth frame. Low picture quality uses 3. */
   shadowEvery = 1; private frameN = 0;
+  /** Samples per pixel when drawing the colour picture, so slanted edges come out clean rather than stepped. 0 turns it off. */
+  aa = 4;
   /** Size of the canvas itself. It is larger than `w` by `h` only when the screen is split into views. */
   cw = 1; ch = 1;
   /** Where on the canvas the finished picture goes, in canvas pixels from the bottom left. Null fills the canvas. */
@@ -321,10 +381,10 @@ export class Pipeline {
   resize(w: number, h: number, cw = w, ch = h) {
     w = Math.max(2, Math.floor(w)); h = Math.max(2, Math.floor(h)); cw = Math.max(2, Math.floor(cw)); ch = Math.max(2, Math.floor(ch));
     if (cw !== this.cw || ch !== this.ch) { this.cw = cw; this.ch = ch; this.renderer.setSize(cw, ch, false); }
-    if (w === this.w && h === this.h) return;
-    this.w = w; this.h = h; this.px = h / 900; SHARED.uPx.value = this.px;
+    if (w === this.w && h === this.h && this.aa === this.aaNow) return;
+    this.w = w; this.h = h; this.aaNow = this.aa; this.px = h / 900; SHARED.uPx.value = this.px;
     this.rtC.dispose(); this.rtN.dispose();
-    this.rtC = new THREE.WebGLRenderTarget(w, h, { minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter });
+    this.rtC = new THREE.WebGLRenderTarget(w, h, { minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter, samples: this.aa });
     this.rtC.depthTexture = new THREE.DepthTexture(w, h); this.rtC.depthTexture.type = THREE.UnsignedIntType;
     this.rtN = new THREE.WebGLRenderTarget(w, h, { minFilter: THREE.NearestFilter, magFilter: THREE.NearestFilter });
     const u = this.postMat.uniforms; u.tC.value = this.rtC.texture; u.tD.value = this.rtC.depthTexture; u.tN.value = this.rtN.texture; u.uRes.value.set(w, h);

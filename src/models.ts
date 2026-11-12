@@ -465,7 +465,8 @@ export function buildWorld(scene: THREE.Scene, props: Prop[], anim: ((t: number)
     return p;
   };
   mk(new THREE.PlaneGeometry(3000, 3000), M.ground, 0, 0, [-Math.PI / 2, 0, 0], w);
-  { const c = roadPt(ROAD.len / 2 + 8); mk(new THREE.PlaneGeometry(ROAD.len + 66, 6), M.road, [c[0], .02, c[1]], 0, [-Math.PI / 2, 0, -ang], w); }
+  // The road is painted by the ground itself: it only needs to know where the road runs.
+  { const a = roadPt(-25), b = roadPt(ROAD.len + 41), u = M.ground.uniforms; u.uRoad.value.set(a[0], a[1], b[0], b[1]); u.uRoadW.value = 3; }
   // far mesas: the skyline. A long walk away, but they are real: they block you, take damage and come down like everything else.
   for (let i = 0; i < 36; i++) {
     const a = i / 36 * 6.283 + R(-.06, .06), d = R(250, 430) * Math.max(1, (MAP.k || 1) * .95), r = R(34, 80), h = R(24, 90), x = cx + Math.cos(a) * d, z = cz + Math.sin(a) * d, top = r * R(.55, .8), sides = 7 + (i % 3), ry = R(0, 3), cap = i % 3 === 0, kx = x + R(-10, 10), kz = z + R(-10, 10), cry = R(0, 3);

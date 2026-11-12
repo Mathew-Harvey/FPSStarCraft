@@ -21,7 +21,7 @@ export class Hud {
   private bars: HTMLElement[] = []; private barFill: HTMLElement[] = []; private labs: HTMLElement[] = [];
   private floats: Floater[] = []; private pingPos = new THREE.Vector3(); private pingT = 0;
   private hurtA = 0; private dirA = 0; private hitT = 0; private miniT = 0; private last = 0; private feedN = 0;
-  private mini: CanvasRenderingContext2D; private fogCv: HTMLCanvasElement | null = null; private fogImg: ImageData | null = null;
+  private mini: CanvasRenderingContext2D; private fogCv: HTMLCanvasElement | null = null; private fogHatch: HTMLCanvasElement | null = null; private hatchPat: CanvasPattern | null = null; private fogImg: ImageData | null = null;
 
   constructor(private root: HTMLElement = document.getElementById('hud')!) {
     this.anchors = this.$('anchors'); this.mini = (this.$('mini') as HTMLCanvasElement).getContext('2d')!;
@@ -187,7 +187,12 @@ export class Hud {
     // the fog: black where nobody has been, dimmed where nobody is looking now
     { const n = fog.n, cv = this.fogCv || (this.fogCv = document.createElement('canvas')); if (cv.width !== n) { cv.width = cv.height = n; this.fogImg = null; } const cx = cv.getContext('2d')!, img = this.fogImg || (this.fogImg = cx.createImageData(n, n)), d = img.data;
       for (let i = 0; i < fog.cells.length; i++) { const v = fog.cells[i]; d[i * 4] = 22; d[i * 4 + 1] = 15; d[i * 4 + 2] = 14; d[i * 4 + 3] = v === 2 ? 0 : v === 1 ? 105 : 236; }
-      cx.putImageData(img, 0, 0); c.imageSmoothingEnabled = true; c.drawImage(cv, X(fog.x0), Z(fog.z0), n * 4 * k, n * 4 * k); }
+      cx.putImageData(img, 0, 0);
+      // Ground nobody has seen is hatched like the blank part of a survey sheet, rather than left as a black slab.
+      const hc = this.fogHatch || (this.fogHatch = document.createElement('canvas')); if (hc.width !== S) { hc.width = S; hc.height = 180; } const hx = hc.getContext('2d')!;
+      if (!this.hatchPat) { const t = document.createElement('canvas'); t.width = t.height = 9; const tg = t.getContext('2d')!; tg.fillStyle = '#211614'; tg.fillRect(0, 0, 9, 9); tg.strokeStyle = '#4a332c'; tg.lineWidth = 1.3; tg.beginPath(); tg.moveTo(-1, 10); tg.lineTo(10, -1); tg.moveTo(-1, 1); tg.lineTo(1, -1); tg.moveTo(8, 10); tg.lineTo(10, 8); tg.stroke(); this.hatchPat = hx.createPattern(t, 'repeat'); }
+      hx.globalCompositeOperation = 'source-over'; hx.clearRect(0, 0, S, 180); hx.imageSmoothingEnabled = true; hx.drawImage(cv, X(fog.x0), Z(fog.z0), n * 4 * k, n * 4 * k);
+      hx.globalCompositeOperation = 'source-in'; hx.fillStyle = this.hatchPat || '#211614'; hx.fillRect(0, 0, S, 180); c.drawImage(hc, 0, 0); }
     for (const o of g.ores) { if (o.amount <= 0 || !fog.seen(o.pos.x, o.pos.z)) continue; c.fillStyle = '#b8f58c'; c.fillRect(X(o.pos.x) - 2.5, Z(o.pos.z) - 2.5, 5, 5); }
     c.lineWidth = 1.5; c.strokeStyle = '#0e0d14';
     for (const b of g.buildings) { if (!b.alive || (b.team !== g.myTeam && !fog.seen(b.pos.x, b.pos.z))) continue; const w = Math.max(5, b.hx * 2 * k), h = Math.max(5, b.hz * 2 * k); c.fillStyle = b.team !== g.myTeam ? (b.kind === 'reedgate' ? '#c58bff' : '#35e0c8') : b.built ? '#ffc21a' : '#7ef0ff'; c.fillRect(X(b.pos.x) - w / 2, Z(b.pos.z) - h / 2, w, h); c.strokeRect(X(b.pos.x) - w / 2, Z(b.pos.z) - h / 2, w, h); }

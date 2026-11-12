@@ -25,7 +25,7 @@ export function buildSnap(g: Game) {
     t: 's', time: r1(g.time), ore: Math.floor(g.cash(SIDE.home)), up: UPS.map((k, i) => g.upOf(SIDE.home)[k] ? i : -1).filter(i => i >= 0), uo: UPS.map((k, i) => g.upOf(SIDE.out)[k] ? i : -1).filter(i => i >= 0), o: g.ores.map(n => Math.round(n.amount)), u, b,
     d: [r1(D.raidIn), D.raidDir === 'north' ? 1 : 0, D.raidLive ? 1 : 0, D.auto ? 1 : 0, D.plan ? [D.plan.phase, r1(D.plan.t), D.plan.label, D.plan.book] : 0, D.callout ? [D.callout.who, D.callout.text, r1(D.callout.t), D.callout.dur, D.callout.keys] : 0, [D.playbook.name, D.playbook.steps, D.playbook.idx]],
     v: g.eco ? sideSnap(D.vs) : 0, vo: Math.floor(g.cash(SIDE.out)),
-    st: [Math.floor(st.mined), st.built, st.kills, st.lost, Math.floor(st.minedV)], e, sc: Object.keys(g.score).map(k => [+k, g.score[+k][0], Math.floor(g.score[+k][1]), g.score[+k][2]]),
+    st: [Math.floor(st.mined), st.built, st.kills, st.lost, Math.floor(st.minedV)], e, mo: g.mission ? D.objectives() : 0, mc: g.mission && g.ms.clock !== undefined ? r1(g.ms.clock) : -1, sc: Object.keys(g.score).map(k => [+k, g.score[+k][0], Math.floor(g.score[+k][1]), g.score[+k][2]]),
   };
 }
 
@@ -117,6 +117,7 @@ export function applySnap(g: Game, s: any) {
   for (const [t, list] of [[SIDE.home, s.up], [SIDE.out, s.uo || []]] as [number, number[]][]) { const on = new Set<number>(list), U = g.upOf(t); UPS.forEach((k, i) => { const was = U[k]; U[k] = on.has(i); if (k === 'gbloom' && U[k] && !was) g.carpet.deepen(t); }); }
   g.ores.forEach((n, i) => { const a = s.o[i]; if (a !== undefined && a !== n.amount) { n.amount = a; g.oreCheck(n); } });
   if (s.sc) { g.score = {}; for (const r of s.sc) g.score[r[0]] = [r[1], r[2], r[3]]; }
+  if (s.mo) g.netObjs = s.mo; if (s.mc >= 0) g.ms.clock = s.mc;
   g.stats.mined = s.st[0]; g.stats.built = s.st[1]; g.stats.kills = s.st[2]; g.stats.lost = s.st[3]; g.stats.minedV = s.st[4] || 0;
   const seen = new Set<number>();
   for (const r of s.u) {

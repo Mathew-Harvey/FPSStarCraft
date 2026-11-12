@@ -3,6 +3,7 @@
 // and each player's half of the screen is an ordinary client of it. Nothing leaves the page.
 // A single player on the Veyl side runs the same way, with one seat: the bots run Ironhold.
 import { Game } from './game';
+import type { Mission } from './campaign';
 import { Net } from './net';
 import { DIFFS, SIDE, FACTION, BLD, setMap, fac, Unit, isSoldier, isWorker } from './data';
 import { buildSnap, serverCmd, serverMove } from './netgame';
@@ -27,16 +28,17 @@ export class LocalMatch {
   private acc = 0; private tick = 0; private done = false;
   /** True when the Veyl run their own economy here, so each half's copy of the game has to set up the same world. */
   get eco() { return this.host.eco; }
-  constructor(public map: number, public diff: number, players = 2, mode: SplitMode | boolean = 'coop') {
+  constructor(public map: number, public diff: number, players = 2, mode: SplitMode | boolean = 'coop', mission: Mission | null = null) {
     audioSeat(0); this.mode = mode === true ? 'versus' : mode === false ? 'coop' : mode;
     const O = this.out, H = this.home, team = (pid: number) => this.mode === 'veyl' ? O : this.mode === 'versus' && pid > 1 ? O : H, eco = this.mode !== 'coop' || O === 2;
-    setMap(map); const g = this.host = new Game(noPipe(), noHud, DIFFS[diff], map, null, null, eco); g.noRender = true; g.evq = []; g.me = null; g.phase = 'play';
+    setMap(map); const g = this.host = new Game(noPipe(), noHud, DIFFS[diff], map, mission, null, eco); g.noRender = true; g.evq = []; g.me = null; g.phase = 'play';
     this.seats = []; for (let i = 0; i < players; i++) this.seats.push(new Seat(i + 1, players === 1 ? 'You' : i ? 'Player two' : 'Player one'));
     for (const s of this.seats) { this.names[s.pid] = s.name; this.teams[s.pid] = team(s.pid); g.score[s.pid] = [0, 0, 0]; }
     g.names = this.names; g.teams = this.teams; g.coop = Math.max(1, this.seats.filter(s => this.teams[s.pid] === H).length); g.human = g.human.map((_, t) => this.seats.some(s => this.teams[s.pid] === t));
     const riggers = g.own(FACTION[H].worker, H); this.seats.forEach((s, i) => { const u = this.teams[s.pid] !== H ? this.veylBody() : riggers[i % riggers.length]; if (u) { this.pilot(s, u); s.unit = u.id; } });
     const classic = fac(H) === 0 && (fac(O) === 1 || fac(O) === 2);
-    if (classic && O === 2 && this.mode === 'versus') { g.feedTo = 1; g.feed('Quartermaster', 'The other half of this screen leads the Gloam. Keep a Headframe standing and squash their Mother Caps.', 'in'); g.feedTo = 2; g.feed('Overgrowth', 'You lead the Gloam tonight. Chew ore, grow the swarm, and break every Headframe.', 'in'); g.feedTo = 0; }
+    if (mission) { /* a story job brings its own lines */ }
+    else if (classic && O === 2 && this.mode === 'versus') { g.feedTo = 1; g.feed('Quartermaster', 'The other half of this screen leads the Gloam. Keep a Headframe standing and squash their Mother Caps.', 'in'); g.feedTo = 2; g.feed('Overgrowth', 'You lead the Gloam tonight. Chew ore, grow the swarm, and break every Headframe.', 'in'); g.feedTo = 0; }
     else if (classic && O === 2 && this.mode === 'veyl') g.feed('Overgrowth', players > 1 ? 'Two of you lead the Gloam tonight. The Ironhold bots are digging in down the road. Break every Headframe.' : 'You lead the Gloam tonight. The Ironhold are digging in down the road. Break every Headframe.', 'in');
     else if (classic && O === 2) g.feed('Quartermaster', 'Two of you on one payroll, and one screen between you. Something is growing at the end of the road.', 'in');
     else if (classic && this.mode === 'versus') { g.feedTo = 1; g.feed('Quartermaster', 'The other half of this screen sings for the Veyl. Keep a Headframe standing and break their Stones.', 'in'); g.feedTo = 2; g.feed('Conductor', 'You sing for the Veyl tonight. Hum ore, grow the Chorus, and break every Headframe.', 'in'); g.feedTo = 0; }
@@ -74,7 +76,8 @@ export class LocalMatch {
     }
     g.update(TICK); this.tick++;
     if (this.tick % 2 === 0) { const snap = JSON.stringify(buildSnap(g)); for (const s of this.seats) { s.lastSnap = performance.now(); s.inbox.push(JSON.parse(snap)); } }
-    if (g.phase === 'over') { this.done = true; const st = g.stats; for (const s of this.seats) this.say(s, { t: 'over', won: g.won, stats: [Math.floor(st.mined), st.built, st.kills, st.lost, Math.floor(st.minedV)], time: g.time }); }
+    // `won` on the wire means the yard end won. A story job played from the outpost end counts its own result in the player's terms, so it is turned round here.
+    if (g.phase === 'over') { this.done = true; const st = g.stats; for (const s of this.seats) this.say(s, { t: 'over', won: g.mission?.out ? !g.won : g.won, stats: [Math.floor(st.mined), st.built, st.kills, st.lost, Math.floor(st.minedV)], time: g.time }); }
   }
   /** Runs the match forward by one screen frame. The match itself ticks thirty times a second, like the server. */
   frame(dt: number) {

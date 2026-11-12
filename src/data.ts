@@ -53,7 +53,7 @@ export const fac = (team: number) => team % 3;
 /** The team that plays a faction at the other end in a mirror match. */
 export const MIRROR = 3;
 /** Who speaks for which side in the message feed. A player only hears their own side, plus Signal and chat. */
-export const VOICE_SIDE: Record<string, number> = { Conductor: 1, Chorus: 1, 'Chorus Lead': 1, Cantor: 1, Lancer: 1, Warden: 1, Tender: 1, Watcher: 1, Overgrowth: 2, Swarm: 2, Grazer: 2, Snapper: 2, Quillback: 2, Blister: 2, Mulcher: 2, Rootwatch: 2 };
+export const VOICE_SIDE: Record<string, number> = { 'Held Fifth': 1,  Conductor: 1, Chorus: 1, 'Chorus Lead': 1, Cantor: 1, Lancer: 1, Warden: 1, Tender: 1, Watcher: 1, Overgrowth: 2, Swarm: 2, Grazer: 2, Snapper: 2, Quillback: 2, Blister: 2, Mulcher: 2, Rootwatch: 2 };
 /** Who holds each end of the map this match, as teams: `home` the yard at the origin, `out` the outpost at the far end of the road.
  *  Any faction can hold either end. A mirror match puts the same faction at both ends, the outpost side as team faction + 3. Set before a Game is made. */
 export const SIDE = { home: 0, out: 1 };
@@ -158,6 +158,8 @@ export interface MapDef {
   sites?: number[][]; /** The map code this layout was built from. */ code?: number;
   name: string; blurb: string; out: [number, number]; flank: number[][]; road: string; flankName: string; exp: [number, number]; arch: number; wreck: [number, number] | null;
   rocks: number; spireEvery: number; buttes: number; crystals: number; ground: number[]; mesa: number[]; rock: number[]; dusk: number;
+  /** A story map's set piece, built on top of the base layout: the split canyon, the glass field round the First Stone, or the Charter drill site. */
+  set?: 'crack' | 'stone' | 'drill'; /** The base map whose layout a story map borrows. */ like?: number;
 }
 export const MAPS: MapDef[] = [
   { name: 'Needle\'s Eye', blurb: 'One road east, one ridge north', out: [124, 13], flank: [[118, -40], [62, -50], [20, -30]], road: 'east road', flankName: 'north ridge', exp: [61, -28], arch: 68, wreck: [46, 30],
@@ -166,7 +168,21 @@ export const MAPS: MapDef[] = [
     rocks: 420, spireEvery: 4, buttes: 14, crystals: 14, ground: [1, .85, .72], mesa: [1, .79, .65], rock: [.91, .78, .7], dusk: .55 },
   { name: 'Glass Flats', blurb: 'Wide open, nowhere to hide', out: [-136, 62], flank: [[-96, 104], [-30, 92], [4, 40]], road: 'west causeway', flankName: 'salt shelf', exp: [-58, -30], arch: 76, wreck: null,
     rocks: 110, spireEvery: 14, buttes: 4, crystals: 60, ground: [.78, 1.2, 1.85], mesa: [.8, .92, 1.6], rock: [.8, 1, 1.5], dusk: .1 },
+  // Story maps. Each one keeps a base map's roads and spacing, so the bots and the balance still hold, and builds its own set on top.
+  { name: 'The Crack', blurb: 'Switchback after the seal broke', out: [92, -98], flank: [[118, -62], [112, 4], [44, 22]], road: 'canyon road', flankName: 'south bend', exp: [-52, -44], arch: 0, wreck: [64, -22],
+    rocks: 360, spireEvery: 5, buttes: 12, crystals: 30, ground: [.86, .9, .78], mesa: [.82, .74, .78], rock: [.8, .76, .8], dusk: .4, set: 'crack', like: 1 },
+  { name: 'First Stone', blurb: 'The oldest glass on Tithe', out: [124, 13], flank: [[118, -40], [62, -50], [20, -30]], road: 'old glass road', flankName: 'north terraces', exp: [61, -28], arch: 68, wreck: null,
+    rocks: 180, spireEvery: 6, buttes: 7, crystals: 70, ground: [.92, 1.12, 1.25], mesa: [.95, 1.05, 1.3], rock: [.9, 1.05, 1.2], dusk: .05, set: 'stone', like: 0 },
+  { name: 'Drill Site', blurb: 'The Charter\'s hole in the Glass Flats', out: [-136, 62], flank: [[-96, 104], [-30, 92], [4, 40]], road: 'west causeway', flankName: 'salt shelf', exp: [-58, -30], arch: 0, wreck: null,
+    rocks: 120, spireEvery: 12, buttes: 4, crystals: 40, ground: [.62, .82, 1.25], mesa: [.66, .72, 1.1], rock: [.7, .8, 1.1], dusk: .8, set: 'drill', like: 2 },
 ];
+/** Story state the engine reads while a campaign job is running. Set before a Game is made, cleared for everything else. */
+export const STORY = {
+  /** The Ironhold team that is Charter Security on this job (they wear company grey), or -1. */
+  charter: -1,
+  /** Ore banked across every finished campaign job, for the Quartermaster's last line. */
+  oreTotal: 0,
+};
 export let MAP: MapDef = MAPS[0];
 /** Map sizes. A map number carries its size in the tens: 0 to 2 are Medium, 10 to 12 Small, 20 to 22 Large. */
 export const SIZES = [{ name: 'Medium', k: 1, sites: 4, blurb: 'Four ore fields to take' }, { name: 'Small', k: .75, sites: 3, blurb: 'Close quarters, three fields' }, { name: 'Large', k: 1.4, sites: 7, blurb: 'A long way out, seven fields' }];
@@ -189,11 +205,11 @@ export const veylPt = (lx: number, lz: number): [number, number] => [OUTPOST.x +
 export function setMap(code: number) {
   if (!validMap(code)) code = 0; const base = code % 10, size = Math.floor(code / 10), S = SIZES[size], k = S.k, B = MAPS[base], sc = (p: number[]) => [Math.round(p[0] * k), Math.round(p[1] * k)];
   MAP = { ...B, base, size, k, out: sc(B.out) as [number, number], flank: B.flank.map(sc), exp: sc(B.exp) as [number, number], arch: Math.round(B.arch * k), wreck: B.wreck ? sc(B.wreck) as [number, number] : null, rocks: Math.round(B.rocks * k * k), buttes: Math.round(B.buttes * k), crystals: B.crystals };
-  if (base === 0) MAP.out[1] = 13;
+  const ne = (B.like ?? base) === 0; if (ne) MAP.out[1] = 13;
   const [ox, oz] = MAP.out;
   const ol = Math.hypot(ox, oz), px = -oz / ol, pz = ox / ol;
-  if (base === 0) { ROAD.x = 0; ROAD.z = 14; } else { ROAD.x = px * 12; ROAD.z = pz * 12; }
-  const ax = base === 0 ? ox : ox + px, az = base === 0 ? 14 : oz + pz, dx = ax - ROAD.x, dz = az - ROAD.z, l = Math.hypot(dx, dz);
+  if (ne) { ROAD.x = 0; ROAD.z = 14; } else { ROAD.x = px * 12; ROAD.z = pz * 12; }
+  const ax = ne ? ox : ox + px, az = ne ? 14 : oz + pz, dx = ax - ROAD.x, dz = az - ROAD.z, l = Math.hypot(dx, dz);
   ROAD.dx = dx / l; ROAD.dz = dz / l; ROAD.len = l; OUTPOST.x = ox; OUTPOST.z = oz;
   const g = veylPt(14, -1); GATE.x = g[0]; GATE.z = g[1];
   const r = roadPt(25, -3); RALLY.x = r[0]; RALLY.z = r[1];

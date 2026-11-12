@@ -55,7 +55,7 @@ try {
   await p.evaluate(() => { navigator.getGamepads = () => []; __ore.startSplit(true); });
   check(await until(() => { const a = __ore.game, c = __ore.game2(); return a.me && c && c.me && c.myTeam === 1 && c.me.team === 1 && a.me.team === 0; }), 'versus: player one is Ironhold and player two drives a Veyl body');
   check(await p.evaluate(() => { const h = __ore.split().host, c = __ore.game2(); return h.units.some(u => u.id === c.me.id && u.pilot === 2 && u.team === 1) && h.teams[2] === 1 && h.coop === 1; }), 'versus: the match has player two on the Veyl side');
-  check(await p.evaluate(() => { const h = __ore.split().host, c = __ore.game2(); return h.eco && c.me.kind === 'tender' && h.human.join() === 'true,true,false'; }), 'versus: both sides run an economy and player two starts as a Tender');
+  check(await p.evaluate(() => { const h = __ore.split().host, c = __ore.game2(); return h.eco && c.me.kind === 'tender' && h.human.slice(0, 2).join() === 'true,true'; }), 'versus: both sides run an economy and player two starts as a Tender');
   const well = await p.evaluate(() => { const c = __ore.game2(), st = c.buildings.find(b => b.alive && b.team === 1 && b.kind === 'choir'); for (let r = 14; r < 40; r += 3) for (let t = 0; t < 6.28; t += .4) { const x = st.pos.x + Math.cos(t) * r, z = st.pos.z + Math.sin(t) * r; if (c.canPlace('hushwell', x, z, false, 1)) { c.place('hushwell', x, z, false, 1); return true; } } return false; });
   check(well && await until(() => __ore.game.buildings.some(b => b.alive && b.team === 1 && b.kind === 'hushwell')), "versus: player two lays out a Hushwell and player one's half sees it");
   const ore0 = await p.evaluate(() => { const c = __ore.game2(), h = __ore.split().host; for (let i = 0; i < 5; i++) c.net.cmd('pl', 'depot', 14, 20, 0); return [Math.floor(h.ore), h.buildings.length]; }); await p.waitForTimeout(800);
@@ -67,7 +67,7 @@ try {
   // co-op on the Veyl side: both halves sing for the Chorus and Ironhold is left to the bots
   await p.evaluate(() => __ore.startSplit('veyl'));
   check(await until(() => { const a = __ore.game, c = __ore.game2(); return a.me && c && c.me && a.myTeam === 1 && c.myTeam === 1 && a.me.team === 1 && c.me.team === 1 && a.me !== c.me; }), 'co-op as the Veyl: both players drive their own Veyl body');
-  check(await p.evaluate(() => { const h = __ore.split().host; return h.eco && h.human.join() === 'false,true,false' && h.units.some(u => u.alive && u.team === 0 && u.kind === 'rigger'); }), 'co-op as the Veyl: the Ironhold crew is run by bots');
+  check(await p.evaluate(() => { const h = __ore.split().host; return h.eco && h.human.slice(0, 2).join() === 'false,true' && h.units.some(u => u.alive && u.team === 0 && u.kind === 'rigger'); }), 'co-op as the Veyl: the Ironhold crew is run by bots');
   await p.evaluate(() => document.getElementById('toMenu').click());
 } catch (e) { console.log('ERROR', e); fail.push('exception'); }
 await b.close();

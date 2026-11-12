@@ -46,12 +46,33 @@ export const FACTION: Record<number, Faction> = {
   1: { name: 'Veyl Chorus', short: 'Veyl', hq: 'choir', worker: 'tender', supply: 'hushwell', builds: ['broodpit', 'hushwell', 'thornspire', 'wardpylon', 'reedgate', 'choir'], voice: 'Conductor', squad: 'Chorus Lead', lead: 'cantor', ore: 'ore' },
   2: { name: 'The Gloam', short: 'Gloam', hq: 'mothercap', worker: 'grazer', supply: 'sporesac', builds: G_BUILDABLE, voice: 'Overgrowth', squad: 'Swarm', lead: 'snapper', ore: 'ore' },
 };
+// Teams 3 to 5 are the second side of a mirror match: the same faction as team - 3, holding the other end of the map.
+FACTION[3] = FACTION[0]; FACTION[4] = FACTION[1]; FACTION[5] = FACTION[2];
+/** The faction a team plays: 0 Ironhold, 1 Veyl, 2 Gloam. */
+export const fac = (team: number) => team % 3;
+/** The team that plays a faction at the other end in a mirror match. */
+export const MIRROR = 3;
 /** Who speaks for which side in the message feed. A player only hears their own side, plus Signal and chat. */
 export const VOICE_SIDE: Record<string, number> = { Conductor: 1, Chorus: 1, 'Chorus Lead': 1, Cantor: 1, Lancer: 1, Warden: 1, Tender: 1, Watcher: 1, Overgrowth: 2, Swarm: 2, Grazer: 2, Snapper: 2, Quillback: 2, Blister: 2, Mulcher: 2, Rootwatch: 2 };
-/** Which faction holds the far end of the map this match. The Ironhold always hold the yard; the Veyl or the Gloam hold the outpost. Set before a Game is made. */
-export const SIDE = { out: 1 };
+/** Who holds each end of the map this match, as teams: `home` the yard at the origin, `out` the outpost at the far end of the road.
+ *  Any faction can hold either end. A mirror match puts the same faction at both ends, the outpost side as team faction + 3. Set before a Game is made. */
+export const SIDE = { home: 0, out: 1 };
+/** Sets who holds each end from the two factions, and returns the two teams. */
+export const setSides = (homeFac: number, outFac: number) => { SIDE.home = homeFac; SIDE.out = outFac === homeFac ? outFac + MIRROR : outFac; return [SIDE.home, SIDE.out]; };
+/** A match code for the lobby and the menus: home faction times 3 plus outpost faction. The old codes 1 and 2 (Ironhold against the Veyl or the Gloam) still mean the same. */
+export const sidesCode = () => fac(SIDE.home) * 3 + fac(SIDE.out);
+export const setSidesCode = (code: number) => { const c = Number.isInteger(code) && code >= 0 && code < 9 ? code : 1; return setSides(Math.floor(c / 3), c % 3); };
 /** The side two sides fight: every match has two. */
-export const foeOf = (team: number) => team === 0 ? SIDE.out : 0;
+export const foeOf = (team: number) => team === SIDE.home ? SIDE.out : SIDE.home;
+/** True for the side that holds the yard. */
+export const atHome = (team: number) => team === SIDE.home;
+/** Turns a point in one end's frame into the same spot at the other end: a half turn about the middle of the two bases.
+ *  Each brain is written for its own end (the Quartermaster for the yard, the Conductor and the Overgrowth for the outpost); this moves it. */
+/** Where a team's home base stands: the yard for the side at home, the outpost for the side at the far end. */
+export const homeXZ = (team: number): [number, number] => atHome(team) ? [0, 0] : [VHOME.x, VHOME.z];
+export const swapEnd = (x: number, z: number): [number, number] => [VHOME.x - x, VHOME.z - z];
+/** A point written for the yard (`yard` true) or the outpost, moved to wherever this team actually stands. */
+export const endPt = (team: number, x: number, z: number, yard: boolean): [number, number] => atHome(team) === yard ? [x, z] : swapEnd(x, z);
 export const isWorker = (k: Kind) => k === 'rigger' || k === 'tender' || k === 'grazer';
 export const isGloam = (k: Kind) => k === 'grazer' || k === 'snapper' || k === 'quillback' || k === 'blister' || k === 'mulcher';
 /** What each building trains, and the extra building a unit needs standing before it can be trained. */
@@ -93,7 +114,7 @@ export const UPGRADES: UpDef[] = [
   ...G_UPGRADES.map(u => ({ ...u, team: 2 })),
 ];
 /** Research a side can buy. */
-export const upsOf = (team: number) => UPGRADES.filter(u => (u.team || 0) === team);
+export const upsOf = (team: number) => UPGRADES.filter(u => (u.team || 0) === fac(team));
 
 export interface Order { type: 'guard' | 'amove' | 'follow' | 'raid'; x: number; z: number; path?: number[][]; lead?: Unit }
 export interface Unit {

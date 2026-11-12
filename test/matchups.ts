@@ -1,18 +1,19 @@
-// Checks for the matchup sweep (Ironhold against the Veyl and against the Gloam): logic bugs and cheese that the
-// bot-against-bot runs in tools/sim.ts turned up. Runs in Node with no browser, on the same simulation the match server runs.
+// Checks for the matchup sweep: logic bugs and cheese that the bot-against-bot runs in tools/sim.ts turned up, and that every pairing of
+// factions plays (any faction at either end, mirrors included). Runs in Node with no browser, on the same simulation the match server runs.
 // Run with: npm run test:rules
 import { noHud, noPipe } from '../server/shim';
 import { Game } from '../src/game';
 import { initHeadless } from '../src/gfx';
-import { DIFFS, SIDE, FACTION, BLD, MAP, setMap, Kind, BKind } from '../src/data';
+import { DIFFS, SIDE, FACTION, BLD, MAP, VHOME, UPGRADES, setMap, setSides, fac, Kind, BKind } from '../src/data';
+const UPGRADE_AT = Object.fromEntries(UPGRADES.map(u => [u.key, u.at]));
 
 initHeadless();
 const fail: string[] = []; const check = (ok: boolean, what: string) => { console.log((ok ? 'PASS ' : 'FAIL ') + what); if (!ok) fail.push(what); };
 let seed = 7; Math.random = () => { seed = (seed * 16807) % 2147483647; return (seed - 1) / 2147483646; };
-/** A fresh match with bots on both sides. `out` is who holds the outpost: 1 the Veyl, 2 the Gloam. */
-function match(out: number, map = 0) {
-  setMap(map); SIDE.out = out; const g = new Game(noPipe(), noHud, DIFFS[1], map, null, null, true);
-  g.noRender = true; g.evq = []; g.me = null; g.phase = 'play'; for (const u of g.units) u.pilot = 0; g.human = [false, false, false];
+/** A fresh match with bots on both sides. `out` is the faction at the outpost (1 the Veyl, 2 the Gloam), `home` the one at the yard. */
+function match(out: number, map = 0, home = 0) {
+  setMap(map); setSides(home, out); const g = new Game(noPipe(), noHud, DIFFS[1], map, null, null, true);
+  g.noRender = true; g.evq = []; g.me = null; g.phase = 'play'; for (const u of g.units) u.pilot = 0; g.human = g.human.map(() => false);
   return g;
 }
 const run = (g: Game, secs: number, each?: () => void) => { for (let i = 0; i < secs * 30 && g.phase !== 'over'; i++) { each?.(); g.update(1 / 30); g.evq!.length = 0; } };
@@ -22,7 +23,7 @@ for (const out of [1, 2]) {
   const name = FACTION[out].short;
   // 1. No proxy towers: a new base 45 m from the enemy used to let its tower go right up against the enemy's ore line.
   {
-    const g = match(out), h = hq(g, out); g.purse = [5000, 5000, 5000];
+    const g = match(out), h = hq(g, out); g.purse = g.purse.map(() => 5000);
     // An Ironhold Headframe staked just past 45 m from the enemy base, finished on the spot.
     const ang = Math.atan2(-h.pos.z, -h.pos.x); let fx = 0, fz = 0;
     for (let r = 46; r < 90; r++) { fx = Math.round(h.pos.x + Math.cos(ang) * r); fz = Math.round(h.pos.z + Math.sin(ang) * r); if (g.canPlace('headframe', fx, fz, false, 0)) break; }
@@ -38,7 +39,7 @@ for (const out of [1, 2]) {
   }
   // 2. Nothing past the edge of the world, where no body can walk up to it.
   {
-    const g = match(out, 20), mx = MAP.out[0] / 2, mz = MAP.out[1] / 2, lim = 200 * (MAP.k || 1); g.purse = [5000, 5000, 5000];
+    const g = match(out, 20), mx = MAP.out[0] / 2, mz = MAP.out[1] / 2, lim = 200 * (MAP.k || 1); g.purse = g.purse.map(() => 5000);
     const far = g.addBuilding('headframe', 0, Math.round(mx), Math.round(mz - lim * .93), true);
     let worst = 0; for (let dx = -42; dx <= 42; dx += 2) for (let dz = -42; dz <= 42; dz += 2) { const x = far.pos.x + dx, z = far.pos.z + dz; if (g.canPlace('depot', x, z, false, 0)) worst = Math.max(worst, Math.hypot(x - mx, z - mz) + BLD.depot.hx); }
     check(worst <= lim, `vs ${name}: no Depot can be staked out past the edge of the world (furthest edge ${Math.round(worst)} of ${Math.round(lim)} m)`);
@@ -66,7 +67,7 @@ for (const out of [1, 2]) {
   }
   // 6. A push that breaks nothing for a long time ends, so both armies do not stand still for the rest of the match.
   {
-    const g = match(out), D = g.dir; g.purse = [0, 0, 0];
+    const g = match(out), D = g.dir; g.purse = g.purse.map(() => 0);
     const sq: any[] = []; for (let i = 0; i < 3; i++) { const u = g.spawn('linesman', 0, 10 + i, 30); u.order = { type: 'amove', x: 900, z: 900 }; u.pilot = 0; sq.push(u); }
     D.plan = { phase: 'go', t: 0, target: hq(g, out), book: 0, label: '', goT: g.time }; D.incoming(D, 0);
     check(D.vs.raidLive, `vs ${name}: the defenders see the push coming`);
@@ -101,12 +102,47 @@ for (const out of [1, 2]) {
   check(Math.hypot(sn.pos.x - 51, sn.pos.z - 40) > Math.abs(x0 - 51) + 1, 'a Snapper scatters from a grenade landing beside it');
 }
 
-// 11. Both pairings, bots on both sides, play out to a result without the stalemates the sweep found.
-for (const [out, map] of [[1, 2], [2, 20]]) {
-  const g = match(out, map); let bad = '';
-  for (let i = 0; i < 40 * 60 * 30 && g.phase !== 'over'; i++) { g.update(1 / 30); g.evq!.length = 0; if (g.cash(0) < -1 || g.cash(out) < -1) bad = 'negative ore'; }
-  check(!bad, `Ironhold vs ${FACTION[out].short} on map ${map}: no negative ore`);
-  check(g.phase === 'over', `Ironhold vs ${FACTION[out].short} on map ${map}: the bots finish the match inside 40 minutes (ended at ${Math.round(g.time)} s)`);
+// 11. Every faction can hold either end. Nine set-ups: three factions at the yard, three at the outpost, the same faction twice being a mirror.
+const NAME = (t: number) => FACTION[t].short + (t >= 3 ? ' (outpost)' : '');
+for (const home of [0, 1, 2]) for (const outF of [0, 1, 2]) {
+  const g = match(outF, 0, home), H = SIDE.home, O = SIDE.out, tag = `${FACTION[H].short} at the yard vs ${NAME(O)} at the outpost`;
+  const hq = (t: number) => g.ownB(FACTION[t].hq, true, t);
+  check(H !== O && fac(H) === home && fac(O) === outF && g.eco, `${tag}: two different teams, both running an economy`);
+  check(hq(H).length === 1 && Math.hypot(hq(H)[0].pos.x, hq(H)[0].pos.z) < 1 && hq(O).length === 1 && Math.hypot(hq(O)[0].pos.x - VHOME.x, hq(O)[0].pos.z - VHOME.z) < 1, `${tag}: each side starts with its own ${BLD[FACTION[H].hq].name} and ${BLD[FACTION[O].hq].name} at its own end`);
+  check(g.own(FACTION[H].worker, H).length === 6 && g.own(FACTION[O].worker, O).length === 6, `${tag}: six workers each`);
+  // Both brains build up, train an army and push, whichever end they are at.
+  // The most each side ever had standing counts, since a side that is losing by minute ten has still had to build up first.
+  const pushed = [false, false], most = [[0, 0], [0, 0]]; let n = 0;
+  run(g, 600, () => { if (g.dir.plan?.phase === 'go') pushed[0] = true; if (g.dir.vs.plan?.phase === 'go') pushed[1] = true;
+    if (n++ % 30 === 0) [H, O].forEach((t, i) => { most[i][0] = Math.max(most[i][0], g.ownB(undefined, true, t).length); most[i][1] = Math.max(most[i][1], g.army(t).length); }); });
+  for (const [t, i] of [[H, 0], [O, 1]]) check(most[i][0] >= 4 && most[i][1] >= 4 && g.stats[i ? 'minedV' : 'mined'] > 600, `${tag}: the ${NAME(t)} bots dig, build and train (up to ${most[i][0]} buildings and ${most[i][1]} fighters, ${Math.floor(g.stats[i ? 'minedV' : 'mined'])} ore)`);
+  check(pushed[0] || pushed[1], `${tag}: somebody marches on the other end inside ten minutes`);
+}
+
+// 12. Mirrors: the two sides are told apart, keep their own research and money, and the match ends when either end falls.
+for (const f of [0, 1, 2]) {
+  const g = match(f, 0, f), H = SIDE.home, O = SIDE.out, n = FACTION[f].short;
+  const a = g.own(FACTION[f].worker, H)[0], b = g.own(FACTION[f].worker, O)[0], mat = (u: any) => { let m: any = null; u.obj.traverse((o: any) => { if (!m && o.isMesh && o.material?.uniforms?.uColor) m = o.material; }); return m; };
+  check(!!mat(a) && !!mat(b) && mat(a) !== mat(b), `${n} mirror: the outpost side's bodies wear different colours`);
+  const key = f === 2 ? 'gfat' : f ? 'vedge' : 'dmg', at = (UPGRADE_AT as any)[key] as BKind; g.purse[O] = 5000; g.addBuilding(at, O, VHOME.x - 14, VHOME.z + 8, true); g.buyUpgrade(key as any, O);
+  check(g.upOf(O)[key as 'dmg'] && !g.upOf(H)[key as 'dmg'], `${n} mirror: research bought at the outpost does not reach the yard`);
+  check(g.cash(H) === 100, `${n} mirror: and neither does the bill`);
+  if (f === 2) { const cap = g.ownB('mothercap', true, O)[0], q = cap.queue.length; cap.buds = 2; g.train(cap, 'snapper'); check(cap.queue.length - q === 2, `${n} mirror: the outpost's Mother Cap hatches Snappers in pairs too (${cap.queue.length - q})`); }
+  const fx: string[] = []; const feed = g.feed.bind(g); (g as any).feed = (w: string, m: string, c = '', t = -1) => { fx.push(t + ':' + w); feed(w, m, c, t); };
+  run(g, 30);
+  check(fx.some(x => x.startsWith(H + ':')) && fx.some(x => x.startsWith(O + ':')) && !fx.some(x => x.startsWith('-1:' + FACTION[f].voice)), `${n} mirror: each side's brain talks only to its own side`);
+  for (const b2 of g.ownB(undefined, false, O)) g.damage(b2, 1e7, null); run(g, 4);
+  check(g.phase === 'over' && g.won, `${n} mirror: breaking every building at the outpost wins it for the yard`);
+  const g2 = match(f, 0, f); for (const b2 of g2.ownB(undefined, false, SIDE.home)) g2.damage(b2, 1e7, null); run(g2, 4);
+  check(g2.phase === 'over' && !g2.won, `${n} mirror: and breaking the yard wins it for the outpost`);
+}
+
+// 13. Every pairing, bots on both sides, plays out to a result without the stalemates the sweep found.
+for (const [home, out, map] of [[0, 1, 2], [0, 2, 20], [0, 0, 1], [1, 1, 0], [2, 2, 10], [1, 2, 0]]) {
+  const g = match(out, map, home), H = SIDE.home, O = SIDE.out, tag = `${FACTION[H].short} vs ${NAME(O)} on map ${map}`; let bad = '';
+  for (let i = 0; i < 40 * 60 * 30 && g.phase !== 'over'; i++) { g.update(1 / 30); g.evq!.length = 0; if (g.cash(H) < -1 || g.cash(O) < -1) bad = 'negative ore'; }
+  check(!bad, `${tag}: no negative ore`);
+  check(g.phase === 'over', `${tag}: the bots finish the match inside 40 minutes (ended at ${Math.round(g.time)} s)`);
 }
 
 console.log(fail.length ? `\n${fail.length} FAILED` : '\nALL PASS'); process.exit(fail.length ? 1 : 0);

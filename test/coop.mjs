@@ -14,7 +14,8 @@ try {
   await sleep(1200);
   const b = await chromium.launch({ args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist', '--enable-webgl'] });
   const open = async name => { const p = await b.newPage({ viewport: { width: 1280, height: 720 } }); p.setDefaultTimeout(120000); p.on('pageerror', e => { console.log(`[${name} pageerror]`, e.message.slice(0, 400)); fail.push(name + ' page error'); }); await p.goto(URL); await p.waitForFunction('window.__ore'); await p.evaluate(n => { __ore.setFree(true); __ore.game.noRender = true; __ore.unlock(); document.getElementById('mName').value = n; }, name); return p; };
-  const A = await open('Ada'), B = await open('Bo');
+  // A page drawing its menu makes the next page load about five times slower (70 s against 15 s here), enough to time out on a busy runner, so the first one holds still.
+  const A = await open('Ada'); await A.evaluate(() => { __ore.game.noRender = true; }); const B = await open('Bo'); await A.evaluate(() => { __ore.game.noRender = false; });
   await A.click('#mCreate'); await A.waitForFunction(() => document.getElementById('mCodeShow').textContent.length === 5);
   const code = await A.evaluate(() => document.getElementById('mCodeShow').textContent); check(/^[A-Z]{5}$/.test(code), 'lobby created with a five-letter code: ' + code);
   await B.fill('#mCode', code); await B.click('#mJoinBtn'); await B.waitForFunction(() => !document.getElementById('mLobby').hidden);

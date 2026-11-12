@@ -83,7 +83,8 @@ try {
   // ---- 3. online: Vex leads the Gloam against Ada's crew
   srv = spawn('node', ['dist/server.mjs'], { env: { ...process.env, PORT: String(PORT) }, stdio: ['ignore', 'pipe', 'pipe'] }); let log = ''; srv.stdout.on('data', d => { log += d; }); srv.stderr.on('data', d => { log += d; });
   await sleep(1200);
-  const A = await open(URL, 'Ada'), V = await open(URL, 'Vex');
+  // A page drawing its menu makes the next page load about five times slower (70 s against 15 s here), enough to time out on a busy runner, so the first one holds still.
+  const A = await open(URL, 'Ada'); await A.evaluate(() => { __ore.game.noRender = true; }); const V = await open(URL, 'Vex'); await A.evaluate(() => { __ore.game.noRender = false; });
   for (const q of [A, V]) await q.evaluate(() => { __ore.setFree(true); __ore.unlock(); });
   await A.click('#mCreate'); await A.waitForFunction(() => document.getElementById('mCodeShow').textContent.length === 5);
   const code = await A.evaluate(() => document.getElementById('mCodeShow').textContent);

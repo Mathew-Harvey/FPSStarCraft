@@ -3,7 +3,7 @@
 // everyone a snapshot of the world about fifteen times a second, plus a list of things to draw and say.
 import * as THREE from 'three';
 import { Game, beamMat } from './game';
-import { UNIT, BLD, BUILDABLE, UPGRADES, TRAINS, UNIT_NEEDS, FACTION, VOICE_SIDE, SIDE, Kind, BKind, Unit, Building, UpKey, isSoldier, isWorker } from './data';
+import { UNIT, BLD, BUILDABLE, UPGRADES, TRAINS, UNIT_NEEDS, FACTION, VOICE_SIDE, SIDE, fac, atHome, Kind, BKind, Unit, Building, UpKey, isSoldier, isWorker } from './data';
 import { burst } from './gloam-play';
 import type { Side } from './director';
 import { V3, M, R, tracerMat } from './gfx';
@@ -22,7 +22,7 @@ export function buildSnap(g: Game) {
   const b = g.buildings.filter(x => x.alive).map(x => [x.id, BKINDS.indexOf(x.kind), x.team, x.pos.x, x.pos.z, x.rot ? 1 : 0, Math.ceil(x.hp), x.built ? 1 : 0, Math.round(x.progress * 100), x.queue.length, x.queue[0] ? KINDS.indexOf(x.queue[0].kind) : 0, x.queue[0] ? r1(x.queue[0].t) : 0, x.buds || 0]);
   const st = g.stats, e = g.evq || []; g.evq = [];
   return {
-    t: 's', time: r1(g.time), ore: Math.floor(g.ore), up: UPS.map((k, i) => g.up[k] ? i : -1).filter(i => i >= 0), o: g.ores.map(n => Math.round(n.amount)), u, b,
+    t: 's', time: r1(g.time), ore: Math.floor(g.cash(SIDE.home)), up: UPS.map((k, i) => g.upOf(SIDE.home)[k] ? i : -1).filter(i => i >= 0), uo: UPS.map((k, i) => g.upOf(SIDE.out)[k] ? i : -1).filter(i => i >= 0), o: g.ores.map(n => Math.round(n.amount)), u, b,
     d: [r1(D.raidIn), D.raidDir === 'north' ? 1 : 0, D.raidLive ? 1 : 0, D.auto ? 1 : 0, D.plan ? [D.plan.phase, r1(D.plan.t), D.plan.label, D.plan.book] : 0, D.callout ? [D.callout.who, D.callout.text, r1(D.callout.t), D.callout.dur, D.callout.keys] : 0, [D.playbook.name, D.playbook.steps, D.playbook.idx]],
     v: g.eco ? sideSnap(D.vs) : 0, vo: Math.floor(g.cash(SIDE.out)),
     st: [Math.floor(st.mined), st.built, st.kills, st.lost, Math.floor(st.minedV)], e, sc: Object.keys(g.score).map(k => [+k, g.score[+k][0], Math.floor(g.score[+k][1]), g.score[+k][2]]),
@@ -48,7 +48,7 @@ function allow(g: Game, u: Unit, key: string, want: number, cap: number, perSec:
 }
 export function serverCmd(g: Game, pid: number, unit: Unit | null, c: any[]) {
   const k = c[0], num = (i: number) => (typeof c[i] === 'number' && isFinite(c[i]) ? c[i] : 0);
-  const side = g.teams[pid] || 0;
+  const side = g.teams[pid] ?? SIDE.home;
   if (k === 'dm') {
     // A player reports their own hits, so the server checks them: the target has to be an enemy in reach, and no body can deal more
     // in a second than the hardest-hitting gun and a grenade could together.
@@ -57,21 +57,21 @@ export function serverCmd(g: Game, pid: number, unit: Unit | null, c: any[]) {
     const bk = BUDGET.get(unit) || { left: 900, t: g.time }; BUDGET.set(unit, bk); bk.left = Math.min(900, bk.left + (g.time - bk.t) * 450); bk.t = g.time;
     const amt = Math.min(450, num(2), bk.left); if (amt <= 0) return; bk.left -= amt; g.damage(t, amt, unit, !!c[3]);
   }
-  else if (k === 'vs') { if (unit && unit.kind === 'warden' && unit.team === 1 && g.time >= ((unit as any).noteT || 0)) { (unit as any).noteT = g.time + 19; for (const o of g.units) if (o.alive && o.team === 1 && Math.hypot(o.pos.x - unit.pos.x, o.pos.z - unit.pos.z) < 16) { o.shield = Math.min(o.maxShield, o.shield + 60); o.pop = .6; } } }
+  else if (k === 'vs') { if (unit && unit.kind === 'warden' && fac(unit.team) === 1 && g.time >= ((unit as any).noteT || 0)) { (unit as any).noteT = g.time + 19; for (const o of g.units) if (o.alive && o.team === unit.team && Math.hypot(o.pos.x - unit.pos.x, o.pos.z - unit.pos.z) < 16) { o.shield = Math.min(o.maxShield, o.shield + 60); o.pop = .6; } } }
   else if (k === 'hl') { const o = g.units.find(x => x.id === num(1)); if (unit && unit.kind === 'patch' && o && o.alive && o.team === unit.team && Math.hypot(o.pos.x - unit.pos.x, o.pos.z - unit.pos.z) < 70) { const bk = BUDGET.get(unit) || { left: 900, t: g.time }; BUDGET.set(unit, bk); bk.left = Math.min(900, bk.left + (g.time - bk.t) * 450); bk.t = g.time; if (bk.left >= 80) { bk.left -= 80; o.hp = Math.min(o.maxHp, o.hp + 10); } } }
   else if (k === 'dp') { if (!unit) return; const p = g.props[num(1)]; if (p && p.alive && Math.hypot(p.x - unit.pos.x, p.z - unit.pos.z) < 175 + p.r) { const a = allow(g, unit, 'dp', Math.min(900, num(2)), 2400, 1200); if (a > 0) g.damageProp(p, a, unit); } }
   else if (k === 'tr') { if (c.length === 9) g.evq!.push(['tr', ...c.slice(1).map(Number), pid]); }
   else if (k === 'pj') { if (c.length === 9) g.evq!.push(['pj', ...c.slice(1).map(Number), 2, pid]); }
   else if (k === 'tn') {
-    const b = g.buildings.find(x => x.id === num(1)), kind = c[2] as Kind; if (!b || !b.alive || b.team !== side || !b.built || !(TRAINS[b.kind] || []).includes(kind) || UNIT[kind].team !== side) return;
+    const b = g.buildings.find(x => x.id === num(1)), kind = c[2] as Kind; if (!b || !b.alive || b.team !== side || !b.built || !(TRAINS[b.kind] || []).includes(kind) || (UNIT[kind].team || 0) !== fac(side)) return;
     const nb = UNIT_NEEDS[kind]; if (nb && !g.ownB(nb, true, side).length) return;
     g.feedTo = pid; g.train(b, kind, true); g.feedTo = 0;
   }
-  else if (k === 'up') { const u = UPGRADES.find(x => x.key === c[1]); if (u && (u.team || 0) === side && g.ownB(u.at, true, side).length) { g.feedTo = pid; g.buyUpgrade(u.key, true); g.feedTo = 0; } }
+  else if (k === 'up') { const u = UPGRADES.find(x => x.key === c[1]); if (u && (u.team || 0) === fac(side) && g.ownB(u.at, true, side).length) { g.feedTo = pid; g.buyUpgrade(u.key, side, true); g.feedTo = 0; } }
   else if (k === 'pl') {
     const kind = c[1] as BKind, x = Math.round(num(2)), z = Math.round(num(3)), rot = !!c[4], v = FACTION[side].voice; if (!FACTION[side].builds.includes(kind)) return;
-    if (g.unlocked(kind, side) && g.canPlace(kind, x, z, rot, side) && g.cash(side) >= BLD[kind].cost && g.place(kind, x, z, rot, side, unit)) { if (g.score[pid]) g.score[pid][2]++; g.feedTo = pid; g.feed(v, side === 2 ? `${BLD[kind].name} rooted. A Grazer gave itself to it, and it grows by itself.` : side ? `${BLD[kind].name} seeded. Hold click on it to sing it up faster.` : `${BLD[kind].name} staked out. Hold the drill on it to speed things up.`, ''); g.feedTo = 0; }
-    else { g.feedTo = pid; g.feed(v, `Could not ${side === 2 ? 'root' : side ? 'seed' : 'stake out'} that ${BLD[kind].name}. Somebody beat you to the spot or the ore.`, 'al'); g.feedTo = 0; }
+    if (g.unlocked(kind, side) && g.canPlace(kind, x, z, rot, side) && g.cash(side) >= BLD[kind].cost && g.place(kind, x, z, rot, side, unit)) { if (g.score[pid]) g.score[pid][2]++; g.feedTo = pid; g.feed(v, fac(side) === 2 ? `${BLD[kind].name} rooted. A Grazer gave itself to it, and it grows by itself.` : fac(side) ? `${BLD[kind].name} seeded. Hold click on it to sing it up faster.` : `${BLD[kind].name} staked out. Hold the drill on it to speed things up.`, ''); g.feedTo = 0; }
+    else { g.feedTo = pid; g.feed(v, `Could not ${fac(side) === 2 ? 'root' : fac(side) ? 'seed' : 'stake out'} that ${BLD[kind].name}. Somebody beat you to the spot or the ore.`, 'al'); g.feedTo = 0; }
   }
   else if (k === 'mn') { const n = g.ores[num(1)]; if (!n || !unit || !isWorker(unit.kind) || Math.hypot(n.pos.x - unit.pos.x, n.pos.z - unit.pos.z) > 8) return; const a = allow(g, unit, 'mn', Math.max(0, Math.min(3, num(2), n.amount, g.packCap(unit.team) - unit.carrying)), 12, 12); n.amount -= a; unit.carrying += a; g.oreCheck(n); }   // banked when the body reaches the Headframe
   else if (k === 'wd') { const b = g.buildings.find(x => x.id === num(1)); if (unit && isWorker(unit.kind) && b && b.alive && b.team === unit.team && !b.built && g.distToBox(b, unit.pos.x, unit.pos.z) < 8) b.progress += allow(g, unit, 'wd', Math.min(.6, Math.max(0, num(2))), 1, 1.25) / BLD[b.kind].time * 1.6; }
@@ -82,7 +82,7 @@ export function serverCmd(g: Game, pid: number, unit: Unit | null, c: any[]) {
   else if (k === 'pg') { const x = Math.max(-400, Math.min(400, num(1))), z = Math.max(-400, Math.min(400, num(2))); g.evq!.push(['pg', pid, x, z]); }
   else if (k === 'ch') { const t = String(c[1] || '').replace(/[<>&]/g, '').trim().slice(0, 120); if (t) g.evq!.push(['fd', g.names[pid] || 'Crew', t, 'ch']); }
   else if (k === 'pt') { if (unit && unit.kind === 'patch' && allow(g, unit, 'pt', 1, 1, 1 / 6.5) >= 1) g.patchUp(unit); }
-  else if (k === 'or') { const o = String(c[1]); if ('GVMXZC'.includes(o) && o.length === 1 && (unit ? unit.team === side : !side)) g.dir.order(o, num(2), num(3), unit); }
+  else if (k === 'or') { const o = String(c[1]); if ('GVMXZC'.includes(o) && o.length === 1 && (unit ? unit.team === side : side === SIDE.home)) g.dir.order(o, num(2), num(3), unit); }
 }
 /** The player's own body, as their browser last reported it. */
 export function serverMove(g: Game, unit: Unit, m: any[]) {
@@ -97,7 +97,7 @@ export function serverMove(g: Game, unit: Unit, m: any[]) {
 // ---------------------------------------------------------------- client: snapshot to world
 function event(g: Game, e: any[]) {
   const net = g.net!, k = e[0];
-  if (k === 'fd') { if (e[4] ? e[4] === net.id : e[3] === 'ch' || e[1] === 'Signal' || (VOICE_SIDE[e[1]] || 0) === g.myTeam) { g.hud.feed(e[1], e[2], e[3]); if (e[3] === 'ch') sfx.blip(); else babble(e[1], String(e[2]).length); } }
+  if (k === 'fd') { if (e[4] ? e[4] === net.id : e[3] === 'ch' || e[1] === 'Signal' || (e[5] >= 0 ? e[5] === g.myTeam : (VOICE_SIDE[e[1]] || 0) === fac(g.myTeam))) { g.hud.feed(e[1], e[2], e[3]); if (e[3] === 'ch') sfx.blip(); else babble(e[1], String(e[2]).length); } }
   else if (k === 'pg') { if ((g.teams[e[1]] || 0) !== g.myTeam) return; g.pings.push({ pid: e[1], x: e[2], z: e[3], t: 8 }); if (g.pings.length > 8) g.pings.shift(); sfx.callout(); }
   else if (k === 'nm') { g.names = e[1]; if (e[2]) g.teams = e[2]; }
   else if (k === 'ph') { for (const r of e[1]) { const p = g.props[r[0]]; if (p && p.alive && p.hp > r[1]) g.damageProp(p, p.hp - r[1], null); } }
@@ -113,7 +113,8 @@ function event(g: Game, e: any[]) {
 export function applySnap(g: Game, s: any) {
   const net = g.net!; g.applying = true;
   for (const e of s.e) event(g, e);
-  g.time = s.time; g.ore = s.ore; if (s.vo !== undefined) g.purse[SIDE.out] = s.vo; { const on = new Set<number>(s.up); UPS.forEach((k, i) => { const was = g.up[k]; g.up[k] = on.has(i); if (k === 'gbloom' && g.up[k] && !was) g.carpet.deepen(); }); }
+  g.time = s.time; g.purse[SIDE.home] = s.ore; if (s.vo !== undefined) g.purse[SIDE.out] = s.vo;
+  for (const [t, list] of [[SIDE.home, s.up], [SIDE.out, s.uo || []]] as [number, number[]][]) { const on = new Set<number>(list), U = g.upOf(t); UPS.forEach((k, i) => { const was = U[k]; U[k] = on.has(i); if (k === 'gbloom' && U[k] && !was) g.carpet.deepen(t); }); }
   g.ores.forEach((n, i) => { const a = s.o[i]; if (a !== undefined && a !== n.amount) { n.amount = a; g.oreCheck(n); } });
   if (s.sc) { g.score = {}; for (const r of s.sc) g.score[r[0]] = [r[1], r[2], r[3]]; }
   g.stats.mined = s.st[0]; g.stats.built = s.st[1]; g.stats.kills = s.st[2]; g.stats.lost = s.st[3]; g.stats.minedV = s.st[4] || 0;
@@ -121,7 +122,7 @@ export function applySnap(g: Game, s: any) {
   for (const r of s.u) {
     let u = g.uById.get(r[0]); if (u && !u.alive) continue;
     if (!u) { u = g.spawn(KINDS[r[1]], r[2], r[3], r[4], r[0]); g.uById.set(u.id, u); }
-    seen.add(u.id); u.nx = r[3]; u.nz = r[4]; u.maxHp = r[7]; if (u.team && g.eco) u.maxShield = UNIT[u.kind].shield * g.armorMul(1);   // Veyl glass upgrades thicken shields too
+    seen.add(u.id); u.nx = r[3]; u.nz = r[4]; u.maxHp = r[7]; if (g.eco && UNIT[u.kind].shield) u.maxShield = UNIT[u.kind].shield * g.armorMul(u.team);   // Veyl glass upgrades thicken shields too
     if (r[8] < u.shield - 1) g.bubble(u); u.hp = r[6]; u.shield = u.maxShield ? Math.min(r[8], u.maxShield) : r[8]; (u as any).nf = r[9]; u.wind = r[12] / 10;
     if (u !== g.me) { u.yaw = r[5] / 100; u.pitch = r[11] / 100; u.pilot = r[10]; } else if (r[10] === net.id || s.time > g.possT + 1.5) u.pilot = r[10];
   }
@@ -152,7 +153,7 @@ export function netTick(g: Game, dt: number) {
   for (const m of net.inbox) {
     if (m.t === 's') applySnap(g, m);
     else if (m.t === 'yo') net.unit = m.unit;
-    else if (m.t === 'over') { g.stats.mined = m.stats[0]; g.stats.built = m.stats[1]; g.stats.kills = m.stats[2]; g.stats.lost = m.stats[3]; g.stats.minedV = m.stats[4] || 0; g.time = m.time; g.end(g.myTeam ? !m.won : !!m.won); }
+    else if (m.t === 'over') { g.stats.mined = m.stats[0]; g.stats.built = m.stats[1]; g.stats.kills = m.stats[2]; g.stats.lost = m.stats[3]; g.stats.minedV = m.stats[4] || 0; g.time = m.time; g.end(atHome(g.myTeam) ? !!m.won : !m.won); }
   }
   net.inbox.length = 0;
   // a body the server has given us and we are not yet driving

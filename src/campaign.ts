@@ -65,7 +65,7 @@ export const MISSIONS: Mission[] = [
     allow: ['bunkhouse', 'depot', 'watchpost', 'machineshop'], units: ['linesman', 'breacher', 'patch'], raids: true, auto: true,
     objectives: [
       { text: () => 'Build a Machine Shop', done: g => has(g, 'machineshop') },
-      { text: () => 'Buy an upgrade at the Machine Shop (E or T)', done: g => g.up.dmg || g.up.armor },
+      { text: () => 'Buy an upgrade at the Machine Shop (E or T)', done: g => g.upOf(0).dmg || g.upOf(0).armor },
       { text: () => 'Say yes to a squad plan (Z)', done: g => g.obj.answered },
       { text: () => 'Break the Reed Gate', done: g => !g.gate() },
     ],

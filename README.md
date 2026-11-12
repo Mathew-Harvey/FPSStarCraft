@@ -34,7 +34,7 @@ One skirmish as the Ironhold Charter against a Veyl outpost. Smash the three Cho
 
 **Their side, the Veyl Chorus**
 
-- **Cantor**: shielded melee raider that dashes in.
+- **Cantor**: shielded melee raider that dashes in. A bot-driven Cantor's sweep also cuts half as deep into up to two more bodies pressed against its target, which is what lets it trade with a swarm.
 - **Lancer**: keeps its distance and fires slow bolts you can sidestep.
 - **Warden**: a boss that wakes when the first Stone falls and later walks with the raids. Stay out of the pink ring.
 - **Reed Gate**: where their reinforcements arrive. Knock it down and the raids shrink.
@@ -116,6 +116,12 @@ The Choir Stone also teaches **Low Hum** (Tenders gather 30% faster) and **Wide 
 
 A third side: a fungal swarm that grows out of the ground. On the Skirmish tab, pick **The Gloam** to lead them against Ironhold bots, or pick Ironhold and **Against the Gloam** to fight them. In an online lobby the host picks who holds the outpost (the Veyl or the Gloam), and split screen uses whichever side is picked on the Skirmish tab. A match has two sides, so the Gloam and the Veyl never share a map.
 
+### Any side against any side
+
+Every pairing plays, mirrors included: Ironhold against Ironhold, Veyl against Veyl, Gloam against Gloam, and the Veyl against the Gloam. On the Skirmish tab pick your side and then who you fight (**Against the Veyl**, **Against the Gloam** or **Against Ironhold**). An Ironhold player always starts at the yard; anyone else starts at the outpost with the foe at the yard. In an online lobby the host picks who holds the yard and who holds the outpost. Ironhold against a Veyl outpost nobody plays is still the classic match, where the outpost breeds raids for free; every other pairing is two built bases, each run by its own faction's brain at whichever end it starts.
+
+In a mirror the far side's bodies and buildings wear a different tint, and each side keeps its own ore, research, Bloom and voice lines. The far end gets the yard's ore fields and starting crew turned round, so both ends have the same walk to their ore. Outside the classic match the outpost also gets the yard's rich nearby ore field turned round, so neither end has the shorter walk to its first new base.
+
 The Gloam are cheap, fast and always more of them, with three rules of their own:
 
 - **Buds.** Every unit ripens from a Bud on a **Mother Cap**, the Gloam HQ. A Cap holds three Buds and grows a new one every seven seconds. Everything a Cap is ripening hatches at once instead of waiting in a queue. Snappers hatch two to a Bud.
@@ -138,7 +144,7 @@ The Gloam are cheap, fast and always more of them, with three rules of their own
 | Foundry | Tusk Hollow | Grows Mulchers. Sells the second tier and Bull Charge. |
 | Signal Mast | Old Growth | Top research, Deep Bloom and Fat Gut. |
 
-The Overgrowth runs the Gloam economy when nobody tells it otherwise (press G to take over), and the Swarm Lead pitches pushes the way Alpha does. `node test/gloam.mjs` plays a solo Gloam run, an Ironhold skirmish against Gloam bots, and an online versus. `node tools/geco.cjs '[[0,1]]' 20` sets Ironhold bots against Gloam bots for balancing; the last runs split one win each with an eighteen-minute draw.
+The Overgrowth runs the Gloam economy when nobody tells it otherwise (press G to take over), and the Swarm Lead pitches pushes the way Alpha does. `node test/gloam.mjs` plays a solo Gloam run, an Ironhold skirmish against Gloam bots, and an online versus. `node tools/geco.cjs '[[0,1]]' 20` sets Ironhold bots against Gloam bots for balancing. In the November matchup sweep (30 headless bot matches per pairing over every map size and shift, `npm run sim`) Ironhold beat the Veyl 17 to 13 and the Gloam 14 to 15 with one draw. Gloam fighters scatter from a grenade in the air; without that, Linesman grenades took a pack of Snappers each and the Gloam won 1 match in 30.
 
 ## The Veyl base
 
@@ -226,6 +232,7 @@ The tables live in `src/data.ts` (`BLD`, `TRAINS`, `UNIT_NEEDS`, `UPGRADES`). Th
 
 Two scripts play whole matches in a headless browser at many times real speed, with drawing switched off.
 
+- `npm run sim -- '{"out":2,"map":0,"diff":1,"seed":1}'` plays one bot-against-bot match in Node with no browser (40 minutes of match in about 20 seconds): `home` and `out` name the faction at each end (0 Ironhold, 1 Veyl, 2 Gloam; the same twice is a mirror), on any map code and shift. The result names the winner, with a 2 on the end for the far side of a mirror, and `bdump: [seconds]` prints each side's buildings, ore, bodies and research at those times. The match's own dice are seeded by the map, so `seed` shuffles where the starting workers stand and when each brain first thinks; without that, two runs of one map are the same match. `human: [1, 0]` makes a side turtle (it builds but never says yes to a push), `verbose: 1` prints both sides every two minutes, and `probe: "park"` runs a cheese scenario. `npm run test:rules` runs the checks from the matchup sweep (`test/matchups.ts`) the same way.
 - `node tools/soak.cjs '[[0,1],[1,1]]'` plays hands-off matches (pairs of map and difficulty) and reports errors, bodies that stop moving, and who won.
 - `node tools/monkey.cjs [seconds] [scenario]` mashes every control at random in single player on every map and shift, each campaign job, and split screen co-op and versus, and reports crashes and broken state (NaN positions, bodies off the map, health over the maximum, halves of a split screen that disagree).
 - `node tools/bot.cjs <mode> <difficulty> [map]` plays as a scripted first-person player with perfect aim. Modes: `linesman` (walk in alone and shoot), `rigger` (drill rush), `longshot`, `squad` (defend, say yes to pushes, go with them) and `afk`. It exists to find one-trick wins.

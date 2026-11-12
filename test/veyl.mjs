@@ -20,7 +20,7 @@ try {
   const s = await p.evaluate(() => { const g = __ore.game, h = __ore.split().host; return { team: g.myTeam, kind: g.me.kind, eco: h.eco, human: h.human.join(), stones: h.buildings.filter(b => b.alive && b.team === 1 && b.kind === 'choir').length, tenders: h.units.filter(u => u.alive && u.kind === 'tender').length, iron: h.units.filter(u => u.alive && u.team === 0).length, cash: g.purse[1], two: !!__ore.game2() }; });
   console.log(JSON.stringify(s));
   check(s.team === 1 && s.kind === 'tender', 'the player is a Veyl Tender');
-  check(s.eco && s.human === 'false,true,false', 'the match runs the Veyl economy, with Ironhold left to the bots');
+  check(s.eco && s.human.split(',').slice(0, 3).join() === 'false,true,false', 'the match runs the Veyl economy, with Ironhold left to the bots');
   check(s.stones === 1 && s.tenders >= 6 && s.iron >= 4, `one Choir Stone, ${s.tenders} Tenders and an Ironhold crew`);
   check(!s.two, 'only one view on screen');
   if (SHOTS) { await p.waitForTimeout(3000); await p.screenshot({ path: SHOTS + '/veyl-start.png' }); }
@@ -42,7 +42,7 @@ try {
   check(!!pit && await until(() => __ore.split().host.buildings.some(b => b.kind === 'broodpit' && b.queue && b.queue.length), null, 20000), 'training a Lancer from the player reaches the pit');
   // research at the Choir Stone
   const up = await p.evaluate(() => __ore.game.buyUpgrade('vhum'));
-  check(up && await until(() => __ore.split().host.up.vhum, null, 20000), 'the player can research Choir Stone hum');
+  check(up && await until(() => __ore.split().host.upOf(1).vhum, null, 20000), 'the player can research Choir Stone hum');
   // Ironhold bots dig and build on their own
   check(await until(() => { const h = __ore.split().host; return h.stats.mined > 60 && h.units.some(u => u.alive && u.team === 0 && u.kind === 'rigger' && u.state !== 'idle'); }, null, 90000), 'the Ironhold bots run their own economy');
   // fixes from the Veyl sweep, one check each
@@ -62,8 +62,8 @@ try {
   check(sw.guard, 'a raider hitting an Ironhold Rigger draws the guards over');
   check(sw.site[1] === false, `a half-built site can be shot down (it had ${sw.site[0]} health)`);
   // after Thicker Glass, the Veyl player's screen shows shields within their maximum
-  await p.evaluate(() => { const h = __ore.split().host; h.purse[1] += 400; if (!h.ownB('wardpylon', true, 1).length) h.addBuilding('wardpylon', 1, h.stones()[0].pos.x - 14, h.stones()[0].pos.z + 20, true); h.buyUpgrade('vglass'); h.spawn('cantor', 1, 0, 44); });
-  check(await until(() => { const g = __ore.game; return g.up.vglass && g.units.some(u => u.alive && u.team === 1 && u.kind === 'cantor' && u.shield > 50); }, null, 20000) && await p.evaluate(() => __ore.game.units.every(u => !u.alive || u.shield <= u.maxShield + .01)), "after Thicker Glass the player's screen keeps Veyl shields within their maximum");
+  await p.evaluate(() => { const h = __ore.split().host; h.purse[1] += 400; if (!h.ownB('wardpylon', true, 1).length) h.addBuilding('wardpylon', 1, h.stones()[0].pos.x - 14, h.stones()[0].pos.z + 20, true); h.buyUpgrade('vglass', 1); h.spawn('cantor', 1, 0, 44); });
+  check(await until(() => { const g = __ore.game; return g.upOf(1).vglass && g.units.some(u => u.alive && u.team === 1 && u.kind === 'cantor' && u.shield > 50); }, null, 20000) && await p.evaluate(() => __ore.game.units.every(u => !u.alive || u.shield <= u.maxShield + .01)), "after Thicker Glass the player's screen keeps Veyl shields within their maximum");
   // an unfinished Choir Stone does not keep the Chorus alive once the last finished one falls
   const lose = await p.evaluate(() => { const h = __ore.split().host, st = h.stones()[0]; const site = h.addBuilding('choir', 1, st.pos.x - 30, st.pos.z - 30, false); for (const b of h.buildings) if (b.kind === 'choir' && b.built && b.alive) h.damage(b, 1e7, null); return { site: site.alive, endT: h.endT, won: h.endWon }; });
   check(lose.site && lose.endT > 0 && lose.won === true, 'an unfinished Choir Stone does not keep the Chorus alive once the last finished one falls');

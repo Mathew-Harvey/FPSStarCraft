@@ -24,7 +24,7 @@ try {
   const s = await p.evaluate(() => { const g = __ore.game, h = __ore.split().host; return { team: g.myTeam, kind: g.me.kind, eco: h.eco, human: h.human.join(), caps: h.buildings.filter(b => b.alive && b.team === 2 && b.kind === 'mothercap').length, grazers: h.units.filter(u => u.alive && u.kind === 'grazer').length, veyl: h.units.filter(u => u.alive && u.team === 1).length + h.buildings.filter(b => b.alive && b.team === 1).length, iron: h.units.filter(u => u.alive && u.team === 0).length, bloom: h.carpet.patches.length, bloomHere: g.carpet.patches.length, buds: h.buildings.find(b => b.kind === 'mothercap')?.buds }; });
   console.log(JSON.stringify(s));
   check(s.team === 2 && s.kind === 'grazer', 'the player is a Gloam Grazer');
-  check(s.eco && s.human === 'false,false,true', 'the match runs the Gloam economy, with Ironhold left to the bots');
+  check(s.eco && s.human.split(',').slice(0, 3).join() === 'false,false,true', 'the match runs the Gloam economy, with Ironhold left to the bots');
   check(s.caps === 1 && s.grazers >= 6 && s.iron >= 4 && s.veyl === 0, `one Mother Cap, ${s.grazers} Grazers, an Ironhold crew and no Veyl`);
   check(s.bloom >= 1 && s.bloomHere >= 1 && s.buds >= 0 && s.buds <= 3, `the Mother Cap spreads Bloom on both copies and grows Buds (${s.buds} ripe)`);
   if (SHOTS) { await p.waitForTimeout(3000); await p.screenshot({ path: SHOTS + '/gloam-start.png' }); }
@@ -50,10 +50,11 @@ try {
   check(await until(p, () => __ore.split().host.units.filter(u => u.alive && u.kind === 'snapper').length >= 2, null, 30000), 'the pair hatches');
   check(await until(p, () => __ore.game.buildings.find(b => b.kind === 'mothercap')?.buds === __ore.split().host.buildings.find(b => b.kind === 'mothercap')?.buds, null, 20000), 'the player sees the Bud count');
   // jump into a Snapper and bite: the attack crosses to the host
+  await until(p, () => __ore.game.units.some(u => u.alive && u.kind === 'snapper' && u.team === 2), null, 20000);   // the hatch is on the host first; wait for the player's copy
   const jumped = await p.evaluate(() => { const g = __ore.game, s = g.units.find(u => u.kind === 'snapper' && u.team === 2); if (!s) return false; g.possess(s, true); return true; });
   check(jumped && await until(p, () => __ore.game.me && __ore.game.me.kind === 'snapper', null, 20000), 'the player can drive a Snapper');
   // research at the Warren
-  check(await p.evaluate(() => __ore.game.buyUpgrade('glegs')) && await until(p, () => __ore.split().host.up.glegs, null, 20000), 'the player can grow Quick Legs at the Warren');
+  check(await p.evaluate(() => __ore.game.buyUpgrade('glegs')) && await until(p, () => __ore.split().host.upOf(2).glegs, null, 20000), 'the player can grow Quick Legs at the Warren');
   // a Blister bursts on command and takes nearby Ironhold with it
   const pop = await p.evaluate(() => { const h = __ore.split().host, cap = h.buildings.find(b => b.kind === 'mothercap'), bl = h.spawn('blister', 2, cap.pos.x + 20, cap.pos.z), v = h.spawn('linesman', 0, cap.pos.x + 23, cap.pos.z); bl.pilot = __ore.split().seats[0].pid; v.pilot = 99; h.dir.vs.auto = false; return [bl.id, v.id]; });
   await p.evaluate(([id]) => { const g = __ore.game; return new Promise(r => { let n = 0; const t = setInterval(() => { const u = g.units.find(x => x.id === id); if (u || ++n > 300) { clearInterval(t); if (u) { u.pilot = 0; g.possess(u, true); } r(); } }, 50); }); }, pop);

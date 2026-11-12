@@ -31,7 +31,7 @@ export function hatch(g: Ctx, x: number, y: number, len: number, ang: number, n:
   }
 }
 /** Broad, half-dry brush strokes that leave the paint uneven. */
-function brush(g: Ctx, s: number, base: string, n: number, ang = 0) {
+export function brush(g: Ctx, s: number, base: string, n: number, ang = 0) {
   for (let i = 0; i < n; i++) {
     g.globalAlpha = R(.1, .26); const x = R(-.1, 1.1) * s, y = R(-.1, 1.1) * s, l = R(.2, .7) * s, a = ang + R(-.25, .25);
     pen(g, [[x, y], [x + Math.cos(a) * l * .5, y + Math.sin(a) * l * .5 + R(-8, 8)], [x + Math.cos(a) * l, y + Math.sin(a) * l]], R(14, 46), tone(base, rnd() < .5 ? R(.7, .9) : R(1.12, 1.4)), .7);
@@ -45,12 +45,12 @@ function flake(g: Ctx, x: number, y: number, r: number, metal: string) {
   g.beginPath(); pts.forEach((p, i) => i ? g.lineTo(p[0], p[1]) : g.moveTo(p[0], p[1])); g.closePath(); g.fillStyle = metal; g.fill();
   pen(g, [...pts.slice(0, Math.ceil(n * .6))], 3.2); pen(g, [...pts.slice(Math.ceil(n * .55)), pts[0]], 2.2, 'rgba(255,255,255,.75)');
 }
-function rivet(g: Ctx, x: number, y: number, r = 6) {
+export function rivet(g: Ctx, x: number, y: number, r = 6) {
   r *= 2; g.fillStyle = INK; g.beginPath(); g.arc(x + 1, y + 1.5, r, 0, 7); g.fill(); g.fillStyle = 'rgba(255,255,255,.2)'; g.beginPath(); g.arc(x, y, r * .72, 0, 7); g.fill();
   g.fillStyle = 'rgba(255,255,255,.8)'; g.beginPath(); g.arc(x - r * .28, y - r * .3, r * .3, 0, 7); g.fill();
 }
 /** Dark turn-away and inked border, then a broken light line just inside it. `box` frames all four sides, `band` only top and bottom. */
-function frame(g: Ctx, s: number, base: string, kind: 'box' | 'band' | 'cap', ink = 7) {
+export function frame(g: Ctx, s: number, base: string, kind: 'box' | 'band' | 'cap', ink = 7) {
   const e = s * .22;
   const sides: [number, number, number, number][] = kind === 'box' ? [[0, 0, 0, 1], [1, 0, -1, 0], [0, 1, 0, -1], [0, 0, 1, 0]] : kind === 'cap' ? [[0, 1, 0, -1]] : [[0, 0, 0, 1], [0, 1, 0, -1]];
   for (const [ox, oy, gx, gy] of sides) {
@@ -66,11 +66,11 @@ function frame(g: Ctx, s: number, base: string, kind: 'box' | 'band' | 'cap', in
   if (kind === 'box') { line([m, 0], [m, s], ink, INK, 0); line([s - m, 0], [s - m, s], ink * 1.25, INK, 0); g.globalAlpha = .8; line([lo, lo], [lo, s - lo], ink * .5, hi, 1); g.globalAlpha = 1; }
 }
 /** Light from above, painted in: the top third lifts, the bottom third sinks towards violet. */
-function sky(g: Ctx, s: number, k = 1) {
+export function sky(g: Ctx, s: number, k = 1) {
   const gr = g.createLinearGradient(0, 0, 0, s); gr.addColorStop(0, `rgba(255,250,225,${.26 * k})`); gr.addColorStop(.4, 'rgba(255,250,225,0)'); gr.addColorStop(.55, 'rgba(60,20,70,0)'); gr.addColorStop(1, `rgba(60,20,70,${.5 * k})`);
   g.fillStyle = gr; g.fillRect(0, 0, s, s);
 }
-function nicks(g: Ctx, s: number, n: number, col: string, len = 40, w = 2.6) {
+export function nicks(g: Ctx, s: number, n: number, col: string, len = 40, w = 2.6) {
   for (let i = 0; i < n; i++) { g.globalAlpha = R(.45, .95); const x = R(.05, .95) * s, y = R(.05, .95) * s, a = R(-.5, .5) + (rnd() < .5 ? 0 : 1.57), l = R(8, len); pen(g, [[x, y], [x + Math.cos(a) * l * .5 + R(-2, 2), y + Math.sin(a) * l * .5], [x + Math.cos(a) * l, y + Math.sin(a) * l]], R(1.2, w), col); }
   g.globalAlpha = 1;
 }

@@ -2,8 +2,9 @@
 import type * as THREE from 'three';
 import type { Rig } from './models';
 
-export type Kind = 'rigger' | 'linesman' | 'breacher' | 'gantry' | 'longshot' | 'patch' | 'cantor' | 'lancer' | 'warden' | 'tender';
-export type BKind = 'headframe' | 'bunkhouse' | 'depot' | 'watchpost' | 'machineshop' | 'foundry' | 'choir' | 'reedgate' | 'broodpit' | 'thornspire' | 'wardpylon' | 'assay' | 'mast' | 'hushwell';
+import { G_UNIT, G_BLD, G_UPGRADES, G_BUILDABLE, G_UNLOCK, type GKind, type GBKind, type GUpKey } from './gloam';
+export type Kind = 'rigger' | 'linesman' | 'breacher' | 'gantry' | 'longshot' | 'patch' | 'cantor' | 'lancer' | 'warden' | 'tender' | GKind;
+export type BKind = 'headframe' | 'bunkhouse' | 'depot' | 'watchpost' | 'machineshop' | 'foundry' | 'choir' | 'reedgate' | 'broodpit' | 'thornspire' | 'wardpylon' | 'assay' | 'mast' | 'hushwell' | GBKind;
 
 export interface UnitDef { name: string; team: number; hp: number; shield: number; speed: number; eye: number; headY: number; bodyY: number; rad: number; cost: number; time: number; supply: number; quip: string; ack: string[] }
 export const UNIT: Record<Kind, UnitDef> = {
@@ -16,6 +17,7 @@ export const UNIT: Record<Kind, UnitDef> = {
   cantor: { name: 'Cantor', team: 1, hp: 90, shield: 50, speed: 5.4, eye: 2.2, headY: 2.42, bodyY: 1.3, rad: .66, cost: 60, time: 11, supply: 1, quip: '"We sing first. It is only polite."', ack: ['The verse is yours.', 'One voice, borrowed.', 'Blades in tune.'] },
   lancer: { name: 'Lancer', team: 1, hp: 50, shield: 30, speed: 4.4, eye: 2.0, headY: 2.12, bodyY: 1.25, rad: .6, cost: 65, time: 12, supply: 1, quip: '"A long note, held until something breaks."', ack: ['The lance hums for you.', 'Hold the note.', 'Far voice, listening.'] },
   warden: { name: 'Warden', team: 1, hp: 900, shield: 300, speed: 3.3, eye: 3.8, headY: 4.0, bodyY: 2.7, rad: 1.5, cost: 300, time: 30, supply: 6, quip: '"The low note. The one the ground hears."', ack: ['The deep voice wakes.', 'Step loudly.', 'The ground is listening.'] },
+  ...G_UNIT,
   tender: { name: 'Tender', team: 1, hp: 40, shield: 20, speed: 4.8, eye: 1.75, headY: 1.86, bodyY: 1.05, rad: .62, cost: 50, time: 8, supply: 1, quip: '"The rock hums. I hum back. We agree on a price."', ack: ['Humming.', 'The seam is listening.', 'A small voice, but useful.'] },
 };
 export interface BldDef { name: string; hp: number; hx: number; hz: number; h: number; cost: number; time: number; blurb: string; needs?: BKind[] }
@@ -34,6 +36,7 @@ export const BLD: Record<BKind, BldDef> = {
   assay: { name: 'Assay Office', hp: 1400, hx: 3.6, hz: 3.2, h: 4.2, cost: 125, time: 14, blurb: 'Longshots, infantry research', needs: ['bunkhouse'] },
   mast: { name: 'Signal Mast', hp: 1100, hx: 2.3, hz: 2.3, h: 12, cost: 250, time: 22, blurb: 'Third upgrades, top research', needs: ['foundry', 'assay'] },
   hushwell: { name: 'Hush Well', hp: 800, hx: 2.4, hz: 2.4, h: 4.4, cost: 100, time: 9, blurb: 'Eight more voices' },
+  ...(G_BLD as Record<GBKind, BldDef>),
 };
 export const BUILDABLE: BKind[] = ['bunkhouse', 'depot', 'watchpost', 'machineshop', 'assay', 'foundry', 'mast', 'headframe'];
 /** Everything about a side that the shared code needs to know. Keyed by team: 0 is the Ironhold Charter, 1 the Veyl Chorus. */
@@ -41,17 +44,21 @@ export interface Faction { name: string; short: string; hq: BKind; worker: Kind;
 export const FACTION: Record<number, Faction> = {
   0: { name: 'Ironhold Charter', short: 'Ironhold', hq: 'headframe', worker: 'rigger', supply: 'depot', builds: BUILDABLE, voice: 'Quartermaster', squad: 'Alpha', lead: 'linesman', ore: 'ore' },
   1: { name: 'Veyl Chorus', short: 'Veyl', hq: 'choir', worker: 'tender', supply: 'hushwell', builds: ['broodpit', 'hushwell', 'thornspire', 'wardpylon', 'reedgate', 'choir'], voice: 'Conductor', squad: 'Chorus Lead', lead: 'cantor', ore: 'ore' },
+  2: { name: 'The Gloam', short: 'Gloam', hq: 'mothercap', worker: 'grazer', supply: 'sporesac', builds: G_BUILDABLE, voice: 'Overgrowth', squad: 'Swarm', lead: 'snapper', ore: 'ore' },
 };
 /** Who speaks for which side in the message feed. A player only hears their own side, plus Signal and chat. */
-export const VOICE_SIDE: Record<string, number> = { Conductor: 1, Chorus: 1, 'Chorus Lead': 1, Cantor: 1, Lancer: 1, Warden: 1, Tender: 1, Watcher: 1 };
+export const VOICE_SIDE: Record<string, number> = { Conductor: 1, Chorus: 1, 'Chorus Lead': 1, Cantor: 1, Lancer: 1, Warden: 1, Tender: 1, Watcher: 1, Overgrowth: 2, Swarm: 2, Grazer: 2, Snapper: 2, Quillback: 2, Blister: 2, Mulcher: 2, Rootwatch: 2 };
+/** Which faction holds the far end of the map this match. The Ironhold always hold the yard; the Veyl or the Gloam hold the outpost. Set before a Game is made. */
+export const SIDE = { out: 1 };
 /** The side two sides fight: every match has two. */
-export const foeOf = (team: number) => team === 0 ? 1 : 0;
-export const isWorker = (k: Kind) => k === 'rigger' || k === 'tender';
+export const foeOf = (team: number) => team === 0 ? SIDE.out : 0;
+export const isWorker = (k: Kind) => k === 'rigger' || k === 'tender' || k === 'grazer';
+export const isGloam = (k: Kind) => k === 'grazer' || k === 'snapper' || k === 'quillback' || k === 'blister' || k === 'mulcher';
 /** What each building trains, and the extra building a unit needs standing before it can be trained. */
-export const TRAINS: Partial<Record<BKind, Kind[]>> = { headframe: ['rigger'], bunkhouse: ['linesman', 'breacher', 'patch', 'longshot'], foundry: ['gantry'], choir: ['tender'], broodpit: ['cantor', 'lancer'], reedgate: ['warden'] };
-export const UNIT_NEEDS: Partial<Record<Kind, BKind>> = { breacher: 'machineshop', patch: 'machineshop', longshot: 'assay' };
+export const TRAINS: Partial<Record<BKind, Kind[]>> = { headframe: ['rigger'], bunkhouse: ['linesman', 'breacher', 'patch', 'longshot'], foundry: ['gantry'], choir: ['tender'], broodpit: ['cantor', 'lancer'], reedgate: ['warden'], mothercap: ['grazer', 'snapper', 'blister', 'quillback'], tuskhollow: ['mulcher'] };
+export const UNIT_NEEDS: Partial<Record<Kind, BKind>> = { breacher: 'machineshop', patch: 'machineshop', longshot: 'assay', snapper: G_UNLOCK.snapper, quillback: G_UNLOCK.quillback, blister: G_UNLOCK.blister, mulcher: G_UNLOCK.mulcher };
 export type UpKey = 'dmg' | 'armor' | 'dmg2' | 'armor2' | 'dmg3' | 'armor3' | 'drill' | 'beds' | 'post' | 'pay' | 'glass' | 'stitch' | 'frag' | 'servo' | 'weld' | 'buckets'
-  | 'vedge' | 'vglass' | 'vedge2' | 'vglass2' | 'vhum' | 'vwide' | 'vstep' | 'vbreath' | 'vthorn' | 'vbloom';
+  | 'vedge' | 'vglass' | 'vedge2' | 'vglass2' | 'vhum' | 'vwide' | 'vstep' | 'vbreath' | 'vthorn' | 'vbloom' | GUpKey;
 /** Research. `at` is the building that sells it, and `needs` is the research that has to be bought first. */
 export interface UpDef { key: UpKey; name: string; cost: number; blurb: string; at: BKind; say: string; needs?: UpKey; /** The side that can buy it. Ironhold when left out. */ team?: number }
 export const UPGRADES: UpDef[] = [
@@ -82,6 +89,8 @@ export const UPGRADES: UpDef[] = [
   { team: 1, key: 'vbloom', name: 'Quick Bloom', cost: 150, blurb: 'Shields come back twice as fast', at: 'reedgate', say: 'Quick Bloom. A broken shell grows back before the echo fades.' },
   { team: 1, key: 'vhum', name: 'Low Hum', cost: 100, blurb: 'Tenders gather 30% faster', at: 'choir', say: 'Low Hum. The seams give up their ore sooner.' },
   { team: 1, key: 'vwide', name: 'Wide Chorus', cost: 125, blurb: '+4 voices, and +2 more per Hush Well', at: 'choir', say: 'Wide Chorus. More room in the song.' },
+  // The Gloam. Research is grown at the buildings that hold it.
+  ...G_UPGRADES.map(u => ({ ...u, team: 2 })),
 ];
 /** Research a side can buy. */
 export const upsOf = (team: number) => UPGRADES.filter(u => (u.team || 0) === team);
@@ -102,6 +111,8 @@ export interface Unit {
 export interface Building {
   id: number; kind: BKind; team: number; pos: THREE.Vector3; hx: number; hz: number; h: number; hp: number; maxHp: number; obj: THREE.Group; holo: THREE.Group | null;
   built: boolean; progress: number; /** progress already paid out as health, so damage to a site sticks */ pdone: number; queue: { kind: Kind; t: number }[]; alive: boolean; cd: number; builder: Unit | null; lastHit: number; rot: boolean; smokeT: number; stage: number;
+  /** A Mother Cap's ripe Buds, and how far the next one has grown. */
+  buds?: number; budT?: number;
 }
 /** A piece of map scenery that can be shot, blown up or drilled apart. */
 export interface Prop {

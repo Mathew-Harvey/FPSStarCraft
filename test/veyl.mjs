@@ -20,7 +20,7 @@ try {
   const s = await p.evaluate(() => { const g = __ore.game, h = __ore.split().host; return { team: g.myTeam, kind: g.me.kind, eco: h.eco, human: h.human.join(), stones: h.buildings.filter(b => b.alive && b.team === 1 && b.kind === 'choir').length, tenders: h.units.filter(u => u.alive && u.kind === 'tender').length, iron: h.units.filter(u => u.alive && u.team === 0).length, cash: g.purse[1], two: !!__ore.game2() }; });
   console.log(JSON.stringify(s));
   check(s.team === 1 && s.kind === 'tender', 'the player is a Veyl Tender');
-  check(s.eco && s.human === 'false,true', 'the match runs the Veyl economy, with Ironhold left to the bots');
+  check(s.eco && s.human === 'false,true,false', 'the match runs the Veyl economy, with Ironhold left to the bots');
   check(s.stones === 1 && s.tenders >= 6 && s.iron >= 4, `one Choir Stone, ${s.tenders} Tenders and an Ironhold crew`);
   check(!s.two, 'only one view on screen');
   if (SHOTS) { await p.waitForTimeout(3000); await p.screenshot({ path: SHOTS + '/veyl-start.png' }); }

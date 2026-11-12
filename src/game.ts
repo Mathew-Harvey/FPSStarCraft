@@ -99,7 +99,7 @@ export class Game {
     for (const k of new Set([...BUILDABLE, ...FACTION[SIDE.home].builds, ...FACTION[SIDE.out].builds])) { const src = this.model(k); this.ghost[k] = MD.hologram(src, holoOK); this.ghostBad[k] = MD.hologram(src, holoBad); this.ghost[k].visible = this.ghostBad[k].visible = false; s.add(this.ghost[k], this.ghostBad[k]); }
     const pool = (n: number, geo: THREE.BufferGeometry, mat: THREE.Material, fx: boolean) => { const out: THREE.Mesh[] = []; for (let i = 0; i < n; i++) { const m = mk(geo, mat, 0, 0, 0, s); if (fx) m.layers.set(L_FX); m.visible = false; out.push(m); } return out; };
     this.tracers = pool(36, G.cyl8, tracerMat, true).map(m => ({ m, t: 0 }));
-    this.puffs = pool(80, G.sph, M.dust, false).map(m => ({ m, t: 0, life: 1, v: V3(), s: 1 }));
+    this.puffs = pool(96, G.cloud, M.dust, false).map(m => ({ m, t: 0, life: 1, v: V3(), s: 1 }));
     this.bits = pool(90, G.box, M.rust, false).map(m => ({ m, t: 0, v: V3(), spin: 0 }));
     this.chunks = pool(240, G.dod, M.rock, false).map(m => ({ m, t: 0, v: V3(), w: V3(), s: 1, rest: false }));
     this.scorch = pool(18, G.blot, M.scorch, false).map(m => { m.rotation.x = -Math.PI / 2; return { m, t: 0, s: 1 }; });
@@ -162,6 +162,7 @@ export class Game {
   addBuilding(kind: BKind, team: number, x: number, z: number, built: boolean, rot = false, id = 0): Building {
     const st = BLD[kind], obj = this.model(kind); obj.position.set(x, 0, z); if (rot) obj.rotation.y = Math.PI / 2; tintMirror(obj, team); this.scene.add(obj);
     const b: Building = { id: id || nextId++, kind, team, pos: V3(x, 0, z), hx: rot ? st.hz : st.hx, hz: rot ? st.hx : st.hz, h: st.h, hp: built ? st.hp : st.hp * .1, maxHp: st.hp, obj, holo: null, built, progress: built ? 1 : 0, pdone: built ? 1 : 0, queue: [], alive: true, cd: R(0, 1), builder: null, lastHit: -99, rot, smokeT: 0, stage: 0 };
+    for (const q of this.props) if (q.dress && q.alive && Math.abs(q.x - x) < b.hx + q.r * .6 && Math.abs(q.z - z) < b.hz + q.r * .6) this.damageProp(q, 1e4, null);
     if (!built) { b.holo = MD.hologram(obj, holoOK); b.holo.position.copy(obj.position); b.holo.rotation.copy(obj.rotation); this.scene.add(b.holo); obj.scale.y = .06; }
     if (fac(team) === 2) { this.carpet.add(b, kind as GBKind, x, z, built); if (kind === 'mothercap') { b.buds = built ? G_TUNE.buds : 0; b.budT = 0; } }
     this.buildings.push(b); return b;
@@ -249,9 +250,9 @@ export class Game {
     const tr = this.tracers.find(t => t.t <= 0); if (!tr) return; const d = TMP.copy(b).sub(a), len = d.length(); if (len < .1) return;
     tr.m.material = mat; tr.m.scale.set(w, len, w); tr.m.position.copy(a).addScaledVector(d, .5); tr.m.quaternion.setFromUnitVectors(UP, d.normalize()); tr.m.visible = true; tr.t = mat === tracerMat ? .06 : .16;
   }
-  puff(p: THREE.Vector3, n: number, size: number, mat: THREE.Material = M.dust, up = 1.2, spread = 1) {
+  puff(p: THREE.Vector3, n: number, size: number, mat: THREE.Material = M.dust, up = 1.2, spread = 1, life = 1) {
     if (this.evq) return;
-    for (let i = 0; i < n; i++) { const f = this.puffs.find(x => x.t <= 0); if (!f) return; f.m.material = mat; f.m.position.copy(p); f.v.set(R(-1, 1) * spread, R(.3, 1) * up, R(-1, 1) * spread); f.s = size * R(.6, 1.2); f.life = f.t = R(.35, .7); f.m.visible = true; f.m.scale.setScalar(.01); }
+    for (let i = 0; i < n; i++) { const f = this.puffs.find(x => x.t <= 0); if (!f) return; f.m.material = mat; f.m.position.copy(p); f.v.set(R(-1, 1) * spread, R(.3, 1) * up, R(-1, 1) * spread); f.s = size * R(.6, 1.2); f.life = f.t = R(.35, .7) * life; f.m.rotation.set(R(0, 6), R(0, 6), R(0, 6)); f.m.visible = true; f.m.scale.setScalar(.01); }
   }
   /** Chunky debris that arcs, bounces once and shrinks away. */
   debris(p: THREE.Vector3, n: number, size: number, mat: THREE.Material, power = 6) {
@@ -269,7 +270,7 @@ export class Game {
     for (const u of this.units) { if (!u.alive || u.team === team) continue; const d = Math.hypot(u.pos.x - p.x, u.pos.z - p.z); if (d > radius + UNIT[u.kind].rad) continue; const k = 1 - .6 * Math.min(1, d / radius); this.damage(u, dmg * k, from); if (d > .1) { u.kx += (u.pos.x - p.x) / d * 9 * k; u.kz += (u.pos.z - p.z) / d * 9 * k; } }
     for (const b of this.buildings) { if (!b.alive || b.team === team) continue; if (this.distToBox(b, p.x, p.z) < radius * .7) this.damage(b, dmg * 1.4, from); }
     this.blastProps(p, radius, dmg, from); this.shove(p, radius * 1.6, 9);
-    const g = V3(p.x, .6, p.z); this.puff(g, 7, radius * .5, acid ? M.gS : veyl ? M.teal : M.fire, 2.2, 1.6); this.puff(g, 5, radius * .55, acid ? M.gGlow : veyl ? M.indigoL : M.smoke, 1.4, 2.2); this.debris(g, 8, .3, acid ? M.gH : veyl ? M.crys : M.rock, 7); this.pow(g, radius * 1.5, acid ? 2 : veyl ? 1 : 0); this.scorchAt(p, radius * 1.5); if (radius >= 3.5) this.crater(p, radius * .55);
+    const g = V3(p.x, .6, p.z); this.puff(g, 5, radius * .62, acid ? M.gS : veyl ? M.teal : M.fire, 2.2, 1.5); this.puff(g, 3, radius * .5, acid ? M.gGlow : veyl ? M.cyan : M.fireD, 1.6, 2); this.puff(TMP2.set(p.x, 1.1, p.z), 5, radius * .7, acid ? M.gGlow : veyl ? M.indigoL : M.soot, 1.5, 1.7, 2.3); this.debris(g, 8, .3, acid ? M.gH : veyl ? M.crys : M.rock, 7); this.pow(g, radius * 1.5, acid ? 2 : veyl ? 1 : 0); this.scorchAt(p, radius * 1.5); if (radius >= 3.5) this.crater(p, radius * .55);
     const v = this.vol(p); this.shake = Math.max(this.shake, v * 1.1); if (!veyl) this.pipe.flash = Math.max(this.pipe.flash, v * .5); sfx.boom(v);
     this.hud.damage(V3(p.x, 2.2, p.z), acid ? 'SPLORCH!' : veyl ? 'WHUMM!' : 'BOOM!', team === this.myTeam || (team < 0 && !veyl) ? 'ko' : 'kobad');
   }
@@ -771,7 +772,7 @@ export class Game {
     if (p.obj) this.scene.remove(p.obj);
     if (!p.owner) {
       const mat = this.propMat(p), hh = Math.min(p.h - p.y0, 14), c = V3(p.x, p.y0, p.z), v = this.vol(c), big = p.maxHp >= 800;
-      if (p.kind === 'plant') this.puff(TMP.set(p.x, .6, p.z), 3, .5, M.violet, 1, .6);
+      if (p.kind === 'plant') this.puff(TMP.set(p.x, .6, p.z), 3, .5, p.dress ? M.dust : M.violet, 1, .6);
       else {
         const n = Math.max(3, Math.min(22, Math.round(2 + p.r * hh * .7))), sz = Math.min(2.6, Math.max(.16, p.r * (p.kind === 'rock' || p.kind === 'mesa' ? .55 : .42)));
         for (let k = 0; k < n; k++) { const a = R(0, 6.283), rr = p.r * R(0, .9); this.chunk(V3(p.x + Math.cos(a) * rr, p.y0 + R(.2, hh), p.z + Math.sin(a) * rr), sz * R(.55, 1.25), mat, 3 + Math.min(6, p.r), c, p.kind === 'metal' || p.kind === 'barrel'); }

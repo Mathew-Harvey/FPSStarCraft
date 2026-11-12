@@ -153,6 +153,7 @@ EXTRA.push(() => {
   S('fab', cloth('#4d577c'));
   S('fabT', cloth('#a8744a'));
   S('fabG', cloth('#6f7a55', { folds: 10 }));
+  S('straw', cloth('#c9a352', { folds: 8, kind: 'none' }));
   S('lea', cloth('#6a4230', { kind: 'box', folds: 2 }));
   S('leaB', cloth('#6a4230', { kind: 'band', folds: 3 }));
   S('leaN', cloth('#6a4230', { kind: 'none', folds: 3 }));

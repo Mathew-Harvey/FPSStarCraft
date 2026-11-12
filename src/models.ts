@@ -448,6 +448,14 @@ function flora(g: THREE.Object3D, x: number, z: number, s: number) {
   const n = 2 + Math.floor(R(0, 3));
   for (let i = 0; i < n; i++) { const a = R(0, 6.3), l = R(.6, 1.6) * s, tx = x + Math.cos(a) * .3 * s, tz = z + Math.sin(a) * .3 * s; mk(tube([[x, 0, z], [tx, l * .6, tz], [tx + Math.cos(a) * l * .4, l, tz + Math.sin(a) * l * .4]], [.07 * s, .05 * s, .03 * s], 6), M.fabG, 0, 0, 0, g); mk(blob(.3, .36, .3), i % 2 ? M.vM : M.violet, [tx + Math.cos(a) * l * .4, l + .1 * s, tz + Math.sin(a) * l * .4], [s, s, s], 0, g); }
 }
+/** Six clumps of dry grass, each a fan of thin curved blades. Made once and shared by every clump on every map. */
+let tuftPool: THREE.BufferGeometry[][] | null = null;
+function tufts() {
+  if (tuftPool) return tuftPool; let s = 4177; const D = (a: number, b: number) => { s = (s * 16807) % 2147483647; return a + (b - a) * s / 2147483647; };
+  return tuftPool = [0, 1, 2, 3, 4, 5].map(() => { const n = 5 + Math.floor(D(0, 4)), out: THREE.BufferGeometry[] = [];
+    for (let k = 0; k < n; k++) { const a = k / n * 6.28 + D(-.4, .4), l = D(.45, 1.05), o = D(.25, .7); out.push(tube([[Math.cos(a) * .08, 0, Math.sin(a) * .08], [Math.cos(a) * l * o * .45, l * .62, Math.sin(a) * l * o * .45], [Math.cos(a) * l * o, l * .92, Math.sin(a) * l * o]], [.085, .07, .012], 5, .45)); }
+    return out; });
+}
 export function buildWorld(scene: THREE.Scene, props: Prop[], anim: ((t: number) => void)[]) {
   const w = new THREE.Group(); scene.add(w); reseed(7919 + Math.round(MAP.out[0] * 31 + MAP.out[1] * 17));
   // Scenery is drawn as a few big merged meshes. Each prop remembers which vertices are its own, so it can crumble or vanish without costing a draw call.
@@ -519,6 +527,31 @@ export function buildWorld(scene: THREE.Scene, props: Prop[], anim: ((t: number)
     for (let i = 0; i < 4; i++) { const a = i * 1.57 + .8; mk(shard(.2, 1.3, 5, .28), M.vC, [Math.cos(a) * 3, .4, Math.sin(a) * 3], 0, [R(-.4, .4), 0, R(-.4, .4)], g); } });
   for (const [x, z] of [[-20, -15], [22, -5], [10, 25], [-24, 11], [-6, 27], [20, -21]].map(([a, b]) => veylPt(a, b))) prop('veyl', GL ? 'Stalk stand' : 'Reed stand', x, z, 2.4, 9, 140, {}, g => { for (let k = 0; k < 6; k++) { const h = R(5, 11), rx = x + R(-2, 2), rz = z + R(-2, 2), lean = R(-.6, .6); const tz = rz + R(-.5, .5); mk(tube([[rx, 0, rz], [rx + lean * .2, h * .5, (rz + tz) / 2], [rx + lean, h, tz]], [.12, .09, .04], 6), (GL ? M.gB : M.vL), 0, 0, 0, g); mk(shard(.13, .8, 4, .35), (GL ? M.gS : M.teal), [rx + lean, h + .1, tz], 0, 0, g); } });
   if (!GL) { mk(G.hexT, M.indigoL, [OUTPOST.x, .06, OUTPOST.z], [11, .12, 11], 0, w); mk(G.torusF, M.teal, [OUTPOST.x, .16, OUTPOST.z], [4.6, 4.6, .6], [Math.PI / 2, 0, 0], w); } mk(G.torusF, GL ? M.gD : M.mag, [OUTPOST.x, .16, OUTPOST.z], [2.2, 2.2, .6], [Math.PI / 2, 0, 0], w);
+  // Set dressing: the litter of a working frontier. Dry scrub, loose stones, scrap, old bones and spoil heaps, none of it in anybody's way.
+  // It has its own dice, so adding to it never moves a mesa or a seam, and like everything else out here it can be shot or flattened.
+  { let ds = 90001 + Math.round(MAP.out[0] * 13 + MAP.out[1] * 7); const D = (a = 0, b = 1) => { ds = (ds * 16807) % 2147483647; return a + (b - a) * ds / 2147483647; }, K = (MAP.k || 1) ** 2;
+    const solids = props.filter(q => q.solid), roadEnd = roadPt(ROAD.len + 6);
+    const free = (x: number, z: number, pad: number) => Math.hypot(x, z) > 15 && Math.hypot(x - OUTPOST.x, z - OUTPOST.z) > 13 && segDist(x, z, ROAD.x, ROAD.z, roadEnd[0], roadEnd[1]) > 4.4 + pad && !solids.some(q => Math.hypot(x - q.x, z - q.z) < q.r + 1 + pad);
+    const dress = (kind: Prop['kind'], name: string, x: number, z: number, r: number, h: number, hp: number, build: (g: THREE.Group) => void) => { prop(kind, name, x, z, r, h, hp, { at: [x, z, D(0, 6.28)] }, build).dress = true; };
+    const spot = (): [number, number] => [cx + D(-175, 175) * (MAP.k || 1), cz + D(-145, 145) * (MAP.k || 1)];
+    for (let i = 0; i < 260 * K; i++) { const [x, z] = spot(); if (!free(x, z, 0)) continue; const sc = D(.7, 1.6), blades = tufts()[i % 6], mat = i % 4 ? M.straw : M.fabG;
+      dress('plant', 'Dry scrub', x, z, .5 * sc, .9 * sc, 6, g => { for (const b of blades) mk(b, mat, 0, [sc, sc, sc], 0, g); }); }
+    for (let i = 0; i < 110 * K; i++) { const [x, z] = spot(); if (!free(x, z, 0)) continue; const n = 3 + Math.floor(D(0, 4));
+      dress('rock', 'Loose stones', x, z, .9, .5, 24, g => { for (let k = 0; k < n; k++) { const sc = D(.18, .6), a = D(0, 6.28), d = k ? D(.3, 1.3) : 0; mk(rocks(i + k), M.rockB, [Math.cos(a) * d, sc * .22, Math.sin(a) * d], [sc * 1.2, sc * D(.6, .9), sc], [0, D(0, 3), 0], g); } }); }
+    for (let i = 0; i < 54 * K; i++) { let x: number, z: number; if (i % 3 === 0) { const q = roadPt(D(10, ROAD.len - 8), (D() < .5 ? -1 : 1) * D(7, 15)); x = q[0]; z = q[1]; } else if (i % 3 === 1) { const a = D(0, 6.28), d = D(30, 60); x = Math.cos(a) * d; z = Math.sin(a) * d; } else[x, z] = spot();
+      if (!free(x, z, .6) || isClear(x, z, -34)) continue; const t = Math.floor(D(0, 7)), wm = [M.wallR, M.wallT, M.wallD, M.wallY][i % 4];
+      if (t === 0) dress('metal', 'Old tyres', x, z, .8, 1.1, 50, g => { const n = 1 + Math.floor(D(0, 3)); for (let k = 0; k < n; k++) mk(ring(.46, .19, 1, 14), M.rib, [D(-.06, .06), .19 + k * .36, D(-.06, .06)], 0, [H2, 0, 0], g); mk(ring(.46, .19, 1, 14), M.rib, [.95, .5, .1], 0, [0, D(-.4, .4), .28], g); });
+      else if (t === 1) dress('metal', 'Scrap sheet', x, z, .9, 1.1, 50, g => { mk(slab(1.7, 1.15, .07, 1.3, .02), wm, [0, .5, 0], 0, [-.42, 0, D(-.12, .12)], g); mk(slab(1.1, .8, .06, 1.3, .02), M.wallD, [.5, .05, .7], 0, [-H2 + .06, .5, 0], g); beam([-.6, 0, -.3], [-.55, 1.0, -.1], .04, M.steelD, g); });
+      else if (t === 2) dress('barrel', 'Dead drum', x, z, .7, .9, 40, g => { mk(can(.4, 1.2, .04), i % 2 ? M.wallR : M.bS, [0, .38, 0], 0, [H2, 0, D(0, 3)], g); mk(blob(.5, .12, .7), M.nD, [.1, .03, .8], 0, 0, g); });
+      else if (t === 3) dress('metal', 'Pipe offcuts', x, z, 1.1, .5, 60, g => { beam([-1.2, .2, 0], [1.3, .2, .3], .2, M.steelD, g); beam([-.9, .2, .5], [1.0, .2, .9], .2, M.steelD, g); beam([-.6, .55, .25], [.8, .55, .6], .2, M.bS, g); });
+      else if (t === 4) dress('metal', 'Sunk crate', x, z, .8, .9, 60, g => { mk(slab(1.15, 1.15, 1.15, 1.2, .07), wm, [0, .32, 0], 0, [.24, 0, .17], g); mk(rocks(i), M.rockB, [.8, .12, .3], [.5, .3, .5], 0, g); });
+      else if (t === 5) dress('metal', 'Survey stake', x, z, .3, 1.8, 20, g => { beam([0, 0, 0], [.06, 1.7, 0], .035, M.steelD, g); mk(G.box, M.red, [.3, 1.5, 0], [.5, .3, .03], [0, 0, -.08], g); mk(rocks(i), M.rockB, [.1, .08, .15], [.3, .2, .3], 0, g); });
+      else dress('metal', 'Claim sign', x, z, .7, 2, 40, g => { beam([-.5, 0, 0], [-.46, 1.7, 0], .05, M.steelD, g); beam([.5, 0, 0], [.52, 1.5, 0], .05, M.steelD, g); mk(G.box, M.hazard1, [0, 1.3, .03], [1.3, .55, .05], [0, 0, -.1], g); }); }
+    for (let i = 0; i < 6 * K; i++) { const [x, z] = spot(); if (!free(x, z, 2) || isClear(x, z, -10)) continue;
+      dress('rock', 'Old bones', x, z, 1.6, 1.4, 60, g => { for (let k = 0; k < 5; k++) mk(G.arc, M.nW, [0, 0, -1.4 + k * .62], [2.0 - k * .16, (2.3 - k * .24) * (k === 2 ? .7 : 1), 1.1], [0, 0, D(-.12, .12)], g); beam([0, .12, -1.8], [0, .16, 1.6], .09, M.nW, g); mk(blob(.62, .5, .85), M.nW, [0, .3, 2.4], 0, [-.2, D(-.5, .5), 0], g); for (const sx of [-1, 1]) mk(shard(.1, .8, 5, .3), M.nW, [sx * .42, .62, 2.3], 0, [-.5, 0, -sx * .9], g); }); }
+    for (let i = 0; i < 7; i++) { const a = i / 7 * 6.28 + D(-.3, .3), d = D(34, 47), x = Math.cos(a) * d, z = Math.sin(a) * d; if (!free(x, z, 2) || isClear(x, z, -40)) continue; const r = 1.8 + (i % 3) * .5, h = r * .62;
+      dress('rock', 'Spoil heap', x, z, r, h, 160, g => { mk(lathe(spl([[r, 0], [r * .82, h * .36], [r * .4, h * .84], [0, h]], 8), 10), M.rockB, 0, 0, 0, g); for (let k = 0; k < 3; k++) { const b = D(0, 6.28); mk(shard(.12, .5, 5, .3), M.ore, [Math.cos(b) * r * .55, h * .5, Math.sin(b) * r * .55], 0, [D(-.8, .8), 0, D(-.8, .8)], g); mk(rocks(i + k), M.rockB, [Math.cos(b + 2) * r, .12, Math.sin(b + 2) * r], [.5, .3, .45], 0, g); } }); }
+  }
   bake(w);
   for (const [mat, b] of batches) { const geo = b.geos.length > 1 ? mergeGeometries(b.geos) : b.geos[0], mesh = new THREE.Mesh(geo, mat); mesh.frustumCulled = false; w.add(mesh); const attr = geo.attributes.position as THREE.BufferAttribute; for (const r of b.recs) r.p.ranges.push({ attr, start: r.start, count: r.count }); }
   // floating shards over the outpost

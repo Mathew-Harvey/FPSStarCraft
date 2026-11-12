@@ -140,6 +140,8 @@ export interface Prop {
   id: number; kind: 'rock' | 'mesa' | 'metal' | 'barrel' | 'plant' | 'crystal' | 'veyl'; name: string; x: number; z: number; r: number; y0: number; h: number;
   hp: number; maxHp: number; alive: boolean; solid: boolean; stage: number; stages: number;
   ranges: { attr: THREE.BufferAttribute; start: number; count: number }[]; obj?: THREE.Object3D; owner?: Prop; link: Prop[];
+  /** Litter on the ground: scrub, stones, scrap. A new building flattens whatever of it is underfoot. */
+  dress?: boolean;
 }
 export interface OreNode { pos: THREE.Vector3; amount: number; max: number; obj: THREE.Group; /** Seconds the seam has been empty. */ dryT?: number }
 export interface Callout { who: string; text: string; t: number; dur: number; keys: [string, string][] }

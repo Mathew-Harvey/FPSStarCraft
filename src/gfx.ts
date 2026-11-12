@@ -1,6 +1,7 @@
 // Rendering: hand-painted procedural textures, the comic toon shader with real shadows,
 // and the ink-outline post pass.
 import * as THREE from 'three';
+import { mergeVertices } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 
 THREE.ColorManagement.enabled = false;
 
@@ -102,7 +103,7 @@ function makeTextures() {
 }
 
 // ---------------------------------------------------------------- toon shader
-const FOG = new THREE.Color('#f3c9a0');
+const FOG = new THREE.Color('#ecd2c2');
 /** 0 is midday, 1 is full sunset. Shared by the sky and the final grade. */
 export const DUSK = { value: 0 };
 const DUSKFOG = new THREE.Color('#f09a84');
@@ -142,13 +143,20 @@ vec3 groundAt(vec2 p){
   vec2 w=p+(vec2(vnoise(p*.13),vnoise(p*.13+17.))-.5)*9.;
   float n1=vnoise(w*.028)*.62+vnoise(w*.075+3.)*.38, a1=fwidth(n1)+.0004;
   float dr=vnoise(vec2(w.x*.02+w.y*.012,w.y*.11-w.x*.05)+60.), a2=fwidth(dr)+.0004;
-  vec3 sand=vec3(.8,.52,.33), earth=vec3(.7,.4,.24), deep=vec3(.61,.33,.205), pale=vec3(.88,.63,.42), inkc=vec3(.27,.12,.09);
-  float eM=smoothstep(.55-a1,.55+a1,n1), dM=smoothstep(.68-a1,.68+a1,n1), pM=smoothstep(.7-a2,.7+a2,dr)*(1.-eM);
+  vec3 sand=vec3(.71,.53,.375), earth=vec3(.59,.4,.285), deep=vec3(.47,.31,.235), pale=vec3(.79,.63,.455), inkc=vec3(.2,.1,.09);
+  float eM=smoothstep(.55-a1,.55+a1,n1), dM=smoothstep(.68-a1,.68+a1,n1), pM=smoothstep(.74-a2,.74+a2,dr)*(1.-eM);
   vec3 c=mix(mix(mix(sand,earth,eM),deep,dM),pale,pM); float ink=0.;
   // a pen line round each patch, lifted off the page here and there
   float brk=smoothstep(.36,.5,vnoise(p*.21+9.));
   ink=max(ink,(1.-smoothstep(.05,.05+fw,abs(n1-.55)/a1*fw))*brk*clamp(.1/fw,0.,1.));
-  ink=max(ink,(1.-smoothstep(.03,.03+fw,abs(dr-.7)/a2*fw))*(1.-brk)*(1.-eM)*.5*clamp(.06/fw,0.,1.));
+  ink=max(ink,(1.-smoothstep(.03,.03+fw,abs(dr-.74)/a2*fw))*(1.-brk)*(1.-eM)*.5*clamp(.06/fw,0.,1.));
+  // each darker patch sits a little proud of the sand: a shaded lip inside its edge, scribbled in, and a bleached line outside it
+  float dM1=(n1-.55)/a1*fw*1.4, lip=(1.-smoothstep(0.,.5,dM1))*step(0.,dM1)*brk;
+  c=mix(c,deep*.9,lip*.55); c=mix(c,pale,(1.-smoothstep(0.,.1+fw,-dM1))*step(dM1,0.)*(1.-brk)*.5*clamp(.2/fw,0.,1.));
+  // dry-brush scribble: bunches of short slanted strokes, as an inker roughs in dirt. Far off they settle into a flat tone.
+  { vec2 pw2=p+(vec2(vnoise(p*.7+5.),vnoise(p*.7+25.))-.5)*.5; float hv=(pw2.x+pw2.y*.8)/.2, hu=pw2.x*.8-pw2.y, bun=smoothstep(.6,.66,vnoise(p*.42+41.)+lip*.3), near=clamp((.04-lod)/.02,0.,1.);
+    float st=(1.-smoothstep(.06,.06+fw/.2,abs(fract(hv)-.5)))*smoothstep(.5,.6,vnoise(vec2(hu*2.4,floor(hv)*3.7)));
+    ink=max(ink,st*bun*near*.42*clamp(.03/fw,0.,1.)); c*=1.-bun*(1.-near)*.05; }
   // the road: packed earth, ragged at the edges, two ruts with tread marks
   vec2 ab=uRoad.zw-uRoad.xy; float len=max(length(ab),.01); vec2 ad=ab/len, rp=p-uRoad.xy; float along=clamp(dot(rp,ad),0.,len), side=dot(rp,vec2(-ad.y,ad.x)), rd=length(rp-ad*along);
   float re=uRoadW+(vnoise(p*.33)-.5)*1.5+(vnoise(p*1.9)-.5)*.3, rm=(1.-smoothstep(re-fw,re+fw,rd))*step(.5,uRoadW);
@@ -170,9 +178,10 @@ vec3 groundAt(vec2 p){
   float pf=clamp((.07-lod)/.035,0.,1.);
   if(pf>.01){ vec2 q=p*1.15, ci=floor(q), hh=h2(ci); float on=step(.66,hash(ci+5.));
     vec2 dd=(fract(q)-(.22+.56*hh))*vec2(1.,1.4+hh.x)/1.15; float r=length(dd), rad=.03+.065*hh.y;
-    c=mix(c,hh.x>.5?pale*1.04:deep*.86,(1.-smoothstep(rad-fw*.5,rad+fw*.5,r))*pf*on);
+    float sr=length(dd-vec2(.5,-.5)*rad); c=mix(c,deep*.72,(1.-smoothstep(rad*.95-fw*.5,rad*.95+fw*.5,sr))*pf*on*.8);
+    c=mix(c,hh.x>.5?pale*1.04:earth*.92,(1.-smoothstep(rad-fw*.5,rad+fw*.5,r))*pf*on);
     ink=max(ink,(1.-smoothstep(.014,.014+fw,abs(r-rad)))*pf*on*clamp(.03/fw,0.,1.)); }
-  c*=.97+.06*vnoise(p*3.1);
+  c*=(.97+.06*vnoise(p*3.1))*(.91+.18*vnoise(p*.011+5.));
   return mix(c,inkc,ink*.78);
 }
 #endif
@@ -187,10 +196,10 @@ void main(){
   float t=dot(n,normalize(vL))+nz*.24; t=mix(t,1.,uFlat*.6);
   float sh=shadowAt(vW+wn*.07);
   float lit=smoothstep(-.03,.03,t)*smoothstep(.3,.7,sh), hi=smoothstep(.74,.78,t)*sh, deep=1.-smoothstep(-.6,-.54,t);
-  vec3 shc=base*vec3(.46,.4,.68)+vec3(.03,.01,.07);
+  vec3 shc=base*vec3(.36,.3,.48)+vec3(.02,.01,.055);
   vec3 col=mix(shc,base*vec3(.8,.75,.8),lit);
   col=mix(col,base,smoothstep(.3,.36,t)*lit);
-  col=mix(col,min(base*1.2+vec3(.08,.07,.03),vec3(1.)),hi*.75);
+  col=mix(col,min(base*1.2+vec3(.08,.07,.03),vec3(1.)),hi*.75*(1.-uFlat));
   vec2 fc=gl_FragCoord.xy/uPx+(vnoise(gl_FragCoord.xy/uPx*.045)-.5)*7.;
   float a1=(fc.x+fc.y)/9., a2=(fc.x-fc.y)/9.;
   float br1=smoothstep(.3,.5,vnoise(vec2(a2*.11,floor(a1)*7.3))), br2=smoothstep(.36,.56,vnoise(vec2(a1*.11,floor(a2)*5.1)+9.));
@@ -213,7 +222,7 @@ export const SHARED = { uShadow: { value: WHITE as THREE.Texture }, uShadowMat: 
 export interface ToonOpts { color?: string; emis?: number; hatch?: number; fog?: number; flat?: number; rx?: number; ry?: number; side?: THREE.Side; ground?: boolean }
 export function T(map?: THREE.Texture | null, o: ToonOpts = {}) {
   return new THREE.ShaderMaterial({
-    uniforms: { uColor: { value: new THREE.Color(o.color || '#ffffff') }, uMap: { value: map || WHITE }, uEmis: { value: o.emis || 0 }, uOpacity: { value: 1 }, uHatch: { value: o.hatch === undefined ? 1 : o.hatch }, uFogK: { value: o.fog === undefined ? .0026 : o.fog }, uFlat: { value: o.flat || 0 }, uRep: { value: new THREE.Vector2(o.rx || 1, o.ry || 1) }, ...(o.ground ? { uRoad: { value: new THREE.Vector4() }, uRoadW: { value: 0 } } : {}), ...SHARED },
+    uniforms: { uColor: { value: new THREE.Color(o.color || '#ffffff') }, uMap: { value: map || WHITE }, uEmis: { value: o.emis || 0 }, uOpacity: { value: 1 }, uHatch: { value: o.hatch === undefined ? 1 : o.hatch }, uFogK: { value: o.fog === undefined ? .0032 : o.fog }, uFlat: { value: o.flat || 0 }, uRep: { value: new THREE.Vector2(o.rx || 1, o.ry || 1) }, ...(o.ground ? { uRoad: { value: new THREE.Vector4() }, uRoadW: { value: 0 } } : {}), ...SHARED },
     vertexShader: TOON_VS, fragmentShader: TOON_FS, side: o.side || THREE.FrontSide, defines: o.ground ? { GROUND: 1 } : {},
   });
 }
@@ -227,11 +236,11 @@ function makeMaterials() {
     rubber: T(TX.rubber), cloth: T(TX.cloth), vest: T(TX.vest), gun: T(TX.gun), helmet: T(TX.helmet), hardhat: T(TX.hardhat), skin: T(TX.skin),
     corr: T(TX.corr, { rx: 2 }), rust: T(TX.rust), tealC: T(TX.tealC), door: T(TX.door), concrete: T(TX.concrete, { rx: 2, ry: 2 }),
     rock: T(TX.rock), mesa: T(TX.mesa, { rx: 3, ry: 1 }), ground: T(null, { hatch: .55, flat: 1, ground: true }), ore: T(TX.ore, { emis: .35 }), oreDead: T(TX.rock, { color: '#b9b0a8' }),
-    indigo: T(TX.indigo), indigoL: T(TX.indigo, { color: '#c9c2ff' }), indigoD: T(TX.indigoD), smoke: T(TX.smoke, { hatch: .5 }), dust: T(TX.smoke, { hatch: .3, color: '#f0b98a' }),
+    indigo: T(TX.indigo), indigoL: T(TX.indigo, { color: '#c9c2ff' }), indigoD: T(TX.indigoD), smoke: T(TX.smoke, { hatch: .5 }), soot: T(TX.smoke, { color: '#6d5f68' }), dust: T(TX.smoke, { hatch: .3, color: '#f0b98a' }),
     visor: T(null, { color: '#ffe27a', emis: 1 }), cyan: T(null, { color: '#8ff2ff', emis: 1 }), teal: T(null, { color: '#35e0c8', emis: .9 }), mag: T(null, { color: '#ff4f9a', emis: .9 }), red: T(null, { color: '#ff4b3a', emis: 1 }),
     planet: T(TX.planet, { fog: 0, hatch: .4 }), ring: T(null, { color: '#ffe9c4', emis: .8, fog: 0, side: THREE.DoubleSide }),
     orange: T(TX.yellowP, { color: '#ff9a5c' }), helmetB: T(TX.helmet, { color: '#ffb08a' }), gold: T(TX.yellowP, { color: '#ffe2a0', emis: .35 }), crys: T(TX.ore, { color: '#8ff7ff', emis: .5 }),
-    scorch: T(null, { color: '#2a1a1c', hatch: 0, flat: 1 }), bolt: T(null, { color: '#9dfcff', emis: 1 }), fire: T(null, { color: '#ffb23a', emis: 1 }), spark: T(null, { color: '#fff1a0', emis: 1 }),
+    scorch: T(null, { color: '#2a1a1c', hatch: 0, flat: 1 }), bolt: T(null, { color: '#9dfcff', emis: 1 }), fire: T(null, { color: '#ffc04a', emis: .62, hatch: 0 }), fireD: T(null, { color: '#ff7a2a', emis: .7, hatch: 0 }), spark: T(null, { color: '#fff1a0', emis: 1 }),
     sign: T(TX.sign), violet: T(null, { color: '#b58cff', emis: .9 }), flash: T(null, { color: '#fff6c0', emis: 1, side: THREE.DoubleSide }),
   });
   for (const f of EXTRA) f();
@@ -258,6 +267,16 @@ function ragged(n: number, rad: (i: number, r: () => number) => number) {
   const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2)); g.setIndex(idx); g.computeVertexNormals(); return g;
 }
 /** An ink blot for scorch marks, and a comic starburst for the flash of a blast. */
+/** A lumpy cloud for smoke, dust and fire: a ball pushed out into a dozen knuckles, so the ink line draws round each one like a comic puff. */
+function cloud() {
+  const g = new THREE.IcosahedronGeometry(.5, 4), a = g.attributes.position as THREE.BufferAttribute, v = new THREE.Vector3(); let seed = 23; const r = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+  const lobes: THREE.Vector3[] = []; for (let i = 0; i < 13; i++) { const y = 1 - (i + .5) / 13 * 2, q = Math.sqrt(1 - y * y), t = i * 2.39996 + r() * .5; lobes.push(new THREE.Vector3(Math.cos(t) * q, y, Math.sin(t) * q)); }
+  const size = lobes.map(() => .75 + r() * .5);
+  for (let i = 0; i < a.count; i++) { v.fromBufferAttribute(a, i).normalize(); let m = 0; for (let k = 0; k < lobes.length; k++) { const d = v.dot(lobes[k]), c = Math.cos(.62 * size[k]); if (d > c) m = Math.max(m, Math.sqrt(1 - ((1 - d) / (1 - c)) ** 2) * size[k]); } v.multiplyScalar(.3 + .2 * m); a.setXYZ(i, v.x, v.y, v.z); }
+  g.deleteAttribute('uv'); g.deleteAttribute('normal'); const out = mergeVertices(g, 1e-4); out.computeVertexNormals();
+  const q = out.attributes.position as THREE.BufferAttribute, uv = new Float32Array(q.count * 2); for (let i = 0; i < q.count; i++) { v.fromBufferAttribute(q, i).normalize(); uv[i * 2] = .5 + Math.atan2(v.z, v.x) / 6.2832; uv[i * 2 + 1] = .5 + v.y * .5; } out.setAttribute('uv', new THREE.BufferAttribute(uv, 2)); return out;
+}
+G.cloud = cloud();
 G.blot = ragged(36, (i, r) => i % 3 === 0 ? .36 + r() * .14 : .27 + r() * .1);
 G.burst = ragged(26, (i, r) => i % 2 ? .19 + r() * .07 : .36 + r() * .14);
 type P3 = [number, number, number];
@@ -301,16 +320,17 @@ export function makeSky() {
 }
 
 // ---------------------------------------------------------------- pipeline
-const POST_FS = `precision highp float; varying vec2 vUv; uniform sampler2D tC,tD,tN; uniform vec2 uRes; uniform float uNear,uFar,uOrtho,uPx,uSat,uStatic,uTime,uFlash,uDusk; ${NOISE}
+const POST_FS = `precision highp float; varying vec2 vUv; uniform sampler2D tC,tD,tN; uniform vec2 uRes; uniform float uNear,uFar,uOrtho,uPx,uSat,uStatic,uTime,uFlash,uDusk,uBold,uProj,uAO; ${NOISE}
 float lin(vec2 uv){ float d=texture2D(tD,uv).x; if(uOrtho>.5) return uNear+d*(uFar-uNear); float z=d*2.-1.; return 2.*uNear*uFar/(uFar+uNear-z*(uFar-uNear)); }
 vec3 nrm(vec2 uv){ return texture2D(tN,uv).xyz*2.-1.; }
 float edgeAt(vec2 u, vec2 sp){
   float d0=lin(u);
   // Ink is drawn as if on the object, not on the screen: it narrows as the thing gets further away,
   // so a distant Rigger gets a fine line rather than one as thick as a close one's.
-  float th=uOrtho>.5?.9:clamp(1.15/(1.+d0/16.),.28,1.15);
-  th*=(.8+.4*vnoise(sp/46.))*uPx;
-  vec2 px=th/uRes, pw=px*1.4, pn=px*.62;
+  // Two pens, as a comic inker uses: a heavy one round the outside of a thing, a fine one for the folds and seams inside it.
+  float th=uOrtho>.5?.9:clamp(1.15/(1.+d0/16.),.28,1.15), tk=uOrtho>.5?1.:1.+uBold*clamp(1./(1.+d0/9.),0.,1.);
+  float wv=(.8+.4*vnoise(sp/46.))*uPx; th*=wv;
+  vec2 px=th*tk/uRes, pw=px*1.4, pn=th/uRes*.62;
   float dA=lin(u+px),dB=lin(u-px),dC=lin(u+px*vec2(-1.,1.)),dD=lin(u+px*vec2(1.,-1.));
   vec3 n0=nrm(u),nA=nrm(u+pn),nB=nrm(u-pn),nC=nrm(u+pn*vec2(-1.,1.)),nD=nrm(u+pn*vec2(1.,-1.));
   float de;
@@ -325,12 +345,24 @@ float edgeAt(vec2 u, vec2 sp){
   float near=uOrtho>.5?0.:min(d0,min(min(dA,dB),min(dC,dD)));
   return max(de,ne)*mix(1.,.4,smoothstep(12.,110.,near));
 }
+// Contact shading: where a thing meets the ground or tucks into a corner the page goes darker, which is what sits it in the world.
+// Each sample is a point of the scene near this one; it shades this one only if it is close by and stands above this surface.
+vec3 vpos(vec2 u){ float d=lin(u); return vec3((u*2.-1.)*vec2(uRes.x/uRes.y,1.)/uProj*d,-d); }
+float hollow(vec2 u, float d0){
+  vec3 p=vpos(u), n=normalize(nrm(u)); float R=.8, o=0.;
+  vec2 r=vec2(uRes.y/uRes.x,1.)*min(R*uProj*.5/d0,.12);
+  float jr=fract(52.9829189*fract(dot(floor(u*uRes),vec2(.06711056,.00583715))))*6.283;
+  for(int k=0;k<14;k++){ float f=(float(k)+.5)/14., an=float(k)*2.399+jr; vec2 q=u+vec2(cos(an),sin(an))*r*sqrt(f);
+    vec3 v=vpos(q)-p; float l=length(v)+1e-4; o+=max(0.,dot(n,v)/l-.15)*(1.-smoothstep(R*.6,R*1.3,l)); }
+  return smoothstep(.14,.75,o/14.*3.6)*(1.-smoothstep(60.,140.,d0));
+}
 void main(){
   vec2 sp=vUv*uRes/uPx;
   vec2 wobv=(vec2(vnoise(sp/30.),vnoise(sp/30.+31.))-.5)*2.6*uPx/uRes;
   vec2 u=vUv+wobv; vec2 h=.3/uRes;
   float edge=(edgeAt(u+h,sp)+edgeAt(u-h,sp)+edgeAt(u+h*vec2(1.,-1.),sp)+edgeAt(u+h*vec2(-1.,1.),sp))*.25;
   vec3 col=texture2D(tC,vUv).rgb;
+  if(uOrtho<.5&&uAO>0.){ float d0=lin(vUv); if(d0<140.){ float oc=hollow(vUv,d0)*uAO; col*=mix(vec3(1.),vec3(.42,.36,.56),oc); } }
   col=mix(col,vec3(.05,.045,.075),min(1.,edge*.95));
   col=mix(col,col*vec3(1.1,.8,.84)+vec3(.03,0.,.07),uDusk*.75);
   col=mix(vec3(dot(col,vec3(.3,.59,.11))),col,1.18*uSat);
@@ -354,6 +386,10 @@ export class Pipeline {
   shadowEvery = 1; private frameN = 0;
   /** Samples per pixel when drawing the colour picture, so slanted edges come out clean rather than stepped. 0 turns it off. */
   aa = 4;
+  /** How much heavier the outside line of a thing is than the lines inside it, close up. 0 is one pen for everything. */
+  bold = 1;
+  /** Strength of the contact shading under and between things. Low picture quality turns it off. */
+  ao = 1;
   /** Size of the canvas itself. It is larger than `w` by `h` only when the screen is split into views. */
   cw = 1; ch = 1;
   /** Where on the canvas the finished picture goes, in canvas pixels from the bottom left. Null fills the canvas. */
@@ -371,7 +407,7 @@ export class Pipeline {
     SHARED.uShadow.value = this.rtS.depthTexture; SHARED.uShadowTex.value = 1 / S;
     this.rtC = new THREE.WebGLRenderTarget(4, 4); this.rtN = new THREE.WebGLRenderTarget(4, 4);
     this.postMat = new THREE.ShaderMaterial({
-      uniforms: { tC: { value: null }, tD: { value: null }, tN: { value: null }, uRes: { value: new THREE.Vector2(1, 1) }, uNear: { value: .06 }, uFar: { value: 4000 }, uOrtho: { value: 0 }, uPx: SHARED.uPx, uSat: { value: 1 }, uFlash: { value: 0 }, uStatic: { value: 0 }, uTime: { value: 0 }, uDusk: DUSK },
+      uniforms: { tC: { value: null }, tD: { value: null }, tN: { value: null }, uRes: { value: new THREE.Vector2(1, 1) }, uNear: { value: .06 }, uFar: { value: 4000 }, uOrtho: { value: 0 }, uPx: SHARED.uPx, uSat: { value: 1 }, uFlash: { value: 0 }, uStatic: { value: 0 }, uTime: { value: 0 }, uDusk: DUSK, uBold: { value: 1 }, uProj: { value: 1 }, uAO: { value: 1 } },
       vertexShader: `varying vec2 vUv; void main(){ vUv=uv; gl_Position=vec4(position.xy,0.,1.); }`, fragmentShader: POST_FS, depthTest: false, depthWrite: false,
     });
     this.postScene.add(new THREE.Mesh(new THREE.PlaneGeometry(2, 2), this.postMat));
@@ -391,7 +427,7 @@ export class Pipeline {
   }
 
   /** Moves the sun toward the horizon and warms the grade. 0 is midday, 1 is sunset. */
-  setDusk(k: number) { if (Math.abs(k - DUSK.value) < .002 && k !== 0) return; DUSK.value = k; LIGHT.set(-.55 - k * .2, .62 - k * .22, .56).normalize(); FOG.set('#f3c9a0').lerp(DUSKFOG, k); }
+  setDusk(k: number) { if (Math.abs(k - DUSK.value) < .002 && k !== 0) return; DUSK.value = k; LIGHT.set(-.55 - k * .2, .62 - k * .22, .56).normalize(); FOG.set('#ecd2c2').lerp(DUSKFOG, k); }
   /** Renders the scene with shadows centred on `focus`, covering `span` metres. */
   draw(scene: THREE.Scene, cam: THREE.PerspectiveCamera | THREE.OrthographicCamera, focus: THREE.Vector3, span: number, shadows = false) {
     const r = this.renderer, sun = this.sun;
@@ -408,7 +444,7 @@ export class Pipeline {
     cam.layers.set(0); cam.layers.enable(L_VM); scene.overrideMaterial = this.normalMat;
     r.setRenderTarget(this.rtN); r.setClearColor(0x8080ff, 1); r.clear(); r.render(scene, cam); scene.overrideMaterial = null;
 
-    const u = this.postMat.uniforms; u.uOrtho.value = (cam as any).isOrthographicCamera ? 1 : 0; u.uNear.value = cam.near; u.uFar.value = cam.far; u.uSat.value = this.sat; u.uFlash.value = this.flash; u.uStatic.value = this.static; u.uTime.value = this.time;
+    const u = this.postMat.uniforms; u.uOrtho.value = (cam as any).isOrthographicCamera ? 1 : 0; u.uProj.value = cam.projectionMatrix.elements[5]; u.uBold.value = this.bold; u.uAO.value = this.ao; u.uNear.value = cam.near; u.uFar.value = cam.far; u.uSat.value = this.sat; u.uFlash.value = this.flash; u.uStatic.value = this.static; u.uTime.value = this.time;
     r.setRenderTarget(null);
     if (this.rect) { const q = this.rect; r.setViewport(q[0], q[1], q[2], q[3]); r.setScissor(q[0], q[1], q[2], q[3]); r.setScissorTest(true); r.render(this.postScene, this.postCam); r.setScissorTest(false); r.setViewport(0, 0, this.cw, this.ch); }
     else r.render(this.postScene, this.postCam);

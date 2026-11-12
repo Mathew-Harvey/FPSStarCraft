@@ -29,7 +29,10 @@ export function bake<T extends THREE.Object3D>(root: T): T {
     } else if (c.children.length) bake(c);
   }
   for (const c of rm) root.remove(c);
-  for (const [mat, e] of by) { const mesh = new THREE.Mesh(e.g.length > 1 ? mergeGeometries(e.g) : e.g[0], mat); mesh.layers.mask = e.mask; root.add(mesh); }
+  for (const [mat, e] of by) {
+    // sculpted parts carry their creases in aEm before they reach the atlas; plain parts merged with them get a blank one
+    if (e.g.some(g => g.attributes.aEm) && !e.g.every(g => g.attributes.aEm)) for (const g of e.g) if (!g.attributes.aEm) g.setAttribute('aEm', new THREE.BufferAttribute(new Float32Array(g.attributes.position.count), 1));
+    const mesh = new THREE.Mesh(e.g.length > 1 ? mergeGeometries(e.g) : e.g[0], mat); mesh.layers.mask = e.mask; root.add(mesh); }
   return root;
 }
 // ---------------------------------------------------------------- unit texture atlas
@@ -54,6 +57,7 @@ export function atlasify<T extends THREE.Object3D>(root: T): T {
     const i = atlasCell(mat); if (i < 0) return;
     const geo = m.geometry, uv = geo.attributes.uv as THREE.BufferAttribute, n = uv.count, em = new Float32Array(n).fill(Math.min(1, u.uEmis.value) + 2 * Math.round(u.uShine.value * 10)), cx = i % COLS, cy = Math.floor(i / COLS), k = (CELL - PAD * 2) / CELL;
     for (let j = 0; j < n; j++) { const a = Math.min(1, Math.max(0, uv.getX(j))), b = Math.min(1, Math.max(0, uv.getY(j))); uv.setXY(j, (cx + PAD / CELL + a * k) / COLS, 1 - (cy + PAD / CELL + (1 - b) * k) / ROWS); }
+    const was = geo.attributes.aEm as THREE.BufferAttribute | undefined; if (was) for (let j = 0; j < n; j++) em[j] += was.getX(j);
     uv.needsUpdate = true; geo.setAttribute('aEm', new THREE.BufferAttribute(em, 1)); m.material = atlas!.mat;
   });
   return bake(root);

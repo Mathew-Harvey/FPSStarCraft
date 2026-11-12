@@ -109,11 +109,11 @@ export const DUSK = { value: 0 };
 const DUSKFOG = new THREE.Color('#f09a84');
 export const NOISE = `float hash(vec2 p){return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453);}
 float vnoise(vec2 p){vec2 i=floor(p),f=fract(p);f=f*f*(3.-2.*f);return mix(mix(hash(i),hash(i+vec2(1,0)),f.x),mix(hash(i+vec2(0,1)),hash(i+vec2(1,1)),f.x),f.y);}`;
-const TOON_VS = `uniform vec3 uL; uniform vec2 uRep; attribute float aEm; varying vec3 vN,vL,vP,vW,vWn,vO,vOn; varying vec2 vUv; varying float vEm,vSh;
-void main(){ vUv=uv*uRep; float sq=floor(aEm*.5+.001); vEm=aEm-2.*sq; vSh=sq*.1; vO=position*length(modelMatrix[0].xyz); vOn=normal; vec4 w=modelMatrix*vec4(position,1.); vW=w.xyz; vec4 mv=viewMatrix*w; vP=mv.xyz; vN=normalize(normalMatrix*normal); vWn=normalize(mat3(modelMatrix)*normal); vL=(viewMatrix*vec4(uL,0.)).xyz; gl_Position=projectionMatrix*mv; }`;
+const TOON_VS = `uniform vec3 uL; uniform vec2 uRep; attribute float aEm; varying vec3 vN,vL,vP,vW,vWn,vO,vOn; varying vec2 vUv; varying float vEm,vSh,vCav;
+void main(){ vUv=uv*uRep; float cq=floor(aEm/32.+.001), er=aEm-32.*cq; vCav=cq<.5?0.:(cq-16.)/15.; float sq=floor(er*.5+.001); vEm=er-2.*sq; vSh=sq*.1; vO=position*length(modelMatrix[0].xyz); vOn=normal; vec4 w=modelMatrix*vec4(position,1.); vW=w.xyz; vec4 mv=viewMatrix*w; vP=mv.xyz; vN=normalize(normalMatrix*normal); vWn=normalize(mat3(modelMatrix)*normal); vL=(viewMatrix*vec4(uL,0.)).xyz; gl_Position=projectionMatrix*mv; }`;
 const TOON_FS = `precision highp float;
 uniform vec3 uColor,uFog; uniform sampler2D uMap,uShadow; uniform mat4 uShadowMat; uniform float uEmis,uOpacity,uHatch,uFogK,uFlat,uPx,uShadowTex,uGrit,uShine;
-varying vec3 vN,vL,vP,vW,vWn,vO,vOn; varying vec2 vUv; varying float vEm,vSh;
+varying vec3 vN,vL,vP,vW,vWn,vO,vOn; varying vec2 vUv; varying float vEm,vSh,vCav;
 ${NOISE}
 float shadowAt(vec3 wp){
   vec4 sc=uShadowMat*vec4(wp,1.); vec3 p=sc.xyz/sc.w*.5+.5;
@@ -289,6 +289,10 @@ void main(){
   { float soft=smoothstep(-.55,.95,t); col*=mix(1.,.66+.46*soft,uGrit*(1.-uFlat));
     float shn=uShine+vSh; vec3 hv=normalize(normalize(vL)+normalize(-vP)); float sp=pow(max(dot(n,hv),0.),mix(6.,70.,shn));
     col+=smoothstep(.3,.62,sp)*lit*shn*uGrit*(1.-uFlat)*(base*.45+vec3(.3,.28,.22)); }
+  // A sculpted model says where it tucks in and where it stands proud. Tucks take the dark an inker lays into a fold, down to a
+  // near-black line at the bottom of the crease, and proud edges catch a little light.
+  col=mix(col,col*vec3(.46,.4,.54)+vec3(.008,.005,.016),smoothstep(.06,.8,vCav)*.82); col=mix(col,vec3(.05,.04,.075),smoothstep(.72,.97,vCav)*.6);
+  col=mix(col,min(base*1.22+vec3(.07,.06,.04),vec3(1.)),smoothstep(.2,.85,-vCav)*.4*lit);
   // Shading strokes are drawn on the thing, not on the screen, so they stay put when it or you move. They are laid out in its own
   // space on whichever side faces most squarely, and step down a size with distance so they stay about nine pixels apart.
   vec3 an=abs(vOn); vec2 hc=an.y>an.x&&an.y>an.z?vO.xz:an.x>an.z?vO.zy:vO.xy;

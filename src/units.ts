@@ -4,6 +4,7 @@ import * as THREE from 'three';
 import { G, M, R, mk, setLayer, L_FX } from './gfx';
 import { lathe, hard, spl, capsule, rbox, blob, nub, tube, plate, rrect, ring, shard, warp, crescent } from './sculpt';
 import './skins';
+import { figure } from './meshes';
 
 type P3 = [number, number, number];
 type Mat = THREE.Material;
@@ -83,7 +84,10 @@ const pauldron = (r: number) => lathe([...hard([[r * .86, -r * .24], [r * 1.07, 
 
 /** Ironhold infantry. The heavy version is the Breacher: bulkier, with a riot shield and a scattergun. */
 function trooper(heavy: boolean, role = ''): THREE.Group {
-  const obj = new THREE.Group(), body = grp('body', obj), long = role === 'long', patch = role === 'patch';
+  const long = role === 'long', patch = role === 'patch';
+  // Sculpted in Blender (art/trooper.py); the plain figure below is what the match server builds, with the same joints.
+  const fig = figure(heavy ? 'breacher' : long ? 'longshot' : patch ? 'patch' : 'linesman'); if (fig) { const mz = fig.points.muzzle; if (mz) muzzle(mz.group, mz.at, heavy ? 1.5 : long ? 1.2 : 1); return fig.root; }
+  const obj = new THREE.Group(), body = grp('body', obj);
   const pl = heavy ? M.pO : patch ? M.pW : long ? M.pD : M.pY, bl = heavy ? M.bO : patch ? M.bW : long ? M.bD : M.bY;
   const hel = heavy ? M.helmO : patch ? M.helmR : long ? M.helmD : M.helm, pants = long ? M.fabG : M.fab, sleeve = pants;
   leg(obj, 'legL', -1, pants, bl, M.bD, M.leaB); leg(obj, 'legR', 1, pants, bl, M.bD, M.leaB);
@@ -175,7 +179,15 @@ function trooper(heavy: boolean, role = ''): THREE.Group {
 }
 
 /** The worker: hard hat, goggles, a moustache you could sweep a floor with, and a rock drill. */
+/** The ore pack a worker carries home. */
+function orePack(body: THREE.Object3D, z: number) {
+  const pack = grp('pack', body); pack.visible = false;
+  put(rbox(.44, .44, .24, .05), M.pD, pack, [0, 1.24, z]); put(rbox(.48, .09, .28, .03), M.haz, pack, [0, 1.44, z]);
+  for (let i = 0; i < 4; i++) put(shard(.09, .46, 5), M.ore, pack, [-.15 + i * .1, 1.48, z + (i % 2) * .06], [R(-.3, .3), R(0, 3), R(-.3, .3)]);
+}
 function rigger(): THREE.Group {
+  // Sculpted in Blender (art/rigger.py). The match server carries no meshes and builds the plain figure below, which has the same joints.
+  const fig = figure('rigger'); if (fig) { orePack(fig.groups.body, -.3); return fig.root; }
   const obj = new THREE.Group(), body = grp('body', obj);
   leg(obj, 'legL', -1, M.fabT, M.leaB, null, M.leaB); leg(obj, 'legR', 1, M.fabT, M.leaB, null, M.leaB);
   put(blob(.44, .34, .34), M.fabT, body, [0, .93, 0]);

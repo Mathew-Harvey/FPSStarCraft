@@ -24,6 +24,8 @@ try {
   check(s.stones === 1 && s.tenders >= 6 && s.iron >= 4, `one Choir Stone, ${s.tenders} Tenders and an Ironhold crew`);
   check(!s.two, 'only one view on screen');
   if (SHOTS) { await p.waitForTimeout(3000); await p.screenshot({ path: SHOTS + '/veyl-start.png' }); }
+  // Software rendering is slow and the rest is about the rules. With drawing on, the first ore took 85 of the 90 s allowed on the build runner.
+  await p.evaluate(() => { __ore.game.noRender = true; });
   // the bot Tenders hum ore home, and the player's screen sees the Veyl purse grow
   const c0 = s.cash;
   check(await until(c => __ore.game.purse[1] > c + 20, c0, 90000), 'the Tenders hum ore into the Veyl purse');

@@ -1000,12 +1000,9 @@ export class Game {
   aiSoldier(u: Unit, dt: number) {
     const heavy = u.kind === 'breacher', big = u.kind === 'gantry', long = u.kind === 'longshot', doc = u.kind === 'patch', up = this.upOf(u.team), glass = long && up.glass, range = big ? 24 : long ? (glass ? 44 : 36) : doc ? 15 : heavy ? 10 : 19;
     if (doc) this.aiMend(u, dt);
-    // Badly hurt and not on a push: walk to the nearest Patch, Depot or the Headframe and come back when mended.
-    if (u.state === 'heal' || (u.hp < u.maxHp * .35 && u.order.type === 'guard' && !big && !doc)) {
-      if (u.hp > u.maxHp * .75 || u.order.type !== 'guard') u.state = 'idle';
-      else { let hx = 0, hz = 0, bd = 1e9; for (const o of this.own('patch', u.team)) { const dd = Math.hypot(o.pos.x - u.pos.x, o.pos.z - u.pos.z); if (dd < bd) { bd = dd; hx = o.pos.x; hz = o.pos.z; } } if (bd > 40) for (const b of this.buildings) if (b.alive && b.team === u.team && b.built && (b.kind === 'depot' || b.kind === 'headframe')) { const dd = Math.hypot(b.pos.x - u.pos.x, b.pos.z - u.pos.z); if (dd < bd) { bd = dd; hx = b.pos.x; hz = b.pos.z + b.hz + 2; } }
-        if (bd < 1e9) { u.state = 'heal'; if (bd > 5) { u.target = null; this.moveTo(u, hx, hz, dt, 4, 1.1); return; } } }
-    }
+    // Hurt guards used to walk off to a Patch, Depot or the Headframe at 35% health and come back mended. With a tower covering the walk, a
+    // defending Ironhold line almost never lost a body: it was the largest single reason the Veyl lost 52 of 60 bot matches (21-9 with it,
+    // 13-16 without). They hold the line now; a Patch, a Depot or the Headframe still mends whoever is standing near it.
     if (u.think <= 0) { u.think = .3; u.target = this.acquire(u, long ? (glass ? 52 : 44) : 30, u.order.type === 'guard' ? 0 : 28); }
     const t = u.target;
     if (t && t.alive) {

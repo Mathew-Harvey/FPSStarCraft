@@ -14,6 +14,8 @@ const LOOKOUT = ['Lookout', 'Watcher', 'Rootwatch'];
 const DEPOT_SLOTS = [[-13, 9], [-13, -9], [-19, 0], [-22, 12], [-26, -6], [-20, 22]];
 const POST_SLOTS_0 = [[31, 20], [9, -31], [33, 5], [-8, 26]];
 /** Watchpost spots covering the road the raids walk down and the flank. Worked out from the map, so they face the Veyl on every map. */
+/** A push that is down to this share of the bodies it set off with goes home. */
+const RETREAT = .4;
 function postSlots(): number[][] {
   if (MAP.base === 0 && MAP.size === 0) return POST_SLOTS_0;
   const e = MAP.flank[MAP.flank.length - 1], el = Math.hypot(e[0], e[1]) || 1, r = (p: [number, number]) => [Math.round(p[0]), Math.round(p[1])];
@@ -61,7 +63,7 @@ const VDOWN = ['A voice is gone.', 'We are one fewer.', 'The song thins.', 'They
 /** One side's squad and economy brain. The Director keeps Ironhold's on itself; a Veyl side that somebody plays gets its own. */
 export interface Side {
   team: number; auto: boolean; qmT: number; hintI: number; chatT: number;
-  plan: { phase: 'ask' | 'count' | 'go'; t: number; target: Building | null; book: number; label: string; /** When the push set off. */ goT?: number } | null;
+  plan: { phase: 'ask' | 'count' | 'go'; t: number; target: Building | null; book: number; label: string; /** When the push set off, and how many set off. */ goT?: number; n0?: number } | null;
   /** When this side last broke one of the enemy's buildings. */
   brokeT?: number;
   nextPlan: number; callout: Callout | null; pushes: number; lastFailed: boolean; fails: number; playbook: { name: string; steps: string[]; idx: number };
@@ -78,7 +80,7 @@ export class Director implements Side {
   /** The Veyl side's brain, used when they run their own economy. */
   vs: Side = { team: 1, auto: true, qmT: 0, hintI: 0, chatT: 70, plan: null, nextPlan: 75, callout: null, pushes: 0, lastFailed: false, fails: 0, playbook: { name: VBOOKS[0].name, steps: VBOOKS[0].steps, idx: 0 }, raidLive: false, retarget: 0 };
   side(team: number): Side { return atHome(team) ? this : this.vs; }
-  plan: { phase: 'ask' | 'count' | 'go'; t: number; target: Building | null; book: number; label: string; goT?: number } | null = null; brokeT = 0;
+  plan: { phase: 'ask' | 'count' | 'go'; t: number; target: Building | null; book: number; label: string; goT?: number; n0?: number } | null = null; brokeT = 0;
   nextPlan = 60; callout: Callout | null = null; pushes = 0; lastFailed = false; /** Pushes in a row that broke nothing. */ fails = 0;
   playbook = { name: 'Yard Push', steps: BOOKS[0].steps, idx: 0 };
   raidIn: number; raidDir: 'east' | 'north' = 'east'; raidN = 0; /** The verse a Veyl player picked for the next raid: 0 all blades, 1 mostly lances, 2 the deep voice. -1 leaves it to the Conductor. */ verse = -1; /** When the Veyl last answered a failed push with a raid of their own. Rationed, so a bad start does not snowball. */ lastCounter = -999; raidLive = false; warned = false; raidAge = 0; raidSeen = false; reinT = 50;
@@ -509,7 +511,7 @@ export class Director implements Side {
     else if (p.phase === 'count') {
       if (p.t <= 0) {
         p.phase = 'go'; p.goT = now; p.target = this.targetFor(p.book, s); s.pushes++; s.retarget = 2;
-        if (p.target) { let i = 0; for (const u of all) if (u !== g.me && !u.pilot && u.order.type === 'guard') { u.order = { type: 'amove', x: p.target.pos.x + R(-3, 3), z: p.target.pos.z + R(-3, 3), path: this.pathFor(p.book, i++, s) }; } }
+        if (p.target) { let i = 0; for (const u of all) if (u !== g.me && !u.pilot && u.order.type === 'guard') { u.order = { type: 'amove', x: p.target.pos.x + R(-3, 3), z: p.target.pos.z + R(-3, 3), path: this.pathFor(p.book, i++, s) }; }  p.n0 = i; }
         this.say(v ? VG(s.team, 'Chorus Lead', 'Swarm Lead') : 'Alpha', B[p.book].go, ''); sfx.callout();
         if (g.eco) this.incoming(s, p.book);
       }
@@ -528,7 +530,11 @@ export class Director implements Side {
       // to towers. Left running, it held the other side in "incoming" forever and both armies stood still (40-minute draws in the bot runs).
       // Also when it has dwindled to a sideshow while a real army stands at the rally: fold it in, and muster again.
       const stale = now - Math.max(p.goT ?? now, s.brokeT || 0) > 150 || (now - (p.goT ?? now) > 60 && idle.length >= 6 && pushing.length * 3 < idle.length);
-      if (!pushing.length || (pushing.length < 2 && all.length < 3) || stale) {
+      // A push that has lost most of its bodies pulls out with what is left. It used to fight to the last one, so every failed push cost the
+      // whole army and the side started the next muster from nothing. Not the Gloam: a swarm wins by trading badly, and pulling it out early took it from 15-15 against Ironhold to 5-25.
+      const routed = !!p.n0 && p.n0 >= 4 && f !== 2 && pushing.length <= Math.floor(p.n0 * RETREAT) && now - (p.goT ?? now) > 12;
+      if (routed) for (const u of pushing) if (!u.pilot && u !== g.me) u.target = null;
+      if (!pushing.length || (pushing.length < 2 && all.length < 3) || stale || routed) {
         if (stale) for (const u of pushing) if (!u.pilot && u !== g.me) u.target = null;
         s.plan = null; s.nextPlan = now + 40; s.lastFailed = true; s.fails++; this.regroup(false, s); this.say(v ? VG(s.team, 'Chorus Lead', 'Swarm Lead') : 'Alpha', v ? VG(s.team, 'The march is spent. Back to the Stones.', 'The swarm is spent. Back to the Bloom.') : 'Push is spent. Pulling back to regroup.', 'al');
         if (g.eco) { const o = this.side(foe); if (o.raidLive) { o.raidLive = false; const of = fac(o.team), them = FACTION[s.team].short; this.say(of ? LOOKOUT[of] : 'Alpha', of ? VG(o.team, `The ${them} have gone home. The Stones still sing.`, `The ${them} have gone home. The Caps still grow.`) : f === 0 ? 'They\'ve gone home. Yard\'s clear.' : 'Yard\'s clear. Somebody sweep up the purple.', '', o.team); } }

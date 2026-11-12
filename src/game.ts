@@ -232,7 +232,7 @@ export class Game {
   }
   /** Follows the unit's order, walking any waypoints first. Returns true on arrival. */
   advance(u: Unit, dt: number, stop: number, mul = 1) {
-    const o = u.order; if (o.path && o.path.length) { if (this.moveTo(u, o.path[0][0], o.path[0][1], dt, 6, mul)) o.path.shift(); return false; }
+    const o = u.order; if (o.waitT && o.waitT > 0) { o.waitT -= dt; return false; } if (o.path && o.path.length) { if (this.moveTo(u, o.path[0][0], o.path[0][1], dt, 6, mul)) o.path.shift(); return false; }
     return this.moveTo(u, o.x, o.z, dt, stop, mul);
   }
   vol(p: THREE.Vector3) { const d = this.me ? p.distanceTo(this.me.pos) : 50; return Math.max(0, 1 - d / 90) ** 2; }

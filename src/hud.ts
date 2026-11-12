@@ -98,7 +98,9 @@ export class Hud {
     const side = g.myTeam, F = FACTION[side], cash = g.cash(side); this.set('ore', String(Math.floor(cash)));
     const used = g.supplyUsed(side), cap = g.supplyCap(side); this.set('sup', `${used}/${cap}`); this.cls('resSup', used >= cap ? 'low' : '');
     const m = Math.floor(g.time / 60), s = Math.floor(g.time % 60); this.set('clock', `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`);
-    const D = g.dir, S = D.side(side), pb = S.playbook, ph = pb.idx; this.set('play', `<b>${pb.name}</b>` + pb.steps.map((n, i) => `<span class="${i === ph ? 'on' : i < ph ? 'dn' : ''}">${n}</span>`).join(''), true);
+    const D = g.dir, S = D.side(side), pb = S.playbook, ph = pb.idx;
+    // The squad's playbook means nothing until there is a squad: in the first minutes (and all of Job 1) it was a strip of jargon over the tutorial.
+    this.vis('play', ph > 0 || !!S.plan || g.army(side).length > 0); this.set('play', `<b>${pb.name}</b>` + pb.steps.map((n, i) => `<span class="${i === ph ? 'on' : i < ph ? 'dn' : ''}">${n}</span>`).join(''), true);
     const st = g.stones().length, sq = g.army(side).length, hfs = g.ownB('headframe').length; this.set('whoSub', 'You · ' + F.name); const foe = foeOf(side), fq = FACTION[foe].hq, nq = g.ownB(fq, false, foe).length; if (g.eco && !g.mission) this.set('goal', `${['Break', 'Silence', 'Squash'][fac(foe)]} ${nq > 1 ? 'every ' + BLD[fq].name : 'the ' + BLD[fq].name} · <em>${nq} standing</em>` + (sq ? ` · ${['Squad', 'Chorus', 'Swarm'][fac(side)]} ${sq}` : ''), true); else if (g.mission) { const next = g.mission.objectives.find(o => !o.done(g)); this.set('goal', (next ? next.text(g) : 'Job done') + (sq ? ` · Squad ${sq}` : ''), true); } else this.set('goal', `${SIDE.out === 2 ? 'Squash the Mother Caps' : 'Smash the Choir Stones'} · <em>${st} left</em>` + (sq ? ` · Squad ${sq}` : ''), true);
     this.set('qm', `<span class="k" style="font-size:13px">G</span> ${F.voice} <b>${S.auto ? 'Auto' : 'Off'}</b>`, true); this.cls('qm', 'qm c out' + (S.auto ? '' : ' off'));
     // who

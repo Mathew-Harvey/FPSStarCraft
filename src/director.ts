@@ -66,7 +66,7 @@ export interface Side {
   brokeT?: number;
   nextPlan: number; callout: Callout | null; pushes: number; lastFailed: boolean; fails: number; playbook: { name: string; steps: string[]; idx: number };
   /** An enemy push is on its way in. */
-  raidLive: boolean; retarget: number;
+  raidLive: boolean; retarget: number; /** Counts down to the next check that the march is still together. */ cohT?: number;
   /** The push on its way in is coming round by the flank. */
   inNorth?: boolean;
 }
@@ -98,7 +98,10 @@ export class Director implements Side {
   // ------------------------------------------------------------ squad bookkeeping
   /** Where a side's army waits, in its own faction's frame: the Ironhold muster at the yard's road end, the Veyl and the Gloam at the outpost's,
    *  the same frame their building slots use. A side at the other end gets the same spot turned round, so both armies of a mirror stand alike. */
-  rallyAt(i: number, north = false, s: Side = this) { const iron = fac(s.team) === 0, n = iron ? (north ? RALLY_N : RALLY) : north ? VRALLY_N : VRALLY, r = iron === atHome(s.team) ? n : (([x, z]) => ({ x, z }))(swapEnd(n.x, n.z)); return { x: r.x + ((i % 4) - 1.5) * 2.4, z: r.z + Math.floor(i / 4) * 2.4 }; }
+  /** Where a side's squad waits: on its own end of the road, or toward the ridge when a flank is coming. The points belong to the end of the map, not
+   *  the faction. The far end used to borrow the yard's points turned through the middle of the map, but the ridge path is not symmetric, so the
+   *  turned ridge point landed on the wrong side of the far base: its army stood 40 m away while a back-door push ate its workers. */
+  rallyAt(i: number, north = false, s: Side = this) { const r = atHome(s.team) ? (north ? RALLY_N : RALLY) : north ? VRALLY_N : VRALLY; return { x: r.x + ((i % 4) - 1.5) * 2.4, z: r.z + Math.floor(i / 4) * 2.4 }; }
   following(s: Side = this) { return this.g.army(s.team).some(u => u.order.type === 'follow'); }
   books(s: Side) { const f = fac(s.team); return f === 2 ? GBOOKS : f ? VBOOKS : BOOKS; }
   pathFor(book: number, i: number, s: Side = this): number[][] | undefined { return book === 1 || (book === 2 && i % 2) ? (!atHome(s.team) ? [...NORTH_PATH] : [...NORTH_PATH].reverse()).map(p => [p[0], p[1]]) : undefined; }
@@ -300,11 +303,12 @@ export class Director implements Side {
     if (!pits.length) put('broodpit', [[-2, -10], [-2, 12], [-8, 1]], 'A Brood Pit first. The voices need somewhere to wake.');
     else if (wantWell) put('hushwell', [[6, -14], [6, 16], [0, -18], [0, 20], [-6, -16], [-6, 18]], 'The song is crowded. Growing a Hush Well.');
     else if (building) saving = false;
+    // The second Stone comes before the extra towers and songs: a Chorus that waited for all of them first expanded minutes after the Ironhold, or never.
+    else if (pitsUp.length && army >= 4 && g.time > 360 && exp.site && stones.length < wantStones) { hold = BLD.choir.cost; const [sx, sz] = exp.site, dx = HX - sx, dz = HZ - sz, l = Math.hypot(dx, dz) || 1, x = Math.round(sx + dx / l * 9), z = Math.round(sz + dz / l * 9); if (cash() >= BLD.choir.cost && g.canPlace('choir', x, z, false, T)) { g.place('choir', x, z, false, T); this.say('Conductor', 'Seeding a new Choir Stone on the far seam. Some Tenders will drift over.', '', T); } }
     else if (pitsUp.length && spires < Math.min(1, wantSpires)) put('thornspire', [[-12, -8], [-12, 10], [-16, 1]], 'A Thorn Spire by the road, to listen for boots.');
     else if (pitsUp.length && !ward.length && army >= 4) put('wardpylon', [[-4, 2], [-5, -4], [-5, 7]], 'A Ward Pylon. It keeps the Stones whole, and it knows the first songs.');
     else if (pitsUp.length && spires < wantSpires) put('thornspire', [[-12, -8], [-12, 10], [-16, 1], [-8, -16], [-8, 18]], 'Another Thorn Spire. The road should sting.');
     else if (wardUp && !U.vedge && army >= 5) g.buyUpgrade('vedge', T);
-    else if (pitsUp.length && army >= 6 && exp.site && stones.length < wantStones) { hold = BLD.choir.cost; const [sx, sz] = exp.site, dx = HX - sx, dz = HZ - sz, l = Math.hypot(dx, dz) || 1, x = Math.round(sx + dx / l * 9), z = Math.round(sz + dz / l * 9); if (cash() >= BLD.choir.cost && g.canPlace('choir', x, z, false, T)) { g.place('choir', x, z, false, T); this.say('Conductor', 'Seeding a new Choir Stone on the far seam. Some Tenders will drift over.', '', T); } }
     else if (exp.bare) { const [bx, bz] = exp.bare; for (const [ox, oz] of [[6, 6], [-6, 6], [6, -6], [-6, -6]]) if (cash() >= BLD.thornspire.cost && g.canPlace('thornspire', bx + ox, bz + oz, false, T)) { g.place('thornspire', bx + ox, bz + oz, false, T); this.say('Conductor', 'A Thorn Spire to keep the new Stone company.', '', T); break; } }
     else if (wardUp && U.vedge && !gate.length && army >= 7) { hold = 200; put('reedgate', [[2, -17], [2, 19], [-10, -14], [-10, 16]], 'The Reed Gate grows. Something deep is listening.'); }
     else if (gateUp && army >= 6 && free >= 6 && g.own('warden', T).length + gateUp.queue.length < (g.time > 660 ? 2 : 1)) { hold = UNIT.warden.cost; if (cash() >= hold) g.train(gateUp, 'warden'); }
@@ -508,6 +512,11 @@ export class Director implements Side {
       }
     } else {
       const pushing = all.filter(u => u.order.type === 'amove');
+      // March together. Bodies walk at different speeds (a Cantor 5.4, a Lancer 4.4, a Gantry 3.9), so a push used to reach the enemy as a
+      // string of ones and twos and die to the towers one at a time: in 130 logged bot pushes, 117 broke nothing. Anyone well ahead of the
+      // middle of the march, and not yet at the fight, now stands for a moment until the rest catch up.
+      s.cohT = (s.cohT || 0) - dt; if (s.cohT <= 0) { s.cohT = .5; const walk = pushing.filter(u => !u.target && !u.pilot && u !== g.me), left = (u: Unit) => { let d = 0, x = u.pos.x, z = u.pos.z; for (const q of [...(u.order.path || []), [u.order.x, u.order.z]]) { d += Math.hypot(q[0] - x, q[1] - z); x = q[0]; z = q[1]; } return d; };
+        if (walk.length >= 3) { const ds = walk.map(left), mid = [...ds].sort((a, b) => a - b)[Math.floor(ds.length / 2)]; walk.forEach((u, i) => { if (ds[i] > 32 && ds[i] < mid - 9) u.order.waitT = .6; }); } }
       // A building the push was walking to has fallen: on to the next one.
       s.retarget -= dt; if (s.retarget <= 0 && g.eco) { s.retarget = 2; if (!p.target || !p.target.alive) p.target = this.targetFor(p.book, s);
         // Anyone standing idle at a spot the push has moved on from walks on to the new target (a squad once stood 10 minutes where a Ward Pylon had been).

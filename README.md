@@ -179,6 +179,11 @@ The campaign is a story in four acts and 24 jobs, plus three side jobs. You play
 
 Three maps exist only for the story: The Crack (Switchback after the canyon floor split), First Stone (the oldest Veyl site, behind old glass walls) and Drill Site (the Charter's drill tower and Deep Charge rigs on the Glass Flats at night). Jobs played from the outpost end run on the same hidden local host as a Veyl or Gloam skirmish, with the job's script running there. `node tools/run-ts.mjs test/story.ts` runs every job headless and checks the endings; `node test/story.mjs` checks cut scenes and the outpost-end jobs in a browser.
 
+![Cut scene: arrival](docs/screenshots/story-arrival.jpg)
+![Cut scene: the last verse](docs/screenshots/story-lastverse.jpg)
+![Drill Site](docs/screenshots/story-drillsite.jpg)
+![First Stone](docs/screenshots/story-firststone.jpg)
+
 ![Campaign menu](docs/screenshots/campaign.jpg)
 
 ## Multiplayer

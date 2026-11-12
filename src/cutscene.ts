@@ -42,8 +42,8 @@ export const CUTS: Record<string, Cut> = {
     { shot: () => ({ cam: [22, 2.4, 18], look: [17, 1.7, 13], fov: 40 }), stage: g => { put(g, 'linesman', 0, 17, 13, 22, 18); put(g, 'linesman', 0, 15, 11.5, 22, 18); }, say: [['Moss', 'Desmond Moss. I run the book. Four to one you\'re gone inside a week.'], ['Pim', 'I\'m Pim. I watch the road and I give everything on it a name. You\'re Nineteen.']] },
   ] },
   rings: { id: 'rings', title: 'Ring inside ring', sides: [0, 1], map: 0, dusk: .8, panels: [
-    { shot: () => ({ cam: [-30, 5, 14], look: [-22, 2, 4], to: [-28, 4, 12], fov: 44 }), stage: g => { bld(g, 'assay', 0, -22, 4); put(g, 'rigger', 0, -26, 9, -22, 4); }, cap: 'The Assay Office, after midnight. Aggie has cut the core sample open.' },
-    { shot: () => ({ cam: [-25.5, 2.3, 10.5], look: [-26, 1.6, 9], fov: 34 }), say: [['Aggie', 'Ore doesn\'t grow in rings.']], cap: 'The ore in the core is laid down in rings, one inside the next, like a tree trunk.' },
+    { shot: () => ({ cam: [-30, 5, 14], look: [-22, 2, 4], to: [-28, 4, 12], fov: 44 }), stage: g => { bld(g, 'assay', 0, -22, 4); put(g, 'rigger', 0, -26, 9, -21, 13); }, cap: 'The Assay Office, after midnight. Aggie has cut the core sample open.' },
+    { shot: () => ({ cam: [-22.5, 2.2, 12.5], look: [-26, 1.5, 9], fov: 38 }), say: [['Aggie', 'Ore doesn\'t grow in rings.']], cap: 'The ore in the core is laid down in rings, one inside the next, like a tree trunk.' },
     { shot: () => ({ cam: [-12, 9, 22], look: [-22, 3, 4], fov: 50 }), say: [['Quartermaster', 'Core sample logged as geological settling. Noted.']] },
   ] },
   queue: { id: 'queue', title: 'The message queue', sides: [0, 1], map: 2, dusk: .85, panels: [
@@ -93,7 +93,7 @@ export const CUTS: Record<string, Cut> = {
     { shot: () => { const [x, z] = roadPt(ROAD.len * .3, -30); return { cam: [x, 3, z + 10], look: toPlate(x, 3, z + 10), fov: 50 }; }, cap: 'The order to set it off is already in the message queue. It arrives in 39 minutes.', say: [['Quartermaster', 'Nobody on the surface is in the plan. Noted.']] },
   ] },
   receiver: { id: 'receiver', title: 'The receiver', sides: [0, 1], map: 0, dusk: .7, panels: [
-    { shot: () => ({ cam: [-2, 4, 4], look: [-6, 8, -10], to: [-1, 3.4, 3], fov: 46 }), stage: g => { bld(g, 'mast', 0, -6, -10); put(g, 'rigger', 0, -3, -4, 0, 4); }, cap: 'Pim has wired a receiver into the Signal Mast. It pulls your mind out of the Gloam and into a Rigger.' },
+    { shot: () => ({ cam: [-20, 5, -26], look: [-24, 8, -14], to: [-19, 4.4, -25], fov: 48 }), stage: g => { bld(g, 'mast', 0, -24, -14); put(g, 'rigger', 0, -21, -20, -20, -26); }, cap: 'Pim has wired a receiver into the Signal Mast. It pulls your mind out of the Gloam and into a Rigger.' },
     { shot: () => ({ cam: [8, 2.2, 12], look: [5, 1.6, 8], fov: 38 }), stage: g => { put(g, 'rigger', 0, 5, 8, 8, 12); }, say: [['Aggie', 'New drill. Same debt. Welcome back.'], ['Pim', 'Moss didn\'t come with you. He says he\'s fine where he is.']] },
   ] },
   mossstays: { id: 'mossstays', title: 'Moss stays', sides: [0, 2], map: 25, dusk: .85, charter: 'home', panels: [

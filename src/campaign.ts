@@ -158,7 +158,7 @@ const ACT1: Mission[] = [
   }),
   job(4, 1, {
     name: 'Night Shift', side: 0, foe: 1, map: 20, diff: 0, dusk: .7, teaches: 'Scouting in the dark, a second Headframe, Watchposts by a far field, Riggers repairing, seams growing back',
-    brief: 'Large map, at night. The yard\'s seams are running low, so stake a second Headframe on a far ore field and keep it standing until morning. Riggers repair anything they stand next to. Put a Watchpost beside the new Headframe. Pim will tell you if something odd happens to the old seams.',
+    brief: 'Large map, at night. The yard\'s seams are running low, so stake a second Headframe on a far ore field and keep it standing until morning. Riggers repair anything they stand next to. Put a Watchpost beside the new Headframe. Pim is keeping an eye on the empty seam by the yard.',
     allow: ['bunkhouse', 'depot', 'watchpost', 'machineshop'], units: ['linesman', 'breacher', 'patch'], raids: true, auto: false,
     objectives: [
       { text: g => `Stake a second Headframe on a far field (${Math.min(2, nB(g, 'headframe'))}/2)`, done: g => nB(g, 'headframe') >= 2 },
@@ -241,7 +241,8 @@ const ACT1: Mission[] = [
       once(g, s, 'l2', has(g, 'mast'), AL, 'Further to your previous message: quota remains outstanding. Please clear the Switchback outpost at your earliest convenience. Kind regards.', 'al');
       once(g, s, 'l3', !!s.l2 && s.t0 > 30, AG, 'That was sent forty minutes ago. Nobody upstairs is coming to help. Now we have it in writing.');
     },
-    outro: 'Three Headframes stood all night with nobody but you building. Head office wants the Switchback outpost cleared, or else.',
+    outro: 'Three Headframes stood all night with nobody but you building. Head office wants the Switchback outpost cleared by the end of the week.',
+    cutOut: ['queue'],
   }),
   job(8, 1, {
     name: 'Ore Else', side: 0, foe: 1, map: 21, diff: 1, dusk: NIGHT, teaches: 'Everything Ironhold on a large map, the whole Veyl base, the Warden',
@@ -462,7 +463,7 @@ const ACT3: Mission[] = [
       once(g, s, 'l2', nB(g, 'warren') > 0, MO, 'Two Snappers to a Bud. The Charter would love you.');
       once(g, s, 'l3', s.t0 > 40, MO, 'Those aren\'t Aggie\'s lot. Their boots are too clean.');
     },
-    outro: 'No survey team made it home. Charter Security is not Aggie\'s crew, and it is here to take something.',
+    outro: 'No survey team made it home. Charter Security is not Aggie\'s crew. It answers to head office, and head office wants the glass.',
     fail: 'The survey finished. Charter Security knows where the Bloom is now.',
   }),
   job(18, 3, {

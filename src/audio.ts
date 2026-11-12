@@ -94,6 +94,16 @@ const synth = {
   kill: () => { tone(660, 990, .07, .16, 'triangle'); later(() => tone(990, 1480, .1, .14, 'triangle'), 60); },
   win: () => { [523, 659, 784, 1046].forEach((f, i) => later(() => tone(f, f, .25, .2, 'triangle'), i * 140)); },
   lose: () => { [392, 330, 262, 196].forEach((f, i) => later(() => tone(f, f, .3, .2, 'sawtooth'), i * 180)); },
+  // A bullet landing on a body. `kind` 0 is Ironhold plate, 1 Veyl crystal, 2 Gloam hide, 3 a shield.
+  impact: (vol = 1, kind = 0, heavy = false) => { noise(.05, kind === 1 ? 3600 : kind === 2 ? 500 : 1400, .3 * vol, kind === 2 ? 'lowpass' : 'bandpass'); if (heavy) tone(160, 60, .09, .2 * vol, 'sine'); },
+  // A bullet landing on the world. `kind` 0 dirt, 1 rock, 2 metal, 3 crystal, 4 Gloam growth.
+  ricochet: (vol = 1, kind = 0) => { noise(.05, kind === 0 ? 700 : 2600, .25 * vol, 'bandpass'); if (kind === 2) tone(2400, 900, .12, .06 * vol, 'sine'); },
+  // A body hitting the ground. `kind` 0 a person, 1 a Gloam body, 2 a walker or anything that size.
+  bodyfall: (vol = 1, kind = 0) => { noise(.14, kind === 2 ? 240 : 420, (kind === 2 ? .7 : .4) * vol); tone(kind === 2 ? 80 : 120, 40, .16, .3 * vol, 'sine'); },
+  // Veyl crystal giving way. `crack` is the small warning crack before the break.
+  shatter: (vol = 1, big = false, crack = false) => { noise(crack ? .06 : .3, 4200, (crack ? .2 : .4) * vol, 'highpass'); if (!crack) tone(big ? 500 : 900, 120, .3, .2 * vol, 'sine'); },
+  // A Gloam body bursting or being opened up.
+  splat: (vol = 1, big = false) => { noise(big ? .28 : .14, 520, (big ? .6 : .35) * vol); tone(200, 70, .12, .15 * vol, 'sine'); },
 };
 
 // ---------------------------------------------------------------- samples
@@ -183,6 +193,39 @@ const sampled: typeof synth = {
   kill: () => { S('knock', .45, { rate: .9, jit: .02 }); S('space', .28); chime(660, .14, .05, .03); },
   win: () => { [523, 659, 784, 1046].forEach((f, i) => { chime(f / 2, .5, .12, i * .14); S('knock', .2, { at: i * .14, rate: f / 523, jit: 0 }); }); S('bell', .3, { at: .56, lp: 6000 }); },
   lose: () => { [392, 330, 262, 196].forEach((f, i) => chime(f / 2, .55, .18, i * .18)); S('knock_deep', .4, { at: .72 }); },
+  impact: (v = 1, kind = 0, heavy = false) => {
+    const lp = far(v);
+    if (kind === 3) { S('zap', .2 * v, { lp, rate: 1.5, jit: .12 }); S('tink', .12 * v, { lp, rate: 1.5 }); }
+    else if (kind === 1) { S('glass', .26 * v, { lp, rate: 1.55, jit: .12 }); S('tink', .2 * v, { lp, rate: .9, jit: .1 }); if (heavy) S('crunch', .2 * v, { lp, rate: 1.5 }); }
+    else if (kind === 2) { S('punch', .4 * v, { lp: Math.min(lp, 3800), rate: .8, jit: .1 }); S('slice', .2 * v, { lp: Math.min(lp, 3000), rate: .62, jit: .12 }); if (heavy) S('crunch', .24 * v, { lp: 2400, rate: .7 }); }
+    else { S('punch', .36 * v, { lp, rate: 1.12, jit: .1 }); S('plate', .2 * v, { lp, rate: 1.5, jit: .14 }); if (heavy) { S('metal', .26 * v, { lp, rate: 1.15 }); S('punch_heavy', .3 * v, { lp }); } }
+    if (heavy) sub(110, 48, .1, .2 * v);
+  },
+  ricochet: (v = 1, kind = 0) => {
+    const lp = far(v);
+    if (kind === 0) { S('pebble', .3 * v, { lp, rate: .8, jit: .2 }); S('thud_soft', .16 * v, { lp: Math.min(lp, 3000), rate: 1.5, jit: .15 }); }
+    else if (kind === 1) { S('pebble', .34 * v, { lp, rate: 1.15, jit: .2 }); S('knock', .14 * v, { lp, rate: 1.6, jit: .15 }); }
+    else if (kind === 2) { S('tink', .3 * v, { lp, rate: 1.1, jit: .2 }); S('metal', .2 * v, { lp, rate: 1.5, jit: .15 }); if (Math.random() < .35) { sub(2600 + Math.random() * 900, 1200, .16, .05 * v, .01); sub(3900, 2100, .12, .02 * v, .01); } }
+    else if (kind === 3) { S('glass', .22 * v, { lp, rate: 1.7, jit: .15 }); S('tink', .2 * v, { lp, rate: 1.3, jit: .15 }); }
+    else { S('slice', .22 * v, { lp: Math.min(lp, 3200), rate: .7, jit: .15 }); S('punch', .2 * v, { lp: Math.min(lp, 3000), rate: .7 }); }
+  },
+  bodyfall: (v = 1, kind = 0) => {
+    const lp = far(v);
+    if (kind === 2) { S('stomp', .7 * v, { lp, rate: .7 }); S('crunch', .5 * v, { lp, rate: .8 }); S('metal', .4 * v, { lp, rate: .6 }); S('plate', .3 * v, { lp, rate: .55, at: .08 }); sub(62, 26, .4, .4 * v); }
+    else if (kind === 1) { S('thud_soft', .4 * v, { lp: Math.min(lp, 4000), rate: .9, jit: .1 }); S('slice', .14 * v, { lp: Math.min(lp, 2600), rate: .6 }); sub(90, 45, .12, .14 * v); }
+    else { S('thud_soft', .5 * v, { lp, rate: .85, jit: .1 }); S('cloth', .22 * v, { lp, jit: .1 }); S('plate', .1 * v, { lp, rate: 1.25, at: .03, jit: .15 }); sub(84, 40, .14, .2 * v); }
+  },
+  shatter: (v = 1, big = false, crack = false) => {
+    const lp = far(v);
+    if (crack) { S('tink', .26 * v, { lp, rate: 1.4, jit: .2 }); S('glass', .16 * v, { lp, rate: 1.9, jit: .15 }); return; }
+    S('glass', .6 * v, { lp, rate: big ? .6 : .95 }); S('glass', .34 * v, { lp, rate: big ? .85 : 1.4, at: .05 }); S('crunch', .34 * v, { lp, rate: big ? .9 : 1.5 }); S('tink', .2 * v, { lp, rate: .8, at: .16, jit: .2 }); S('pebble', .2 * v, { lp, rate: 1.3, at: .24, jit: .2 });
+    sub(big ? 120 : 190, big ? 34 : 60, big ? .6 : .3, (big ? .4 : .2) * v); if (big) { S('boom', .4 * v, { lp: Math.min(lp, 3500) }); S('field', .3 * v, { lp, rate: .6 }); }
+  },
+  splat: (v = 1, big = false) => {
+    const lp = Math.min(far(v), 4200);
+    S('punch_heavy', (big ? .55 : .38) * v, { lp, rate: big ? .7 : .9 }); S('slice', (big ? .34 : .22) * v, { lp, rate: .55, jit: .12 }); S('crunch', (big ? .4 : .18) * v, { lp: 2200, rate: .6 });
+    if (big) { S('pour', .3 * v, { lp: 2600, rate: .8, at: .05 }); sub(100, 36, .25, .3 * v); }
+  },
 };
 /** Every sound effect. Plays the sampled set once it has decoded, the synthesised one until then. */
 export const soundsReady = () => ready;

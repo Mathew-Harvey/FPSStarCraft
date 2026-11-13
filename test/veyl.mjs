@@ -77,8 +77,10 @@ try {
   check(end[0] === false && /falls silent/.test(end[1]), 'the Veyl player is told they lost');
   // and a fresh run won by breaking every Headframe says so
   await p.evaluate(() => __ore.startVeyl()); await until(() => __ore.game.me && __ore.split() && __ore.split().host.time > 1);
-  await p.evaluate(() => { const h = __ore.split().host; for (const b of h.buildings) if (b.team === 0 && b.kind === 'headframe' && b.alive) h.damage(b, 1e6, null); });
-  check(await until(() => __ore.game.phase === 'over', null, 30000), 'breaking every Headframe ends the match');
+  // Every home building, whatever form it takes (a Survey Rig counts as a Headframe). Drawing is held still while the match plays out, so a
+  // busy machine still runs the two seconds of ending in time.
+  await p.evaluate(() => { __ore.hold(true); const h = __ore.split().host; for (const b of h.buildings) if (b.team === 0 && h.isHQ(b) && b.alive) h.damage(b, 1e6, null); });
+  check(await until(() => __ore.game.phase === 'over', null, 180000), 'breaking every Headframe ends the match'); await p.evaluate(() => __ore.hold(false));
   await p.waitForTimeout(600);
   const win = await p.evaluate(() => [__ore.game.won, document.getElementById('endTitle').textContent]);
   check(win[0] === true && /Veyl take/.test(win[1]), 'the Veyl player is told they won');

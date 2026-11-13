@@ -10,6 +10,7 @@ import { DEFAULTS, factionRule } from '../../core/registry';
 import { isEnemy } from '../../core/sides';
 import { defineUnits, defineBuildings, defineFaction } from '../../core/registry';
 import { defineAbilities } from '../../core/ability';
+import { gloamShowTick } from './show';
 
 const TMP = V3();
 export const quillMat = new THREE.MeshBasicMaterial({ color: 0xe9dab2 });
@@ -261,7 +262,7 @@ defineUnits({ keeper: { noBud: true } });
 defineFaction(2, {
   // Bloom and the Caps' Buds for every client; the roster's clouds, fuses, borrowed bodies and walkers for the host.
   fx(g, dt) {
-    gloamFx(g, dt); rosterFx(g, dt); if (g.net) return; tickFuses(g, dt); tickBorrowed(g, dt);
+    gloamFx(g, dt); gloamShowTick(g, dt); rosterFx(g, dt); if (g.net) return; tickFuses(g, dt); tickBorrowed(g, dt);
     for (const u of g.units) {
       if (!u.alive) continue;
       if (WALKERS.has(u.kind) && (u as any).rootT > 0) { (u as any).rootT -= dt; if ((u as any).rootT <= 0) reroot(g, u); }

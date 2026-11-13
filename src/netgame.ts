@@ -21,6 +21,9 @@ const unitRow = (x: Unit) => [x.id, KINDS.indexOf(x.kind), x.team, r1(x.pos.x), 
   (x.moving ? F_MOVE : 0) | (x.target ? F_TGT : 0) | (x.state === 'mining' || x.state === 'build' || x.state === 'repair' ? F_WORK : 0) | (x.carrying ? F_CARRY : 0) | (x.swing > .6 || x.flashT > 0 ? F_FIRE : 0) | (ORD.indexOf(x.order.type === 'scout' ? 'amove' : x.order.type) << 5)   /* two bits on the wire: a scout goes as a body on the march */ | (x.brace ? F_BRACE : 0),
   x.pilot, Math.round(x.pitch * 100), Math.round(x.wind * 10)];
 const bldRow = (x: Building) => [x.id, BKINDS.indexOf(x.kind), x.team, x.pos.x, x.pos.z, x.rot ? 1 : 0, Math.ceil(x.hp), x.built ? 1 : 0, Math.round(x.progress * 100), x.queue.length, x.queue[0] ? KINDS.indexOf(x.queue[0].kind) : 0, x.queue[0] ? r1(x.queue[0].t) : 0, x.buds || 0];
+/** Switches for test servers, never set on a real one. `trustHits` (ORE_TRUST_HITS=1) checks hit claims the way the server did before
+ *  claims were checked per attack (any hit, up to 450 a second from 175 m), so the browser sync tests (test/coop.mjs, test/versus.mjs) can end a match quickly with big hits. */
+export const WIRE = { trustHits: false, /** Off: every side is sent the whole world, the way it was before fog on the wire. ORE_WIRE_FOG=0, for the same tests. */ fog: true };
 /** The line out of each match, so a damage claim can be checked against what the claimer's side was sent. */
 const WIRES = new WeakMap<Game, Wire>();
 /** Index 13 of a building row: 1 when the side is not looking at it now and is sent its last sighting. */
@@ -35,10 +38,10 @@ export class Wire {
   /** Call once per snapshot round, before `snap`: takes the events and works out what every side that has a seat can see. */
   begin(teams: Iterable<number>) {
     const g = this.g; this.ev = g.evq || []; g.evq = []; this.byId.clear(); for (const u of g.units) this.byId.set(u.id, u);
-    for (const t of new Set(teams)) if (t >= 0) this.view(t).update(g);
+    if (WIRE.fog) for (const t of new Set(teams)) if (t >= 0) this.view(t).update(g);
   }
   snap(team: number | null) {
-    const g = this.g, D = g.dir, H = SIDE.home, Ot = SIDE.out, V = team === null ? null : this.view(team), ok = (t: number) => !V || V.friend(t);
+    const g = this.g, D = g.dir, H = SIDE.home, Ot = SIDE.out, V = team === null || !WIRE.fog ? null : this.view(team), ok = (t: number) => !V || V.friend(t);
     let u: any[][], b: any[][], foeSeen = !V;
     // events first, against what the side was sent last time: a body that died this tick is not in this snapshot
     const ev = V ? this.ev.filter(e => this.shows(V, e)) : this.ev;
@@ -123,6 +126,11 @@ export function serverCmd(g: Game, pid: number, unit: Unit | null, c: any[]) {
     // A player reports their own hits, so the server checks each one against the attacks that body really has: reach, how hard, how often,
     // and a clear line for a gun (src/net-arms.ts). The target has to be an enemy that this side can see.
     if (!unit) return; const id = num(1), t = g.units.find(x => x.id === id) || g.buildings.find(x => x.id === id); if (!t || !t.alive || t.team === unit.team) return;
+    if (WIRE.trustHits) {   // test servers only (see WIRE): the old allowance, any hit up to 450 a second from 175 m
+      if (Math.hypot(t.pos.x - unit.pos.x, t.pos.z - unit.pos.z) > 175) return;
+      const bk = BUDGET.get(unit) || { left: 900, t: g.time }; BUDGET.set(unit, bk); bk.left = Math.min(900, bk.left + (g.time - bk.t) * 450); bk.t = g.time;
+      const amt = Math.min(450, num(2), bk.left); if (amt > 0) { bk.left -= amt; g.damage(t, amt, unit, !!c[3]); } return;
+    }
     const V = WIRES.get(g)?.views.get(unit.team); if (V && !(V.sentU.has(id) || V.sentB.has(id))) { dropped.unseen = (dropped.unseen || 0) + 1; return; }
     const amt = checkClaim(g, unit, t, Math.min(450, num(2))); if (amt > 0) g.damage(t, amt, unit, !!c[3]);
   }
@@ -215,7 +223,7 @@ export function applySnap(g: Game, s: any) {
   for (const r of s.b) {
     let b = g.bById.get(r[0]); if (b && !b.alive) continue;
     if (!b) { b = g.addBuilding(BKINDS[r[1]], r[2], r[3], r[4], !!r[7], !!r[5], r[0]); g.bById.set(b.id, b); if (!r[7] && r[2] === 0) g.puff(V3(r[3], .3, r[4]), 5, 1.2, M.dust, .5, 2); }
-    seenB.add(b.id);
+    seenB.add(b.id); (b as any).ghost = r[GHOST] === 1;   // an enemy building this side is not looking at now: as it was when last seen
     if (!b.built && r[7]) { b.built = true; b.obj.scale.y = 1; if (b.holo) { g.scene.remove(b.holo); b.holo = null; } sfx.built(); g.puff(V3(b.pos.x, 1.5, b.pos.z), 8, 1.8, M.dust, .8, 2.5); }
     b.progress = r[8] / 100; if (!b.built) b.obj.scale.y = Math.max(.06, b.progress);
     if (r[6] < b.hp - .5) b.lastHit = g.time; b.hp = r[6];

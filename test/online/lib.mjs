@@ -39,3 +39,11 @@ export async function versus(url, opts = {}) {
   A.send({ t: 'start' }); const bA = await A.wait(m => m.t === 'begin'), bV = await V.wait(m => m.t === 'begin');
   return { A, V, code, bA, bV };
 }
+/** Walks a raw client's body to (tx, tz) at `speed` metres a second, reporting its position the way a page does, facing where it goes. */
+export async function walk(c, unit, tx, tz, speed = 9, faceX, faceZ) {
+  const me = c.last('s').u.find(r => r[0] === unit); if (!me) return false; let x = me[3], z = me[4];
+  for (let i = 0; i < 2000; i++) { const d = Math.hypot(tx - x, tz - z); if (d < .3) break; const k = Math.min(speed * .05, d) / d; x += (tx - x) * k; z += (tz - z) * k;
+    const yaw = faceX === undefined ? Math.atan2(tx - x, tz - z) : Math.atan2(faceX - x, faceZ - z);
+    c.send({ t: 'in', me: [Math.round(x * 10) / 10, Math.round(z * 10) / 10, Math.round(yaw * 100) / 100, 0, 1], c: [] }); await sleep(50); }
+  await sleep(600); const now = c.last('s').u.find(r => r[0] === unit); return !!now && Math.hypot(now[3] - tx, now[4] - tz) < 6;
+}

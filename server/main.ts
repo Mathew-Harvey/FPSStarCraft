@@ -9,9 +9,12 @@ import { WebSocketServer, WebSocket } from 'ws';
 import { Game } from '../src/game';
 import { initHeadless } from '../src/gfx';
 import { DIFFS, MAPS, SIDE, FACTION, BLD, setMap, setSidesCode, fac, validMap, rollMap, Unit, isWorker } from '../src/data';
-import { Wire, serverCmd, serverMove } from '../src/netgame';
+import { Wire, WIRE, serverCmd, serverMove } from '../src/netgame';
+import { dropped } from '../src/net-arms';
 
 initHeadless();
+if (process.env.ORE_TRUST_HITS === '1') { WIRE.trustHits = true; console.log('test server: hit claims are not checked (ORE_TRUST_HITS)'); }
+if (process.env.ORE_WIRE_FOG === '0') { WIRE.fog = false; console.log('test server: every side is sent the whole world (ORE_WIRE_FOG=0)'); }
 const PORT = +(process.env.PORT || 8080), TICK = 1 / 30, MAX_PLAYERS = 4, MAX_LOBBIES = 40;
 const here = dirname(fileURLToPath(import.meta.url));
 const pagePath = [join(here, 'index.html'), join(here, '..', 'dist', 'index.html')].find(existsSync) || '';
@@ -102,7 +105,7 @@ function step(l: Lobby) {
 setInterval(() => { for (const l of lobbies.values()) { if (l.game) { try { step(l); } catch (e) { console.error('match crashed', l.code, e); l.game = null; for (const p of l.players) send(p, { t: 'err', msg: 'The match hit a fault on the server and had to stop. Sorry.' }); tell(l); } } } }, TICK * 1000);
 
 const http = createServer((req, res) => {
-  if (req.url === '/healthz') { res.writeHead(200, { 'content-type': 'text/plain' }); res.end(`ok ${lobbies.size} lobbies`); return; }
+  if (req.url === '/healthz') { res.writeHead(200, { 'content-type': 'text/plain' }); res.end(`ok ${lobbies.size} lobbies\ndropped hit claims: ${JSON.stringify(dropped)}`); return; }
   if (process.env.ORE_DEV && pagePath) page = readFileSync(pagePath);
   res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-cache' }); res.end(page);
 });

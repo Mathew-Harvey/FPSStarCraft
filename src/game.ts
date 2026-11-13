@@ -14,12 +14,12 @@ import { ENV, hourOf, matchHour, matchWeather, lampsBegin, lamp, flashLamp, lamp
 import type { Mission } from './campaign';
 import type { Net } from './net';
 import { HitFx, Surface } from './hitfx';
-import { unitRule, bldRule, factionRule, DEFAULTS, type Hit } from './core/registry';
+import { unitRule, bldRule, factionRule, DEFAULTS, HIT_FILTERS, type Hit } from './core/registry';
 import './factions';
 import { plainBody } from './core/plain';
 import { Stance } from './stance';
-import { levelMul, armourHit, canHit, LEVELS } from './core/combat';
-import { tickStatus, statusPace, canAct, soak } from './core/status';
+import { levelMul, armourHit, canHit, LEVELS, catOf, inCat } from './core/combat';
+import { tickStatus, statusPace, canAct, soak, hasStatus } from './core/status';
 import { initEnergy, tickAbilities, useAbility, type Target } from './core/ability';
 import { initAir, tickAir, airCollide, sameLayer, flyKeys } from './core/air';
 import { seenBy, drawShimmer } from './core/sight';
@@ -191,7 +191,7 @@ export class Game {
   uById = new Map<number, Unit>(); bById = new Map<number, Building>();
   evq: any[] | null = null; coop = 1; applying = false; names: Record<number, string> = {}; feedTo = 0; score: Record<number, number[]> = {}; myTeam = SIDE.home; teams: Record<number, number> = {}; vWind = 0; vX = 0; vZ = 0; pings: { x: number; z: number; t: number; pid: number }[] = [];
   spawn(kind: Kind, team: number, x: number, z: number, id = 0): Unit {
-    const md = unitRule(kind).figure?.() ?? figureOf(kind); tintMirror(md.obj, team); const st = UNIT[kind], hp = st.hp * (fac(team) === 0 || this.eco ? this.armorMul(team) : 1), sh = st.shield * (fac(team) && this.eco ? this.armorMul(team) : 1);
+    const md = unitRule(kind).figure?.() ?? figureOf(kind); tintMirror(md.obj, team); const st = UNIT[kind], hp = st.hp * (fac(team) === 0 || this.eco ? this.armorMul(team, catOf(kind)) : 1), sh = st.shield * (fac(team) && this.eco ? this.armorMul(team, catOf(kind)) : 1);
     const rs = st.rad * 3.6, ring = mk(G.ringG, ringMat, [0, .08, 0], [rs, rs, 1], [-Math.PI / 2, 0, 0], md.obj); ring.layers.set(L_FX); ring.visible = false;
     const u: Unit = { id: id || nextId++, kind, team, pilot: 0, nx: x, nz: z, pos: V3(x, 0, z), yaw: R(0, 6), hp, maxHp: hp, shield: sh, maxShield: sh, obj: md.obj, rig: md.rig, ring, alive: true, speed: st.speed, moving: false, phase: R(0, 6), cd: R(0, 1), think: R(0, .3), target: null, order: { type: 'guard', x, z }, lastHit: -99, state: 'idle', timer: 0, carrying: 0, node: null, site: null, dashCd: R(2, 5), dashT: 0, swing: 0, slot: 0, flashT: 0, pop: 0, wind: 0, windX: 0, windZ: 0, kx: 0, kz: 0, pitch: 0, brace: false };
     initEnergy(u); initAir(u);
@@ -253,7 +253,8 @@ export class Game {
   nearHQ(x: number, z: number, team = 0) { let best: Building | null = null, bd = 1e9; for (const b of this.buildings) if (b.alive && b.team === team && b.built && this.isHQ(b)) { const d = Math.hypot(b.pos.x - x, b.pos.z - z); if (d < bd) { bd = d; best = b; } } return best; }
   /** Where a fresh Rigger turns up: in front of the first Headframe still standing. */
   hqSpot(team = 0): [number, number] { const k = FACTION[team].hq, h = this.ownB(k, true, team)[0] || this.ownB(k, false, team)[0]; return h ? [h.pos.x + 2 + Math.random() * 3, h.pos.z + h.hz + 2.4 + Math.random() * 2] : atHome(team) ? [2, 7] : [VHOME.x - 4, VHOME.z + 4]; }
-  ownB(kind?: BKind, builtOnly = false, team = 0) { return this.buildings.filter(b => b.alive && b.team === team && (!kind || b.kind === kind) && (!builtOnly || b.built)); }
+  /** A side's buildings, of one kind if given. A kind that grew into another still counts as what it was (BldRules.counts: an Elder Cap is a Mother Cap). */
+  ownB(kind?: BKind, builtOnly = false, team = 0) { return this.buildings.filter(b => b.alive && b.team === team && (!kind || b.kind === kind || !!bldRule(b.kind).counts?.includes(kind)) && (!builtOnly || b.built)); }
   /** The outpost side's bases: Choir Stones, or Mother Caps when the Gloam hold it. */
   /** A body for a player joining the outpost side: a free worker or fighter, or a fresh worker at one of its bases. */
   freshBody(team: number): Unit | null { const free = this.units.filter(u => u.alive && u.team === team && !u.pilot && !unitRule(u.kind).heavy && !unitRule(u.kind).skipRespawn), w = free.filter(u => isWorker(u.kind)); if (w.length) return w[Math.floor(Math.random() * w.length)]; if (free.length) return free[Math.floor(Math.random() * free.length)]; const F = FACTION[team]; return this.ownB(F.hq, false, team).length ? this.spawn(F.worker, team, ...this.hqSpot(team)) : null; }
@@ -273,10 +274,10 @@ export class Game {
    *  Night is the even fight: the person's hero body against the bots' tougher AI-driven Veyl. */
   oreK(team: number) { return this.eco && !this.human[team] && this.human[foeOf(team)] ? 1 + Math.max(0, this.diff.enemy - 1) : 1; }
   foeK(team: number) { return this.human[team] ? 1 : this.diff.enemy; }
-  gunMul(team: number) { const m = levelMul(this, team, 'atk'); return fac(team) ? m : m * (this.eco ? this.foeK(team) : 1); }
+  gunMul(team: number, cat?: string) { const m = levelMul(this, team, 'atk', cat); return fac(team) ? m : m * (this.eco ? this.foeK(team) : 1); }
   /** With a full economy the Veyl pay for every body, so each one the AI drives is worth more than a free raider: it takes less from each hit and hits harder. */
   vBoost = { hp: 1.65, dmg: 1.45 };
-  armorMul(team: number) { return levelMul(this, team, 'arm'); }
+  armorMul(team: number, cat?: string) { return levelMul(this, team, 'arm', cat); }
   /** What a Veyl body's hit is worth: the shift on a bot side, and the songs the Chorus has learned. */
   vMul(team: number) { return this.foeK(team) * (this.eco ? this.gunMul(team) * this.vBoost.dmg : 1); }
   /** How much faster research makes this body walk. */
@@ -381,7 +382,7 @@ export class Game {
       return;
     }
     if (t === this.me && this.safeT > 0) return;
-    if (!t.alive || amt <= 0) return; if (from && !canHit(from, t)) return; t.lastHit = this.time;
+    if (!t.alive || amt <= 0) return; if (from && !canHit(from, t)) return; for (const f of HIT_FILTERS) { amt = f(this, t, amt, from); if (amt <= 0) return; } t.lastHit = this.time;
     const u = isUnit(t) ? t : null, me = this.me;
     if (!u) amt *= 1 + this.overtime(); else if (from && !isUnit(from)) amt /= 1 + this.overtime();
     // A unit sheltering behind scenery: shots from the far side by anything but a player mostly chew up the scenery instead.
@@ -673,7 +674,7 @@ export class Game {
     if (!canPay(this, t, costOf(key))) { if (manual) { sfx.deny(); this.feed(v, `${u.name} is ${u.cost} ore${u.flux ? ` and ${u.flux} Flux` : ''}. ${fac(t) === 2 ? 'Chew some more.' : fac(t) ? 'Hum some more.' : 'Keep digging.'}`, 'al', t); } return false; }
     pay(this, t, costOf(key)); this.upOf(t)[key] = true; sfx.built();
     // An armour level (percent mode) thickens every body the side already has, by that level's share.
-    const plate = u.line === 'arm' && u.lvl && LEVELS.mode === 'percent' ? u.pct ?? LEVELS.pct[u.lvl - 1] : 0; if (key === 'gbloom') this.carpet.deepen(t); if (plate) for (const x of this.own(undefined, t)) { x.maxHp *= plate; x.hp *= plate; if (fac(t)) { x.maxShield *= plate; x.shield *= plate; } } factionRule(t).bought?.(this, t, key);
+    const plate = u.line === 'arm' && u.lvl && LEVELS.mode === 'percent' ? u.pct ?? LEVELS.pct[u.lvl - 1] : 0; if (key === 'gbloom') this.carpet.deepen(t); if (plate) for (const x of this.own(undefined, t)) { if (!inCat(u.cat, catOf(x.kind))) continue; x.maxHp *= plate; x.hp *= plate; if (fac(t)) { x.maxShield *= plate; x.shield *= plate; } } factionRule(t).bought?.(this, t, key);
     this.feed(v, u.say, '', t); return true;
   }
   canPlace(k: BKind, x: number, z: number, rot: boolean, team = 0) {
@@ -683,8 +684,10 @@ export class Game {
     const [mx, mz] = MAP.mid!, fromMid = Math.hypot(x - mx, z - mz); if (fromMid + Math.max(hx, hz) > MAP.rad! * .99) return false;
     // And nothing goes up on the enemy's doorstep. A new base always needed 45 m of clear ground from the enemy; the buildings round it
     // did not, so a Headframe 45 m out could put a Watchpost, Thorn Spire or Stinger Stalk right beside the enemy's ore line.
-    for (const b of this.buildings) if (b.alive && b.team !== team && Math.hypot(b.pos.x - x, b.pos.z - z) < 45) return false;
+    const far = bldRule(k).far, gap = far ? 12 : 45;
+    for (const b of this.buildings) if (b.alive && b.team !== team && Math.hypot(b.pos.x - x, b.pos.z - z) < gap) return false;
     if (k === hq) { if (fromMid > MAP.rad! * .95) return false; }
+    else if (far) { /* placeOK decides */ }
     else if ((team || Math.hypot(x, z) > 80) && !this.buildings.some(b => b.alive && b.team === team && b.built && this.isHQ(b) && Math.hypot(b.pos.x - x, b.pos.z - z) < 42)) return false;
     for (const b of this.buildings) if (b.alive && Math.abs(x - b.pos.x) < hx + b.hx + 1.6 && Math.abs(z - b.pos.z) < hz + b.hz + 1.6) return false;
     for (const o of this.ores) if (o.amount > 0 && Math.abs(x - o.pos.x) < hx + 2.4 && Math.abs(z - o.pos.z) < hz + 2.4) return false;
@@ -700,7 +703,7 @@ export class Game {
   placeWhy = '';
   place(k: BKind, x: number, z: number, rot: boolean, team = 0, by: Unit | null = this.me) { if (this.net) { this.net.cmd('pl', k, x, z, rot ? 1 : 0); sfx.place(); this.puff(TMP.set(x, .3, z), 5, 1.2, M.dust, .5, 2); return null; }
     // A Gloam building is a Grazer that put down roots. No Grazer to spare, no building.
-    let root: Unit | null = null; if (fac(team) === 2) { root = rootGrazer(this, x, z, by && by.team === team ? by : null, team); if (!root) return null; }
+    let root: Unit | null = null; if (fac(team) === 2 && !bldRule(k).free) { root = rootGrazer(this, x, z, by && by.team === team ? by : null, team); if (!root) return null; }
     pay(this, team, costOf(k)); const b = this.addBuilding(k, team, x, z, false, rot); { const vt = bldRule(k).tap ? ventAt(this, x, z) : null; if (vt) vt.tap = b; } if (root) consume(this, root); sfx.place(); this.puff(TMP.set(x, .3, z), 5, 1.2, fac(team) ? M.violet : M.dust, .5, 2); return b; }
 
   weldAcc = 0;
@@ -966,7 +969,7 @@ export class Game {
     else if (u.state === 'toHQ') { if (!hq) { u.state = 'wait'; return; } if (this.distToBox(hq, u.pos.x, u.pos.z) < 1.7 + this.bankReach(hq)) { this.purse[side] += u.carrying * this.oreK(side); if (!atHome(side)) this.stats.minedV += u.carrying; else this.stats.mined += u.carrying; u.carrying = 0; if (u.rig.pack) u.rig.pack.visible = false; u.state = 'idle'; } else { /* Walk to the near face of the home building, so neither end of the map has a longer walk round it than the other. */ const x = Math.max(hq.pos.x - hq.hx - .8, Math.min(hq.pos.x + hq.hx + .8, u.pos.x)), z = Math.max(hq.pos.z - hq.hz - .8, Math.min(hq.pos.z + hq.hz + .8, u.pos.z)); this.moveTo(u, x, z, dt, .3); } }
   }
   acquire(u: Unit, range: number, bRange: number) {
-    if (this.truce) return null;
+    if (this.truce) return null; if (u.status && hasStatus(u, 'blind')) { range = Math.min(range, 4); bRange = Math.min(bRange, 4); }
     let best: Unit | Building | null = null, bd = range;
     // Not simply the nearest: fighters go for healers, marksmen and the wounded first, and think twice about a raised shield.
     let bs = 1e9;

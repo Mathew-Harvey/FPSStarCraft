@@ -64,5 +64,5 @@ export const G_TUNE = {
   stinger: { range: 9, dmg: 18, cd: 1.1 },
 };
 
-export const G_FACTION: Faction = { name: 'The Gloam', short: 'Gloam', hq: 'mothercap', worker: 'grazer', supply: 'sporesac', builds: G_BUILDABLE, voice: 'Overgrowth', squad: 'Swarm', lead: 'snapper', ore: 'ore' };
+export const G_FACTION: Faction = { name: 'The Gloam', short: 'Gloam', hq: 'mothercap', worker: 'grazer', supply: 'sporesac', builds: G_BUILDABLE, voice: 'Overgrowth', squad: 'Swarm', lead: 'snapper', ore: 'ore', barracks: 'warren' };
 export const G_TRAINS: Partial<Record<GBKind, GKind[]>> = { mothercap: ['grazer', 'snapper', 'blister', 'quillback'], tuskhollow: ['mulcher'] };

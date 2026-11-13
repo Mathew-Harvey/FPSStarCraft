@@ -98,6 +98,22 @@ export interface BldRules {
 export interface FactionRules {
   /** The bot brain for a side of this faction: economy, building, research and squad plans. */
   brain?(D: Director, dt: number, S: Side): void;
+  /** The free raid factory for the far side of the classic match, which runs no economy (Ironhold at home against the Veyl, nobody playing them). */
+  classic?(D: Director, dt: number): void;
+  /** Timed hints at the start of a match: seconds, who says it, the line. */
+  hints?: [number, string, string][];
+  /** The squad's three playbooks (a push down the road, a flank, and all in). */
+  books?: { name: string; steps: string[]; go: string; label: string }[];
+  /** Idle chatter, given the faction at the other end. */
+  chatter?(foe: number): string[];
+  /** What a body says on a kill or when a friend goes down, given the faction at the other end. */
+  lines?(kind: 'kill' | 'down', foe: number): string[];
+  /** A body of this faction came out of training (the first of a kind gets a line). */
+  trained?(D: Director, u: Unit): void;
+  /** A building of this faction finished. */
+  built?(D: Director, b: Building): void;
+  /** A building of this faction fell; `left` is how many of that kind the side still has. */
+  lost?(D: Director, b: Building, left: number): void;
   /** The brain for a body of this faction with no `ai` hook of its own. */
   ai?(g: Game, u: Unit, dt: number): void;
   /** The first-person controls for a body of this faction with no `drive` hook of its own. */

@@ -24,7 +24,7 @@ export const I_BLD: Record<IBKind, BldDef> = {
   mast: { name: 'Signal Mast', hp: 1100, hx: 2.3, hz: 2.3, h: 12, cost: 250, time: 22, blurb: 'Third upgrades, top research', needs: ['foundry', 'assay'] },
 };
 export const I_BUILDABLE: IBKind[] = ['bunkhouse', 'depot', 'watchpost', 'machineshop', 'assay', 'foundry', 'mast', 'headframe'];
-export const I_FACTION: Faction = { name: 'Ironhold Charter', short: 'Ironhold', hq: 'headframe', worker: 'rigger', supply: 'depot', builds: I_BUILDABLE, voice: 'Quartermaster', squad: 'Alpha', lead: 'linesman', ore: 'ore' };
+export const I_FACTION: Faction = { name: 'Ironhold Charter', short: 'Ironhold', hq: 'headframe', worker: 'rigger', supply: 'depot', builds: I_BUILDABLE, voice: 'Quartermaster', squad: 'Alpha', lead: 'linesman', ore: 'ore', barracks: 'bunkhouse' };
 export const I_TRAINS: Partial<Record<IBKind, IKind[]>> = { headframe: ['rigger'], bunkhouse: ['linesman', 'breacher', 'patch', 'longshot'], foundry: ['gantry'] };
 export const I_NEEDS: Partial<Record<IKind, IBKind>> = { breacher: 'machineshop', patch: 'machineshop', longshot: 'assay' };
 /** Research. `at` is the building that sells it, and `needs` is the research that has to be bought first. */

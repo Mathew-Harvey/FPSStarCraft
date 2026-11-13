@@ -20,7 +20,7 @@ export const V_BLD: Record<VBKind, BldDef> = {
   hushwell: { name: 'Hush Well', hp: 800, hx: 2.4, hz: 2.4, h: 4.4, cost: 100, time: 9, blurb: 'Eight more voices' },
 };
 export const V_BUILDABLE: VBKind[] = ['broodpit', 'hushwell', 'thornspire', 'wardpylon', 'reedgate', 'choir'];
-export const V_FACTION: Faction = { name: 'Veyl Chorus', short: 'Veyl', hq: 'choir', worker: 'tender', supply: 'hushwell', builds: V_BUILDABLE, voice: 'Conductor', squad: 'Chorus Lead', lead: 'cantor', ore: 'ore' };
+export const V_FACTION: Faction = { name: 'Veyl Chorus', short: 'Veyl', hq: 'choir', worker: 'tender', supply: 'hushwell', builds: V_BUILDABLE, voice: 'Conductor', squad: 'Chorus Lead', lead: 'cantor', ore: 'ore', barracks: 'broodpit' };
 export const V_TRAINS: Partial<Record<VBKind, VKind[]>> = { choir: ['tender'], broodpit: ['cantor', 'lancer'], reedgate: ['warden'] };
 /** Songs are learned at the buildings that sing them. */
 export const V_UPGRADES: { key: VUpKey; name: string; cost: number; blurb: string; at: VBKind; say: string; needs?: VUpKey }[] = [

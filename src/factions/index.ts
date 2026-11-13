@@ -2,6 +2,9 @@
 import './ironhold/rules';
 import './veyl/rules';
 import './gloam/rules';
+import './ironhold/brain';
+import './veyl/brain';
+import './gloam/brain';
 import './ironhold/look';
 import './veyl/look';
 import './gloam/look';

@@ -15,7 +15,7 @@ export interface BldDef { name: string; hp: number; hx: number; hz: number; h: n
 export const BLD: Record<BKind, BldDef> = { ...I_BLD, ...V_BLD, ...(G_BLD as Record<GBKind, BldDef>) };
 export const BUILDABLE: BKind[] = I_BUILDABLE;
 /** Everything about a side that the shared code needs to know. Keyed by team: 0 is the Ironhold Charter, 1 the Veyl Chorus. */
-export interface Faction { name: string; short: string; hq: BKind; worker: Kind; supply: BKind; builds: BKind[]; voice: string; squad: string; lead: Kind; ore: string }
+export interface Faction { name: string; short: string; hq: BKind; worker: Kind; supply: BKind; builds: BKind[]; voice: string; squad: string; lead: Kind; ore: string; /** Where its first fighters train: the squad's playbook waits on it. */ barracks: BKind }
 export const FACTION: Record<number, Faction> = { 0: I_FACTION, 1: V_FACTION, 2: G_FACTION };
 // Teams 3 to 5 are the second side of a mirror match: the same faction as team - 3, holding the other end of the map.
 FACTION[3] = FACTION[0]; FACTION[4] = FACTION[1]; FACTION[5] = FACTION[2];

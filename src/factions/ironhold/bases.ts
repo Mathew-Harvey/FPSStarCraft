@@ -15,7 +15,7 @@ import { load, unload, usedOf } from '../../core/cargo';
 import { roomFor, flyBuilding } from '../../core/air';
 import { refund, costOf } from '../../core/econ';
 import { TUNE, mem, nearest, within, dist, mulOf } from './kit';
-import { HOSTS, ADDONS, LAB, CRAWLERS, I_UPGRADES, type IBKind } from './numbers';
+import { HOSTS, ADDONS, LAB, CRAWLERS, I_UPGRADES, I_NEEDS, type IBKind, type IKind } from './numbers';
 
 const isHost = (k: string) => HOSTS.includes(k as IBKind);
 const isAddon = (k: string) => ADDONS.includes(k as IBKind);
@@ -25,8 +25,11 @@ const an = (s: string) => (/^[AEIOU]/.test(s) ? 'an ' : 'a ') + s;
 /** The add-on bolted to a building (alive), if any, and the building an add-on is bolted to. */
 export function addonOf(b: Building): Building | null { const a = mem(b).addon as Building | undefined; return a && a.alive && mem(a).host === b ? a : null; }
 export function hostOf(a: Building): Building | null { const h = mem(a).host as Building | undefined; return h && h.alive && mem(h).addon === a ? h : null; }
-/** Where an add-on goes beside a host: against the host's west wall (the Bunkhouse's door is on the east), back edges lined up. */
-export function addonSpot(host: Building, k: BKind): [number, number] { const d = BLD[k]; return [host.pos.x - host.hx - 1.7 - d.hx, host.pos.z - host.hz + d.hz]; }
+/** Where an add-on can go beside a host, best first: against the west wall (the Bunkhouse's door is on the east), then the north and south walls. */
+export function addonSpots(host: Building, k: BKind): [number, number][] { const d = BLD[k], x = host.pos.x, z = host.pos.z; return [[x - host.hx - 1.7 - d.hx, z - host.hz + d.hz], [x - host.hx + d.hx, z - host.hz - 1.7 - d.hz], [x - host.hx + d.hx, z + host.hz + 1.7 + d.hz]]; }
+/** The spot an add-on would go now: the first of addonSpots with room (or the west one when none has room, for the refusal). */
+export function addonSpot(host: Building, k: BKind, g?: Game): [number, number] { const all = addonSpots(host, k); return (g && all.find(p => g.canPlace(k, p[0], p[1], false, host.team))) || all[0]; }
+const nearSpot = (h: Building, k: BKind, x: number, z: number) => addonSpots(h, k).reduce((a, p) => Math.hypot(p[0] - x, p[1] - z) < Math.hypot(a[0] - x, a[1] - z) ? p : a);
 const hasLab = (b: Building) => { const a = addonOf(b); return !!a && a.built && a.kind === 'labbay'; };
 const hasTwin = (b: Building) => { const a = addonOf(b); return !!a && a.built && a.kind === 'twinbay'; };
 /** Bolts an add-on to a host. */
@@ -34,17 +37,17 @@ export function link(host: Building, a: Building) { mem(host).addon = a; mem(a).
 /** A free host of this side whose add-on spot is near a point, for snapping a Rigger's ghost and for linking a new add-on. */
 function freeHost(g: Game, team: number, k: BKind, x: number, z: number, r = 6): Building | null {
   let best: Building | null = null, bd = r;
-  for (const h of g.buildings) { if (!h.alive || h.team !== team || !isHost(h.kind) || addonOf(h) || mem(h).crawl) continue; const [sx, sz] = addonSpot(h, k), d = Math.hypot(sx - x, sz - z); if (d < bd) { bd = d; best = h; } }
+  for (const h of g.buildings) { if (!h.alive || h.team !== team || !isHost(h.kind) || addonOf(h) || mem(h).crawl) continue; const [sx, sz] = nearSpot(h, k, x, z), d = Math.hypot(sx - x, sz - z); if (d < bd) { bd = d; best = h; } }
   return best;
 }
 /** Starts an add-on beside a host (a Rigger is sent to build it). Returns the site, or null when the spot is taken. */
 export function bolt(g: Game, host: Building, k: BKind): Building | null {
-  if (addonOf(host) || !host.built) return null; const [x, z] = addonSpot(host, k); if (!g.canPlace(k, x, z, false, host.team)) return null;
+  if (addonOf(host) || !host.built) return null; const [x, z] = addonSpot(host, k, g); if (!g.canPlace(k, x, z, false, host.team)) return null;
   const a = g.addBuilding(k, host.team, x, z, false); link(host, a); return a;
 }
 const addonAction = (k: IBKind, hotkey: string): BldAction => ({
   key: k, name: `Bolt on ${an(BLD[k].name)}`, hotkey, cost: costOf(k), blurb: BLD[k].blurb,
-  ok(g, b) { if (addonOf(b)) return `It already has ${an(BLD[addonOf(b)!.kind].name)}.`; if (mem(b).crawl) return 'Not while it crawls.'; const [x, z] = addonSpot(b, k); return g.canPlace(k, x, z, false, b.team) ? '' : 'Something is in the way on its west side.'; },
+  ok(g, b) { if (addonOf(b)) return `It already has ${an(BLD[addonOf(b)!.kind].name)}.`; if (mem(b).crawl) return 'Not while it crawls.'; const [x, z] = addonSpot(b, k, g); return g.canPlace(k, x, z, false, b.team) ? '' : 'No room beside it. Clear a wall.'; },
   run(g, b) { bolt(g, b, k); },
 });
 /** A host trains two at once with a Twin Bay; anything else trains one at a time, as usual. Nothing trains while it crawls. */
@@ -77,7 +80,7 @@ function tickCrawl(g: Game, b: Building, dt: number) {
 /** A left-behind add-on at the spot a crawling host just settled on gets bolted back on. */
 function freeHostAddon(g: Game, b: Building): Building | null {
   if (!isHost(b.kind)) return null;
-  return g.buildings.find(a => a.alive && a.team === b.team && isAddon(a.kind) && !hostOf(a) && (() => { const [x, z] = addonSpot(b, a.kind); return Math.hypot(a.pos.x - x, a.pos.z - z) < 1.5; })()) || null;
+  return g.buildings.find(a => a.alive && a.team === b.team && isAddon(a.kind) && !hostOf(a) && addonSpots(b, a.kind).some(p => Math.hypot(a.pos.x - p[0], a.pos.z - p[1]) < 1.5)) || null;
 }
 const crawlAction: BldAction = {
   key: 'crawl', name: 'Crawl', hotkey: 'K', blurb: 'Packs onto skids and crawls at walking pace to where you are looking. An add-on stays behind.',
@@ -143,8 +146,8 @@ defineBuildings({
     b.cd -= dt; if (b.cd > 0) return; const t = nearest(g, { pos: b.pos, team: b.team }, TUNE.bastion.range + b.hx, o => !o.air && seenBy(g, b.team, o)); if (!t) { b.cd = .3; return; }
     b.cd = TUNE.bastion.cd; const a = V3(b.pos.x, b.h + 1, b.pos.z), e = V3(t.pos.x, UNIT[t.kind].bodyY, t.pos.z); g.tracer(a, e, tracerMat, .16); if (g.vol(b.pos) > .05) sfx.cannon(); g.damage(t, TUNE.bastion.dmg * g.gunMul(b.team), b); g.burst(e, TUNE.bastion.dmg * .3, 2, null, t);
   } },
-  twinbay: { added(g, b) { if (!hostOf(b)) { const h = freeHost(g, b.team, b.kind, b.pos.x, b.pos.z, 2); if (h) link(h, b); } }, spot(g, team, x, z) { const h = freeHost(g, team, 'twinbay', x, z); return h ? addonSpot(h, 'twinbay') : null; } },
-  labbay: { added(g, b) { if (!hostOf(b)) { const h = freeHost(g, b.team, b.kind, b.pos.x, b.pos.z, 2); if (h) link(h, b); } }, spot(g, team, x, z) { const h = freeHost(g, team, 'labbay', x, z); return h ? addonSpot(h, 'labbay') : null; }, note: b => hostOf(b) ? `Bolted to the ${BLD[hostOf(b)!.kind].name}` : 'Not bolted to anything' },
+  twinbay: { added(g, b) { if (!hostOf(b)) { const h = freeHost(g, b.team, b.kind, b.pos.x, b.pos.z, 2); if (h) link(h, b); } }, spot(g, team, x, z) { const h = freeHost(g, team, 'twinbay', x, z); return h ? nearSpot(h, 'twinbay', x, z) : null; } },
+  labbay: { added(g, b) { if (!hostOf(b)) { const h = freeHost(g, b.team, b.kind, b.pos.x, b.pos.z, 2); if (h) link(h, b); } }, spot(g, team, x, z) { const h = freeHost(g, team, 'labbay', x, z); return h ? nearSpot(h, 'labbay', x, z) : null; }, note: b => hostOf(b) ? `Bolted to the ${BLD[hostOf(b)!.kind].name}` : 'Not bolted to anything' },
   pumpjack: { tap: true },
   // A Depot sinks into the ground once it is up, so its own side walks over it. It comes up when an enemy body is close.
   depot: { walkOver: (_g, b, u) => u.team === b.team && !mem(b).raised && b.built, tick(g, b, dt) {
@@ -172,6 +175,9 @@ function each(g: Game, b: Building, dt: number) {
 // ---------------------------------------------------------------- gates for research
 /** Lab Bay research needs a Lab Bay bolted to a building of that kind; some levels need a building standing as well. */
 function gate(g: Game, team: number, what: string): string {
+  // A unit that needs a building beyond the one it trains at (the Patch, Longshot, Claim Barge), and a building that needs another first.
+  const nb = I_NEEDS[what as IKind]; if (nb) return g.ownB(nb, true, team).length ? '' : BLD[nb].name;
+  if (BLD[what as BKind]?.needs) { const m = g.missing(what as BKind, team); return m.length ? BLD[m[0]].name : ''; }
   const u = I_UPGRADES.find(x => x.key === what); if (!u) return '';
   if (u.lab && !g.ownB(u.at, true, team).some(hasLab)) return `Lab Bay on ${an(BLD[u.at].name)}`;
   for (const r of u.req || []) if (!g.ownB(r, true, team).length) return BLD[r].name;

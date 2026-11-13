@@ -18,6 +18,7 @@ import { load, unload, CARGO } from '../../src/core/cargo';
 import { switchKind, morph } from '../../src/core/morph';
 import { isEnemy, setAlliances, MAX_SIDES, TEAM_SLOTS } from '../../src/core/sides';
 import { serverCmd, buildSnap, buildSnaps } from '../../src/netgame';
+import { TERRAIN } from '../../src/terrain';
 
 initHeadless();
 const fail: string[] = []; const check = (ok: boolean, what: string) => { console.log((ok ? 'PASS ' : 'FAIL ') + what); if (!ok) fail.push(what); };
@@ -50,7 +51,14 @@ const run = (g: Game, secs: number, each?: () => boolean | void) => { for (let i
   { const taps = Object.keys(BLD).filter(k => bldRule(k as BKind).tap); defineBuildings(Object.fromEntries(taps.map(k => [k, { tap: undefined }])));
     const g0 = world(); setSides(0, 1); check(world(0, 1).vents.length === 0 && g0.vents.length === 0, 'vents: with no tap in either roster none are laid, so a match without Flux plays as before');
     defineBuildings(Object.fromEntries(taps.map(k => [k, { tap: true }]))); }
-  ECON.vents = 'on'; const g = world(0, 0); const H = SIDE.home, O = SIDE.out;
+  ECON.vents = 'on';
+  { // A map's own vents (stream J's ground lays two by each base and two by each field) come first: each sits clear of the ore, and a tap fits.
+    const gj = world(0, 0), dj = gj.vents.map(v => Math.min(...gj.ores.map(o => Math.hypot(v.pos.x - o.pos.x, v.pos.z - o.pos.z))));
+    check(gj.vents.length >= 4 && dj.every(x => x >= 5), `vents: the map's own (${gj.vents.length}) all stand clear of the ore (nearest ${Math.min(...dj).toFixed(1)} m)`);
+  }
+  // The rest of this file tests the engine's own vent spots and flat ground, the fallback for a map with no ground of its own.
+  TERRAIN.on = false;
+  const g = world(0, 0); const H = SIDE.home, O = SIDE.out;
   check(g.vents.length >= 4, `vents: laid when switched on (${g.vents.length})`);
   const d = (v: { pos: { x: number; z: number } }, x: number, z: number) => Math.hypot(v.pos.x - x, v.pos.z - z);
   const yard = g.vents.map(v => d(v, 0, 0)).sort((a, b) => a - b).slice(0, 2), far = g.vents.map(v => d(v, VHOME.x, VHOME.z)).sort((a, b) => a - b).slice(0, 2);

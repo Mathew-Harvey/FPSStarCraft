@@ -125,20 +125,20 @@ export const I_UPGRADES: { key: IUpKey; name: string; cost: number; blurb: strin
   { key: 'drill', name: 'Diamond Bits', cost: 100, blurb: 'Riggers dig 30% faster', at: 'headframe', say: 'Diamond Bits fitted. The rock has filed a complaint.' },
   { key: 'buckets', name: 'Deep Buckets', cost: 150, flux: 50, blurb: 'Riggers carry 10 ore a trip', at: 'headframe', needs: 'drill', say: 'Deep Buckets. Same back, more rock.' },
   // Lab Bay on a Bunkhouse.
-  { key: 'overtime', lab: true, name: 'Overtime', cost: 100, flux: 100, blurb: 'Linesmen can trade 10 health for 11 s of faster fire and feet (key Q)', at: 'bunkhouse', say: 'Overtime approved. Nobody gets paid for it.' },
+  { key: 'overtime', lab: true, name: 'Overtime', cost: 100, flux: 100, blurb: 'Linesmen can trade 10 health for 11 s of faster fire and feet (key T)', at: 'bunkhouse', say: 'Overtime approved. Nobody gets paid for it.' },
   { key: 'hobble', lab: true, name: 'Hobble Shells', cost: 50, flux: 50, blurb: 'Breacher hits slow what they hit for a second', at: 'bunkhouse', say: 'Hobble Shells loaded. They hit you in the knees.' },
   { key: 'kitbelt', lab: true, name: 'Kit Belts', cost: 100, flux: 100, blurb: 'Linesmen and Sappers get +15 health', at: 'bunkhouse', say: 'Kit Belts on. More pouches, more padding.' },
   // Lab Bay on a Machine Shop.
   { key: 'hotspout', lab: true, name: 'Hot Spout', cost: 150, flux: 150, blurb: 'Dustbike flame does +5 to soft bodies and reaches 2 m further', at: 'machineshop', say: 'Hot Spout fitted. The bikes burn blue now.' },
   { key: 'quickanchor', lab: true, name: 'Quick Anchor', cost: 100, flux: 100, blurb: 'Pile Drivers anchor and lift in 1.5 s', at: 'machineshop', say: 'Quick Anchor. The stakes go in before you finish swearing.' },
-  { key: 'minedrill', lab: true, name: 'Mine Drill', cost: 75, flux: 75, blurb: 'Sappers dig a Shaft Mine in 1 s and keep four at once', at: 'machineshop', say: 'Mine Drill issued. Holes, faster.' },
+  { key: 'minedrill', lab: true, name: 'Mine Drill', cost: 75, flux: 75, blurb: 'Sappers dig a Shaft Mine in 1 s and keep three at once', at: 'machineshop', say: 'Mine Drill issued. Holes, faster.' },
   // Lab Bay on a Hangar.
-  { key: 'smoke', lab: true, name: 'Smoke Cloak', cost: 100, flux: 100, blurb: 'Gadflies can hide in smoke (key Q)', at: 'hangar', say: 'Smoke Cloak fitted. The Gadflies vanish on cue.' },
+  { key: 'smoke', lab: true, name: 'Smoke Cloak', cost: 100, flux: 100, blurb: 'Gadflies can hide in smoke (key C)', at: 'hangar', say: 'Smoke Cloak fitted. The Gadflies vanish on cue.' },
   { key: 'rotors', lab: true, name: 'Fast Rotors', cost: 150, flux: 150, blurb: 'Gadflies and Hoppers fly 20% faster', at: 'hangar', say: 'Fast Rotors. Hold on to your hats.' },
   { key: 'battery', lab: true, name: 'Big Battery', cost: 150, flux: 150, blurb: 'Surveyors, Gadflies and Claim Barges start with 25 more energy and hold 50 more', at: 'hangar', say: 'Big Battery. More juice, more tricks.' },
   // Signal Mast and Annex.
-  { key: 'ghillie', name: 'Ghillie', cost: 150, flux: 150, blurb: 'Longshots can go unseen (key Q, uses energy)', at: 'mast', say: 'Ghillie suits issued. Try not to lose them.' },
-  { key: 'foreclose', name: 'Foreclosure', cost: 150, flux: 150, blurb: 'Claim Barges can fire a 240-damage shell (key Q)', at: 'annex', say: 'Foreclosure papers signed. The Barges can serve them now.' },
+  { key: 'ghillie', name: 'Ghillie', cost: 150, flux: 150, blurb: 'Longshots can go unseen (key C, uses energy)', at: 'mast', say: 'Ghillie suits issued. Try not to lose them.' },
+  { key: 'foreclose', name: 'Foreclosure', cost: 150, flux: 150, blurb: 'Claim Barges can fire a 240-damage shell (key C)', at: 'annex', say: 'Foreclosure papers signed. The Barges can serve them now.' },
   { key: 'relocate', name: 'Relocate', cost: 150, flux: 150, blurb: 'Claim Barges can jump to any spot your side can see (key E)', at: 'annex', say: 'Relocate cleared. The Barges can be anywhere by Tuesday.' },
   // Older research kept: no plan row replaces these.
   { key: 'spotlight', name: 'Spotlight', cost: 100, flux: 50, blurb: 'Watchposts see unseen bodies within 11 m', at: 'assay', say: 'Spotlights on the Watchposts. Nothing hides from a lamp.' },

@@ -7,7 +7,9 @@ import { Game } from '../src/game';
 import { initHeadless } from '../src/gfx';
 import { DIFFS, FACTION, UNIT, BLD, setMap, setSides, isFighter, OVERTIME, CHOIR_REACH, CLEAVE } from '../src/data';
 import { G_TUNE } from '../src/factions/gloam/numbers';
-const spec0 = JSON.parse(process.argv[2] || '{}'); if (spec0.reach !== undefined) CHOIR_REACH.m = spec0.reach; if (spec0.cleave !== undefined) CLEAVE.n = spec0.cleave; if (spec0.bite) G_TUNE.bite.snapper = spec0.bite; if (spec0.cap) BLD.mothercap.cost = spec0.cap; if (spec0.bud) G_TUNE.budEvery = spec0.bud; if (spec0.gnaw) G_TUNE.bite.gnaw = spec0.gnaw;
+import { TERRAIN } from '../src/terrain';
+const spec0 = JSON.parse(process.argv[2] || '{}'); if (spec0.flat) TERRAIN.on = false;   // flat: the maps without their high ground, vents and beacons
+ if (spec0.reach !== undefined) CHOIR_REACH.m = spec0.reach; if (spec0.cleave !== undefined) CLEAVE.n = spec0.cleave; if (spec0.bite) G_TUNE.bite.snapper = spec0.bite; if (spec0.cap) BLD.mothercap.cost = spec0.cap; if (spec0.bud) G_TUNE.budEvery = spec0.bud; if (spec0.gnaw) G_TUNE.bite.gnaw = spec0.gnaw;
 if (spec0.ot !== undefined) { OVERTIME.start = spec0.ot * 60; if (spec0.otk) OVERTIME.perMin = spec0.otk; }
 initHeadless();
 const spec = JSON.parse(process.argv[2] || '{}');

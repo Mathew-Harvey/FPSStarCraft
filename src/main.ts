@@ -1,4 +1,7 @@
 // Boot, input, the frame loop, and the menu screens.
+import { TER, MADE } from './terrain';
+import { openMaker } from './mapmaker';
+import { usePlan, planMap } from './mapcode';
 import * as THREE from 'three';
 import { Pipeline, ViewPipe, V3, makeSky, TX, M } from './gfx';
 import { LAMP_ON } from './light';
@@ -317,7 +320,7 @@ function showLobby(l: Lobby) {
   // The lobby's match code says who holds each end: yard faction * 3 + outpost faction (1 and 2 are the classic Ironhold matches).
   const code = l.out ?? 1, lh = Math.floor(code / 3), lf = code % 3, outT = lf === lh ? lf + 3 : lf, onOut = (p: { team: number }) => p.team === outT, FN = ['Ironhold', 'Veyl Chorus', 'The Gloam'];
   $('mPlayers').innerHTML = l.players.map(p => `<button type="button" disabled class="${p.ready || p.id === l.host ? 'dn' : ''}${onOut(p) ? ' v' : ''}">${onOut(p) ? FN[lf] + (lf === lh ? ' (outpost)' : '') : lh ? FN[lh] + (lf === lh ? ' (yard)' : '') : p.id === l.host ? 'Host' : 'Crew'}<b>${p.name.replace(/[<>&]/g, '')}</b><small>${p.id === l.host ? 'Runs the shift' : p.ready ? 'Ready' : 'Not ready'}</small></button>`).join('');
-  mDiffB.forEach((b, i) => { b.classList.toggle('on', i === l.diff); b.disabled = !host; }); lobMap = l.map; mMapB.forEach((b, i) => { b.classList.toggle('on', i === baseOf(l.map)); b.disabled = !host; }); mSizeB.forEach(b => { b.classList.toggle('on', +(b.dataset.s || 0) === sizeOf(l.map)); b.disabled = !host; });
+  mDiffB.forEach((b, i) => { b.classList.toggle('on', i === l.diff); b.disabled = !host; }); lobMap = l.map; { const mb = $('mMade') as HTMLButtonElement; mb.classList.toggle('on', !!l.plan); mb.disabled = !host || (!MADE.code && !l.plan); } mMapB.forEach((b, i) => { b.classList.toggle('on', !l.plan && +(b.dataset.b ?? i) === baseOf(l.map)); b.disabled = !host; }); mSizeB.forEach(b => { b.classList.toggle('on', +(b.dataset.s || 0) === sizeOf(l.map)); b.disabled = !host; });
   const nm = ['Ironhold', 'the Veyl', 'the Gloam'], foeName = nm[lf] + (lf === lh ? ' at the outpost' : ''), homeName = nm[lh] + (lf === lh ? ' at the yard' : '');
   mFoeB.forEach((b, i) => { b.classList.toggle('on', FOE_FAC[i] === lf); b.disabled = !host; }); mHomeB.forEach((b, i) => { b.classList.toggle('on', i === lh); b.disabled = !host; });
   $('mSide').textContent = me && onOut(me) ? 'Play as ' + homeName : 'Play as ' + foeName; { const v = l.players.filter(onOut).length, c = l.players.length - v; if (v) $('mHint').textContent = (c ? 'Versus shift. Both sides dig, build and train, and any side with nobody on it is run by bots. ' : `Everyone is on ${foeName}. ${homeName[0].toUpperCase() + homeName.slice(1)} will be bots. `) + (host ? 'You start it when everyone is ready.' : 'Hit Ready when you are.'); }
@@ -332,7 +335,7 @@ async function mpConnect(then: (n: Net) => void) {
   n.onLobby = l => { showLobby(l); if (l.code) { mErr(''); lastCode = l.code; } }; n.onError = m => mErr(m);
   n.onClose = () => { net = null; if (game.net === n) { game.net = null; toMenu(); } showMode(); if (lastCode) { mCode.value = lastCode; mErr('Lost the connection. Press Join to get back into lobby ' + lastCode + '.'); } else mErr('Lost the connection to the server.'); };
   n.onBegin = m => {
-    endSplit(); mode = 'multi'; hud.reset(); game.dispose(); setSidesCode(m.out ?? 1); setTeamGame(m.mt || null); STORY.charter = -1; game = new Game(pipe, hud, DIFFS[m.diff], m.map, null, n, !!m.eco); game.sens = sens; game.names = m.names; game.myTeam = m.team ?? SIDE.home; game.teams = m.teams || {}; if (m.ph) { game.applying = true; for (const r of m.ph) { const q = game.props[r[0]]; if (q && q.alive && q.hp > r[1]) game.damageProp(q, q.hp - r[1], null); } game.applying = false; } ended = false; (window as any).__ore.game = game;
+    endSplit(); mode = 'multi'; hud.reset(); game.dispose(); usePlan(m.plan || null); setSidesCode(m.out ?? 1); setTeamGame(m.mt || null); STORY.charter = -1; game = new Game(pipe, hud, DIFFS[m.diff], m.map, null, n, !!m.eco); game.sens = sens; game.names = m.names; game.myTeam = m.team ?? SIDE.home; game.teams = m.teams || {}; if (m.ph) { game.applying = true; for (const r of m.ph) { const q = game.props[r[0]]; if (q && q.alive && q.hp > r[1]) game.damageProp(q, q.hp - r[1], null); } game.applying = false; } ended = false; (window as any).__ore.game = game;
     initAudio(); setVolume(vol); setMusic(mus); $('menu').hidden = true; $('pause').hidden = true; $('end').hidden = true; hud.show(true); game.phase = 'play'; game.introT = 1.8; lock();
   };
   try { await n.connect(srv); net = n; mErr(''); then(n); } catch (e) { mErr(String((e as Error).message || e) + ' Check the server address.'); }
@@ -344,19 +347,26 @@ $('mLeave').addEventListener('click', () => { net?.send({ t: 'leave' }); });
 $('mSide').addEventListener('click', () => { const l = net?.lobby, me = l?.players.find(p => p.id === l.you), c = l?.out ?? 1, outT = c % 3 === Math.floor(c / 3) ? c % 3 + 3 : c % 3; net?.send({ t: 'team', v: me && me.team === outT ? 0 : 1 }); });
 $('mReady').addEventListener('click', () => { const l = net?.lobby, me = l?.players.find(p => p.id === l.you); net?.send({ t: 'ready', v: !(me && me.ready) }); });
 $('mStart').addEventListener('click', () => net?.send({ t: 'start' }));
-mDiffB.forEach((b, i) => b.addEventListener('click', () => net?.send({ t: 'set', diff: i }))); mFoeB.forEach((b, i) => b.addEventListener('click', () => { const c = net?.lobby?.out ?? 1; net?.send({ t: 'set', out: Math.floor(c / 3) * 3 + FOE_FAC[i] }); })); mHomeB.forEach((b, i) => b.addEventListener('click', () => { const c = net?.lobby?.out ?? 1; net?.send({ t: 'set', out: i * 3 + c % 3 }); })); mMapB.forEach((b, i) => b.addEventListener('click', () => net?.send({ t: 'set', map: mapCode(i, sizeOf(lobMap)) }))); mSizeB.forEach(b => b.addEventListener('click', () => net?.send({ t: 'set', map: mapCode(baseOf(lobMap), +(b.dataset.s || 0)) })));
+$('mMade').addEventListener('click', () => { if (MADE.code) net?.send({ t: 'set', plan: MADE.code }); });
+mDiffB.forEach((b, i) => b.addEventListener('click', () => net?.send({ t: 'set', diff: i }))); mFoeB.forEach((b, i) => b.addEventListener('click', () => { const c = net?.lobby?.out ?? 1; net?.send({ t: 'set', out: Math.floor(c / 3) * 3 + FOE_FAC[i] }); })); mHomeB.forEach((b, i) => b.addEventListener('click', () => { const c = net?.lobby?.out ?? 1; net?.send({ t: 'set', out: i * 3 + c % 3 }); })); mMapB.forEach((b, i) => b.addEventListener('click', () => net?.send({ t: 'set', map: mapCode(+(b.dataset.b ?? i), sizeOf(lobMap)) }))); mSizeB.forEach(b => b.addEventListener('click', () => net?.send({ t: 'set', map: mapCode(baseOf(lobMap), +(b.dataset.s || 0)) })));
 showMode();
 const diffBtns = Array.from($('diff').querySelectorAll('button')) as HTMLButtonElement[];
 const showDiff = () => diffBtns.forEach((b, i) => { b.classList.toggle('on', i === diffI); b.setAttribute('aria-pressed', String(i === diffI)); });
 diffBtns.forEach((b, i) => b.addEventListener('click', () => { diffI = i; showDiff(); save(); })); showDiff();
 const mapBtns = Array.from($('maps').querySelectorAll('button')) as HTMLButtonElement[];
 const sizeBtns = Array.from($('sizes').querySelectorAll('button')) as HTMLButtonElement[];
-const showMap = () => { mapBtns.forEach((b, i) => { b.classList.toggle('on', i === baseOf(mapI)); b.setAttribute('aria-pressed', String(i === baseOf(mapI))); }); sizeBtns.forEach(b => { const on = +(b.dataset.s || 0) === sizeOf(mapI); b.classList.toggle('on', on); b.setAttribute('aria-pressed', String(on)); }); };
+const showMap = () => { mapBtns.forEach((b, i) => { const on = +(b.dataset.b ?? i) === baseOf(mapI); b.classList.toggle('on', on); b.setAttribute('aria-pressed', String(on)); }); sizeBtns.forEach(b => { const on = +(b.dataset.s || 0) === sizeOf(mapI); b.classList.toggle('on', on); b.setAttribute('aria-pressed', String(on)); }); };
 /** Picks a map, keeping the size; a number of 10 or more is a whole map code with its size. */
 const useMap = (code: number) => { mode = 'skirm'; mapI = code % 100; showMap(); showMode(); save(); if (game.mapI % 100 !== mapI || game.mission) fresh(); };
-const pickMap = (i: number) => useMap(i >= 10 ? i : mapCode(i, sizeOf(mapI)));
-const pickSize = (s: number) => useMap(mapCode(baseOf(mapI), s));
-mapBtns.forEach((b, i) => b.addEventListener('click', () => pickMap(i))); sizeBtns.forEach(b => b.addEventListener('click', () => pickSize(+(b.dataset.s || 0)))); showMap();
+// Picking a map from the list puts any made map away; the map maker's Play button puts it back in use.
+const pickMap = (i: number) => { usePlan(null); showMade(); useMap(i >= 10 ? i : mapCode(i, sizeOf(mapI))); };
+const pickSize = (s: number) => { usePlan(null); showMade(); useMap(mapCode(baseOf(mapI), s)); };
+const showMade = () => { const n = $('makerNote'); if (n) n.textContent = MADE.plan ? 'Your made map is in use. Pick any map above to put it away.' : 'Lay out your own map and share it as a code'; };
+const playMade = (code: number) => { mapI = code % 100; mode = 'skirm'; showMap(); showMode(); showMade(); fresh(); start(); };
+$('makerBtn').addEventListener('click', () => openMaker(playMade));
+// A made map's code after #map= in the address loads it, once the page is up.
+queueMicrotask(() => { const hm = location.hash.match(/map=(M[\w-]+)/); const P = hm ? usePlan(hm[1]) : null; if (P) { mapI = planMap(P) % 100; mode = 'skirm'; showMap(); showMode(); showMade(); fresh(); } });
+mapBtns.forEach((b, i) => b.addEventListener('click', () => pickMap(+(b.dataset.b ?? i)))); sizeBtns.forEach(b => b.addEventListener('click', () => pickSize(+(b.dataset.s || 0)))); showMap();
 const sensEl = $('sens') as HTMLInputElement, volEl = $('vol') as HTMLInputElement; sensEl.value = String(sens); volEl.value = String(vol);
 sensEl.addEventListener('input', () => { sens = +sensEl.value; game.sens = sens; pad.sens = sens; save(); });
 volEl.addEventListener('input', () => { vol = +volEl.value; setVolume(vol); save(); });
@@ -428,5 +438,5 @@ function frame(now: number) {
   if (fast > 900 && quality < 1) { quality = Math.min(1, quality / .85); fast = 0; pipe.aa = aaFor(); pipe.ao = aoFor(); pipe.glow = pipe.shafts = glowFor(); LAMP_ON.value = (gfxI as number) !== 1; resize(); }
   requestAnimationFrame(frame);
 }
-(window as any).__ore = { MAP: () => MAP, models: MD, tx: TX, mats: M, gloamB: GLOAM_BUILDINGS, gloamBloom: bloomPatch, sounds: { ready: soundsReady, sfx }, quit, atlasUsed: MD.atlasUsed, game, start, pipe, hud, hud2, startSplit, startVeyl, split: () => split, game2: () => game2, setFree: (v: boolean) => { freeMouse = v; }, hold: (v: boolean) => { still = v; }, pickMap, pickSize, pickSide: (s: number, f = 0) => { mode = "skirm"; sideI = s; foeI = s ? s - 1 : f; showSide(); fresh(); }, unlock: () => { camp = STORY_JOBS; mpOpen = true; mode = 'multi'; showMode(); }, net: () => net, pickJob: (i: number) => { mode = 'camp'; camp = Math.max(camp, Math.min(i, STORY_JOBS)); jobI = i; showMode(); fresh(); }, playCuts, cuts: CUTS, cutP, startStory: (i: number) => { mode = 'camp'; jobI = i; camp = Math.max(camp, Math.min(i, STORY_JOBS)); start(); } };
+(window as any).__ore = { MAP: () => MAP, ter: () => TER, models: MD, tx: TX, mats: M, gloamB: GLOAM_BUILDINGS, gloamBloom: bloomPatch, sounds: { ready: soundsReady, sfx }, quit, atlasUsed: MD.atlasUsed, game, start, pipe, hud, hud2, startSplit, startVeyl, split: () => split, game2: () => game2, setFree: (v: boolean) => { freeMouse = v; }, hold: (v: boolean) => { still = v; }, pickMap, pickSize, pickSide: (s: number, f = 0) => { mode = "skirm"; sideI = s; foeI = s ? s - 1 : f; showSide(); fresh(); }, unlock: () => { camp = STORY_JOBS; mpOpen = true; mode = 'multi'; showMode(); }, net: () => net, pickJob: (i: number) => { mode = 'camp'; camp = Math.max(camp, Math.min(i, STORY_JOBS)); jobI = i; showMode(); fresh(); }, playCuts, cuts: CUTS, cutP, startStory: (i: number) => { mode = 'camp'; jobI = i; camp = Math.max(camp, Math.min(i, STORY_JOBS)); start(); } };
 requestAnimationFrame(frame);

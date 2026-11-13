@@ -20,6 +20,8 @@ export interface Read { key: 'none' | 'steady' | 'rush' | 'fort' | 'boom'; short
 const plural = (n: number, name: string) => n === 1 ? (/^[AEIOU]/.test(name) ? 'an ' : 'a ') + name : `${n} ${name}${/s$/.test(name) ? 'es' : 's'}`;
 const list = (a: string[]) => a.length < 2 ? a.join('') : a.slice(0, -1).join(', ') + ' and ' + a[a.length - 1];
 
+/** How much further a body on a scouting walk sees than it does in a fight. */
+export const SCOUT_EYE = 10;
 export class Intel {
   /** Each side has seen an enemy building at least once. Index 0 is the side at the yard, 1 the side at the far end. */
   found = [false, false]; foundT = [0, 0];
@@ -59,12 +61,12 @@ export class Intel {
     this.t -= dt; if (this.t > 0) return; this.t = .5; const g = this.g, host = !g.net;
     for (const T of multi() ? MATCH.teams : [SIDE.home, SIDE.out]) {
       const i = this.ix(T), foe = foeOf(T), many = multi(), seen = this.seen[i], eyes: number[][] = [];
-      for (const u of g.units) if (u.alive && u.team === T) eyes.push([u.pos.x, u.pos.z, SIGHT[u.kind] || 30]);
+      for (const u of g.units) if (u.alive && u.team === T) eyes.push([u.pos.x, u.pos.z, (SIGHT[u.kind] || 30) + (u.order.type === 'scout' ? SCOUT_EYE : 0)]);  // a body out scouting is looking, not fighting, so it sees 10 m further
       for (const b of g.buildings) if (b.alive && b.team === T) eyes.push([b.pos.x, b.pos.z, SIGHT[b.kind] || (b.built ? 26 : 14)]);
       const sees = (x: number, z: number, pad = 0) => eyes.some(e => (e[0] - x) ** 2 + (e[1] - z) ** 2 <= (e[2] + pad) ** 2);
       for (const s of this.spots[i]) if (!s.seen && sees(s.x, s.z)) s.seen = true;
       const live = new Set<number>();
-      for (const b of g.buildings) { if ((many ? !isEnemy(T, b.team) : b.team !== foe) || !b.alive) continue; live.add(b.id); if (!sees(b.pos.x, b.pos.z)) continue;
+      for (const b of g.buildings) { if ((many ? !isEnemy(T, b.team) : b.team !== foe) || !b.alive) continue; live.add(b.id); if (!sees(b.pos.x, b.pos.z, Math.min(b.hx, b.hz))) continue;   // seen once the eye reaches its near wall, not its middle
         let r = seen.get(b.id); if (!r) { r = { id: b.id, kind: b.kind, x: b.pos.x, z: b.pos.z, built: b.built, t: g.time }; seen.set(b.id, r); this.fresh[i].push(r); if (!this.freshT[i]) this.freshT[i] = g.time + 5; } r.built = b.built; r.t = g.time; }
       for (const [id, r] of seen) if (!live.has(id) && sees(r.x, r.z, -4)) seen.delete(id);
       if (!this.found[i] && seen.size) { this.found[i] = true; this.foundT[i] = g.time; if (host && MAP.hid) this.announce(T); }

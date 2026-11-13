@@ -9,6 +9,7 @@ import { DIFFS, UNIT, BLD, FACTION, UPGRADES, setMap, setSides, Kind, BKind, Uni
 import { defineBuildings, defineFaction, defineUnits, addHitFilter, HIT_FILTERS, bldRule } from '../../src/core/registry';
 import { ECON, costOf, canPay, sendToVent, seamRate, ventSpots } from '../../src/core/econ';
 import { LEVELS, level, levelMul, canHit } from '../../src/core/combat';
+import { purseOf, staffVents } from '../../src/core/purse';
 import { addStatus, hasStatus, statusPace, canAct } from '../../src/core/status';
 import { defineAbilities, abilitiesOf, whyNot, useAbility, ENERGY } from '../../src/core/ability';
 import { AIR, liftOff, flyBuilding, land } from '../../src/core/air';
@@ -69,6 +70,15 @@ const run = (g: Game, secs: number, each?: () => boolean | void) => { for (let i
   g.purse[H] = 100; g.fluxPurse[H] = 10; check(!g.train(barracks, 'xflux' as Kind), 'training is refused when there is ore but not enough Flux');
   g.fluxPurse[H] = 30; check(g.train(barracks, 'xflux' as Kind) && g.cash(H) === 50 && g.flux(H) === 5, 'training takes ore and Flux');
   check(g.cancelTrain(barracks, 0) && g.cash(H) === 100 && g.flux(H) === 30 && barracks.queue.length === 0, 'cancelling an order gives both back');
+  // The brains' purse: ore and Flux together, with something kept back.
+  { g.purse[H] = 100; g.fluxPurse[H] = 30; const P = purseOf(g, H);
+    check(P.can('xflux' as Kind) && !P.can('xflux' as Kind, 2) && P.short('xflux' as Kind, 2).includes('Flux'), 'a purse knows a body costs ore and Flux');
+    P.hold([60, 0]); check(!P.can('xflux' as Kind) && P.can('xflux' as Kind, 1, false) && P.free().can('xflux' as Kind), 'a purse keeps back what it is saving for');
+    g.fluxPurse[H] = 0; check(P.wantsFlux('xflux' as Kind) && !P.wantsFlux(FACTION[H].supply), 'a purse says when Flux is what is missing');
+    for (const u of g.units) if (u.team === H) sendToVent(g, u, null);
+    const n = staffVents(g, H, 3), on = g.units.filter(u => u.alive && u.team === H && u.vent === v).length;
+    check(n === 3 && on === 3, `staffing a tapped vent puts three workers on it (${n}, ${on})`);
+    g.fluxPurse[H] = 5000; check(staffVents(g, H, 3) === 2, 'with plenty of Flux one goes back to ore each step'); for (const u of g.units) if (u.team === H) sendToVent(g, u, null); }
   FACTION[H].builds.pop(); ECON.vents = 'auto';
   // Supply never goes past 200.
   for (let i = 0; i < 40; i++) g.addBuilding(FACTION[H].supply, H, -60 + (i % 8) * 8, -60 + Math.floor(i / 8) * 8, true);

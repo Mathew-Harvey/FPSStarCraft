@@ -245,7 +245,7 @@ export function netTick(g: Game, dt: number) {
   for (const m of net.inbox) {
     if (m.t === 's') applySnap(g, m);
     else if (m.t === 'yo') net.unit = m.unit;
-    else if (m.t === 'over') { g.stats.mined = m.stats[0]; g.stats.built = m.stats[1]; g.stats.kills = m.stats[2]; g.stats.lost = m.stats[3]; g.stats.minedV = m.stats[4] || 0; g.time = m.time; g.end(atHome(g.myTeam) ? !!m.won : !m.won); }
+    else if (m.t === 'over') { g.stats.mined = m.stats[0]; g.stats.built = m.stats[1]; g.stats.kills = m.stats[2]; g.stats.lost = m.stats[3]; g.stats.minedV = m.stats[4] || 0; g.time = m.time; g.end(m.mine || atHome(g.myTeam) ? !!m.won : !m.won); }
   }
   net.inbox.length = 0;
   // a body the server has given us and we are not yet driving

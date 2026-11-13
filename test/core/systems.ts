@@ -6,7 +6,7 @@ import { noHud, noPipe } from '../../server/shim';
 import { Game } from '../../src/game';
 import { initHeadless } from '../../src/gfx';
 import { DIFFS, UNIT, BLD, FACTION, UPGRADES, setMap, setSides, Kind, BKind, Unit, SIDE, VHOME, swapEnd, fac } from '../../src/data';
-import { defineBuildings, defineFaction, defineUnits, addHitFilter, HIT_FILTERS } from '../../src/core/registry';
+import { defineBuildings, defineFaction, defineUnits, addHitFilter, HIT_FILTERS, bldRule } from '../../src/core/registry';
 import { ECON, costOf, canPay, sendToVent, seamRate, ventSpots } from '../../src/core/econ';
 import { LEVELS, level, levelMul, canHit } from '../../src/core/combat';
 import { addStatus, hasStatus, statusPace, canAct } from '../../src/core/status';
@@ -45,7 +45,10 @@ const run = (g: Game, secs: number, each?: () => boolean | void) => { for (let i
 // ---------------------------------------------------------------- 1. Flux, vents, prices
 {
   check(costOf('xflux' as Kind)[0] === 50 && costOf('xflux' as Kind)[1] === 25 && costOf('xplain' as Kind)[1] === 0 && costOf(UPGRADES[0].key)[0] === UPGRADES[0].cost, 'prices: a kind with Flux costs [ore, Flux]; one without costs no Flux; research reads the same way');
-  const g0 = world(); setSides(0, 1); check(world(0, 1).vents.length === 0 && g0.vents.length === 0, 'vents: with no tap in either roster none are laid, so a match without Flux plays as before');
+  // The factions' own rosters may have a tap by now, so take every tap away for this check and give them back after.
+  { const taps = Object.keys(BLD).filter(k => bldRule(k as BKind).tap); defineBuildings(Object.fromEntries(taps.map(k => [k, { tap: undefined }])));
+    const g0 = world(); setSides(0, 1); check(world(0, 1).vents.length === 0 && g0.vents.length === 0, 'vents: with no tap in either roster none are laid, so a match without Flux plays as before');
+    defineBuildings(Object.fromEntries(taps.map(k => [k, { tap: true }]))); }
   ECON.vents = 'on'; const g = world(0, 0); const H = SIDE.home, O = SIDE.out;
   check(g.vents.length >= 4, `vents: laid when switched on (${g.vents.length})`);
   const d = (v: { pos: { x: number; z: number } }, x: number, z: number) => Math.hypot(v.pos.x - x, v.pos.z - z);
@@ -89,12 +92,16 @@ const run = (g: Game, secs: number, each?: () => boolean | void) => { for (let i
   check(hit(fly, gun, 10) === 0 && !canHit(gun, fly) && canHit(aa, fly) && hit(fly, aa, 10) === 10, 'a ground weapon cannot hurt a flier; one that reaches the air can');
   gun.order = { type: 'guard', x: 50, z: 60 }; aa.order = { type: 'guard', x: 54, z: 60 };
   check(g.acquire(gun, 30, 0) !== fly && g.acquire(aa, 30, 0) !== null, 'a ground-only body never picks a flier as its target');
-  const U = g.upOf(H); U.dmg = true; U.dmg2 = true;
+  // Scratch research, so the checks do not lean on a faction's real numbers (which carry categories now).
+  const sx = (key: string, line: string, lvl: number) => ({ key, name: 'Scratch ' + key, cost: 1, blurb: '', at: FACTION[H].barracks, say: '', team: fac(H), line, lvl });
+  const real = UPGRADES.filter(u => (u.team || 0) === fac(H) && (u.line === 'atk' || u.line === 'arm')), keep = real.map(u => [u, u.line] as const); for (const u of real) (u as any).line = undefined;
+  (UPGRADES as any).push(sx('xatk1', 'atk', 1), sx('xatk2', 'atk', 2), sx('xarm1', 'arm', 1));
+  const U = g.upOf(H) as any, UO = g.upOf(O) as any; U.xatk1 = true; U.xatk2 = true;
   check(level(g, H, 'atk') === 2 && near(levelMul(g, H, 'atk'), 1.25 * 1.2), 'research levels: two attack levels bought is level 2, worth what the old two upgrades were');
   check(near(g.gunMul(H), 1.25 * 1.2 * g.foeK(H)) && near(g.armorMul(O), 1), 'the shared multipliers read the levels');
   LEVELS.mode = 'flat'; check(hit(plain, gun, 10) === 12 && near(g.gunMul(H), g.foeK(H)), 'flat mode: each attack level adds to the hit instead');
-  g.upOf(O).armor = true; check(hit(plain, gun, 10) === 11, 'flat mode: each armour level takes 1 off');
-  LEVELS.mode = 'percent'; U.dmg = U.dmg2 = false; g.upOf(O).armor = false;
+  UO.xarm1 = true; check(hit(plain, gun, 10) === 11, 'flat mode: each armour level takes 1 off');
+  LEVELS.mode = 'percent'; U.xatk1 = U.xatk2 = false; UO.xarm1 = false; (UPGRADES as any).splice(-3, 3); for (const [u, l] of keep) (u as any).line = l;
 }
 
 // ---------------------------------------------------------------- 3. Effects

@@ -4,6 +4,7 @@
 import type { Game } from './game';
 import { MAP, SIDE, FACTION, BLD, UNIT, BKind, Unit, Building, VHOME, atHome, homeXZ, foeOf, fac, isWorker, isFighter, compass } from './data';
 import { SIGHT } from './fog';
+import { MATCH, multi, isEnemy } from './core/sides';
 
 /** One enemy building as a side last saw it. */
 export interface Seen { id: number; kind: BKind; x: number; z: number; built: boolean; /** Match time when it was last in sight. */ t: number }
@@ -19,6 +20,8 @@ export interface Read { key: 'none' | 'steady' | 'rush' | 'fort' | 'boom'; short
 const plural = (n: number, name: string) => n === 1 ? (/^[AEIOU]/.test(name) ? 'an ' : 'a ') + name : `${n} ${name}${/s$/.test(name) ? 'es' : 's'}`;
 const list = (a: string[]) => a.length < 2 ? a.join('') : a.slice(0, -1).join(', ') + ' and ' + a[a.length - 1];
 
+/** How much further a body on a scouting walk sees than it does in a fight. */
+export const SCOUT_EYE = 10;
 export class Intel {
   /** Each side has seen an enemy building at least once. Index 0 is the side at the yard, 1 the side at the far end. */
   found = [false, false]; foundT = [0, 0];
@@ -31,8 +34,10 @@ export class Intel {
     for (const i of [0, 1]) { const [hx, hz] = i ? [VHOME.x, VHOME.z] : [0, 0], [ex, ez] = i ? [0, 0] : [VHOME.x, VHOME.z];
       for (const r of (MAP.roads || []).slice(1)) if (Math.hypot(r[0] - hx, r[1] - hz) < 20) this.spots[i].push({ x: r[2], z: r[3], seen: false, sent: false });
       this.spots[i].push({ x: ex, z: ez, seen: false, sent: false }); }
+    // A match of more than two sides keeps a record for each side, in MATCH.teams order (the yard and the far end come first, as before).
+    for (let i = 2; i < MATCH.teams.length; i++) { this.found.push(false); this.foundT.push(0); this.seen.push(new Map()); this.spots.push([]); this.fresh.push([]); this.freshT.push(0); this.botT.push(40); this.lost.push(0); }
   }
-  ix(team: number) { return atHome(team) ? 0 : 1; }
+  ix(team: number) { return multi() ? Math.max(0, MATCH.teams.indexOf(team)) : atHome(team) ? 0 : 1; }
   /** This side knows where to find the enemy. Always true on a map that shows both bases from the start. */
   knows(team: number) { return !MAP.hid || this.found[this.ix(team)]; }
   /** The enemy buildings this side can plan against: every one of them on an open map, the ones it has seen on a hidden map. */
@@ -54,14 +59,14 @@ export class Intel {
 
   update(dt: number) {
     this.t -= dt; if (this.t > 0) return; this.t = .5; const g = this.g, host = !g.net;
-    for (const T of [SIDE.home, SIDE.out]) {
-      const i = this.ix(T), foe = foeOf(T), seen = this.seen[i], eyes: number[][] = [];
-      for (const u of g.units) if (u.alive && u.team === T) eyes.push([u.pos.x, u.pos.z, SIGHT[u.kind] || 30]);
+    for (const T of multi() ? MATCH.teams : [SIDE.home, SIDE.out]) {
+      const i = this.ix(T), foe = foeOf(T), many = multi(), seen = this.seen[i], eyes: number[][] = [];
+      for (const u of g.units) if (u.alive && u.team === T) eyes.push([u.pos.x, u.pos.z, (SIGHT[u.kind] || 30) + (u.order.type === 'scout' ? SCOUT_EYE : 0)]);  // a body out scouting is looking, not fighting, so it sees 10 m further
       for (const b of g.buildings) if (b.alive && b.team === T) eyes.push([b.pos.x, b.pos.z, SIGHT[b.kind] || (b.built ? 26 : 14)]);
       const sees = (x: number, z: number, pad = 0) => eyes.some(e => (e[0] - x) ** 2 + (e[1] - z) ** 2 <= (e[2] + pad) ** 2);
       for (const s of this.spots[i]) if (!s.seen && sees(s.x, s.z)) s.seen = true;
       const live = new Set<number>();
-      for (const b of g.buildings) { if (b.team !== foe || !b.alive) continue; live.add(b.id); if (!sees(b.pos.x, b.pos.z)) continue;
+      for (const b of g.buildings) { if ((many ? !isEnemy(T, b.team) : b.team !== foe) || !b.alive) continue; live.add(b.id); if (!sees(b.pos.x, b.pos.z, Math.min(b.hx, b.hz))) continue;   // seen once the eye reaches its near wall, not its middle
         let r = seen.get(b.id); if (!r) { r = { id: b.id, kind: b.kind, x: b.pos.x, z: b.pos.z, built: b.built, t: g.time }; seen.set(b.id, r); this.fresh[i].push(r); if (!this.freshT[i]) this.freshT[i] = g.time + 5; } r.built = b.built; r.t = g.time; }
       for (const [id, r] of seen) if (!live.has(id) && sees(r.x, r.z, -4)) seen.delete(id);
       if (!this.found[i] && seen.size) { this.found[i] = true; this.foundT[i] = g.time; if (host && MAP.hid) this.announce(T); }

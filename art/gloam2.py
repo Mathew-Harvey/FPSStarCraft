@@ -278,7 +278,7 @@ def build_smother():
     ball = S.bump(ball, lambda p: .03 * np.sin(np.arctan2(p[..., 0] - C[0], p[..., 2] - C[2]) * 8) * np.clip((p[..., 1] - C[1]) * 2 + 1, 0, 1) + .02 * (S.noise(p, 6, 2.3) - .5))
     pores = [C + V(np.cos(a) * np.sin(b), np.cos(b), np.sin(a) * np.sin(b)) * .66 for a, b in ((.3, .6), (1.6, .9), (2.8, .5), (4.0, .8), (5.2, .6), (.9, 1.3), (2.2, 1.4), (3.5, 1.2), (4.8, 1.4), (0, 0.05))]
     ball = S.cut(ball, *[S.sphere(q, .075) for q in pores], k=.03)
-    fig.add('ball', 'halo', 'gC', ball, 2200, voxel=.005, uv=('top',))
+    fig.add('ball', 'halo', 'gV', ball, 2200, voxel=.005, uv=('top',))                                              # pale, like a puffball, so it never reads as a Bloater's bladder
     fig.add('pores', 'halo', 'gS', S.union(*[S.sphere(q - (q - C) * .04, .06) for q in pores]), 400, voxel=.004, glow=.7)
     veil = S.shell(S.ellipsoid(C + V(0, -.2, 0), (.66, 1.15, .66)), .022)                                              # a lace skirt hanging from under the ball
     veil = S.both(veil, S.below(C[1] - .32))

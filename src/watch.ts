@@ -7,6 +7,7 @@ import { Net } from './net';
 import type { Replay } from './match';
 import { FACTION, UNIT, BLD, SIDE, fac, Kind } from './data';
 import { multi, MATCH } from './core/sides';
+import { rankedInit, rankedFrame } from './ranked';
 
 export interface WatchHooks {
   /** Starts the page's online game for a 'begin' message (main.ts does the same for a player). */
@@ -184,14 +185,14 @@ export async function showReplays() {
 let cur: Game | null = null, endLink: HTMLElement | null = null;
 /** Sets up the bar, the panels and the menu buttons. Called once by main.ts. */
 export function watchInit(h: WatchHooks) {
-  H = h; build();
+  H = h; build(); rankedInit(h);
   $('mWatch')?.addEventListener('click', () => { const c = H.code().trim().toUpperCase(); if (c.length !== 5) { H.err('Type the five-letter code of the lobby you want to watch.'); return; } H.connect(n => n.send({ t: 'join', code: c, name: H.name(), watch: 1 })); });
   $('mReplays')?.addEventListener('click', () => { showReplays(); });
   $('mWatchSide')?.addEventListener('click', () => { const n = H.net(), l = n?.lobby, me = l?.players.find(p => p.id === l.you); n?.send({ t: 'team', v: me && me.team < 0 ? 0 : 2 }); });
 }
 /** Every frame, before the game moves: a watcher's keys and mouse do not drive the body; the bar and panels are kept up to date. */
 export function watchFrame(g: Game, dt: number) {
-  cur = g; const n = g.net as Net | null;
+  cur = g; const n = g.net as Net | null; rankedFrame(g);
   // the player left the replay (quit, or started something else)
   if (rp && n === rp.net) rp.on = true; else if (rp && rp.on) stopReplay();
   // the lobby's watch button says what it will do

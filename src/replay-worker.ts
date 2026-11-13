@@ -14,7 +14,7 @@ function start() { overSent = false; p = new Playback(rec!, (s, m) => { if (s.id
 function status() { if (p) post({ t: 'rp', tick: p.m.tick, last: p.last, speed, paused, drift: p.drift }); }
 function tick() {
   if (!p || paused) return;
-  carry += speed; let n = Math.floor(carry); carry -= n;
+  carry += speed * (rec?.setup.rules?.speed || 1); let n = Math.floor(carry); carry -= n;
   while (n-- > 0 && p) { if (p.step()) { if (!overSent) { overSent = true; const g = p.m.g, st = g.stats, end = rec!.end; post({ t: 'over', won: end?.won ?? !!g.won, stats: [Math.floor(st.mined), st.built, st.kills, st.lost, Math.floor(st.minedV)], time: g.time, replay: '' }); } paused = true; break; } }
   if (p && p.m.tick % 10 === 0) status();
 }

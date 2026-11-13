@@ -4,9 +4,11 @@ import * as MD from '../../../models';
 import { defineUnits, defineBuildings, defineFaction } from '../../../core/registry';
 import { SICK } from '../../../core/lamps';
 import { G_TUNE, type GBKind } from '../numbers';
-import { lookPose, LOOK_KINDS, GLOAM_BUILDINGS2 } from './cast2';
+import { lookPose, LOOK_KINDS, GLOAM_BUILDINGS2, ripens } from './cast2';
+import type * as THREE from 'three';
+import { GLOAM_FX } from './effects';
 
-defineBuildings(Object.fromEntries(Object.keys(G_TUNE.bloomR).map(k => [k, { model: (a: ((t: number) => void)[]) => MD.gloamB(k as GBKind, a) }])));
+defineBuildings(Object.fromEntries(Object.keys(G_TUNE.bloomR).map(k => [k, { model: (a: ((t: number) => void)[]) => ripens(MD.gloamB(k as GBKind, a), a) as THREE.Group }])));
 defineUnits({ blister: { lamp: [.9, 0, 5, SICK, .7] }, mulcher: { lamp: [3.4, 0, 7, SICK, .5] } });
 // A Blister swells and shrinks as it breathes, and puffs up a little more with a target in sight.
 defineUnits({ blister: { pose(g, u, _dt, _s, _ease, sc) { const k = 1 + Math.sin(g.time * 7 + u.id) * .04 + (u.target ? .05 : 0); u.obj.scale.set(sc * k, sc * k, sc * k); } } });
@@ -19,3 +21,5 @@ defineUnits({ mulcher: { stance: { breath: 1.3, bulk: true } }, blister: { stanc
 // The second brood (stream G, look/cast2.ts): dig in and out, ability poses and flight, laid over the shared walk.
 defineUnits(Object.fromEntries(LOOK_KINDS.map(k => [k, { pose(g: any, u: any, dt: number, _s: number, ease: number) { lookPose(g, u, dt, ease); } }])));
 defineBuildings(Object.fromEntries(Object.keys(GLOAM_BUILDINGS2).map(k => [k, { model: (a: ((t: number) => void)[]) => MD.gloamB(k as GBKind, a) }])));
+// The ability effects (look/effects.ts), on the page for the capture bench and the rules.
+if (typeof window !== 'undefined') (window as any).__gloamFx = GLOAM_FX;

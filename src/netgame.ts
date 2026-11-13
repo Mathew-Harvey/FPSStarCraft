@@ -17,7 +17,7 @@ const F_MOVE = 1, F_TGT = 2, F_WORK = 4, F_CARRY = 8, F_FIRE = 16, F_BRACE = 128
 export function buildSnap(g: Game) {
   const D = g.dir;
   const u = g.units.filter(x => x.alive).map(x => [x.id, KINDS.indexOf(x.kind), x.team, r1(x.pos.x), r1(x.pos.z), Math.round(x.yaw * 100), Math.ceil(x.hp), Math.ceil(x.maxHp), Math.floor(x.shield),
-    (x.moving ? F_MOVE : 0) | (x.target ? F_TGT : 0) | (x.state === 'mining' || x.state === 'build' || x.state === 'repair' ? F_WORK : 0) | (x.carrying ? F_CARRY : 0) | (x.swing > .6 || x.flashT > 0 ? F_FIRE : 0) | (ORD.indexOf(x.order.type) << 5) | (x.brace ? F_BRACE : 0),
+    (x.moving ? F_MOVE : 0) | (x.target ? F_TGT : 0) | (x.state === 'mining' || x.state === 'build' || x.state === 'repair' ? F_WORK : 0) | (x.carrying ? F_CARRY : 0) | (x.swing > .6 || x.flashT > 0 ? F_FIRE : 0) | (ORD.indexOf(x.order.type === 'scout' ? 'amove' : x.order.type) << 5)   /* two bits on the wire: a scout goes as a body on the march */ | (x.brace ? F_BRACE : 0),
     x.pilot, Math.round(x.pitch * 100), Math.round(x.wind * 10)]);
   const b = g.buildings.filter(x => x.alive).map(x => [x.id, BKINDS.indexOf(x.kind), x.team, x.pos.x, x.pos.z, x.rot ? 1 : 0, Math.ceil(x.hp), x.built ? 1 : 0, Math.round(x.progress * 100), x.queue.length, x.queue[0] ? KINDS.indexOf(x.queue[0].kind) : 0, x.queue[0] ? r1(x.queue[0].t) : 0, x.buds || 0]);
   const st = g.stats, e = g.evq || []; g.evq = [];
@@ -82,7 +82,7 @@ export function serverCmd(g: Game, pid: number, unit: Unit | null, c: any[]) {
   else if (k === 'pg') { const x = Math.max(-400, Math.min(400, num(1))), z = Math.max(-400, Math.min(400, num(2))); g.evq!.push(['pg', pid, x, z]); }
   else if (k === 'ch') { const t = String(c[1] || '').replace(/[<>&]/g, '').trim().slice(0, 120); if (t) g.evq!.push(['fd', g.names[pid] || 'Crew', t, 'ch']); }
   else if (k === 'pt') { if (unit && unit.kind === 'patch' && allow(g, unit, 'pt', 1, 1, 1 / 6.5) >= 1) g.patchUp(unit); }
-  else if (k === 'or') { const o = String(c[1]); if ('GVMXZC'.includes(o) && o.length === 1 && (unit ? unit.team === side : side === SIDE.home)) g.dir.order(o, num(2), num(3), unit); }
+  else if (k === 'or') { const o = String(c[1]); if ('GVMXZCS'.includes(o) && o.length === 1 && (unit ? unit.team === side : side === SIDE.home)) g.dir.order(o, num(2), num(3), unit); }
 }
 /** The player's own body, as their browser last reported it. */
 export function serverMove(g: Game, unit: Unit, m: any[]) {

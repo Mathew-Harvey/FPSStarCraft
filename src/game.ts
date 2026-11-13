@@ -6,6 +6,7 @@ import * as MD from './models';
 import { sfx, drillSound, setMood, babble } from './audio';
 import type { Hud } from './hud';
 import { Fog } from './fog';
+import { Intel } from './scout';
 import { Kind, BKind, UNIT, BLD, BUILDABLE, UPGRADES, TRAINS, UNIT_NEEDS, UpKey, Unit, Building, Prop, OreNode, Difficulty, DIFFS, OUTPOST, GATE, MAP, MAPS, ROAD, VHOME, FACTION, SIDE, setMap, veylPt, isUnit, isSoldier, isWorker, isFighter, foeOf, fac, MIRROR, atHome, endPt, swapEnd , STORY } from './data';
 import { Director } from './director';
 import { ENV, hourOf, matchHour, matchWeather, lampsBegin, lamp, flashLamp, lampsCommit, flicker, LAMP_ON } from './light';
@@ -101,13 +102,15 @@ export class Game {
   shake = 0; noRender = false; alertT = 0; mood = 0;
   /** Hit reactions, deaths and what a bullet does where it lands. All of it is for show. */
   fx!: HitFx; stance!: Stance;
+  /** What each side has seen of the other (see scout.ts). */
+  intel!: Intel; /** Pins the build plan a bot side picks on a hidden map (an index into DOCTRINES), for tests and pictures. */ docFix?: number;
   introT = 0; menuPos = V3(); menuQuat = new THREE.Quaternion(); hitStop = 0; streak = 0; streakT = 0; kick = 0; stepPhase = 0; dustT = 0; hopT = 0; hopCd = 0; hopX = 0; hopZ = 0; endT = 0; endWon = false;
 
   constructor(public pipe: Pipeline | ViewPipe, public hud: Hud, public diff: Difficulty = DIFFS[1], public mapI = 0, public mission: Mission | null = null, public net: Net | null = null, /** The Veyl run a real economy (Tenders, building, training) instead of breeding raids for free. On whenever somebody plays the Veyl. */ public eco = false) {
     // Only the classic match (Ironhold at home, the Veyl at the outpost) can run the Veyl as a free raid factory. The Gloam, the mirrors and
     // anyone else at home always run a real economy on both sides.
-    if (!(fac(SIDE.home) === 0 && fac(SIDE.out) === 1)) this.eco = true;
-    setMap(mapI); (M.ground as any).uniforms.uColor.value.setRGB(MAP.ground[0], MAP.ground[1], MAP.ground[2]); (M.mesa as any).uniforms.uColor.value.setRGB(MAP.mesa[0], MAP.mesa[1], MAP.mesa[2]); (M.rock as any).uniforms.uColor.value.setRGB(MAP.rock[0], MAP.rock[1], MAP.rock[2]); 
+    setMap(mapI); if (!(fac(SIDE.home) === 0 && fac(SIDE.out) === 1) || MAP.hid) this.eco = true;   // and on a hidden map nobody starts with a base already built
+    (M.ground as any).uniforms.uColor.value.setRGB(MAP.ground[0], MAP.ground[1], MAP.ground[2]); (M.mesa as any).uniforms.uColor.value.setRGB(MAP.mesa[0], MAP.mesa[1], MAP.mesa[2]); (M.rock as any).uniforms.uColor.value.setRGB(MAP.rock[0], MAP.rock[1], MAP.rock[2]); 
     this.wxSalt = mapI + (net ? 0 : Date.now() % 50);   // the clock, not the dice: a draw here would move every bot match that follows
     const s = this.scene; s.add(makeSky()); MD.buildWorld(s, this.props, this.anim); this.spires = this.props.filter(p => p.solid); s.add(this.cam);
     this.vm = { drill: MD.vmDrill(), rifle: MD.vmRifle(), scatter: MD.vmScatter(), shield: MD.vmShield(), cannon: MD.vmCannon(), long: MD.vmLong(), pistol: MD.vmPistol(), veyl: MD.vmVeyl() };
@@ -133,7 +136,7 @@ export class Game {
     // The home seams at the outpost end. Against Ironhold at the yard they are the Veyl's own, a few metres closer to the Choir Stone than the
     // yard's are to the Headframe (the pairings were balanced with that). Any other pairing gets the yard's layout turned end for end, so a
     // mirror match starts both sides the same walk from their ore: with the closer seams the outpost side won 25 of 30 mirror bot matches.
-    const classic = fac(SIDE.home) === 0 && fac(SIDE.out) !== 0;
+    const classic = fac(SIDE.home) === 0 && fac(SIDE.out) !== 0 && !MAP.hid;
     if (classic) field([[25, -11, 8, 1.2], [28, -4, 7, 1.0], [28, 5, 8, 1.3], [24, 12, 7, 1.1], [31, -14, 6, .9], [32, 11, 7, 1.0]].map(([lx, lz, n, sc]) => { const [x, z] = veylPt(lx, lz); return [Math.round(x), Math.round(z), n, sc]; }), 900);
     else {
       const seams = YARD_SEAMS.map(([x, z, n, sc]) => { const [mx, mz] = swapEnd(x, z); return [Math.round(mx), Math.round(mz), n, sc]; }); field(seams, 900);
@@ -156,9 +159,9 @@ export class Game {
     for (const [x, z] of [[7, -9.5], [7, 10.5]]) V('broodpit', x, z);
     for (const [x, z] of [[-12, -11.5], [-12, 13]]) V('thornspire', x, z);
     V('wardpylon', -10.5, 1); }
-    this.fog = new Fog();
+    this.fog = new Fog(); this.intel = new Intel(this);
     this.dir = new Director(this); this.story = mission; if (mission) { this.dir.side(mission.out ? SIDE.out : SIDE.home).auto = mission.auto; if (!net) mission.setup?.(this); }
-    if (!net) { this.me = this.units[0]; this.possess(this.me, true); } this.yaw = Math.atan2(ROAD.dx - .4, ROAD.dz - .4);
+    if (!net) { this.me = this.units[0]; this.possess(this.me, true); } this.yaw = MAP.hid ? 2.2 : Math.atan2(ROAD.dx - .4, ROAD.dz - .4);   // on a hidden map everyone starts facing the same way, whatever the layout
   }
 
   /** Frees this world's own meshes on the graphics card once the game is thrown away. Shared shapes stay; three.js re-uploads anything used again. */
@@ -255,7 +258,7 @@ export class Game {
     for (const s of this.spires) { const dx = p.x - s.x, dz = p.z - s.z, m = s.r + r; if (Math.abs(dx) > m || Math.abs(dz) > m) continue; const d = Math.hypot(dx, dz); if (d < m && d > .001) { p.x += dx / d * (m - d); p.z += dz / d * (m - d); if (ai) { const tx = -dz / d, tz = dx / d, sg = Math.sign(tx * (gx - p.x) + tz * (gz - p.z)) || 1; p.x += tx * sg * .08; p.z += tz * sg * .08; } } }
     for (const o of this.ores) { if (o.amount <= 0) continue; const dx = p.x - o.pos.x, dz = p.z - o.pos.z, d = Math.hypot(dx, dz), m = 1.7; if (d < m && d > .001) { p.x += dx / d * (m - d); p.z += dz / d * (m - d); } }
     // The edge of the world: a circle around the middle of the map, inside the ring of mesas. It moves with the map, so the far end of Glass Flats stays reachable.
-    const ox = MAP.out[0] / 2, oz = MAP.out[1] / 2, cx = p.x - ox, cz = p.z - oz, cd = Math.hypot(cx, cz), lim = 200 * (MAP.k || 1); if (cd > lim) { p.x = ox + cx / cd * lim; p.z = oz + cz / cd * lim; }
+    const [ox, oz] = MAP.mid!, cx = p.x - ox, cz = p.z - oz, cd = Math.hypot(cx, cz), lim = MAP.rad!; if (cd > lim) { p.x = ox + cx / cd * lim; p.z = oz + cz / cd * lim; }
   }
   moveTo(u: Unit, x: number, z: number, dt: number, stop = .4, mul = 1) {
     const dx = x - u.pos.x, dz = z - u.pos.z, d = Math.hypot(dx, dz); if (d < stop) return true;
@@ -484,9 +487,9 @@ export class Game {
       if (this.staticT > 0) { this.staticT -= dtReal; if (this.staticT <= 0) this.respawn(); }
       else if (this.me?.alive && !this.tab) this.updatePlayer(dt, P);
       if (SIDE.out === 2) gloamFx(this, dt);
-      if (this.net) { netTick(this, dt); this.poseUnits(dt); this.updateProjs(dt); this.updateChunks(dt); this.updateWrecks(dt); this.updateFx(dt); } else {
+      if (this.net) { netTick(this, dt); this.intel.update(dt); this.poseUnits(dt); this.updateProjs(dt); this.updateChunks(dt); this.updateWrecks(dt); this.updateFx(dt); } else {
       if (this.mission && this.endT <= 0) { this.mission.tick?.(this, this.ms, dt); if (this.ms.lose) { this.endT = 2.4; this.endWon = false; this.pipe.flash = 1; } else if (this.mission.objectives.every(o => o.done(this))) { this.endT = 2.4; this.endWon = true; this.pipe.flash = 1; } }
-      this.updateUnits(dt); this.updateBuildings(dt); this.updateProjs(dt); this.updateChunks(dt); this.updateWrecks(dt); this.dir.update(dt);
+      this.updateUnits(dt); this.updateBuildings(dt); this.updateProjs(dt); this.updateChunks(dt); this.updateWrecks(dt); this.dir.update(dt); this.intel.update(dt);
       this.updateFx(dt); }
     } else if (this.phase === 'cut') { const dt = Math.min(dtReal, .05); this.time += dt; if (this.cutSim) { this.updateUnits(dt); this.updateBuildings(dt); this.updateProjs(dt); this.updateChunks(dt); this.updateWrecks(dt); } this.updateFx(dt); }
     else { const live = !!this.net && (this.phase === 'paused' || this.phase === 'card'); /* an online match does not stop for a pause screen or a title card */ if (live) { netTick(this, dtReal); this.poseUnits(dtReal); this.updateProjs(dtReal); this.updateChunks(dtReal); this.updateWrecks(dtReal); } this.updateFx(this.phase === 'menu' || live ? dtReal : 0); }
@@ -653,11 +656,11 @@ export class Game {
     const st = BLD[k], hx = rot ? st.hz : st.hx, hz = rot ? st.hx : st.hz, hq = FACTION[team].hq;
     // A new base (Headframe or Choir Stone) can go on any open ground short of the enemy; everything else stays near one of your own.
     // Nothing can be staked out on the far side of the edge of the world, where bodies cannot walk up to it and hit it.
-    const mx = MAP.out[0] / 2, mz = MAP.out[1] / 2, fromMid = Math.hypot(x - mx, z - mz); if (fromMid + Math.max(hx, hz) > 198 * (MAP.k || 1)) return false;
+    const [mx, mz] = MAP.mid!, fromMid = Math.hypot(x - mx, z - mz); if (fromMid + Math.max(hx, hz) > MAP.rad! * .99) return false;
     // And nothing goes up on the enemy's doorstep. A new base always needed 45 m of clear ground from the enemy; the buildings round it
     // did not, so a Headframe 45 m out could put a Watchpost, Thorn Spire or Stinger Stalk right beside the enemy's ore line.
     for (const b of this.buildings) if (b.alive && b.team !== team && Math.hypot(b.pos.x - x, b.pos.z - z) < 45) return false;
-    if (k === hq) { if (fromMid > 190 * (MAP.k || 1)) return false; }
+    if (k === hq) { if (fromMid > MAP.rad! * .95) return false; }
     else if ((team || Math.hypot(x, z) > 80) && !this.buildings.some(b => b.alive && b.team === team && b.kind === hq && b.built && Math.hypot(b.pos.x - x, b.pos.z - z) < 42)) return false;
     for (const b of this.buildings) if (b.alive && Math.abs(x - b.pos.x) < hx + b.hx + 1.6 && Math.abs(z - b.pos.z) < hz + b.hz + 1.6) return false;
     for (const o of this.ores) if (o.amount > 0 && Math.abs(x - o.pos.x) < hx + 2.4 && Math.abs(z - o.pos.z) < hz + 2.4) return false;
@@ -947,7 +950,7 @@ export class Game {
       if (u.kx || u.kz) { u.pos.x += u.kx * dt; u.pos.z += u.kz * dt; const k = Math.max(0, 1 - dt * 7); u.kx *= k; u.kz *= k; if (Math.abs(u.kx) + Math.abs(u.kz) < .05) u.kx = u.kz = 0; this.collide(u, u.pos.x, u.pos.z); }
       if (fac(u.team) === 0 && u.hp < u.maxHp && t - u.lastHit > 5) for (const b of this.buildings) if (b.team === u.team && b.built && (b.kind === 'depot' || b.kind === 'headframe') && Math.abs(b.pos.x - u.pos.x) < 16 && Math.abs(b.pos.z - u.pos.z) < 16) { u.hp = Math.min(u.maxHp, u.hp + 5 * dt); break; }
       if (u.pilot) { u.kx = u.kz = 0; if (u.hp < u.maxHp && t - u.lastHit > 6) u.hp = Math.min(u.maxHp, u.hp + u.maxHp * .05 * dt); }
-      else if (u !== me || this.staticT > 0) { if (isWorker(u.kind)) this.aiRigger(u, dt); else if (fac(u.team) === 0) this.aiSoldier(u, dt); else if (fac(u.team) === 2) aiGloam(this, u, dt); else if (u.kind === 'cantor') this.aiCantor(u, dt); else if (u.kind === 'lancer') this.aiLancer(u, dt); else this.aiWarden(u, dt); }
+      else if (u !== me || this.staticT > 0) { if (u.order.type === 'scout') this.intel.walk(u, dt); else if (isWorker(u.kind)) this.aiRigger(u, dt); else if (fac(u.team) === 0) this.aiSoldier(u, dt); else if (fac(u.team) === 2) aiGloam(this, u, dt); else if (u.kind === 'cantor') this.aiCantor(u, dt); else if (u.kind === 'lancer') this.aiLancer(u, dt); else this.aiWarden(u, dt); }
     }
     // keep bodies apart
     for (let i = 0; i < us.length; i++) { const a = us[i]; if (!a.alive) continue; const ra = UNIT[a.kind].rad; for (let j = i + 1; j < us.length; j++) { const b = us[j]; if (!b.alive) continue; const dx = b.pos.x - a.pos.x; if (dx > 4 || dx < -4) continue; const dz = b.pos.z - a.pos.z, mine = a === me || b === me, lim = (ra + UNIT[b.kind].rad) * (mine ? (a.team === b.team ? 1.8 : 1.25) : 1.12), d2 = dx * dx + dz * dz; if (d2 < lim * lim && d2 > 1e-5) { const d = Math.sqrt(d2), p = (lim - d) * .5; const wa = a === me || a.pilot ? 0 : b.kind === 'warden' ? 2 : mine ? 2 : 1, wb = b === me || b.pilot ? 0 : a.kind === 'warden' ? 2 : mine ? 2 : 1; a.pos.x -= dx / d * p * wa; a.pos.z -= dz / d * p * wa; b.pos.x += dx / d * p * wb; b.pos.z += dz / d * p * wb; } } }

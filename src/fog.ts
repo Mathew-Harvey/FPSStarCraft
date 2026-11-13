@@ -5,13 +5,13 @@ import { MAP } from './data';
 
 const CELL = 4;
 /** How far each kind of body or building sees, in metres. */
-const SIGHT: Record<string, number> = { longshot: 46, gantry: 38, warden: 40, watchpost: 48, headframe: 36, choir: 40 };
+export const SIGHT: Record<string, number> = { longshot: 46, gantry: 38, warden: 40, watchpost: 48, headframe: 36, choir: 40 };
 
 export class Fog {
   /** Cells this side has ever seen (1), and cells it can see right now (2). */
   cells: Uint8Array; n: number; x0: number; z0: number; private t = 0;
   constructor() {
-    const k = MAP.k || 1, cx = MAP.out[0] / 2, cz = MAP.out[1] / 2, half = 230 * k;
+    const [cx, cz] = MAP.mid!, half = MAP.rad! * 1.15;
     this.n = Math.ceil(half * 2 / CELL); this.x0 = cx - half; this.z0 = cz - half; this.cells = new Uint8Array(this.n * this.n);
   }
   private idx(x: number, z: number) { const i = Math.floor((x - this.x0) / CELL), j = Math.floor((z - this.z0) / CELL); return i < 0 || j < 0 || i >= this.n || j >= this.n ? -1 : j * this.n + i; }

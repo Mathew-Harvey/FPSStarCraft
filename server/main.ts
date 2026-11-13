@@ -8,7 +8,7 @@ import { dirname, join } from 'node:path';
 import { WebSocketServer, WebSocket } from 'ws';
 import { Game } from '../src/game';
 import { initHeadless } from '../src/gfx';
-import { DIFFS, MAPS, SIDE, FACTION, BLD, setMap, setSidesCode, fac, validMap, Unit, isWorker } from '../src/data';
+import { DIFFS, MAPS, SIDE, FACTION, BLD, setMap, setSidesCode, fac, validMap, rollMap, Unit, isWorker } from '../src/data';
 import { buildSnap, serverCmd, serverMove } from '../src/netgame';
 
 initHeadless();
@@ -43,10 +43,11 @@ function veylBody(g: Game): Unit | null { return g.freshBody(SIDE.out); }
 function pilot(g: Game, p: Player, u: Unit) { if (p.unit && p.unit !== u) release(g, p); u.pilot = p.id; p.unit = u; u.target = null; u.wind = 0; if (u.site) { u.site.builder = null; u.site = null; } u.state = 'idle'; /* ore in the pack stays there until the body walks it home: banking it here was a free trip */ u.order = { type: 'guard', x: u.pos.x, z: u.pos.z }; }
 
 function begin(l: Lobby) {
+  l.map = rollMap(l.map);   // a Vast map is turned a new way for every match, so nobody knows where the far base is
   setMap(l.map); setSidesCode(l.out); const eco = l.players.some(p => p.team !== SIDE.home) || l.out === 2, g = new Game(noPipe(), noHud, DIFFS[l.diff], l.map, null, null, eco); g.noRender = true; g.evq = []; g.coop = l.players.length; g.me = null; g.phase = 'play';
   l.game = g; l.gone = {}; l.tick = 0; sides(l); l.hp0 = g.props.map(q => q.hp); const names: Record<number, string> = {}; for (const p of l.players) { names[p.id] = p.name; g.score[p.id] = [0, 0, 0]; g.teams[p.id] = p.team; } g.names = names; g.coop = Math.max(1, l.players.filter(p => p.team === SIDE.home).length);
   const riggers = g.own(FACTION[SIDE.home].worker, SIDE.home); let ri = 0; l.players.forEach(p => { p.inbox = []; p.unit = null; const u = p.team !== SIDE.home ? veylBody(g) : riggers[ri++ % riggers.length]; if (u) pilot(g, p, u); });
-  for (const p of l.players) send(p, { t: 'begin', map: l.map, diff: l.diff, unit: p.unit ? p.unit.id : 0, names, team: p.team, teams: g.teams, eco: eco ? 1 : 0, out: l.out });
+  for (const p of l.players) send(p, { t: 'begin', map: l.map, diff: l.diff, unit: p.unit ? p.unit.id : 0, names, team: p.team, teams: g.teams, eco: g.eco ? 1 : 0, out: l.out });
   { const crew = l.players.filter(p => p.team === SIDE.home).length, veyl = l.players.length - crew, H = SIDE.home, O = SIDE.out;
     if (fac(H) === 0 && fac(O) !== 0) {
     if (veyl && fac(O) === 2) g.feed('Overgrowth', crew ? 'The Ironhold have somebody clever with them tonight. Chew ore, grow the swarm, and break every Headframe.' : `${veyl > 1 ? veyl + ' of you lead' : 'You lead'} the Gloam tonight. The Ironhold bots are digging in down the road. Break every Headframe.`, 'in', O);
@@ -125,7 +126,7 @@ wss.on('connection', ws => {
     else if (m.t === 'leave') { leave(p); send(p, { t: 'lobby', code: '', you: p.id, host: 0, map: 0, diff: 1, state: 'lobby', players: [] }); }
     else if (m.t === 'ready') { p.ready = !!m.v; tell(l); }
     else if (m.t === 'team' && !l.game) { const [H, O] = setSidesCode(l.out); p.team = m.v ? O : H; tell(l); }
-    else if (m.t === 'set' && l.host === p.id && !l.game) { if (validMap(m.map)) l.map = m.map; if (m.diff >= 0 && m.diff < DIFFS.length) l.diff = m.diff | 0; if (Number.isInteger(m.out) && m.out >= 0 && m.out < 9) { const [, O0] = setSidesCode(l.out); l.out = m.out; const [H1, O1] = setSidesCode(l.out); for (const x of l.players) x.team = x.team === O0 ? O1 : H1; } tell(l); }
+    else if (m.t === 'set' && l.host === p.id && !l.game) { if (validMap(m.map)) l.map = m.map % 100; if (m.diff >= 0 && m.diff < DIFFS.length) l.diff = m.diff | 0; if (Number.isInteger(m.out) && m.out >= 0 && m.out < 9) { const [, O0] = setSidesCode(l.out); l.out = m.out; const [H1, O1] = setSidesCode(l.out); for (const x of l.players) x.team = x.team === O0 ? O1 : H1; } tell(l); }
     else if (m.t === 'start' && l.host === p.id && !l.game) { if (l.players.every(x => x.ready || x.id === l.host)) begin(l); else send(p, { t: 'err', msg: 'Not everyone is ready.' }); }
   });
   ws.on('close', () => leave(p)); ws.on('error', () => leave(p));

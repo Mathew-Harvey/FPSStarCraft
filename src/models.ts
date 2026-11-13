@@ -551,6 +551,7 @@ export function isClear(x: number, z: number, pad = 0) {
   const end = roadPt(ROAD.len + 6);
   if (Math.hypot(x, z) < 44 + pad || Math.hypot(x - OUTPOST.x - 2 * ROAD.dx, z - OUTPOST.z - 2 * ROAD.dz) < 36 + pad || segDist(x, z, ROAD.x, ROAD.z, end[0], end[1]) < 9 + pad) return true;
   for (const [ex, ez] of MAP.sites || [MAP.exp]) if (Math.hypot(x - ex, z - ez) < 22 + pad || segDist(x, z, ex, ez, 0, 0) < 6 + pad) return true;
+  for (const r of (MAP.roads || []).slice(1)) if (segDist(x, z, r[0], r[1], r[2], r[3]) < 7 + pad) return true;
   let px = OUTPOST.x, pz = OUTPOST.z; for (const [qx, qz] of NORTH_PATH) { if (segDist(x, z, px, pz, qx, qz) < 8 + pad) return true; px = qx; pz = qz; }
   return segDist(x, z, px, pz, 0, 0) < 8 + pad;
 }
@@ -573,7 +574,9 @@ export function buildWorld(scene: THREE.Scene, props: Prop[], anim: ((t: number)
   // Scenery is drawn as a few big merged meshes. Each prop remembers which vertices are its own, so it can crumble or vanish without costing a draw call.
   const batches = new Map<THREE.Material, { geos: THREE.BufferGeometry[]; recs: { p: Prop; start: number; count: number }[]; n: number }>();
   type Opt = { solid?: boolean; stages?: number; y0?: number; at?: [number, number, number] };
-  const ang = Math.atan2(ROAD.dz, ROAD.dx), cx = MAP.out[0] / 2, cz = MAP.out[1] / 2;
+  const ang = Math.atan2(ROAD.dz, ROAD.dx), [cx, cz] = MAP.mid || [MAP.out[0] / 2, MAP.out[1] / 2], HID = !!MAP.hid, RAD = MAP.rad || 200;
+  /** A spot somewhere on a hidden map's disc. */
+  const disc = (f: number, a = R(0, 6.2832), d = Math.sqrt(R(0, 1))): [number, number] => [cx + Math.cos(a) * d * RAD * f, cz + Math.sin(a) * d * RAD * f];
   const prop = (kind: Prop['kind'], name: string, x: number, z: number, r: number, h: number, hp: number, o: Opt, build?: (g: THREE.Group) => void): Prop => {
     const p: Prop = { id: props.length, kind, name, x, z, r, y0: o.y0 || 0, h, hp, maxHp: hp, alive: true, solid: !!o.solid, stage: 0, stages: o.stages || 0, ranges: [], link: [] }; props.push(p);
     if (build) {
@@ -586,18 +589,22 @@ export function buildWorld(scene: THREE.Scene, props: Prop[], anim: ((t: number)
   };
   mk(new THREE.PlaneGeometry(3000, 3000), M.ground, 0, 0, [-Math.PI / 2, 0, 0], w);
   // The road is painted by the ground itself: it only needs to know where the road runs.
-  { const a = roadPt(-25), b = roadPt(ROAD.len + 41), u = M.ground.uniforms; u.uRoad.value.set(a[0], a[1], b[0], b[1]); u.uRoadW.value = 3; }
+  { const u = M.ground.uniforms, rs = MAP.roads || [[...roadPt(-25), ...roadPt(ROAD.len + 41)]]; rs.slice(0, 10).forEach((r, i) => u.uRoads.value[i].set(r[0], r[1], r[2], r[3])); u.uRoadN.value = Math.min(10, rs.length); u.uRoadW.value = 3; }
   // far mesas: the skyline. A long walk away, but they are real: they block you, take damage and come down like everything else.
   for (let i = 0; i < 36; i++) {
-    const a = i / 36 * 6.283 + R(-.06, .06), d = R(250, 430) * Math.max(1, (MAP.k || 1) * .95), r = R(34, 80), h = R(24, 90), x = cx + Math.cos(a) * d, z = cz + Math.sin(a) * d, top = r * R(.55, .8), sides = 7 + (i % 3), ry = R(0, 3), cap = i % 3 === 0, kx = x + R(-10, 10), kz = z + R(-10, 10), cry = R(0, 3);
+    const a = i / 36 * 6.283 + R(-.06, .06), d0 = R(250, 430), d = HID ? RAD + 70 + (d0 - 250) : d0 * Math.max(1, (MAP.k || 1) * .95), r = R(34, 80), h = R(24, 90), x = cx + Math.cos(a) * d, z = cz + Math.sin(a) * d, top = r * R(.55, .8), sides = 7 + (i % 3), ry = R(0, 3), cap = i % 3 === 0, kx = x + R(-10, 10), kz = z + R(-10, 10), cry = R(0, 3);
     prop('mesa', 'Mesa', x, z, r * .9, cap ? h * 1.45 : h, 9000 + r * h * 3, { solid: true, stages: 3 }, g => { mk(crag(top, r, h, sides + 4, rnd), M.mesa, [x, h / 2 - 1, z], 0, [0, ry, 0], g); if (cap) mk(crag(r * .3, r * .42, h * .5, 9, rnd, 3), M.mesa, [kx, h + h * .22, kz], 0, [0, cry, 0], g); });
   }
   // nearer buttes inside the map: big, slow to bring down, but they do come down
-  for (let i = 0; i < MAP.buttes; i++) { const a = i / MAP.buttes * 6.283 + .4, d = R(150, 185) * (MAP.k || 1) * (i % 2 && MAP.buttes > 10 ? .62 : 1), r = R(10, 20), h = R(14, 34), x = cx + Math.cos(a) * d, z = cz + Math.sin(a) * d * .8; if (isClear(x, z, r + 6)) continue;
+  for (let i = 0; i < MAP.buttes; i++) { const a = i / MAP.buttes * 6.283 + .4, d0 = R(150, 185), d = (HID ? d0 / 190 * RAD : d0 * (MAP.k || 1)) * (i % 2 && MAP.buttes > 10 ? .62 : 1), r = R(10, 20), h = R(14, 34), x = cx + Math.cos(a) * d, z = cz + Math.sin(a) * d * (HID ? 1 : .8); if (isClear(x, z, r + 6)) continue;
     prop('mesa', 'Butte', x, z, r * .95, h * 1.3, 2600 + r * h * 6, { solid: true, stages: 3 }, g => { mk(crag(r * .7, r, h, 11, rnd), M.mesa, [x, h / 2 - .5, z], 0, [0, R(0, 3), 0], g); mk(crag(r * .4, r * .55, h * .4, 9, rnd, 3), M.mesa, [x + R(-3, 3), h * 1.18, z + R(-3, 3)], 0, [0, R(0, 3), 0], g); }); }
+  // A vast map is broken up by buttes standing out in the open, so you cannot see from one end to the other. Each stands alone with room to walk round it: nothing here finds a path, so a wall of rock would trap a squad.
+  if ((MAP.k || 1) >= 1.9) { const put: number[][] = [], K = MAP.k || 1;
+    for (let i = 0; i < (HID ? 120 : 64); i++) { const [x, z] = HID ? disc(.93) : [cx + R(-158, 158) * K, cz + R(-128, 128) * K], r = R(8, 17), h = R(12, 32), ry = R(0, 3), ry2 = R(0, 3), ox = R(-3, 3), oz = R(-3, 3); if (isClear(x, z, r + 7) || put.some(q => Math.hypot(x - q[0], z - q[1]) < r + q[2] + 16)) continue; put.push([x, z, r]);
+      prop('mesa', 'Butte', x, z, r * .95, h * 1.3, 2600 + r * h * 6, { solid: true, stages: 3 }, g => { mk(crag(r * .7, r, h, 11, rnd), M.mesa, [x, h / 2 - .5, z], 0, [0, ry, 0], g); mk(crag(r * .4, r * .55, h * .4, 9, rnd, 3), M.mesa, [x + ox, h * 1.18, z + oz], 0, [0, ry2, 0], g); }); } }
   // rocks, spires and plants
   for (let i = 0; i < MAP.rocks; i++) {
-    const x = cx + R(-170, 170) * (MAP.k || 1), z = cz + R(-140, 140) * (MAP.k || 1);
+    const [x, z] = HID ? disc(.97) : [cx + R(-170, 170) * (MAP.k || 1), cz + R(-140, 140) * (MAP.k || 1)];
     if (i % MAP.spireEvery === 0) { const h = R(8, 20), ww = h * .34; if (isClear(x, z, ww + 2)) continue;
       prop('rock', 'Rock spire', x, z, ww * .5, h + 1, 350 + h * 45, { solid: true, stages: 2 }, g => { mk(crag(ww * .36, ww * .5, h, 8, rnd, 6), M.rockB, [x, h / 2 - .5, z], 0, [R(-.08, .08), R(0, 3), R(-.08, .08)], g); mk(rocks(i), M.rockB, [x + 1, h + .6, z], [h * .3, h * .22, h * .3], [0, R(0, 3), 0], g); if (i % (MAP.spireEvery * 2) === 0) mk(crag(ww * .25, ww * .35, h * .5, 7, rnd, 4), M.rockB, [x + ww * .9, h * .22, z + ww * .5], 0, [R(-.2, .2), R(0, 3), R(-.2, .2)], g); }); }
     else if (i % 8 < 5) { if (isClear(x, z, -3) && i % 3) continue; const sc = R(.4, 2.0); prop('rock', 'Boulder', x, z, sc * .55, sc * .6, 40 + sc * 70, {}, g => { mk(rocks(i), M.rockB, [x, sc * .25, z], [sc * 1.15, sc * R(.6, 1.0), sc * R(.8, 1.3)], [0, R(0, 3), 0], g); }); }
@@ -617,14 +624,17 @@ export function buildWorld(scene: THREE.Scene, props: Prop[], anim: ((t: number)
     prop('crystal', 'Spilled ore', wx - 8, wz + 4, 3.5, 1.2, 80, {}, g => { for (let i = 0; i < 6; i++) mk(shard(.25, 1.1, 5, .3), M.ore, [wx - 8 + R(-4, 4), .4, wz + 4 + R(-3, 3)], [1, R(.8, 1.3), 1], [R(-1, 1), 0, R(-1, 1)], g); }); }
   // base dressing
   for (const [x, z, r] of [[-9, 13, 0], [12, 16, .4], [-14, -4, 1.2], [9, -14, 2]] as P3[]) prop('metal', 'Floodlight', x, z, .4, 7.8, 160, {}, gg => { const g = new THREE.Group(); g.position.set(x, 0, z); g.rotation.y = r; gg.add(g); beam([0, 0, 0], [0, 7, 0], .12, M.steelD, g); beam([0, 7, 0], [1.2, 7.6, 0], .08, M.steelD, g); mk(G.box, M.visor, [1.4, 7.5, 0], [.9, .3, .7], [0, 0, -.5], g); mk(G.box, M.concrete, [0, .2, 0], [.8, .4, .8], 0, g); });
-  for (const [x, z] of [[-8, 9], [-9.4, 9.6], [-8.6, 10.6], [8.5, 8.2], [14, -4], [15.2, -3.4], roadPt(30, 6), roadPt(31.2, 6.6), roadPt(58, -5), roadPt(59, -4.1), roadPt(88, 5), roadPt(96, -5.5), roadPt(97.2, -5.8)]) prop('barrel', 'Fuel drum', x, z, .48, 1.25, 30, { solid: x < -7 }, g => { mk(can(.4, 1.2, .04), i3(x) ? M.wallR : M.bY, [x, .6, z], 0, [0, R(0, 3), 0], g); mk(ring(.405, .04), M.red, [x, 1.0, z], 0, [H2, 0, 0], g); mk(ring(.405, .03), M.nD, [x, .3, z], 0, [H2, 0, 0], g); });
+  for (const [x, z] of [[-8, 9], [-9.4, 9.6], [-8.6, 10.6], [8.5, 8.2], [14, -4], [15.2, -3.4], ...(MAP.hid ? [] : [roadPt(30, 6), roadPt(31.2, 6.6), roadPt(58, -5), roadPt(59, -4.1), roadPt(88, 5), roadPt(96, -5.5), roadPt(97.2, -5.8)])]) prop('barrel', 'Fuel drum', x, z, .48, 1.25, 30, { solid: x < -7 }, g => { mk(can(.4, 1.2, .04), i3(x) ? M.wallR : M.bY, [x, .6, z], 0, [0, R(0, 3), 0], g); mk(ring(.405, .04), M.red, [x, 1.0, z], 0, [H2, 0, 0], g); mk(ring(.405, .03), M.nD, [x, .3, z], 0, [H2, 0, 0], g); });
   for (const [x, z, m] of [[-11.5, 6, 0], [-11.2, 4.6, 1], [-11.6, 5.3, 2]] as P3[]) prop('metal', 'Crate', x, z, .75, m === 2 ? 2.4 : 1.2, 90, { solid: m !== 2, y0: m === 2 ? 1.15 : 0 }, g => { mk(slab(1.2, 1.2, 1.2, 1.2, .07), [M.wallT, M.wallR, M.wallY][m], [x, m === 2 ? 1.75 : .6, z], 0, [0, R(0, 1), 0], g); });
   { const pipe = prop('metal', 'Pipeline', 13.5, -5, .5, .6, 260, {}, g => { beam([7, .25, 1], [20, .25, -11], .22, M.steelD, g); beam([7, .25, 1], [7, .25, 4], .22, M.steelD, g); for (let i = 0; i < 5; i++) mk(G.box, M.concrete, [8.6 + i * 2.6, .2, -.5 - i * 2.4], [.6, .5, .6], 0, g); });
     for (let i = 0; i <= 6; i++) { if (i === 3) continue; const part = prop('metal', 'Pipeline', 7 + 13 * i / 6, 1 - 12 * i / 6, .5, .6, 1, {}); part.owner = pipe; pipe.link.push(part); } }
   for (let i = 0; i < 7; i++) { const a = -2.2 + i * .34, x = Math.cos(a) * 36, z = Math.sin(a) * 36; prop('metal', 'Fence', x, z, .35, 1.6, 40, {}, g => { beam([x, 0, z], [x, 1.5, z], .07, M.steelD, g); if (i) beam([x, 1.2, z], [Math.cos(a - .34) * 36, 1.2, Math.sin(a - .34) * 36], .04, M.rubber, g); }); }
   prop('rock', 'Seep pool', 26, 2, 3, .5, 300, {}, gg => { const g = new THREE.Group(); g.position.set(26, 0, 2); gg.add(g); mk(ring(1.5, .36, 1, 14), M.rockB, [0, .15, 0], 0, [Math.PI / 2, 0, 0], g); mk(G.disc, M.violet, [0, .22, 0], [2.6, 2.6, 1], [-Math.PI / 2, 0, 0], g); });
   // road markers
-  for (let rs = 16; rs < ROAD.len - 12; rs += 16) { if (Math.abs(rs - MAP.arch) < 6) continue; const [x, z] = roadPt(rs, rs % 32 ? 4.6 : -4.6); prop('metal', 'Road marker', x, z, .35, 2.8, 60, {}, g => { beam([x, 0, z], [x, 2.2, z], .06, M.steelD, g); mk(G.box, M.hazard1, [x, 2.4, z], [.1, .6, .9], 0, g); }); }
+  const marker = (x: number, z: number) => prop('metal', 'Road marker', x, z, .35, 2.8, 60, {}, g => { beam([x, 0, z], [x, 2.2, z], .06, M.steelD, g); mk(G.box, M.hazard1, [x, 2.4, z], [.1, .6, .9], 0, g); });
+  for (let rs = 16; rs < ROAD.len - 12; rs += 16) { if (Math.abs(rs - MAP.arch) < 6) continue; const [x, z] = roadPt(rs, rs % 32 ? 4.6 : -4.6); marker(x, z); }
+  // the other roads get the same markers, so no road looks more used than the rest
+  for (const [ax, az, bx, bz] of (MAP.roads || []).slice(1)) { const l = Math.hypot(bx - ax, bz - az), ux = (bx - ax) / l, uz = (bz - az) / l; for (let rs = 16; rs < l - 10; rs += 16) { const o = rs % 32 ? 4.6 : -4.6; marker(ax + ux * rs - uz * o, az + uz * rs + ux * o); } }
   // Veyl ground: glowing veins and crystal growths around the outpost. When the Gloam hold it: moss streaks and fungus.
   const GL = SIDE.out === 2;
   for (let i = 0; i < 26; i++) { const a = R(0, 6.3), d = R(8, 34), x = OUTPOST.x + 2 * ROAD.dx + Math.cos(a) * d, z = OUTPOST.z + 2 * ROAD.dz + Math.sin(a) * d, l = R(3, 9), ra = a + R(-.6, .6); mk(G.box, GL ? M.gGlow : M.teal, [x, .03, z], [l, .04, .16], [0, -ra, 0], w); if (i % 2) mk(G.box, GL ? M.gGlow : M.teal, [x + Math.cos(ra) * l * .5, .03, z + Math.sin(ra) * l * .5], [l * .5, .04, .12], [0, -ra + .9, 0], w); }
@@ -642,11 +652,11 @@ export function buildWorld(scene: THREE.Scene, props: Prop[], anim: ((t: number)
   if (!GL) { mk(G.hexT, M.indigoL, [OUTPOST.x, .06, OUTPOST.z], [11, .12, 11], 0, w); mk(G.torusF, M.teal, [OUTPOST.x, .16, OUTPOST.z], [4.6, 4.6, .6], [Math.PI / 2, 0, 0], w); } mk(G.torusF, GL ? M.gD : M.mag, [OUTPOST.x, .16, OUTPOST.z], [2.2, 2.2, .6], [Math.PI / 2, 0, 0], w);
   // Set dressing: the litter of a working frontier. Dry scrub, loose stones, scrap, old bones and spoil heaps, none of it in anybody's way.
   // It has its own dice, so adding to it never moves a mesa or a seam, and like everything else out here it can be shot or flattened.
-  { let ds = 90001 + Math.round(MAP.out[0] * 13 + MAP.out[1] * 7); const D = (a = 0, b = 1) => { ds = (ds * 16807) % 2147483647; return a + (b - a) * ds / 2147483647; }, K = (MAP.k || 1) ** 2;
+  { let ds = 90001 + Math.round(MAP.out[0] * 13 + MAP.out[1] * 7); const D = (a = 0, b = 1) => { ds = (ds * 16807) % 2147483647; return a + (b - a) * ds / 2147483647; }, K = HID ? 3.1416 * RAD * RAD / 101500 * .55 : (MAP.k || 1) ** 2;
     const solids = props.filter(q => q.solid), roadEnd = roadPt(ROAD.len + 6);
     const free = (x: number, z: number, pad: number) => Math.hypot(x, z) > 15 && Math.hypot(x - OUTPOST.x, z - OUTPOST.z) > 13 && segDist(x, z, ROAD.x, ROAD.z, roadEnd[0], roadEnd[1]) > 4.4 + pad && !solids.some(q => Math.hypot(x - q.x, z - q.z) < q.r + 1 + pad);
     const dress = (kind: Prop['kind'], name: string, x: number, z: number, r: number, h: number, hp: number, build: (g: THREE.Group) => void) => { prop(kind, name, x, z, r, h, hp, { at: [x, z, D(0, 6.28)] }, build).dress = true; };
-    const spot = (): [number, number] => [cx + D(-175, 175) * (MAP.k || 1), cz + D(-145, 145) * (MAP.k || 1)];
+    const spot = (): [number, number] => HID ? disc(.98, D(0, 6.2832), Math.sqrt(D())) : [cx + D(-175, 175) * (MAP.k || 1), cz + D(-145, 145) * (MAP.k || 1)];
     for (let i = 0; i < 260 * K; i++) { const [x, z] = spot(); if (!free(x, z, 0)) continue; const sc = D(.7, 1.6), blades = tufts()[i % 6], mat = i % 4 ? M.straw : M.fabG;
       dress('plant', 'Dry scrub', x, z, .5 * sc, .9 * sc, 6, g => { for (const b of blades) mk(b, mat, 0, [sc, sc, sc], 0, g); }); }
     for (let i = 0; i < 110 * K; i++) { const [x, z] = spot(); if (!free(x, z, 0)) continue; const n = 3 + Math.floor(D(0, 4));

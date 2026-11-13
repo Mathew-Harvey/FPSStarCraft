@@ -146,7 +146,7 @@ vec2 crackle(vec2 p){
 }
 #endif
 #ifdef GROUND
-uniform vec4 uRoad; uniform float uRoadW;
+uniform vec4 uRoads[10]; uniform int uRoadN; uniform float uRoadW;
 // The desert floor is painted here rather than in a tiled picture, so it never repeats and stays crisp underfoot:
 // big two-tone patches with a broken pen contour, wind-bleached drifts, cracked plates, pebbles, and the road with its ruts.
 vec3 groundAt(vec2 p){
@@ -169,7 +169,10 @@ vec3 groundAt(vec2 p){
     float st=(1.-smoothstep(.06,.06+fw/.2,abs(fract(hv)-.5)))*smoothstep(.52,.6,vnoise(vec2(hu*3.6,floor(hv)*3.7)));
     ink=max(ink,st*bun*near*.42*clamp(.03/fw,0.,1.)); c*=1.-bun*(1.-near)*.05; }
   // the road: packed earth, ragged at the edges, two ruts with tread marks
-  vec2 ab=uRoad.zw-uRoad.xy; float len=max(length(ab),.01); vec2 ad=ab/len, rp=p-uRoad.xy; float along=clamp(dot(rp,ad),0.,len), side=dot(rp,vec2(-ad.y,ad.x)), rd=length(rp-ad*along);
+  // (there can be several: the nearest one is the one drawn here)
+  vec2 ad=vec2(1.,0.); float along=0., side=0., rd=1e5;
+  for(int i=0;i<10;i++){ if(i>=uRoadN) break; vec4 sg=uRoads[i]; vec2 ab=sg.zw-sg.xy; float len=max(length(ab),.01); vec2 d0=ab/len, rp=p-sg.xy; float al=clamp(dot(rp,d0),0.,len), r0=length(rp-d0*al);
+    if(r0<rd){ rd=r0; ad=d0; along=al; side=dot(rp,vec2(-d0.y,d0.x)); } }
   float re=uRoadW+(vnoise(p*.33)-.5)*1.5+(vnoise(p*1.9)-.5)*.3, rm=(1.-smoothstep(re-fw,re+fw,rd))*step(.5,uRoadW);
   float rut=1.-smoothstep(.24,.3+fw,abs(abs(side)-1.2));
   vec3 rc=mix(vec3(.62,.39,.27),vec3(.5,.29,.21),rut*.8); rc=mix(rc,rc*1.12,smoothstep(.5,.7,vnoise(p*vec2(.9,.9)+ad*along*.2)));
@@ -370,7 +373,7 @@ if (LAMPS !== 8) throw new Error('the toon shader is written for eight lamps');
 export interface ToonOpts { color?: string; emis?: number; hatch?: number; fog?: number; flat?: number; rx?: number; ry?: number; side?: THREE.Side; ground?: boolean; cliff?: boolean; bloom?: boolean; /** 0 is chalk, 1 is polished metal. */ shine?: number }
 export function T(map?: THREE.Texture | null, o: ToonOpts = {}) {
   return new THREE.ShaderMaterial({
-    uniforms: { uColor: { value: new THREE.Color(o.color || '#ffffff') }, uMap: { value: map || WHITE }, uEmis: { value: o.emis || 0 }, uOpacity: { value: 1 }, uHatch: { value: o.hatch === undefined ? 1 : o.hatch }, uFogK: { value: o.fog === undefined ? .0032 : o.fog }, uFlat: { value: o.flat || 0 }, uShine: { value: o.shine === undefined ? .2 : o.shine }, uRep: { value: new THREE.Vector2(o.rx || 1, o.ry || 1) }, ...(o.ground ? { uRoad: { value: new THREE.Vector4() }, uRoadW: { value: 0 } } : {}), ...SHARED },
+    uniforms: { uColor: { value: new THREE.Color(o.color || '#ffffff') }, uMap: { value: map || WHITE }, uEmis: { value: o.emis || 0 }, uOpacity: { value: 1 }, uHatch: { value: o.hatch === undefined ? 1 : o.hatch }, uFogK: { value: o.fog === undefined ? .0032 : o.fog }, uFlat: { value: o.flat || 0 }, uShine: { value: o.shine === undefined ? .2 : o.shine }, uRep: { value: new THREE.Vector2(o.rx || 1, o.ry || 1) }, ...(o.ground ? { uRoads: { value: o.ground ? Array.from({ length: 10 }, () => new THREE.Vector4()) : [] }, uRoadN: { value: 0 }, uRoadW: { value: 0 } } : {}), ...SHARED },
     vertexShader: TOON_VS, fragmentShader: TOON_FS, side: o.side || THREE.FrontSide, defines: o.ground ? { GROUND: 1 } : o.cliff ? { CLIFF: 1 } : o.bloom ? { BLOOM: 1 } : {},
   });
 }

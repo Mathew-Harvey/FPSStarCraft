@@ -1,6 +1,7 @@
 // What Veyl bodies do: the Cantor's blades and Whirl, the Lancer's beam and Held Note, the Warden's slam and Low Note, in first person
 // and as the bots drive them. Shared code reaches these through the registry (src/core/registry.ts).
 import * as THREE from 'three';
+import './arms';      // what a driven Veyl body can claim online
 import { V3, R, M } from '../../gfx';
 import { sfx } from '../../audio';
 import type { Game } from '../../game';

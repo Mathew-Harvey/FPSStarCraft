@@ -79,19 +79,20 @@ try {
   r = await p.evaluate(() => { const g = __ore.game, C = g.cmd, bh = g.addBuilding('bunkhouse', 0, 16, 16, true); for (const x of [-34, -42, -50]) g.addBuilding('depot', 0, x, 24, true); g.ore = 2000; look(16, 16); aim(16, 16, 0); click(0); step(1);
     const ids = C.card.map(b => b.id), off = Object.fromEntries(C.card.map(b => [b.id, b.off])); for (let i = 0; i < 6; i++) key('KeyE'); const q = bh.queue.length, full = C.card.find(b => b.id === 'tr:linesman').off;
     const slots = document.querySelectorAll('#cpan .qs:not(.none)').length, before = g.ore; key('Backspace'); const after = g.ore, q2 = bh.queue.length;
-    return { sel: C.selB === bh, ids, off, q, full, slots, refund: after - before, q2 }; });
+    const price = +(/(\d+) ore/.exec(C.card.find(b => b.id === 'tr:linesman').sub) || [0, 0])[1]; return { sel: C.selB === bh, ids, off, q, full, slots, refund: after - before, q2, price }; });
+  const linePrice = r.price;
   check(r.sel && r.ids.includes('tr:linesman') && r.ids.includes('tr:breacher') && r.ids.includes('rally'), `a Bunkhouse picked: the card shows what it trains and a rally point (${r.ids})`);
-  check(/Machine Shop/.test(r.off['tr:breacher']), `a unit that needs another building is greyed and says which ("${r.off['tr:breacher']}")`);
+  check(/Lab Bay/.test(r.off['tr:breacher']), `a unit that needs an add-on or another building is greyed and says which ("${r.off['tr:breacher']}")`);
   check(r.q === 5 && /Queue full/.test(r.full), `the queue holds five, and the sixth press says the queue is full (${r.q}, "${r.full}")`);
   check(r.slots === 5, `the five queued bodies show in the panel (${r.slots})`);
-  check(r.refund === 60 && r.q2 === 4, `Backspace takes the last one off and pays its ore back (${r.refund} ore)`);
+  check(linePrice > 0 && r.refund === linePrice && r.q2 === 4, `Backspace takes the last one off and pays its ore back (${r.refund} ore)`);
   await shot('card-building');
   r = await p.evaluate(() => { const g = __ore.game, C = g.cmd, bh = C.selB; const q0 = bh.queue.length, before = g.ore, el = document.querySelector('#cpan .qs[data-cb="q:1"]'), rc = el.getBoundingClientRect(), R = document.getElementById('hud').getBoundingClientRect(), s = g.hud.scale;
     C.cx = (rc.left + rc.width / 2 - R.left) / s; C.cy = (rc.top + rc.height / 2 - R.top) / s; click(0); return { refund: g.ore - before, q: q0 - bh.queue.length }; });
-  check(r.refund === 60 && r.q === 1, `a click on a queued body in the panel cancels that one (${r.refund} ore back)`);
+  check(r.refund === linePrice && r.q === 1, `a click on a queued body in the panel cancels that one (${r.refund} ore back)`);
   {
     r = await p.evaluate(() => { const g = __ore.game, C = g.cmd, bh = C.selB; g.ore = 0; step(1); const poor = C.card.find(b => b.id === 'tr:linesman').off; const el = document.querySelector('#ccard .cb[data-cb="tr:linesman"]'); return { poor, grey: el && el.classList.contains('off'), txt: el && el.textContent }; });
-    check(/60 ore/.test(r.poor) && r.grey && /60 ore/.test(r.txt), `with no ore the button is greyed and says what it costs ("${r.poor}")`);
+    check(new RegExp(linePrice + ' ore').test(r.poor) && r.grey && new RegExp(linePrice + ' ore').test(r.txt), `with no ore the button is greyed and says what it costs ("${r.poor}")`);
   }
   r = await p.evaluate(() => { const g = __ore.game, C = g.cmd, bh = C.selB; g.ore = 2000; bh.queue.length = 0; look(30, 4); aim(30, 4, 0); click(2); const set = C.rally.get(bh); const u = g.spawn('linesman', 0, bh.pos.x + 1, bh.pos.z + bh.hz + 1.2); step(2); const o = u.order; step(200); return { set: !!set, mine: o.mine, d: Math.hypot(u.pos.x - 30, u.pos.z - 4), lines: C['lines'].visible }; });
   check(r.set && r.mine, 'a right click with a building picked sets its rally point, and a new body from it is sent there');

@@ -179,8 +179,7 @@ try {
     window.ptap = i => { pbtn(i, true); pdrive(); pbtn(i, false); pdrive(); };
     const g = __ore.game; if (g.cmd.on) { key('KeyN'); step(25); } g.phase = 'play'; });
   r = await p.evaluate(() => { pbtn(8, true); pdrive(); return __ore.game.cmd.on; });
-  await p.waitForTimeout(500);
-  r = await p.evaluate(was => { pdrive(); step(25); const on = __ore.game.cmd.on; pbtn(8, false); pdrive(); step(2); return { was, on, still: __ore.game.cmd.on }; }, r);
+  r = await p.evaluate(was => { for (let i = 0; i < 14; i++) __ore.padDrive(pad); step(25); const on = __ore.game.cmd.on; pbtn(8, false); pdrive(); step(2); return { was, on, still: __ore.game.cmd.on }; }, r);
   check(!r.was && r.on && r.still, 'holding View on a controller lifts the player into the command view (a short press still calls the squad)');
   r = await p.evaluate(() => { const g = __ore.game, C = g.cmd, z0 = C.zt; ptap(12); return { z0, z1: C.zt }; });
   check(r.z1 < r.z0, `D-pad up zooms in from above (${r.z0.toFixed(2)} → ${r.z1.toFixed(2)})`);

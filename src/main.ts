@@ -217,8 +217,9 @@ function padDrive(g: Game, p: Gamepad, slot: number, dt: number) {
   const tap = (i: number, code: string) => { if (hit(i)) g.pressed.add(code); };
   // Holding View (button 8) for under half a second is the squad's follow order, as before; holding it longer lifts the player into the
   // command view, and a tap there drops back down.
-  if (down(8) && !was[8]) padViewT[slot] = performance.now();
-  const viewTap = !down(8) && was[8] && performance.now() - padViewT[slot] < 400, viewHeld = down(8) && performance.now() - padViewT[slot] >= 400 && !padViewDone[slot];
+  // Counted in game time, not the clock: a slow frame must not turn a tap into a hold.
+  if (down(8)) padViewT[slot] = was[8] ? padViewT[slot] + dt : 0;
+  const viewTap = !down(8) && was[8] && padViewT[slot] < .4, viewHeld = down(8) && padViewT[slot] >= .4 && !padViewDone[slot];
   if (!down(8)) padViewDone[slot] = false;
   if ((game.phase === 'play' || game.phase === 'card') && g.cmd.on) {
     // From above: left stick slides the view (W A S D), right stick moves the cursor, RT picks or presses the card under the cursor,

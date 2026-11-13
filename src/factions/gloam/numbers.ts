@@ -46,7 +46,7 @@ export const G_UPGRADES = [
   { key: 'garmor3', line: 'arm', lvl: 3, name: 'Stone Hide', cost: 250, blurb: '+15% health', at: 'oldgrowth', needs: 'garmor2', say: 'Stone Hide. We are the ground.' },
   { key: 'gbloom', name: 'Deep Bloom', cost: 175, blurb: 'Bloom spreads 40% wider and heals twice as fast', at: 'oldgrowth', say: 'Deep Bloom. The carpet runs to the horizon.' },
   { key: 'ggut', name: 'Fat Gut', cost: 175, blurb: 'Grazers carry 21 ore', at: 'oldgrowth', needs: 'gtongue', say: 'Fat Gut. Bellies dragging.' },
-] as { key: GUpKey; name: string; cost: number; blurb: string; at: GBKind; say: string; needs?: GUpKey; line?: 'atk' | 'arm' | 'shd'; lvl?: number; pct?: number; flux?: number }[];
+] as { key: GUpKey; name: string; cost: number; blurb: string; at: GBKind; say: string; needs?: GUpKey; line?: 'atk' | 'arm' | 'shd'; lvl?: number; pct?: number; flux?: number; cat?: string }[];
 
 /** Tuning the game reads. */
 export const G_TUNE = {

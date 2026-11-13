@@ -43,7 +43,7 @@ function sideApply(g: Game, S: Side, d: any[]) {
   S.playbook.name = d[4][0]; S.playbook.steps = d[4][1]; S.playbook.idx = d[4][2];
 }
 
-const SBITS: StatusKey[] = ['slow', 'stun', 'root', 'unseen', 'revealed', 'dug', 'lifted', 'shielded', 'burning', 'borrowed'];
+const SBITS: StatusKey[] = ['slow', 'stun', 'root', 'unseen', 'revealed', 'dug', 'lifted', 'shielded', 'burning', 'borrowed', 'blind'];
 const statusBits = (u: Unit) => (u.status || []).reduce((n, s) => s.t > 0 ? n | (1 << SBITS.indexOf(s.k)) : n, 0);
 /** Snapshots for every side with a player, sharing one tick's events. One snapshot for all when nobody on the map is hidden. */
 export function buildSnaps(g: Game, teams: number[]): Map<number, string> {

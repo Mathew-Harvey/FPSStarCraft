@@ -6,7 +6,7 @@ import { sfx } from '../../audio';
 import type { Game } from '../../game';
 import { TMP, r1, beamMat } from '../../game';
 import { UNIT, Unit, Building, isUnit, foeOf, CLEAVE } from '../../data';
-import { defineUnits, defineFaction } from '../../core/registry';
+import { defineUnits, defineBuildings, defineFaction } from '../../core/registry';
 
 /** First person as a Veyl fighter. */
 export function updateVeyl(g: Game, dt: number, P: Set<string>, eye: THREE.Vector3, dir: THREE.Vector3) {
@@ -122,3 +122,14 @@ export function aiWarden(g: Game, u: Unit, dt: number) {
 
 defineUnits({ cantor: { ai: aiCantor }, lancer: { ai: aiLancer }, warden: { ai: aiWarden } });
 defineFaction(1, { ai: aiWarden, drive: (g, dt, P, eye, dir) => updateVeyl(g, dt, P, eye, dir) });
+
+defineBuildings({
+  thornspire: { tick(g, b, dt) {
+    b.cd -= dt; if (b.cd <= 0) { const twin = g.eco && g.upOf(b.team).vthorn; b.cd = twin ? .7 : 1; let tgt: Unit | null = null, bd = twin ? 32 : 26; for (const o of g.units) { if (!o.alive || o.team === b.team) continue; const d = o.pos.distanceTo(b.pos); if (d < bd) { bd = d; tgt = o; } }
+      if (tgt) { g.tracer(V3(b.pos.x, 6.9, b.pos.z), V3(tgt.pos.x, UNIT[tgt.kind].bodyY, tgt.pos.z), beamMat, .2); sfx.zap(g.vol(b.pos) * .7); g.damage(tgt, 10 * g.vMul(b.team), b); g.puff(TMP.copy(tgt.pos).setY(1), 2, .5, M.mag, .5); } else b.cd = .3; }
+  } },
+  choir: { tick(g, b, dt) {
+    b.cd -= dt; if (b.cd <= 0) { b.cd = 1.15; let tgt: Unit | null = null, bd = 21; for (const o of g.units) { if (!o.alive || o.team === b.team) continue; const d = o.pos.distanceTo(b.pos); if (d < bd) { bd = d; tgt = o; } }
+      if (tgt) { g.tracer(V3(b.pos.x, 9.6, b.pos.z), V3(tgt.pos.x, 1.1, tgt.pos.z), beamMat, .16); sfx.zap(g.vol(b.pos) * .8); g.damage(tgt, 6 * g.vMul(b.team), b); g.puff(TMP.copy(tgt.pos).setY(1), 2, .5, M.teal, .5); } }
+  } },
+});

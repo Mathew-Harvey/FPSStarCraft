@@ -49,6 +49,10 @@ export interface BldRules {
   added?(g: Game, b: Building, built: boolean): void;
   /** Building work just finished. */
   done?(g: Game, b: Building): void;
+  /** Runs this building's training queue its own way (a Mother Cap ripens every Bud at once). Without it the queue trains one at a time. */
+  hatch?(g: Game, b: Building, dt: number): void;
+  /** New bodies walk out of the long side instead of the front. */
+  sideDoor?: boolean;
   /** Lamps hung on the building, in its own space: x, y, z and reach. */
   lamps?: [number, number, number, number][];
 }
@@ -63,8 +67,8 @@ export interface FactionRules {
   drive?(g: Game, dt: number, P: Set<string>, eye: THREE.Vector3, dir: THREE.Vector3, look: Hit | null, gun: Weapon | null): void;
   /** Every frame, host and replica: the faction's own systems (Bloom, Buds). */
   fx?(g: Game, dt: number): void;
-  /** Every frame for each finished building of this faction (host only), before its kind's tick. */
-  tick?(g: Game, b: Building, dt: number): void;
+  /** Every frame for each standing building of this faction, finished or not (host only), before anything else it does. */
+  each?(g: Game, b: Building, dt: number): void;
   /** A building of this faction was just put down. */
   added?(g: Game, b: Building, built: boolean): void;
 }

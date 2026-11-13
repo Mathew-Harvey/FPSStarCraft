@@ -13,7 +13,7 @@ import { ENV, hourOf, matchHour, matchWeather, lampsBegin, lamp, flashLamp, lamp
 import type { Mission } from './campaign';
 import type { Net } from './net';
 import { HitFx, Surface } from './hitfx';
-import { unitRule, factionRule, DEFAULTS, type Hit } from './core/registry';
+import { unitRule, bldRule, factionRule, DEFAULTS, type Hit } from './core/registry';
 import './factions';
 import { Stance } from './stance';
 import { applySnap, netTick } from './netgame';
@@ -934,34 +934,21 @@ export class Game {
   updateBuildings(dt: number) {
     for (const b of this.buildings) {
       if (!b.alive) continue;
-      if (fac(b.team) === 2) gloamBuilding(this, b, dt);
+      factionRule(b.team).each?.(this, b, dt);
       if (!b.built) {
         // A site gains health as it goes up but keeps the damage it takes, so shooting a half-built site down works.
         b.progress = Math.min(1, b.progress); if (b.progress > b.pdone) { if (!this.net) b.hp = Math.min(b.maxHp, b.hp + b.maxHp * .9 * (b.progress - b.pdone)); b.pdone = b.progress; } b.obj.scale.y = Math.max(.06, b.progress);
-        if (b.progress >= 1) { b.built = true; if (!this.net) b.hp = Math.min(b.maxHp, Math.max(1, b.hp)); b.obj.scale.y = 1; if (b.holo) { this.scene.remove(b.holo); b.holo = null; } if (b.builder) { b.builder.site = null; b.builder.state = 'idle'; b.builder = null; } sfx.built(); this.stats.built++; this.puff(TMP.copy(b.pos).setY(1.5), 8, 1.8, fac(b.team) === 2 ? M.gS : M.dust, .8, 2.5); if (b.kind === 'mothercap') b.buds = 1; this.dir.buildingDone(b); }
+        if (b.progress >= 1) { b.built = true; if (!this.net) b.hp = Math.min(b.maxHp, Math.max(1, b.hp)); b.obj.scale.y = 1; if (b.holo) { this.scene.remove(b.holo); b.holo = null; } if (b.builder) { b.builder.site = null; b.builder.state = 'idle'; b.builder = null; } sfx.built(); this.stats.built++; this.puff(TMP.copy(b.pos).setY(1.5), 8, 1.8, fac(b.team) === 2 ? M.gS : M.dust, .8, 2.5); bldRule(b.kind).done?.(this, b); this.dir.buildingDone(b); }
         else if ((fac(b.team) !== 2 && (b.team === SIDE.home || this.eco)) && this.needsBuilder(b)) this.assignRigger(b);
         continue;
       }
       if ((fac(b.team) !== 2 && (b.team === SIDE.home || this.eco)) && b.hp < b.maxHp * .7 && this.time - b.lastHit > 6 && this.needsBuilder(b)) this.assignRigger(b);
       if (b.hp < b.maxHp * .5 && fac(b.team) === 0) { b.smokeT -= dt; if (b.smokeT <= 0) { const bad = b.hp < b.maxHp * .25; b.smokeT = bad ? .18 : .4; const fire = bad && Math.random() < .5; this.puff(TMP.set(b.pos.x + R(-b.hx, b.hx) * .6, b.h * R(.6, 1), b.pos.z + R(-b.hz, b.hz) * .6), 1, fire ? 1.1 : 1.5, fire ? M.fire : M.smoke, 2.4, .5); } }
       // A Mother Cap ripens every Bud at once; everything else trains one at a time.
-      if (b.kind === 'mothercap') { for (let i = b.queue.length - 1; i >= 0; i--) { const q = b.queue[i]; q.t -= dt; if (q.t > 0) continue; b.queue.splice(i, 1); const a = R(0, 6.283), u = this.spawn(q.kind, b.team, b.pos.x + Math.cos(a) * (b.hx + 1.2), b.pos.z + Math.sin(a) * (b.hz + 1.2)); this.puff(TMP.copy(u.pos).setY(1), 4, .8, M.gS); if (this.vol(b.pos) > .2) sfx.blip(); this.dir.trained(u); } }
-      else if (b.queue.length) { const q = b.queue[0]; q.t -= dt; if (q.t <= 0) { b.queue.shift(); const side = b.kind === 'bunkhouse' && !b.rot; const u = this.spawn(q.kind, b.team, b.pos.x + (side ? b.hx + 1.2 : R(-1, 3)), b.pos.z + (side ? R(-.5, .5) : b.hz + 1.2)); this.puff(TMP.copy(u.pos).setY(1), 4, .8, fac(b.team) ? M.violet : M.dust); if (this.vol(b.pos) > .2) sfx.blip(); this.dir.trained(u); } }
+      const br = bldRule(b.kind); if (br.hatch) br.hatch(this, b, dt);
+      else if (b.queue.length) { const q = b.queue[0]; q.t -= dt; if (q.t <= 0) { b.queue.shift(); const side = !!br.sideDoor && !b.rot; const u = this.spawn(q.kind, b.team, b.pos.x + (side ? b.hx + 1.2 : R(-1, 3)), b.pos.z + (side ? R(-.5, .5) : b.hz + 1.2)); this.puff(TMP.copy(u.pos).setY(1), 4, .8, fac(b.team) ? M.violet : M.dust); if (this.vol(b.pos) > .2) sfx.blip(); this.dir.trained(u); } }
       if (this.truce) continue;
-      if (b.kind === 'watchpost') {
-        b.cd -= dt; let tgt: Unit | null = null, bd = this.upOf(b.team).post ? 42 : 34; for (const o of this.units) { if (!o.alive || o.team === b.team) continue; const d = o.pos.distanceTo(b.pos); if (d < bd) { bd = d; tgt = o; } }
-        if (tgt) { const gun = b.obj.userData.gun; gun.rotation.y = Math.atan2(tgt.pos.x - b.pos.x, tgt.pos.z - b.pos.z) - b.obj.rotation.y; if (b.cd <= 0) { b.cd = this.upOf(b.team).post ? .3 : .45; const a = V3(b.pos.x, 6, b.pos.z), e = V3(tgt.pos.x, UNIT[tgt.kind].bodyY, tgt.pos.z); this.tracer(a, e, tracerMat, .1); sfx.turret(this.vol(b.pos) * .6); this.damage(tgt, 10 * this.gunMul(b.team), b); } }
-      } else if (b.kind === 'headframe') {
-        // The night watchman on the Headframe: a slow rivet gun, so two raiders cannot empty the pit while the squad is away.
-        b.cd -= dt; if (b.cd <= 0) { b.cd = .8; let tgt: Unit | null = null, bd = 20; for (const o of this.units) { if (!o.alive || o.team === b.team) continue; const d = o.pos.distanceTo(b.pos); if (d < bd) { bd = d; tgt = o; } }
-          if (tgt) { this.tracer(V3(b.pos.x, b.h + .6, b.pos.z), V3(tgt.pos.x, UNIT[tgt.kind].bodyY, tgt.pos.z), tracerMat, .08); sfx.turret(this.vol(b.pos) * .4); this.damage(tgt, 9 * this.gunMul(b.team), b); } else b.cd = .3; }
-      } else if (b.kind === 'thornspire') {
-        b.cd -= dt; if (b.cd <= 0) { const twin = this.eco && this.upOf(b.team).vthorn; b.cd = twin ? .7 : 1; let tgt: Unit | null = null, bd = twin ? 32 : 26; for (const o of this.units) { if (!o.alive || o.team === b.team) continue; const d = o.pos.distanceTo(b.pos); if (d < bd) { bd = d; tgt = o; } }
-          if (tgt) { this.tracer(V3(b.pos.x, 6.9, b.pos.z), V3(tgt.pos.x, UNIT[tgt.kind].bodyY, tgt.pos.z), beamMat, .2); sfx.zap(this.vol(b.pos) * .7); this.damage(tgt, 10 * this.vMul(b.team), b); this.puff(TMP.copy(tgt.pos).setY(1), 2, .5, M.mag, .5); } else b.cd = .3; }
-      } else if (b.kind === 'choir') {
-        b.cd -= dt; if (b.cd <= 0) { b.cd = 1.15; let tgt: Unit | null = null, bd = 21; for (const o of this.units) { if (!o.alive || o.team === b.team) continue; const d = o.pos.distanceTo(b.pos); if (d < bd) { bd = d; tgt = o; } }
-          if (tgt) { this.tracer(V3(b.pos.x, 9.6, b.pos.z), V3(tgt.pos.x, 1.1, tgt.pos.z), beamMat, .16); sfx.zap(this.vol(b.pos) * .8); this.damage(tgt, 6 * this.vMul(b.team), b); this.puff(TMP.copy(tgt.pos).setY(1), 2, .5, M.teal, .5); } }
-      }
+      bldRule(b.kind).tick?.(this, b, dt);
     }
   }
   /** A site with nobody on it: no builder, a dead one, one a player is driving, or one that has gone off to other work. */

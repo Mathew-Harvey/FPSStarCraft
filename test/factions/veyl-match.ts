@@ -4,7 +4,7 @@
 import { noHud, noPipe } from '../../server/shim';
 import { Game } from '../../src/game';
 import { initHeadless } from '../../src/gfx';
-import { DIFFS, UNIT, BLD, UPGRADES, setMap, setSides, fac } from '../../src/data';
+import { DIFFS, UNIT, BLD, UPGRADES, setMap, setSides, fac, atHome } from '../../src/data';
 import { costOf } from '../../src/core/econ';
 initHeadless();
 const spec = JSON.parse(process.argv[2] || '{}'), mins = spec.mins ?? 40;
@@ -23,9 +23,9 @@ while (g.phase !== 'over' && g.time < mins * 60) {
   if (process.env.FEED) for (const ev of g.evq!) if (ev[0] === 'fd' && (ev[5] < 0 || V.includes(ev[5]))) console.log(Math.round(g.time), ev[1] + ':', ev[2]);
   for (const ev of g.evq!) if (ev[0] === 'ab') { const u = g.units.find(x => x.id === ev[1]); if (u && V.includes(u.team)) abs[u.kind + '.' + ev[2]] = (abs[u.kind + '.' + ev[2]] || 0) + 1; }
   g.evq!.length = 0; tick++;
-  if (process.env.DBG && tick % 1800 === 0) for (const t of V) { const tn = g.own('tender', t), st: Record<string, number> = {}; for (const u of tn) st[u.state + (u.vent ? 'V' : '')] = (st[u.state + (u.vent ? 'V' : '')] || 0) + 1; console.log('t', Math.round(g.time), 'ore', Math.round(g.cash(t)), 'flux', Math.round(g.flux(t)), 'mined', Math.round(g.stats.minedV), 'army', g.army(t).length, 'sup', g.supplyUsed(t) + '/' + g.supplyCap(t), JSON.stringify(st), g.ownB(undefined, true, t).filter(b => b.queue.length).map(b => b.kind + ':' + b.queue.map(q => q.kind).join('+') + '@' + g.rate(b)).join(' ')); }
+  if (process.env.DBG && tick % 1800 === 0) for (const t of V) { const tn = g.own('tender', t), st: Record<string, number> = {}; for (const u of tn) st[u.state + (u.vent ? 'V' : '')] = (st[u.state + (u.vent ? 'V' : '')] || 0) + 1; console.log('t', Math.round(g.time), 'ore', Math.round(g.cash(t)), 'flux', Math.round(g.flux(t)), 'mined', Math.round(atHome(t) ? g.stats.mined : g.stats.minedV), 'army', g.army(t).length, 'sup', g.supplyUsed(t) + '/' + g.supplyCap(t), JSON.stringify(st), g.ownB(undefined, true, t).filter(b => b.queue.length).map(b => b.kind + ':' + b.queue.map(q => q.kind).join('+') + '@' + g.rate(b)).join(' '), 'orders', g.army(t).map(u => u.order.type + (u.order.mine ? 'M' : '')).join(','), 'plan', (g.dir.side(t) as any).plan?.phase, (g.dir.side(t) as any).nextPlan, (g.dir as any).warned); }
   if (tick % 15 === 0) {
-    for (const u of g.units) if (!seen.has(u) && V.includes(u.team)) { seen.add(u); if (g.time > 1) { made[u.kind] = (made[u.kind] || 0) + 1; const c = costOf(u.kind); spend[u.kind] = (spend[u.kind] || 0) + c[0] + c[1]; } }
+    for (const u of g.units) if (!seen.has(u) && V.includes(u.team)) { seen.add(u); if (g.time > 1) { { const mk = u.kind + (process.env.SPLIT ? '@' + (atHome(u.team) ? 'yard' : 'far') : ''); made[mk] = (made[mk] || 0) + 1; } const c = costOf(u.kind); spend[u.kind] = (spend[u.kind] || 0) + c[0] + c[1]; } }
     for (const b of g.buildings) if (!seen.has(b) && V.includes(b.team)) { seen.add(b); if (g.time > 1) blds[b.kind] = (blds[b.kind] || 0) + 1; }
   }
 }

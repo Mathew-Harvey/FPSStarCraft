@@ -96,7 +96,7 @@ export function hatchVeyl(g: Game, b: Building, dt: number) {
   b.queue.shift(); const at: [number, number] | undefined = (q as any).far;
   const x = at ? at[0] + (Math.random() - .5) * 2 : b.pos.x + (Math.random() * 4 - 1), z = at ? at[1] + (Math.random() - .5) * 2 : b.pos.z + b.hz + 1.2;
   const u = g.spawn(q.kind, b.team, x, z); g.puff(TMP.copy(u.pos).setY(1), at ? 8 : 4, at ? 1.2 : .8, M.violet); if (g.vol(u.pos) > .2) sfx.blip(); g.dir.trained(u);
-  if (at) REST.set(b, UNIT[q.kind].time * V_TUNE.far.rest);
+  if (at) REST.set(b, Math.max(0, UNIT[q.kind].time * V_TUNE.far.cycle - V_TUNE.far.arrive));
 }
 /** Where Far Singing puts a new body: the side's field nearest its army (or, for a player's side, nearest the body the player drives). */
 export function frontField(g: Game, team: number): [number, number] {

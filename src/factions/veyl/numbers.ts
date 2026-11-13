@@ -123,8 +123,9 @@ export const V_TUNE = {
   /** Mending Pool: building energy (max, start, a second), shields put back for each point of energy, reach. Choir Stone: Quicken. */
   pool: { max: 100, start: 50, regen: .7875, per: 3, r: 7, rate: 50 },
   quicken: { energy: 50, t: 20, k: 1.5, max: 200, start: 50 },
-  /** Far Singing: seconds a unit takes to be sung in at a field, and how long a Brood Pit then rests (times the unit's training). */
-  far: { arrive: 3, rest: 1.25 },
+  /** Far Singing: seconds a unit takes to be sung in at a field; the Brood Pit then rests so that one body every `cycle` of its training time
+   *  comes out (0.9: a little quicker than training at home, the way a warp gate is; it was a rest of 1.25 times on top, which made a Pit 45% slower). */
+  far: { arrive: 3, cycle: .9 },
   /** Air levels: damage and health per level for fliers (percent, like the ground levels). */
   air: [1.15, 1.12, 1.1],
   /** Shell levels: shield per level, as a share of the body's shield. */

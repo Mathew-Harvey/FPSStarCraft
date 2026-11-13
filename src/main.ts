@@ -17,7 +17,7 @@ import { CUTS, CutPlayer } from './cutscene';
 import { Net, Lobby } from './net';
 import { treeHtml, treeTabs } from './tree';
 import { TEAM_LAYOUTS } from './teammaps';
-import { isFriend, type TeamPlan } from './core/sides';
+import { isFriend, planTeams, type TeamPlan } from './core/sides';
 import { defineBuildings } from './core/registry';
 import { defineAbilities } from './core/ability';
 import { TouchPad, TouchPref, touchDevice, touchWords } from './touch';
@@ -362,6 +362,17 @@ function showLobby(l: Lobby) {
   const nm = ['Ironhold', 'the Veyl', 'the Gloam'], foeName = nm[lf] + (lf === lh ? ' at the outpost' : ''), homeName = nm[lh] + (lf === lh ? ' at the yard' : '');
   mFoeB.forEach((b, i) => { b.classList.toggle('on', FOE_FAC[i] === lf); b.disabled = !host; }); mHomeB.forEach((b, i) => { b.classList.toggle('on', i === lh); b.disabled = !host; });
   $('mSide').textContent = me && onOut(me) ? 'Play as ' + homeName : 'Play as ' + foeName; { const v = l.players.filter(onOut).length, c = l.players.length - v; if (v) $('mHint').textContent = (c ? 'Versus shift. Both sides dig, build and train, and any side with nobody on it is run by bots. ' : `Everyone is on ${foeName}. ${homeName[0].toUpperCase() + homeName.slice(1)} will be bots. `) + (host ? 'You start it when everyone is ready.' : 'Hit Ready when you are.'); }
+  // A team game on a map with more than two starts: the host picks the kind of game, and everyone picks a start.
+  { const n = MAPS[baseOf(l.map)]?.ring || 0, L = n && !l.plan ? TEAM_LAYOUTS[n] || [] : [], cur = l.mt ? L.findIndex(x => JSON.stringify(x.teams) === JSON.stringify(l.mt!.groups)) : 0;
+    $('mTeamRow').hidden = L.length < 2;
+    if (L.length >= 2) {
+      $('mTeams').innerHTML = L.map((x, i) => `<button type="button" data-t="${i}" class="${i === cur ? 'on' : ''}"${host ? '' : ' disabled'}>${x.name}</button>`).join('');
+      const t = l.mt ? planTeams(l.mt) : null, FN = ['Ironhold', 'Veyl', 'Gloam'];
+      $('mStarts').hidden = !t;
+      if (t) $('mStarts').innerHTML = t.at.map((s, j) => [s, j]).sort((x, y) => x[0] - y[0]).map(([s, j]) => { const team = t.teams[j], side = l.mt!.groups.findIndex(gr => gr.includes(s)) + 1, who = l.players.filter(p => p.team === team).map(p => p.name.replace(/[<>&]/g, '')).join(', ');
+        return `<button type="button" data-s="${s}" class="${me && me.team === team ? 'on' : ''}">Start ${s + 1} · ${FN[fac(team)]}<small>Team ${side}${who ? ' · ' + who : ' · bots'}</small></button>`; }).join('');
+      $('mSide').hidden = !!t;
+    } else $('mSide').hidden = false; }
   $('mStart').hidden = !host; $('mReady').hidden = host; $('mReady').textContent = me && me.ready ? 'Not ready' : 'Ready'; ($('mStart') as HTMLButtonElement).disabled = !l.players.every(p => p.ready || p.id === l.host);
 }
 async function mpConnect(then: (n: Net) => void) {
@@ -385,7 +396,14 @@ $('mSide').addEventListener('click', () => { const l = net?.lobby, me = l?.playe
 $('mReady').addEventListener('click', () => { const l = net?.lobby, me = l?.players.find(p => p.id === l.you); net?.send({ t: 'ready', v: !(me && me.ready) }); });
 $('mStart').addEventListener('click', () => net?.send({ t: 'start' }));
 $('mMade').addEventListener('click', () => { if (MADE.code) net?.send({ t: 'set', plan: MADE.code }); });
-mDiffB.forEach((b, i) => b.addEventListener('click', () => net?.send({ t: 'set', diff: i }))); mFoeB.forEach((b, i) => b.addEventListener('click', () => { const c = net?.lobby?.out ?? 1; net?.send({ t: 'set', out: Math.floor(c / 3) * 3 + FOE_FAC[i] }); })); mHomeB.forEach((b, i) => b.addEventListener('click', () => { const c = net?.lobby?.out ?? 1; net?.send({ t: 'set', out: i * 3 + c % 3 }); })); mMapB.forEach((b, i) => b.addEventListener('click', () => net?.send({ t: 'set', map: mapCode(+(b.dataset.b ?? i), sizeOf(lobMap)) }))); mSizeB.forEach(b => b.addEventListener('click', () => net?.send({ t: 'set', map: mapCode(baseOf(lobMap), +(b.dataset.s || 0)) })));
+mDiffB.forEach((b, i) => b.addEventListener('click', () => net?.send({ t: 'set', diff: i })));
+// The host's kind of game: the yard's faction holds the yard's team, the outpost's the other; in a free for all the starts take turns.
+$('mTeams').addEventListener('click', e => { const b = (e.target as HTMLElement).closest('[data-t]') as HTMLButtonElement | null, l = net?.lobby; if (!b || !l || b.disabled) return;
+  const n = MAPS[baseOf(l.map)]?.ring || 0, L = TEAM_LAYOUTS[n]?.[+b.dataset.t!]; if (!L) return; if (+b.dataset.t! === 0) { net?.send({ t: 'set', mt: null }); return; }
+  const code = l.out ?? 1, lh = Math.floor(code / 3), lf = code % 3, cyc = [lh, lf, ...[0, 1, 2].filter(f => f !== lh && f !== lf)], facs: number[] = Array(n).fill(-1);
+  L.teams.forEach((grp, gi) => { for (const s of grp) facs[s] = L.teams.length === 2 ? (gi === 0 ? lh : lf) : cyc[gi % cyc.length]; });
+  net?.send({ t: 'set', mt: { n, groups: L.teams.map(x => x.slice()), facs } }); });
+$('mStarts').addEventListener('click', e => { const b = (e.target as HTMLElement).closest('[data-s]') as HTMLElement | null; if (b) net?.send({ t: 'team', s: +b.dataset.s! }); }); mFoeB.forEach((b, i) => b.addEventListener('click', () => { const c = net?.lobby?.out ?? 1; net?.send({ t: 'set', out: Math.floor(c / 3) * 3 + FOE_FAC[i] }); })); mHomeB.forEach((b, i) => b.addEventListener('click', () => { const c = net?.lobby?.out ?? 1; net?.send({ t: 'set', out: i * 3 + c % 3 }); })); mMapB.forEach((b, i) => b.addEventListener('click', () => net?.send({ t: 'set', map: mapCode(+(b.dataset.b ?? i), sizeOf(lobMap)) }))); mSizeB.forEach(b => b.addEventListener('click', () => net?.send({ t: 'set', map: mapCode(baseOf(lobMap), +(b.dataset.s || 0)) })));
 showMode();
 const diffBtns = Array.from($('diff').querySelectorAll('button')) as HTMLButtonElement[];
 const showDiff = () => diffBtns.forEach((b, i) => { b.classList.toggle('on', i === diffI); b.setAttribute('aria-pressed', String(i === diffI)); });

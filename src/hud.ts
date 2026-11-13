@@ -5,7 +5,7 @@ import type { Game } from './game';
 import { UNIT, BLD, FACTION, SIDE, fac, foeOf, atHome, homeXZ, Kind, Unit, Building, MAP, MAPS, OUTPOST, VHOME, ROAD, NORTH_PATH, roadPt, isWorker } from './data';
 import { keyName, abilityWords } from './card';
 import { abilitiesOf, whyNot } from './core/ability';
-import { isFriend } from './core/sides';
+import { isFriend, multi, enemiesOf } from './core/sides';
 const capW = (t: string) => t.charAt(0).toUpperCase() + t.slice(1);
 
 const V = new THREE.Vector3();
@@ -123,6 +123,7 @@ export class Hud {
     // On a hidden map the count is of the ones your side has seen: the true count would tell you they had expanded before any scout did.
     const nk = MAP.hid ? g.intel.known(side).filter(b => b.kind === fq).length : nq;
     if (g.eco && !g.story && MAP.hid && !g.intel.knows(side)) this.set('goal', `Find the ${FACTION[foe].short} · <em>nobody has seen them</em>` + (sq ? ` · ${['Squad', 'Chorus', 'Swarm'][fac(side)]} ${sq}` : ''), true);
+    else if (g.eco && !g.story && multi()) { const n = enemiesOf(g.myTeam).filter(t => !g.outOf.includes(t)).reduce((k, t) => k + g.hqs(t, false).length, 0); this.set('goal', `Break every enemy home building · <em>${n} standing</em>` + (sq ? ` · ${['Squad', 'Chorus', 'Swarm'][fac(side)]} ${sq}` : ''), true); }
     else if (g.eco && !g.story) this.set('goal', `${['Break', 'Silence', 'Squash'][fac(foe)]} ${nk > 1 ? 'every ' + BLD[fq].name : 'the ' + BLD[fq].name} · <em>${MAP.hid ? nk ? nk + ' seen' : 'not seen yet' : nk + ' standing'}</em>` + (sq ? ` · ${['Squad', 'Chorus', 'Swarm'][fac(side)]} ${sq}` : ''), true); else if (g.story) { const next = D.objectives().find(o => !o.done); this.set('goal', (next ? next.text : 'Job done') + clock + (sq ? ` · ${['Squad', 'Chorus', 'Swarm'][fac(side)]} ${sq}` : ''), true); } else this.set('goal', `${SIDE.out === 2 ? 'Squash the Mother Caps' : 'Smash the Choir Stones'} · <em>${st} left</em>` + (sq ? ` · Squad ${sq}` : ''), true);
     this.set('qm', `<span class="k" style="font-size:13px">G</span> ${F.voice} <b>${S.auto ? 'Auto' : 'Off'}</b>`, true); this.cls('qm', 'qm c out' + (S.auto ? '' : ' off'));
     // who

@@ -105,11 +105,13 @@ const startsHere = () => MAPS[baseOf(mapI)]?.ring || 0;
  *  the other starts take turns between that faction and the third. */
 function teamPlan(): TeamPlan | null {
   const n = startsHere(), L = mode === 'skirm' && n ? TEAM_LAYOUTS[n]?.[teamI] : null; if (!L || teamI <= 0) return null;
-  const me = sideI === 0 ? 0 : n / 2, foe = FOE_FAC[foeI], others = [foe, ...[0, 1, 2].filter(f => f !== foe)], facs: number[] = Array(n).fill(-1); let e = 0;
+  const me = sideI === 0 ? 0 : n / 2, foe = FOE_FAC[foeI], others = [foe, [0, 1, 2].find(f => f !== foe && f !== sideI) ?? [0, 1, 2].find(f => f !== foe)!], facs: number[] = Array(n).fill(-1); let e = 0;
   for (const grp of L.teams) { const mine = grp.includes(me); for (const s of grp) facs[s] = mine ? sideI : L.teams.length === 2 ? foe : others[e++ % 2]; }
   return { n, groups: L.teams.map(t => t.slice()), facs };
 }
 const teamKey = () => JSON.stringify(teamPlan());
+/** Every faction in the match the menu would start: two in a one-on-one, up to three in a team game. Their art comes before it starts. */
+const matchFacs = () => { const tp = teamPlan(); return tp ? [...new Set(tp.facs)] : sidesWanted(); };
 let builtTeam = 'null';
 const setWanted = () => { const tp = teamPlan(); if (!tp || !setTeamGame(tp)) setSides(...sidesWanted()); builtTeam = teamKey(); };
 const want = () => { setWanted(); STORY.charter = mode === 'skirm' ? -1 : charterTeam(MISSIONS[jobI]); return want0(); };
@@ -171,8 +173,8 @@ document.addEventListener('pointerlockerror', () => { freeMouse = true; });
 document.addEventListener('pointerlockchange', () => { if (!locked() && live() && !freeMouse) pause(); });
 
 function fresh() { endSplit(); hush(); hud.reset(); reroll(); const w = want(); game.dispose(); game = new Game(pipe, hud, w.d, w.map, w.m); game.sens = sens; ended = false; (window as any).__ore.game = game;
-  artSoon(sidesWanted(), () => { if (!$('menu').hidden && game.phase !== 'play' && !game.net && !split) fresh(); }); }   // the art for sides picked in the menu comes while the player looks
-function start() { if (!artGate(sidesWanted(), () => { fresh(); start(); })) return; if (mode === 'skirm' && sideI) { startVeyl(); return; } if (mode !== 'skirm' && MISSIONS[jobI].out) { startStory(MISSIONS[jobI]); return; } if (sidesCode() !== wantCode() || builtTeam !== teamKey()) fresh(); initAudio(); setVolume(vol); setMusic(mus); { const w = want(); if (game.diff !== w.d || game.mapI !== w.map || game.mission !== w.m || game.time > 0) fresh(); } $('menu').hidden = true; $('pause').hidden = true; $('end').hidden = true; hud.show(true); game.phase = 'play'; game.introT = 1.8; lock(); }
+  artSoon(matchFacs(), () => { if (!$('menu').hidden && game.phase !== 'play' && !game.net && !split) fresh(); }); }   // the art for sides picked in the menu comes while the player looks
+function start() { if (!artGate(matchFacs(), () => { fresh(); start(); })) return; if (mode === 'skirm' && sideI) { startVeyl(); return; } if (mode !== 'skirm' && MISSIONS[jobI].out) { startStory(MISSIONS[jobI]); return; } if (sidesCode() !== wantCode() || builtTeam !== teamKey()) fresh(); initAudio(); setVolume(vol); setMusic(mus); { const w = want(); if (game.diff !== w.d || game.mapI !== w.map || game.mission !== w.m || game.time > 0) fresh(); } $('menu').hidden = true; $('pause').hidden = true; $('end').hidden = true; hud.show(true); game.phase = 'play'; game.introT = 1.8; lock(); }
 /** The pause screen shows the whole tech tree: what is standing, what can be built next and what each building sells. */
 let treeF = -1;
 function showTree() {
@@ -392,7 +394,8 @@ async function mpConnect(then: (n: Net) => void) {
   mErr('Connecting...'); const n = new Net();
   n.onLobby = l => { showLobby(l); if (l.code) { mErr(''); lastCode = l.code; } }; n.onError = m => mErr(m);
   n.onClose = () => { net = null; if (game.net === n) { game.net = null; toMenu(); } showMode(); if (lastCode) { mCode.value = lastCode; mErr('Lost the connection. Press Join to get back into lobby ' + lastCode + '.'); } else mErr('Lost the connection to the server.'); };
-  n.onBegin = m => netBegin(n, m);
+  // A match from the server waits for every side's art (its world pictures queue up in the Net meanwhile).
+  n.onBegin = m => { const f = m.mt?.facs ? [...new Set(m.mt.facs as number[])] : [Math.floor((m.out ?? 1) / 3), (m.out ?? 1) % 3]; if (artGate(f, () => netBegin(n, m))) netBegin(n, m); };
 
   try { await n.connect(srv); net = n; mErr(''); then(n); } catch (e) { mErr(String((e as Error).message || e) + ' Check the server address.'); }
 }

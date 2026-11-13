@@ -2,7 +2,7 @@
 // useAbility, which checks energy, cooldown, range and target the same way every time. Online, a client only asks ('ab') and the server casts.
 import type { Game } from '../game';
 import type { Unit, Building } from '../data';
-import { UNIT } from '../data';
+import { UNIT, isUnit } from '../data';
 import { isEnemy } from './sides';
 import { canAct } from './status';
 
@@ -45,8 +45,11 @@ export function whyNot(g: Game, u: Unit, key: string, t: Target): string {
   const a = abilityOf(u.kind, key); if (!a) return 'no such ability';
   if (!u.alive) return 'dead'; if (u.inside) return 'inside'; if (!canAct(u)) return 'cannot act';
   if ((u.energy ?? 0) < a.energy) return 'energy'; if ((u.abCd?.[key] ?? 0) > 0) return 'cooldown'; if (u.cast) return 'busy';
-  if (a.target !== 'self') { if (!isFinite(t.x) || !isFinite(t.z)) return 'aim'; if (Math.hypot(t.x - u.pos.x, t.z - u.pos.z) > a.range + 1) return 'range'; }
-  if (a.target === 'body') { const o = bodyOf(g, t.id); if (!o || !o.alive) return 'target'; const ally = !isEnemy(o.team, u.team); if ((a.who ?? 'foe') === 'ally' ? !ally : (a.who ?? 'foe') === 'foe' ? ally : false) return 'target'; if (Math.hypot(o.pos.x - u.pos.x, o.pos.z - u.pos.z) > a.range + 1) return 'range'; }
+  // A building is measured to its nearest edge, not its centre: the aim point on a building is its centre, and a short-reach ability
+  // (the Sapper's Satchel, range 3) could never reach a wide one.
+  const ob = a.target === 'body' ? bodyOf(g, t.id) : null, wide = !!ob && !isUnit(ob);
+  if (a.target !== 'self') { if (!isFinite(t.x) || !isFinite(t.z)) return 'aim'; if (!wide && Math.hypot(t.x - u.pos.x, t.z - u.pos.z) > a.range + 1) return 'range'; }
+  if (a.target === 'body') { const o = bodyOf(g, t.id); if (!o || !o.alive) return 'target'; const ally = !isEnemy(o.team, u.team); if ((a.who ?? 'foe') === 'ally' ? !ally : (a.who ?? 'foe') === 'foe' ? ally : false) return 'target'; if ((isUnit(o) ? Math.hypot(o.pos.x - u.pos.x, o.pos.z - u.pos.z) : g.distToBox(o, u.pos.x, u.pos.z)) > a.range + 1) return 'range'; }
   if (a.can && !a.can(g, u, t)) return 'refused';
   return '';
 }

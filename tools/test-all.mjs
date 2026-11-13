@@ -23,10 +23,13 @@ for (const t of list) {
   const t0 = Date.now(), args = t.split(' '), log = 'dist/test-logs/' + args.find(a => a.startsWith('test/')).replace(/[/.]/g, '_') + '.log';
   process.stdout.write(`${t} ... `);
   const { code, out } = await new Promise(done => {
-    const c = spawn('node', args, { stdio: ['ignore', 'pipe', 'pipe'] }); let out = '';
+    // Each file runs in its own process group, and the whole group is stopped when it ends: a server or browser a test left running would
+    // otherwise hold its port, and the next run's test would talk to the old server (with the old build and the old switches).
+    const c = spawn('node', args, { stdio: ['ignore', 'pipe', 'pipe'], detached: true }); let out = '';
+    const sweep = () => { try { process.kill(-c.pid, 'SIGKILL'); } catch { /* the group is already gone */ } };
     c.stdout.on('data', d => out += d); c.stderr.on('data', d => out += d);
-    const kill = setTimeout(() => { out += `\nKILLED after ${LIMIT / 60000} minutes`; c.kill('SIGKILL'); }, LIMIT);
-    c.on('close', code => { clearTimeout(kill); done({ code, out }); });
+    const kill = setTimeout(() => { out += `\nKILLED after ${LIMIT / 60000} minutes`; sweep(); }, LIMIT);
+    c.on('exit', sweep); c.on('close', code => { clearTimeout(kill); sweep(); done({ code, out }); });
   });
   writeFileSync(log, out); const secs = Math.round((Date.now() - t0) / 1000), fails = out.split('\n').filter(l => /^\s*FAIL\b/.test(l));
   results.push({ t, ok: code === 0, secs, log, fails });

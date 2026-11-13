@@ -136,6 +136,10 @@ const run = (g: Game, secs: number, each?: () => boolean | void) => { for (let i
   const c = g.spawn('xcaster' as Kind, H, 40, 90), foe = g.spawn('xtank' as Kind, O, 46, 90), far = g.spawn('xplain' as Kind, O, 70, 90), pal = g.spawn('xplain' as Kind, H, 42, 92);
   check(c.maxEnergy === 200 && c.energy === ENERGY.start && abilitiesOf('xcaster').length === 1, `a body with energy starts with ${ENERGY.start} of 200 and its ability listed`);
   check(whyNot(g, c, 'zap', { x: far.pos.x, z: far.pos.z, id: far.id }) === 'range' && whyNot(g, c, 'zap', { x: pal.pos.x, z: pal.pos.z, id: pal.id }) === 'target' && whyNot(g, c, 'nope', { x: 0, z: 0 }) === 'no such ability', 'refused: out of range, a friend for a foe-only ability, or an ability it does not have');
+  { // A building is measured to its nearest edge: a wide one whose centre is past the range but whose wall is inside it can be the target.
+    const hq = g.addBuilding(FACTION[O].hq, O, 40, 90, true), r = 10 + 1 + .5; hq.pos.x = c.pos.x + r + hq.hx - 1; hq.pos.z = c.pos.z;
+    const ok = whyNot(g, c, 'zap', { x: hq.pos.x, z: hq.pos.z, id: hq.id }); hq.pos.x += 3; const no = whyNot(g, c, 'zap', { x: hq.pos.x, z: hq.pos.z, id: hq.id });
+    check(hq.hx > 2 && ok === '' && no === 'range', `a building is in range by its nearest wall, not its centre (${ok || 'ok'}, then ${no})`); hq.alive = false; g.buildings.splice(g.buildings.indexOf(hq), 1); }
   c.energy = 20; check(whyNot(g, c, 'zap', { x: foe.pos.x, z: foe.pos.z, id: foe.id }) === 'energy', 'refused: not enough energy');
   c.energy = 60; check(useAbility(g, c, 'zap', { x: foe.pos.x, z: foe.pos.z, id: foe.id }) && near(c.energy, 10) && zapped === 0 && !!c.cast, 'cast: the energy is paid and the wind-up starts');
   check(whyNot(g, c, 'zap', { x: foe.pos.x, z: foe.pos.z, id: foe.id }) !== '', 'no second cast while winding up or cooling down');

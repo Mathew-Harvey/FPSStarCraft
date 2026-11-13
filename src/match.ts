@@ -19,7 +19,19 @@ export const REPLAY_V = 1;
 
 /** One player in the match. `team` -1 is an observer, who sees both sides and cannot act. */
 export interface Seat { id: number; name: string; team: number; unit: Unit | null; inbox: any[] }
-export interface Setup { map: number; /** A made map's code (src/mapcode.ts), or '' for the map as it comes. */ plan?: string; diff: number; /** Who holds each end (see setSidesCode). */ out: number; /** A team game or free-for-all (see setTeamGame); unset for a one-on-one. */ mt?: TeamPlan | null; seed: number; /** The clock at the start (Date.now), which sets the weather. */ clock: number }
+export interface Setup { map: number; /** A made map's code (src/mapcode.ts), or '' for the map as it comes. */ plan?: string; diff: number; /** Who holds each end (see setSidesCode). */ out: number; /** A team game or free-for-all (see setTeamGame); unset for a one-on-one. */ mt?: TeamPlan | null; seed: number; /** The clock at the start (Date.now), which sets the weather. */ clock: number; /** Custom-game rules, if the host changed any (see Rules). */ rules?: Rules | null }
+/** Custom-game rules a host can set in the lobby: the ore and Flux each side starts with, and how fast the match runs (1 is normal). */
+export interface Rules { ore: number; flux: number; speed: number }
+export const SPEEDS = [.5, .75, 1, 1.25, 1.5, 2];
+export const RULES0: Rules = { ore: 100, flux: 0, speed: 1 };
+/** The rules from a lobby message, checked: anything missing or out of range is left as it comes. Null when nothing differs from the usual. */
+export function cleanRules(o: any, was: Rules | null = null): Rules | null {
+  const r = { ...(was || RULES0) }; if (!o || typeof o !== 'object') return was;
+  if (Number.isFinite(o.ore) && o.ore >= 0 && o.ore <= 5000) r.ore = Math.round(o.ore);
+  if (Number.isFinite(o.flux) && o.flux >= 0 && o.flux <= 2000) r.flux = Math.round(o.flux);
+  if (SPEEDS.includes(o.speed)) r.speed = o.speed;
+  return r.ore === RULES0.ore && r.flux === RULES0.flux && r.speed === RULES0.speed ? null : r;
+}
 /** A recorded match: the setup, who was in it, and every input in tick order. */
 export interface Replay {
   v: number; /** The server build the match ran on, so an old file is not played on new rules without a warning. */ build: string; at: string;
@@ -65,7 +77,8 @@ export class Match {
       // Building the models draws on the dice too, and a process that has built them before (a server on its second match) draws less.
       // From here on the match has dice of its own, so what happens next does not depend on what was built before.
       this.rnd = seeded(L.seed ^ 0x5eed); Math.random = this.rnd;
-      this.g = g; g.noRender = true; g.evq = []; g.me = null; g.phase = 'play'; this.wire = new Wire(g); this.hp0 = g.props.map(q => q.hp);
+      this.g = g; g.noRender = true; g.evq = []; g.me = null; g.phase = 'play';
+      if (L.rules) for (let t = 0; t < g.purse.length; t++) { g.purse[t] = L.rules.ore; g.fluxPurse[t] = L.rules.flux; } this.wire = new Wire(g); this.hp0 = g.props.map(q => q.hp);
       this.seats = seats; const names: Record<number, string> = {};
       for (const p of players) { names[p.id] = p.name; g.score[p.id] = [0, 0, 0]; g.teams[p.id] = p.team; } g.names = names; this.crew();
       const riggers = g.own(FACTION[SIDE.home].worker, SIDE.home); let ri = 0;
@@ -85,7 +98,7 @@ export class Match {
   }
   get players() { return this.seats.filter(s => s.team >= 0); }
   private crew() { const g = this.g, P = this.players; g.coop = Math.max(1, P.filter(p => p.team === SIDE.home).length); g.human = g.human.map((_, t) => P.some(p => p.team === t)); }
-  beginMsg(s: Seat, ph?: number[][]) { const g = this.g, L = this.setup; return { t: 'begin', plan: L.plan || '', map: L.map, diff: L.diff, unit: s.unit ? s.unit.id : 0, names: g.names, ph, team: s.team, teams: g.teams, eco: g.eco ? 1 : 0, out: L.out, mt: L.mt || null, watch: s.team < 0 ? 1 : 0 }; }
+  beginMsg(s: Seat, ph?: number[][]) { const g = this.g, L = this.setup; return { t: 'begin', plan: L.plan || '', map: L.map, diff: L.diff, unit: s.unit ? s.unit.id : 0, names: g.names, ph, team: s.team, teams: g.teams, eco: g.eco ? 1 : 0, out: L.out, mt: L.mt || null, watch: s.team < 0 ? 1 : 0, speed: L.rules?.speed || 1 }; }
 
   /** Hands a body back to the AI. */
   release(p: Seat) {

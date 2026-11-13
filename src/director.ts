@@ -6,7 +6,7 @@ import { sfx } from './audio';
 import type { Game } from './game';
 import { Kind, BKind, UNIT, BLD, UPGRADES, Unit, Building, Callout, OUTPOST, GATE, RALLY, RALLY_N, VRALLY, VRALLY_N, VHOME, NORTH_PATH, MAP, MAPS, ROAD, FACTION, SIDE, veylPt, roadPt, isSoldier, foeOf, fac, atHome, endPt, swapEnd, homeXZ, compass } from './data';
 import { Doctrine, DOCTRINES } from './doctrine';
-import { overgrowth, GHINTS, GBOOKS, GCHATTER, GKILL, GDOWN, IKILL_G, ICHATTER_G } from './gloam-ai';
+import { overgrowth, GHINTS, GBOOKS, GCHATTER, GKILL, GDOWN, IKILL_G, ICHATTER_G } from './factions/gloam/brain';
 /** One line for whichever side holds the outpost: the Veyl's, or the Gloam's. */
 const VG = (team: number, veyl: string, gloam: string) => fac(team) === 2 ? gloam : veyl;
 /** Who calls out what they see, for each faction. */

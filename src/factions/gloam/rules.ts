@@ -1,11 +1,12 @@
 // How the Gloam play: their bots, their first-person bodies, Buds, Bloom and the Stinger Stalk.
 // Kept out of game.ts so the shared simulation only carries thin hooks.
 import * as THREE from 'three';
-import { V3, R, M } from './gfx';
-import { sfx } from './audio';
-import type { Game } from './game';
-import { UNIT, BLD, Unit, Building, isUnit, isWorker } from './data';
-import { G_TUNE, GBKind } from './gloam';
+import { V3, R, M } from '../../gfx';
+import { sfx } from '../../audio';
+import type { Game } from '../../game';
+import { UNIT, BLD, Unit, Building, isUnit, isWorker } from '../../data';
+import { G_TUNE, GBKind } from './numbers';
+import { defineFaction } from '../../core/registry';
 
 const TMP = V3();
 export const quillMat = new THREE.MeshBasicMaterial({ color: 0xe9dab2 });
@@ -216,3 +217,5 @@ export function spareGrazers(g: Game, team = g.myTeam) { return g.units.filter(u
 /** Where a Gloam building can grow: on its own Bloom, with the whole footprint covered. Mother Caps can seed bare ground. */
 export function onBloom(g: Game, k: GBKind, x: number, z: number, team: number) { return k === 'mothercap' || g.carpet.on(x, z, Math.max(BLD[k].hx, BLD[k].hz) * .6, team); }
 export { isWorker };
+
+defineFaction(2, { ai: aiGloam, drive: (g, dt, P, eye, dir) => playerGloam(g, dt, P, eye, dir) });

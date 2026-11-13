@@ -1,9 +1,9 @@
 // The Gloam's economy brain, the Overgrowth: what to root next, what to grow, and how many mouths to feed.
 // It mirrors the Quartermaster and the Conductor, with the Gloam's own rules: every building costs a Grazer,
 // every unit costs a Bud, and buildings only grow on Bloom.
-import type { Director, Side } from './director';
-import { DOCTRINES } from './doctrine';
-import { BLD, UNIT, UPGRADES, Kind, BKind, Building, MAP, veylPt, endPt, homeXZ, foeOf } from './data';
+import type { Director, Side } from '../../director';
+import { DOCTRINES } from '../../doctrine';
+import { BLD, UNIT, UPGRADES, Kind, BKind, Building, MAP, veylPt, endPt, homeXZ, foeOf } from '../../data';
 export const GHINTS: [number, string, string][] = [
   [1.5, 'Overgrowth', 'The Gloam stir. Hold click on the green ore to chew it loose, then carry it in your belly to the Mother Cap. I will grow the rest.'],
   [16, 'Overgrowth', 'Press 2 to root a building yourself. It costs a Grazer, and it only grows on our Bloom. Press G and I will stop.'],

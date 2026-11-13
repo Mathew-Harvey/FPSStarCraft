@@ -4,7 +4,8 @@
 import * as THREE from 'three';
 import { Game, beamMat } from './game';
 import { UNIT, BLD, BUILDABLE, UPGRADES, TRAINS, UNIT_NEEDS, FACTION, VOICE_SIDE, SIDE, fac, atHome, Kind, BKind, Unit, Building, UpKey, isSoldier, isWorker } from './data';
-import { burst } from './gloam-play';
+import { burst } from './factions/gloam/rules';
+import { patchUp } from './factions/ironhold/rules';
 import type { Side } from './director';
 import { V3, M, R, tracerMat } from './gfx';
 import { sfx, babble } from './audio';
@@ -81,7 +82,7 @@ export function serverCmd(g: Game, pid: number, unit: Unit | null, c: any[]) {
   else if (k === 'rd') { /* the old raid call: the Veyl now march as a squad, answered with Z like Ironhold's */ }
   else if (k === 'pg') { const x = Math.max(-400, Math.min(400, num(1))), z = Math.max(-400, Math.min(400, num(2))); g.evq!.push(['pg', pid, x, z]); }
   else if (k === 'ch') { const t = String(c[1] || '').replace(/[<>&]/g, '').trim().slice(0, 120); if (t) g.evq!.push(['fd', g.names[pid] || 'Crew', t, 'ch']); }
-  else if (k === 'pt') { if (unit && unit.kind === 'patch' && allow(g, unit, 'pt', 1, 1, 1 / 6.5) >= 1) g.patchUp(unit); }
+  else if (k === 'pt') { if (unit && unit.kind === 'patch' && allow(g, unit, 'pt', 1, 1, 1 / 6.5) >= 1) patchUp(g, unit); }
   else if (k === 'or') { const o = String(c[1]); if ('GVMXZCS'.includes(o) && o.length === 1 && (unit ? unit.team === side : side === SIDE.home)) g.dir.order(o, num(2), num(3), unit); }
 }
 /** The player's own body, as their browser last reported it. */

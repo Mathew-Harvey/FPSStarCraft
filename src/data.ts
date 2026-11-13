@@ -2,50 +2,21 @@
 import type * as THREE from 'three';
 import type { Rig } from './models';
 
-import { G_UNIT, G_BLD, G_UPGRADES, G_BUILDABLE, G_UNLOCK, type GKind, type GBKind, type GUpKey } from './gloam';
-export type Kind = 'rigger' | 'linesman' | 'breacher' | 'gantry' | 'longshot' | 'patch' | 'cantor' | 'lancer' | 'warden' | 'tender' | GKind;
-export type BKind = 'headframe' | 'bunkhouse' | 'depot' | 'watchpost' | 'machineshop' | 'foundry' | 'choir' | 'reedgate' | 'broodpit' | 'thornspire' | 'wardpylon' | 'assay' | 'mast' | 'hushwell' | GBKind;
+import { I_UNIT, I_BLD, I_BUILDABLE, I_FACTION, I_TRAINS, I_NEEDS, I_UPGRADES, type IKind, type IBKind, type IUpKey } from './factions/ironhold/numbers';
+import { V_UNIT, V_BLD, V_FACTION, V_TRAINS, V_UPGRADES, type VKind, type VBKind, type VUpKey } from './factions/veyl/numbers';
+import { G_UNIT, G_BLD, G_UPGRADES, G_FACTION, G_TRAINS, G_UNLOCK, type GKind, type GBKind, type GUpKey } from './factions/gloam/numbers';
+// Each faction's numbers live in src/factions/<faction>/numbers.ts. This file joins them into the tables the shared code reads.
+export type Kind = IKind | VKind | GKind;
+export type BKind = IBKind | VBKind | GBKind;
 
 export interface UnitDef { name: string; team: number; hp: number; shield: number; speed: number; eye: number; headY: number; bodyY: number; rad: number; cost: number; time: number; supply: number; quip: string; ack: string[] }
-export const UNIT: Record<Kind, UnitDef> = {
-  rigger: { name: 'Rigger', team: 0, hp: 45, shield: 0, speed: 4.6, eye: 1.5, headY: 1.52, bodyY: .9, rad: .66, cost: 50, time: 8, supply: 1, quip: '"I dig holes. You point at where."', ack: ['Drill\'s warm, boss.', 'Back in the dirt.', 'Hard hat on. Mostly.'] },
-  linesman: { name: 'Linesman', team: 0, hp: 60, shield: 0, speed: 4.8, eye: 1.58, headY: 1.56, bodyY: .9, rad: .66, cost: 60, time: 11, supply: 1, quip: '"Paid by the bullet. Tips welcome."', ack: ['Boss is in my head again.', 'Point me at something purple.', 'Safety\'s off. So is my shift.'] },
-  breacher: { name: 'Breacher', team: 0, hp: 150, shield: 0, speed: 4.2, eye: 1.78, headY: 1.78, bodyY: 1.02, rad: .8, cost: 110, time: 15, supply: 2, quip: '"I knock. Then there is no door."', ack: ['Shield up. Manners down.', 'Somebody order a wall?', 'Big gun, short walk.'] },
-  gantry: { name: 'Gantry', team: 0, hp: 420, shield: 0, speed: 3.9, eye: 2.95, headY: 3.2, bodyY: 2.1, rad: 1.25, cost: 220, time: 22, supply: 4, quip: '"Two legs, two cannons, zero paperwork."', ack: ['Walker\'s yours. Mind the paint.', 'Stomping on your say-so.', 'Big rig, bigger invoice.'] },
-  longshot: { name: 'Longshot', team: 0, hp: 50, shield: 0, speed: 4.7, eye: 1.58, headY: 1.56, bodyY: .9, rad: .66, cost: 120, time: 16, supply: 2, quip: '"I bill by the mile."', ack: ['Scope\'s yours. Breathe out first.', 'One round, one invoice.', 'I was comfortable back there.'] },
-  patch: { name: 'Patch', team: 0, hp: 70, shield: 0, speed: 5.0, eye: 1.55, headY: 1.56, bodyY: .9, rad: .66, cost: 90, time: 13, supply: 1, quip: '"Hold still. This is mostly glue."', ack: ['Clinic is open.', 'Who\'s leaking?', 'I do stitches and rivets.'] },
-  cantor: { name: 'Cantor', team: 1, hp: 90, shield: 50, speed: 5.4, eye: 2.2, headY: 2.42, bodyY: 1.3, rad: .66, cost: 60, time: 11, supply: 1, quip: '"We sing first. It is only polite."', ack: ['The verse is yours.', 'One voice, borrowed.', 'Blades in tune.'] },
-  lancer: { name: 'Lancer', team: 1, hp: 50, shield: 30, speed: 4.4, eye: 2.0, headY: 2.12, bodyY: 1.25, rad: .6, cost: 65, time: 12, supply: 1, quip: '"A long note, held until something breaks."', ack: ['The lance hums for you.', 'Hold the note.', 'Far voice, listening.'] },
-  warden: { name: 'Warden', team: 1, hp: 900, shield: 300, speed: 3.3, eye: 3.8, headY: 4.0, bodyY: 2.7, rad: 1.5, cost: 300, time: 30, supply: 6, quip: '"The low note. The one the ground hears."', ack: ['The deep voice wakes.', 'Step loudly.', 'The ground is listening.'] },
-  ...G_UNIT,
-  tender: { name: 'Tender', team: 1, hp: 40, shield: 20, speed: 4.8, eye: 1.75, headY: 1.86, bodyY: 1.05, rad: .62, cost: 50, time: 8, supply: 1, quip: '"The rock hums. I hum back. We agree on a price."', ack: ['Humming.', 'The seam is listening.', 'A small voice, but useful.'] },
-};
+export const UNIT: Record<Kind, UnitDef> = { ...I_UNIT, ...V_UNIT, ...(G_UNIT as Record<GKind, UnitDef>) };
 export interface BldDef { name: string; hp: number; hx: number; hz: number; h: number; cost: number; time: number; blurb: string; needs?: BKind[] }
-export const BLD: Record<BKind, BldDef> = {
-  headframe: { name: 'Headframe', hp: 2400, hx: 6.6, hz: 4.6, h: 5, cost: 400, time: 50, blurb: 'A new base: Riggers bank ore here' },
-  bunkhouse: { name: 'Bunkhouse', hp: 1500, hx: 3.9, hz: 3.0, h: 2.8, cost: 150, time: 14, blurb: 'Trains your soldiers' },
-  depot: { name: 'Depot', hp: 800, hx: 2.8, hz: 2.6, h: 4.6, cost: 100, time: 9, blurb: 'Eight more beds' },
-  watchpost: { name: 'Watchpost', hp: 550, hx: 1.6, hz: 1.6, h: 8, cost: 125, time: 11, blurb: 'Gun tower', needs: ['bunkhouse'] },
-  machineshop: { name: 'Machine Shop', hp: 1900, hx: 4.6, hz: 3.6, h: 4, cost: 150, time: 16, blurb: 'Breachers, Patches, first upgrades', needs: ['bunkhouse'] },
-  foundry: { name: 'Foundry', hp: 2000, hx: 4.4, hz: 3.8, h: 6, cost: 200, time: 20, blurb: 'Gantry walkers, second upgrades', needs: ['machineshop'] },
-  choir: { name: 'Choir Stone', hp: 2000, hx: 1.5, hz: 1.5, h: 11, cost: 400, time: 50, blurb: 'A new Stone: Tenders bring ore here' },
-  reedgate: { name: 'Reed Gate', hp: 1600, hx: 3.6, hz: 1.4, h: 8, cost: 200, time: 20, blurb: 'Wakes Wardens, second songs', needs: ['wardpylon'] },
-  broodpit: { name: 'Brood Pit', hp: 1500, hx: 3.2, hz: 3.2, h: 4.2, cost: 150, time: 14, blurb: 'Hatches Cantors and Lancers' },
-  thornspire: { name: 'Thorn Spire', hp: 380, hx: 1.2, hz: 1.2, h: 7.6, cost: 110, time: 11, blurb: 'Bolt tower', needs: ['broodpit'] },
-  wardpylon: { name: 'Ward Pylon', hp: 520, hx: 1.5, hz: 1.5, h: 7, cost: 150, time: 16, blurb: 'Shields buildings near it, first songs', needs: ['broodpit'] },
-  assay: { name: 'Assay Office', hp: 1400, hx: 3.6, hz: 3.2, h: 4.2, cost: 125, time: 14, blurb: 'Longshots, infantry research', needs: ['bunkhouse'] },
-  mast: { name: 'Signal Mast', hp: 1100, hx: 2.3, hz: 2.3, h: 12, cost: 250, time: 22, blurb: 'Third upgrades, top research', needs: ['foundry', 'assay'] },
-  hushwell: { name: 'Hush Well', hp: 800, hx: 2.4, hz: 2.4, h: 4.4, cost: 100, time: 9, blurb: 'Eight more voices' },
-  ...(G_BLD as Record<GBKind, BldDef>),
-};
-export const BUILDABLE: BKind[] = ['bunkhouse', 'depot', 'watchpost', 'machineshop', 'assay', 'foundry', 'mast', 'headframe'];
+export const BLD: Record<BKind, BldDef> = { ...I_BLD, ...V_BLD, ...(G_BLD as Record<GBKind, BldDef>) };
+export const BUILDABLE: BKind[] = I_BUILDABLE;
 /** Everything about a side that the shared code needs to know. Keyed by team: 0 is the Ironhold Charter, 1 the Veyl Chorus. */
 export interface Faction { name: string; short: string; hq: BKind; worker: Kind; supply: BKind; builds: BKind[]; voice: string; squad: string; lead: Kind; ore: string }
-export const FACTION: Record<number, Faction> = {
-  0: { name: 'Ironhold Charter', short: 'Ironhold', hq: 'headframe', worker: 'rigger', supply: 'depot', builds: BUILDABLE, voice: 'Quartermaster', squad: 'Alpha', lead: 'linesman', ore: 'ore' },
-  1: { name: 'Veyl Chorus', short: 'Veyl', hq: 'choir', worker: 'tender', supply: 'hushwell', builds: ['broodpit', 'hushwell', 'thornspire', 'wardpylon', 'reedgate', 'choir'], voice: 'Conductor', squad: 'Chorus Lead', lead: 'cantor', ore: 'ore' },
-  2: { name: 'The Gloam', short: 'Gloam', hq: 'mothercap', worker: 'grazer', supply: 'sporesac', builds: G_BUILDABLE, voice: 'Overgrowth', squad: 'Swarm', lead: 'snapper', ore: 'ore' },
-};
+export const FACTION: Record<number, Faction> = { 0: I_FACTION, 1: V_FACTION, 2: G_FACTION };
 // Teams 3 to 5 are the second side of a mirror match: the same faction as team - 3, holding the other end of the map.
 FACTION[3] = FACTION[0]; FACTION[4] = FACTION[1]; FACTION[5] = FACTION[2];
 /** The faction a team plays: 0 Ironhold, 1 Veyl, 2 Gloam. */
@@ -76,43 +47,12 @@ export const endPt = (team: number, x: number, z: number, yard: boolean): [numbe
 export const isWorker = (k: Kind) => k === 'rigger' || k === 'tender' || k === 'grazer';
 export const isGloam = (k: Kind) => k === 'grazer' || k === 'snapper' || k === 'quillback' || k === 'blister' || k === 'mulcher';
 /** What each building trains, and the extra building a unit needs standing before it can be trained. */
-export const TRAINS: Partial<Record<BKind, Kind[]>> = { headframe: ['rigger'], bunkhouse: ['linesman', 'breacher', 'patch', 'longshot'], foundry: ['gantry'], choir: ['tender'], broodpit: ['cantor', 'lancer'], reedgate: ['warden'], mothercap: ['grazer', 'snapper', 'blister', 'quillback'], tuskhollow: ['mulcher'] };
-export const UNIT_NEEDS: Partial<Record<Kind, BKind>> = { breacher: 'machineshop', patch: 'machineshop', longshot: 'assay', snapper: G_UNLOCK.snapper, quillback: G_UNLOCK.quillback, blister: G_UNLOCK.blister, mulcher: G_UNLOCK.mulcher };
-export type UpKey = 'dmg' | 'armor' | 'dmg2' | 'armor2' | 'dmg3' | 'armor3' | 'drill' | 'beds' | 'post' | 'pay' | 'glass' | 'stitch' | 'frag' | 'servo' | 'weld' | 'buckets'
-  | 'vedge' | 'vglass' | 'vedge2' | 'vglass2' | 'vhum' | 'vwide' | 'vstep' | 'vbreath' | 'vthorn' | 'vbloom' | GUpKey;
+export const TRAINS: Partial<Record<BKind, Kind[]>> = { ...I_TRAINS, ...V_TRAINS, ...G_TRAINS };
+export const UNIT_NEEDS: Partial<Record<Kind, BKind>> = { ...I_NEEDS, snapper: G_UNLOCK.snapper, quillback: G_UNLOCK.quillback, blister: G_UNLOCK.blister, mulcher: G_UNLOCK.mulcher };
+export type UpKey = IUpKey | VUpKey | GUpKey;
 /** Research. `at` is the building that sells it, and `needs` is the research that has to be bought first. */
 export interface UpDef { key: UpKey; name: string; cost: number; blurb: string; at: BKind; say: string; needs?: UpKey; /** The side that can buy it. Ironhold when left out. */ team?: number }
-export const UPGRADES: UpDef[] = [
-  { key: 'dmg', name: 'Hollow Points', cost: 150, blurb: '+25% gun damage', at: 'machineshop', say: 'Hollow Points issued. Try to hit something with them.' },
-  { key: 'armor', name: 'Plating', cost: 150, blurb: '+25% health', at: 'machineshop', say: 'Plating bolted on. Everyone walk heavier.' },
-  { key: 'dmg2', name: 'Tungsten Core', cost: 200, blurb: '+20% gun damage', at: 'foundry', needs: 'dmg', say: 'Tungsten Core rounds. Each one costs more than you do.' },
-  { key: 'armor2', name: 'Reactive Plating', cost: 200, blurb: '+20% health', at: 'foundry', needs: 'armor', say: 'Reactive Plating fitted. It bites back, allegedly.' },
-  { key: 'dmg3', name: 'Charter Specials', cost: 250, blurb: '+15% gun damage', at: 'mast', needs: 'dmg2', say: 'Charter Specials. Head office signed for these in person.' },
-  { key: 'armor3', name: 'Vault Plate', cost: 250, blurb: '+15% health', at: 'mast', needs: 'armor2', say: 'Vault Plate. You are now worth more than the safe.' },
-  { key: 'drill', name: 'Diamond Bits', cost: 100, blurb: 'Riggers dig 30% faster', at: 'headframe', say: 'Diamond Bits fitted. The rock has filed a complaint.' },
-  { key: 'beds', name: 'Bunk Stacks', cost: 125, blurb: '+4 beds, and +2 more per Depot', at: 'headframe', say: 'Bunk Stacks in. Top bunk pays extra.' },
-  { key: 'post', name: 'Twin Mounts', cost: 125, blurb: 'Watchposts fire faster and reach further', at: 'machineshop', say: 'Twin Mounts on every Watchpost. Twice the noise.' },
-  { key: 'pay', name: 'Hazard Pay', cost: 100, blurb: 'Infantry move 12% faster', at: 'assay', say: 'Hazard Pay approved. Watch them run now.' },
-  { key: 'glass', name: 'Long Glass', cost: 125, blurb: 'Longshots reach further and hit 15% harder', at: 'assay', say: 'Long Glass ground and fitted. They can see your mistakes from here.' },
-  { key: 'stitch', name: 'Field Stitches', cost: 125, blurb: 'Patches heal 60% faster', at: 'assay', say: 'Field Stitches. Faster, and nearly as tidy.' },
-  { key: 'frag', name: 'Short Fuses', cost: 100, blurb: 'Grenades come back in 5 seconds', at: 'assay', say: 'Short Fuses issued. Count faster.' },
-  { key: 'servo', name: 'Servo Legs', cost: 150, blurb: 'Gantry walks 20% faster and stomps more often', at: 'foundry', say: 'Servo Legs in the walker. It skips now. Nobody likes it.' },
-  { key: 'weld', name: 'Field Welders', cost: 200, blurb: 'Everyone out of a fight slowly heals', at: 'mast', say: 'Field Welders on call. Stand still and get better.' },
-  { key: 'buckets', name: 'Deep Buckets', cost: 200, blurb: 'Riggers carry 10 ore a trip', at: 'mast', needs: 'drill', say: 'Deep Buckets. Same back, more rock.' },
-  // The Veyl Chorus. Songs are learned at the buildings that sing them.
-  { team: 1, key: 'vedge', name: 'Keener Edges', cost: 150, blurb: '+25% Veyl damage', at: 'wardpylon', say: 'Keener Edges. The blades hum a half step higher.' },
-  { team: 1, key: 'vglass', name: 'Thicker Glass', cost: 150, blurb: '+25% health and shields', at: 'wardpylon', say: 'Thicker Glass. Every shell rings a little lower.' },
-  { team: 1, key: 'vstep', name: 'Quick Step', cost: 100, blurb: 'Veyl move 12% faster', at: 'wardpylon', say: 'Quick Step. The Chorus learns to hurry.' },
-  { team: 1, key: 'vthorn', name: 'Twin Thorns', cost: 125, blurb: 'Thorn Spires fire faster and reach further', at: 'wardpylon', say: 'Twin Thorns. The Spires grow a second eye.' },
-  { team: 1, key: 'vedge2', name: 'Bright Edges', cost: 200, blurb: '+20% Veyl damage', at: 'reedgate', needs: 'vedge', say: 'Bright Edges. You can hear them cut.' },
-  { team: 1, key: 'vglass2', name: 'Deep Glass', cost: 200, blurb: '+20% health and shields', at: 'reedgate', needs: 'vglass', say: 'Deep Glass. Rivets ring off it now.' },
-  { team: 1, key: 'vbreath', name: 'Long Breath', cost: 125, blurb: 'Lancers reach further and hit 15% harder', at: 'reedgate', say: 'Long Breath. The Lancers hold the note longer.' },
-  { team: 1, key: 'vbloom', name: 'Quick Bloom', cost: 150, blurb: 'Shields come back twice as fast', at: 'reedgate', say: 'Quick Bloom. A broken shell grows back before the echo fades.' },
-  { team: 1, key: 'vhum', name: 'Low Hum', cost: 100, blurb: 'Tenders gather 30% faster', at: 'choir', say: 'Low Hum. The seams give up their ore sooner.' },
-  { team: 1, key: 'vwide', name: 'Wide Chorus', cost: 125, blurb: '+4 voices, and +2 more per Hush Well', at: 'choir', say: 'Wide Chorus. More room in the song.' },
-  // The Gloam. Research is grown at the buildings that hold it.
-  ...G_UPGRADES.map(u => ({ ...u, team: 2 })),
-];
+export const UPGRADES: UpDef[] = [...I_UPGRADES, ...V_UPGRADES.map(u => ({ ...u, team: 1 })), ...G_UPGRADES.map(u => ({ ...u, team: 2 }))];
 /** Research a side can buy. */
 export const upsOf = (team: number) => UPGRADES.filter(u => (u.team || 0) === fac(team));
 

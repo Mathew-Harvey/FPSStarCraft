@@ -79,3 +79,16 @@ export function tickAct(u: Unit, dt: number) {
 }
 /** A body by id (g.uById is only kept by online clients). */
 export const byId = (g: Game, id: number) => g.units.find(o => o.id === id) || null;
+
+// ---------------------------------------------------------------- what the enemy can answer (the bots hold back on what nobody can fight)
+import { isEnemy } from '../../core/sides';
+import { BLD } from '../../data';
+const CAN = new Map<number, { t: number; air: boolean; see: boolean }>();
+/** Can any enemy of `team` hit fliers, and can any see dug-in bodies? Checked at most every 5 s. */
+export function foeAnswers(g: Game, team: number) {
+  let c = CAN.get(team); if (c && g.time - c.t < 5 && g.time >= c.t) return c;
+  let air = false, see = false;
+  for (const u of g.units) { if (!u.alive || !isEnemy(team, u.team)) continue; const d = UNIT[u.kind]; if (d.hits === 'air' || d.hits === 'both') air = true; if (d.detect) see = true; if (air && see) break; }
+  if (!(air && see)) for (const b of g.buildings) { if (!b.alive || !isEnemy(team, b.team)) continue; const d = BLD[b.kind] as any; if (d.hits === 'air' || d.hits === 'both') air = true; if (d.detect) see = true; }
+  CAN.set(team, c = { t: g.time, air, see }); return c;
+}

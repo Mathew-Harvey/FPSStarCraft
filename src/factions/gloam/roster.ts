@@ -10,8 +10,9 @@ import { defineUnits, defineBuildings, defineFaction, addHitFilter, type Hit } f
 import { useAbility, abilitiesOf, whyNot, type Target } from '../../core/ability';
 import { levelMul } from '../../core/combat';
 import { hasStatus, addStatus, clearStatus } from '../../core/status';
+import { ripenShare } from '../../core/morph';
 import { G2, G_TUNE, G_DIGS, G_FLIES, type GKind } from './numbers';
-import { gMul, spitAt, spitMat, bileMat, acidMat, spineMat, dist, reach, raiding, dug, nearestFoeAt, giveLife, tickLife, lineMul, FHIDE, isCap, squelch, act, tickAct, HIT_ACT, byId } from './kit';
+import { gMul, spitAt, spitMat, bileMat, acidMat, spineMat, dist, reach, raiding, dug, nearestFoeAt, giveLife, tickLife, lineMul, FHIDE, isCap, squelch, act, tickAct, HIT_ACT, byId, foeAnswers } from './kit';
 
 const TMP = V3();
 
@@ -49,7 +50,7 @@ export function rosterFx(g: Game, dt: number) {
   const fhK = new Map<number, number>();
   for (const u of g.units) {
     if (!u.alive || fac(u.team) !== 2) continue;
-    tickAct(u, dt);
+    tickAct(u, dt); (u as any).ripen = ripenShare(u);   // stream G grows vines over a ripening body
     // Flier Hide: a flier's health follows the Flier Hide levels instead of the ground Hide levels.
     if (G_FLIES.has(u.kind)) { let want = fhK.get(u.team); if (want === undefined) fhK.set(u.team, want = lineMul(g, u.team, FHIDE) / levelMul(g, u.team, 'arm')); const had = (u as any).fhk ?? 1; if (Math.abs(want - had) > 1e-6) { u.maxHp *= want / had; u.hp *= want / had; (u as any).fhk = want; } }
     // Dug in, a Shellback (or Lobber) knits fast.
@@ -172,7 +173,7 @@ function aiSeeder(g: Game, u: Unit, dt: number) {
     if (isDug(u)) { if (d > 40 || nearestFoeAt(g, u.team, u.pos.x, u.pos.z, 5)) setDug(g, u, false); return; }
     if (d > 30) { g.moveTo(u, t.pos.x, t.pos.z, dt); return; }
     if (d < 12 && isUnit(t)) { const ax = u.pos.x - t.pos.x, az = u.pos.z - t.pos.z, l = Math.hypot(ax, az) || 1; g.moveTo(u, u.pos.x + ax / l * 4, u.pos.z + az / l * 4, dt, .2, 1); return; }
-    if (canDig(g, u) && (u.abCd?.fling ?? 0) > 6) setDug(g, u, true);
+    if (canDig(g, u) && (u.abCd?.fling ?? 0) > 6 && (u === g.me || u.pilot || g.human[u.team] || foeAnswers(g, u.team).see)) setDug(g, u, true);
     return;
   }
   if (isDug(u)) { if (raiding(u)) setDug(g, u, false); return; }
@@ -236,6 +237,11 @@ const aiHusk = (g: Game, u: Unit, dt: number) => aiMelee(g, u, dt, { reach: 1.3,
 const aiPup = (g: Game, u: Unit, dt: number) => aiMelee(g, u, dt, { reach: 1.1, cd: G2.pup.cd, dmg: (g, u) => G2.pup.bite * gMul(g, u.team, 'sower'), any: true });
 /** A walking Stinger Stalk or Puffball: goes where it is told and roots there once it stands on its own Bloom (actions.ts). */
 function aiWalker(g: Game, u: Unit, dt: number) {
+  // A walking Stinger Stalk still whips ground bodies close by; a walking Puffball still shoots fliers. Half as often as rooted.
+  u.cd -= dt; if (u.cd <= 0) {
+    const stg = u.kind === 'stingerwalk', R0 = stg ? G_TUNE.stinger.range : G2.puffball.range, t = nearestFoeAt(g, u.team, u.pos.x, u.pos.z, R0, o => stg ? !o.air : !!o.air);
+    if (t) { u.cd = (stg ? G_TUNE.stinger.cd : G2.puffball.cd) * 2; act(u, stg ? 'whip' : 'puff'); u.yaw = Math.atan2(t.pos.x - u.pos.x, t.pos.z - u.pos.z); g.tracer(V3(u.pos.x, stg ? 4 : 3, u.pos.z), V3(t.pos.x, UNIT[t.kind].bodyY + (t.alt || 0), t.pos.z), stg ? spitMat : acidMat, .14); g.damage(t, (stg ? G_TUNE.stinger.dmg * gMul(g, u.team) : G2.puffball.dmg * gMul(g, u.team, 'quillback')), u); } else u.cd = .3;
+  }
   const o = u.order; if (Math.hypot(o.x - u.pos.x, o.z - u.pos.z) > 1.5) { g.moveTo(u, o.x, o.z, dt, 1, 1); return; }
   if (g.carpet.on(u.pos.x, u.pos.z, 0, u.team)) useAbility(g, u, 'root');
 }

@@ -4,7 +4,7 @@
 import { noHud, noPipe } from '../../server/shim';
 import { Game } from '../../src/game';
 import { initHeadless } from '../../src/gfx';
-import { DIFFS, UNIT, BLD, FACTION, TRAINS, UPGRADES, setMap, setSides, Kind, BKind, Unit, Building, SIDE } from '../../src/data';
+import { DIFFS, UNIT, BLD, FACTION, TRAINS, UPGRADES, setMap, setSides, Kind, BKind, Unit, Building, SIDE, fac } from '../../src/data';
 import { costOf } from '../../src/core/econ';
 import { abilitiesOf, whyNot, useAbility } from '../../src/core/ability';
 import { hasStatus } from '../../src/core/status';
@@ -18,7 +18,9 @@ import { otherEnd } from '../../src/factions/gloam/actions';
 initHeadless();
 const fail: string[] = []; const check = (ok: boolean, what: string) => { console.log((ok ? 'PASS ' : 'FAIL ') + what); if (!ok) fail.push(what); };
 let seed = 11; Math.random = () => { seed = (seed * 16807) % 2147483647; return (seed - 1) / 2147483646; };
-const quick = process.argv.includes('quick');
+const quick = process.argv.includes('quick'), oneArg = process.argv.indexOf('one');
+// One bot match, for part 2 (run as a child process): every kind of body the Gloam side made, and what it spent on each.
+if (oneArg > 0) { oneMatch(JSON.parse(process.argv[oneArg + 1])); process.exit(0); }
 
 /** A Gloam side at the yard against Ironhold, with the bot brains switched off so only what the test does happens. */
 function world(out = 0) {
@@ -54,15 +56,16 @@ const dmgOf = (b: Unit | Building) => b.maxHp - b.hp;
   check(cap.kind === 'eldercap' && g.isHQ(cap) && g.ownB('mothercap', true, H).includes(cap), 'tech: it becomes an Elder Cap, still a home building and still counts as a Mother Cap');
   tryAll(); tryAll();
   check(built.has('rotden') && built.has('wingspire') && built.has('deeproot') && built.has('quillgarden'), 'tech: the Elder Cap opens the Rot Den, Wing Spire, Deep Root and Quill Garden');
-  check(!built.has('tuskhollow') && !built.has('needleden'), 'tech: the Tusk Hollow and Needle Den still wait for an Ancient Cap');
+  check(!built.has('needleden') && !g.unlocked('tallspire', H), 'tech: the Needle Den and Tall Spire still wait for an Ancient Cap');
   check(g.buildingAction(cap, 'grow'), 'tech: the Elder Cap starts ripening into an Ancient Cap (a Rot Den is standing)');
   run(g, BLD.ancientcap.time + 1); tryAll(); tryAll();
-  check(cap.kind === 'ancientcap' && built.has('tuskhollow') && built.has('needleden'), 'tech: the Ancient Cap opens the Tusk Hollow and the Needle Den');
+  check(cap.kind === 'ancientcap' && built.has('needleden'), 'tech: the Ancient Cap opens the Needle Den');
   const spire = g.ownB('wingspire', true, H)[0]; check(!!spire && g.buildingAction(spire, 'grow'), 'tech: a Wing Spire ripens into a Tall Spire once an Ancient Cap stands');
   run(g, BLD.tallspire.time + 1); check(spire.kind === 'tallspire' && g.ownB('wingspire', true, H).includes(spire), 'tech: the Tall Spire still counts as a Wing Spire');
   // Every Cap unit trains from the Cap; every ripened unit ripens. Spore Sacs first, for beds.
   for (let j = 0; j < 8; j++) { const [x, z] = ring(cap, j, 40); grow(g, 'sporesac', H, x, z); }
   for (const k of TRAINS.ancientcap || []) { cap.buds = 9; if (g.train(cap, k)) made.add(k); else console.log('  not trained:', k, g.gated(H, k), g.supplyUsed(H), g.supplyCap(H)); }
+  const hol = g.ownB('tuskhollow', true, H)[0]; check(!!hol && g.train(hol, 'mulcher'), 'tech: a Mulcher wakes in the Tusk Hollow');
   run(g, 40);
   for (const k of TRAINS.ancientcap || []) if (g.own(k, H).length) via.add(k);
   check((TRAINS.ancientcap || []).every(k => made.has(k)), `tech: every Cap unit trains (${(TRAINS.ancientcap || []).filter(k => !made.has(k)).join(', ') || 'all'})`);
@@ -72,7 +75,7 @@ const dmgOf = (b: Unit | Building) => b.maxHp - b.hp;
   run(g, 30);
   for (const from of Object.keys(G_RIPEN) as GKind[]) { const to = G_RIPEN[from]!.to; check(g.own(to, H).length > 0, `tech: ...into a ${UNIT[to].name}`); }
   // Bodies that only come from something else: Husks (Seeder), Pups (Sower), walkers (uprooting), Drifters (Spore Sac).
-  const other = kinds.filter(k => !(TRAINS.ancientcap || []).includes(k) && !Object.values(G_RIPEN).some(r => r!.to === k));
+  const other = kinds.filter(k => k !== 'mulcher' && !(TRAINS.ancientcap || []).includes(k) && !Object.values(G_RIPEN).some(r => r!.to === k));
   check(other.sort().join(',') === ['drifter', 'husk', 'pup', 'puffwalk', 'stingerwalk'].sort().join(','), `tech: every other kind comes from an ability or a building command (${other.join(', ')})`);
 }
 
@@ -216,8 +219,42 @@ const dmgOf = (b: Unit | Building) => b.maxHp - b.hp;
   check(!!v && bldRule('ventbladder').tap === true, `Vent Bladder: taps a vent (${g.vents.length} vents laid)`);
 }
 
-// part 2 (bot matches) follows
+// ---------------------------------------------------------------- 7. the bots make every unit (ten seeded 40-minute matches)
+if (!quick) {
+  const { spawn } = await import('node:child_process'), specs: any[] = [];
+  for (let i = 0; i < 10; i++) specs.push({ home: i % 2 ? 0 : 2, out: i % 2 ? 2 : 0, map: i % 3, seed: 100 + i, mins: 40, foe: i % 4 < 2 ? 0 : 1 });
+  for (const sp of specs) if (sp.foe === 1) { if (sp.home === 0) sp.home = 1; else sp.out = 1; }
+  const rows: any[] = []; let next = 0;
+  const one = (sp: any) => new Promise<void>(res => { let out = ''; const p = spawn(process.execPath, [process.argv[1], 'one', JSON.stringify(sp)], { stdio: ['ignore', 'pipe', 'inherit'] }); p.stdout.on('data', d => out += d); p.on('close', code => { const line = out.trim().split('\n').pop() || '{}'; try { rows.push({ ...JSON.parse(line), code }); } catch { rows.push({ sp, code, bad: out.slice(-300) }); } res(); }); });
+  await Promise.all([0, 1, 2, 3].map(async () => { while (next < specs.length) await one(specs[next++]); }));
+  const made = new Map<string, number>(), spend = new Map<string, number>(); let total = 0;
+  for (const r of rows) { check(r.code === 0 && !r.bad, `bots: match ${JSON.stringify(r.sp)} ran to the end (${r.res ?? 'crashed'} at ${Math.round((r.t ?? 0) / 60)} min)`); check(!r.stall, `bots: no stall in ${JSON.stringify(r.sp)} (${r.stall || 'the Gloam kept making things'})`); for (const k in r.made || {}) made.set(k, (made.get(k) || 0) + r.made[k]); for (const k in r.spend || {}) { spend.set(k, (spend.get(k) || 0) + r.spend[k]); total += r.spend[k]; } }
+  for (const k of Object.keys(G_UNIT)) check((made.get(k) || 0) > 0, `bots: made at least one ${UNIT[k as Kind].name} across ten matches (${made.get(k) || 0})`);
+  console.log('\nShare of the Gloam\'s unit spend (ore plus Flux), ten matches:');
+  for (const [k, v] of [...spend].sort((a, b) => b[1] - a[1])) console.log(`  ${UNIT[k as Kind].name.padEnd(13)} ${(v / total * 100).toFixed(1).padStart(5)}%  made ${made.get(k)}`);
+  console.log('Results: ' + rows.map(r => `${r.sp?.home}${r.sp?.out}:${r.res}`).join(' '));
+}
 console.log(fail.length ? `\n${fail.length} FAILED\n` + fail.join('\n') : '\nALL PASS');
 if (fail.length) process.exitCode = 1;
 export { check, fail, world, run };
+
+function oneMatch(sp: { home: number; out: number; map: number; seed: number; mins: number }) {
+  seed = sp.seed; setMap(sp.map); setSides(sp.home, sp.out);
+  const g = new Game(noPipe(), noHud, DIFFS[1], sp.map, null, null, true); g.noRender = true; g.evq = []; g.me = null; g.phase = 'play'; g.human = g.human.map(() => false);
+  for (const u of g.units) u.pilot = 0;
+  const T = sp.home === 2 ? SIDE.home : SIDE.out, seen = new Map<Unit, string>(), made: Record<string, number> = {}, spend: Record<string, number> = {};
+  const note = (u: Unit, from?: string) => { const k = u.kind; made[k] = (made[k] || 0) + 1; const c = costOf(k as Kind), f = from ? costOf(from as Kind) : [0, 0]; spend[k] = (spend[k] || 0) + Math.max(0, c[0] - f[0]) + Math.max(0, c[1] - f[1]); };
+  for (const u of g.units) if (u.team === T) seen.set(u, u.kind);
+  let res = 'draw', lastNew = 0, stall = '';
+  for (let i = 0; i < sp.mins * 60 * 30; i++) {
+    g.update(1 / 30); g.evq!.length = 0;
+    if (i % 30 === 0) {
+      for (const u of g.units) if (u.alive && u.team === T && fac(u.team) === 2) { const was = seen.get(u); if (was === undefined) { note(u); lastNew = g.time; } else if (was !== u.kind) { note(u, was); lastNew = g.time; } seen.set(u, u.kind); }
+      if ((sp as any).log && i % (30 * 60) === 0) { const bk: Record<string, number> = {}; for (const b of g.buildings) if (b.alive && b.team === T) bk[b.kind] = (bk[b.kind] || 0) + 1; console.error(Math.round(g.time / 60) + 'm', 'ore', Math.round(g.cash(T)), 'flux', Math.round(g.flux(T)), 'army', g.army(T).length, 'foe', g.army(T === SIDE.home ? SIDE.out : SIDE.home).length, JSON.stringify(bk), Object.keys(g.upOf(T)).filter(k => g.upOf(T)[k as never]).join(',')); }
+      if (g.time - lastNew > 300 && g.ownB(undefined, true, T).length && !stall) stall = `nothing new for 5 minutes at ${Math.round(g.time / 60)} min`;
+    }
+    if (g.endT > 0 || !g.hqs(SIDE.home).length || !g.hqs(SIDE.out).length) { res = !g.hqs(SIDE.home).length ? 'out' : !g.hqs(SIDE.out).length ? 'home' : g.endWon ? 'home' : 'out'; break; }
+  }
+  console.log(JSON.stringify({ sp, res, t: Math.round(g.time), made, spend, stall }));
+}
 void [G_BLD, G_DIGS, UPGRADES, costOf, abilitiesOf, unitRule];

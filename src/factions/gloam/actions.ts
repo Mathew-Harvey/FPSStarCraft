@@ -19,15 +19,15 @@ type Grow = { to: GBKind; t: number; all: number };
 const growOf = (b: Building): Grow | undefined => (b as any).grow;
 /** A building swapping into a bigger kind where it stands: what it needs besides the price, and how long it takes. */
 const TIERS: Partial<Record<GBKind, { to: GBKind; needs: GBKind; hotkey: string }>> = {
-  mothercap: { to: 'eldercap', needs: 'warren', hotkey: 'R' },
-  eldercap: { to: 'ancientcap', needs: 'rotden', hotkey: 'R' },
-  wingspire: { to: 'tallspire', needs: 'ancientcap', hotkey: 'R' },
+  mothercap: { to: 'eldercap', needs: 'warren', hotkey: 'N' },
+  eldercap: { to: 'ancientcap', needs: 'rotden', hotkey: 'N' },
+  wingspire: { to: 'tallspire', needs: 'ancientcap', hotkey: 'N' },
 };
 /** Starts a building ripening into its next kind. Paid by buildingAction; the building keeps working meanwhile. */
 function startGrow(g: Game, b: Building, to: GBKind) { (b as any).grow = { to, t: BLD[to].time, all: BLD[to].time } as Grow; g.puff(TMP.set(b.pos.x, b.h, b.pos.z), 6, 1.4, M.gS, .6, 2); if (g.vol(b.pos) > .2) sfx.place(); }
 /** Every frame, host: ripening counts down, then the building becomes its next kind (health kept as a share). */
 export function tickGrow(g: Game, b: Building, dt: number) {
-  const gr = growOf(b); if (!gr) return; gr.t -= dt * Math.max(0, g.rate(b)); if (gr.t > 0) return;
+  const gr = growOf(b); if (!gr) return; gr.t -= dt * Math.max(0, g.rate(b)); b.obj.userData.ripen = Math.min(1, 1 - gr.t / gr.all); if (gr.t > 0) return;
   (b as any).grow = undefined; const from = b.kind; g.rebuild(b, gr.to); g.carpet.drop(b); g.carpet.add(b, gr.to, b.pos.x, b.pos.z, true);
   g.puff(TMP.set(b.pos.x, b.h * .8, b.pos.z), 10, 2, M.gS, 1, 3); sfx.built();
   g.feed(G_VOICE, from === 'wingspire' ? 'The Tall Spire has grown. Bloaters can ripen into Sowers there.' : `The ${BLD[gr.to].name} has ripened.`, '', b.team);
@@ -35,7 +35,7 @@ export function tickGrow(g: Game, b: Building, dt: number) {
 const G_VOICE = 'Overgrowth';
 const tierActions = (k: GBKind) => (g: Game, b: Building): BldAction[] => {
   const T = TIERS[k]!, gr = growOf(b);
-  if (gr) return [{ key: 'stopgrow', name: `Stop ripening (${Math.ceil(gr.t)} s left)`, hotkey: 'R', blurb: 'Gives the price back.', run: (g, b) => { (b as any).grow = undefined; refund(g, b.team, costOf(T.to)); } }];
+  if (gr) return [{ key: 'stopgrow', name: `Stop ripening (${Math.ceil(gr.t)} s left)`, hotkey: 'N', blurb: 'Gives the price back.', run: (g, b) => { (b as any).grow = undefined; b.obj.userData.ripen = 0; refund(g, b.team, costOf(T.to)); } }];
   return [{ key: 'grow', name: `Ripen into ${BLD[T.to].name}`, hotkey: T.hotkey, cost: costOf(T.to), blurb: `${BLD[T.to].time} s. ${BLD[T.to].blurb}.`,
     ok: (g, b) => !g.ownB(T.needs as BKind, true, b.team).length ? `needs a ${BLD[T.needs].name} first` : '',
     run: (g, b) => startGrow(g, b, T.to) }];
@@ -55,7 +55,7 @@ export function reroot(g: Game, u: Unit) {
   const b = g.addBuilding(to, u.team, Math.round(u.pos.x), Math.round(u.pos.z), true); b.hp = Math.max(1, b.maxHp * k);
   u.alive = false; g.scene.remove(u.obj); g.puff(TMP.set(u.pos.x, .4, u.pos.z), 6, 1, M.dust, .5, 1.6); return b;
 }
-const uprootAct = (to: GKind, name: string, blurb: string): BldAction => ({ key: 'uproot', name, hotkey: 'R', blurb,
+const uprootAct = (to: GKind, name: string, blurb: string): BldAction => ({ key: 'uproot', name, hotkey: 'N', blurb,
   ok: (g, b) => b.queue.length ? 'still busy' : to === 'drifter' && g.supplyUsed(b.team) > g.supplyCap(b.team) ? 'its beds are full' : '',
   run: (g, b) => { uproot(g, b, to); } });
 
@@ -68,7 +68,7 @@ export function podHop(g: Game, b: Building, x?: number, z?: number) {
   for (let i = 0; i < 8; i++) { const ox = tx + (i ? R(-3, 3) : 0), oz = tz + (i ? R(-3, 3) : 0); if (Math.hypot(ox - MAP.mid![0], oz - MAP.mid![1]) < MAP.rad! * .95 - 2 && podRoom(g, ox, oz)) { (b as any).hops = 0; const n = g.addBuilding('sporepod', b.team, Math.round(ox), Math.round(oz), false); (n as any).hops = 0; return n; } }
   return null;
 }
-const podAct: BldAction = { key: 'hop', name: 'Plant one more pod', hotkey: 'R', blurb: '14 m on toward the enemy. Once per pod.',
+const podAct: BldAction = { key: 'hop', name: 'Plant one more pod', hotkey: 'N', blurb: '14 m on toward the enemy. Once per pod.',
   ok: (_g, b) => (b as any).hops > 0 ? '' : 'this pod has planted its one', run: (g, b) => { podHop(g, b); } };
 
 // ---------------------------------------------------------------- Deep Root tunnels
@@ -96,7 +96,7 @@ function tunnelTick(g: Game, b: Building) {
     if (there + 8 < here) { (u as any).tunT = g.time + 3; travel(g, u, b); }
   }
 }
-const tunnelAct: BldAction = { key: 'go', name: 'Go through', hotkey: 'R', blurb: 'You and every body of yours within 6 m come out at the other end.',
+const tunnelAct: BldAction = { key: 'go', name: 'Go through', hotkey: 'N', blurb: 'You and every body of yours within 6 m come out at the other end.',
   ok: (g, b) => !otherEnd(g, b) ? (b.kind === 'deeproot' ? 'no Tunnel Root grown from it yet' : 'its Deep Root is gone') : '',
   run: (g, b) => { const to = otherEnd(g, b)!; for (const u of g.units) if (u.alive && u.team === b.team && !u.air && !u.inside && g.distToBox(b, u.pos.x, u.pos.z) < 6) { (u as any).tunT = g.time + 3; travel(g, u, b); } void to; } };
 /** A Tunnel Root has to go where the side can see now, within reach of a body or building of its own, and needs a Deep Root with no tunnel. */
@@ -110,7 +110,7 @@ export function tunnelOK(g: Game, x: number, z: number, team: number) {
 // ---------------------------------------------------------------- research a bigger Cap still sells
 /** An Elder or Ancient Cap still sells the Mother Cap's research; the prompt only lists research at its own kind, so it lists them as commands. */
 const capResearch = (g: Game, b: Building): BldAction[] => {
-  const keys = 'FGHJ'.split(''); let i = 0; const out: BldAction[] = [];
+  const keys = 'JKLM'.split(''); let i = 0; const out: BldAction[] = [];
   for (const u of G_UPGRADES) { if (u.at !== 'mothercap' || g.upOf(b.team)[u.key] || i >= keys.length) continue; if (u.needs && !g.upOf(b.team)[u.needs]) continue; out.push({ key: 'r_' + u.key, name: u.name, hotkey: keys[i++], blurb: `${u.cost} ore${u.flux ? ' / ' + u.flux + ' Flux' : ''}. ${u.blurb}`, ok: g2 => g2.gated(b.team, u.key), run: (g2, b2) => { g2.buyUpgrade(u.key, b2.team, true); } }); }
   return out;
 };

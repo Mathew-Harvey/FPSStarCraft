@@ -139,7 +139,7 @@ export const I_UPGRADES: { key: IUpKey; name: string; cost: number; blurb: strin
   // Signal Mast and Annex.
   { key: 'ghillie', name: 'Ghillie', cost: 150, flux: 150, blurb: 'Longshots can go unseen (key C, uses energy)', at: 'mast', say: 'Ghillie suits issued. Try not to lose them.' },
   { key: 'foreclose', name: 'Foreclosure', cost: 150, flux: 150, blurb: 'Claim Barges can fire a 240-damage shell (key C)', at: 'annex', say: 'Foreclosure papers signed. The Barges can serve them now.' },
-  { key: 'relocate', name: 'Relocate', cost: 150, flux: 150, blurb: 'Claim Barges can jump to any spot your side can see (key E)', at: 'annex', say: 'Relocate cleared. The Barges can be anywhere by Tuesday.' },
+  { key: 'relocate', name: 'Relocate', cost: 150, flux: 150, blurb: 'Claim Barges can jump to any spot your side can see (key T)', at: 'annex', say: 'Relocate cleared. The Barges can be anywhere by Tuesday.' },
   // Older research kept: no plan row replaces these.
   { key: 'spotlight', name: 'Spotlight', cost: 100, flux: 50, blurb: 'Watchposts see unseen bodies within 11 m', at: 'assay', say: 'Spotlights on the Watchposts. Nothing hides from a lamp.' },
   { key: 'post', name: 'Twin Mounts', cost: 125, blurb: 'Watchposts fire faster and reach further', at: 'assay', say: 'Twin Mounts on every Watchpost. Twice the noise.' },

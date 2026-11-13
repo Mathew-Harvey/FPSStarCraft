@@ -172,6 +172,9 @@ const http = createServer((req, res) => {
     res.writeHead(200, { 'content-type': 'application/json', 'content-encoding': 'gzip', 'content-disposition': `attachment; filename="ore-else-${m[1]}.json"`, 'access-control-allow-origin': '*' }); res.end(r.gz); return; } }
   // The replay player the page starts beside itself (src/replay-worker.ts).
   if (url === '/replay-worker.js') { const f = [join(here, 'replay-worker.js'), join(here, '..', 'dist', 'replay-worker.js')].find(existsSync); if (!f) { res.writeHead(404); res.end(); return; } res.writeHead(200, { 'content-type': 'text/javascript', 'cache-control': 'no-cache' }); res.end(readFileSync(f)); return; }
+  // The art the page fetches as a match needs it (src/artfiles.ts), from art/ beside the page.
+  if (url.startsWith('/art/')) { const name = url.slice(5), f = pagePath ? join(dirname(pagePath), 'art', name) : ''; if (!/^[\w.-]+\.(wasm|webp)$/.test(name) || !f || !existsSync(f)) { res.writeHead(404); res.end(); return; }
+    res.writeHead(200, { 'content-type': name.endsWith('.webp') ? 'image/webp' : 'application/wasm', 'cache-control': 'public, max-age=31536000, immutable' }); res.end(readFileSync(f)); return; }
   if (process.env.ORE_DEV && pagePath) page = readFileSync(pagePath);
   res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-cache' }); res.end(page);
 });

@@ -213,10 +213,13 @@ export const veilTime = (t: number) => { SHIMMER_T.value = t; };
 export function borrow(body: THREE.Object3D, color: THREE.ColorRepresentation, amount = .55): { off(): void; update(t: number): void } {
   const c = col(color), was = new Map<THREE.Mesh, THREE.Material>(), mine: THREE.ShaderMaterial[] = [];
   body.traverse(o => { const m = o as THREE.Mesh; const mat = m.material as THREE.ShaderMaterial; if (!m.isMesh || Array.isArray(m.material) || !mat.uniforms?.uColor) return;
-    const t = mat.clone(); t.uniforms = { ...mat.uniforms, uColor: { value: (mat.uniforms.uColor.value as THREE.Color).clone() } }; t.userData = { ...mat.userData, base: (mat.uniforms.uColor.value as THREE.Color).clone() };
+    const t = mat.clone(); t.uniforms = { ...mat.uniforms, uColor: { value: (mat.uniforms.uColor.value as THREE.Color).clone() } }; t.userData = { ...mat.userData, base: (mat.uniforms.uColor.value as THREE.Color).clone(), emis: mat.uniforms.uEmis?.value ?? 0 }; if (mat.uniforms.uEmis) t.uniforms.uEmis = { value: mat.uniforms.uEmis.value };
     was.set(m, mat); m.material = t; mine.push(t); });
   return {
-    update(t: number) { const k = amount * (.8 + .2 * Math.sin(t * 4)); for (const m of mine) (m.uniforms.uColor.value as THREE.Color).copy(m.userData.base).lerp(c, k); },
+    // The paint is pulled hard toward the colour and lit from within a little, pulsing, so a painted figure (whose own picture carries
+    // most of its colour) reads as taken over at any distance, in shade too.
+    update(t: number) { const p = .5 + .5 * Math.sin(t * 4), k = Math.min(.9, amount * 1.45) * (.85 + .15 * p);
+      for (const m of mine) { (m.uniforms.uColor.value as THREE.Color).copy(m.userData.base).lerp(c, k).multiplyScalar(1.25); if (m.uniforms.uEmis) m.uniforms.uEmis.value = m.userData.emis + .18 + .14 * p; } },
     off() { for (const [m, mat] of was) m.material = mat; for (const m of mine) m.dispose(); } };
 }
 

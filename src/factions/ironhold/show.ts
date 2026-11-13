@@ -17,7 +17,7 @@ import { heldMaterial, setLayer } from '../../gfx';
 import type { Model } from '../../models';
 import * as E from '../../look-ironhold';
 import { FxKit, cloud, ring } from '../../fx/kit';
-import { skids } from './look/yard2';
+import { skids, depotSunk } from './look/yard2';
 import { TUNE, mem, boosted } from './kit';
 
 type Fig = E.Fig;
@@ -30,6 +30,8 @@ const ART: Partial<Record<Kind, E.Kind>> = {
   sapper: 'sapper', hauldrone: 'hauldrone', dustbike: 'dustbike', piledriver: 'piledriver', piledriverset: 'piledriver',
   hopper: 'hopper', flakkite: 'flakkite', flakwalker: 'flakkite', gadfly: 'gadfly', surveyor: 'surveyor', claimbarge: 'claimbarge',
 };
+/** Seconds a called Haul Drone takes to come down. */
+const DROP = 1.6;
 const figOf = (u: Unit): Fig | null => (u.obj.userData.fig as Fig) || null;
 
 function figureFor(kind: Kind): Model {
@@ -61,7 +63,12 @@ function stateOf(g: Game, u: Unit): E.State {
 const looks: Record<string, any> = {};
 for (const kind of Object.keys(ART) as Kind[]) looks[kind] = {
   figure: () => figureFor(kind),
-  pose(g: Game, u: Unit) { const f = figOf(u); if (!f) return false; E.animate(ART[u.kind]!, f, stateOf(g, u)); return true; },
+  pose(g: Game, u: Unit) {
+    const f = figOf(u); if (!f) return false; E.animate(ART[u.kind]!, f, stateOf(g, u));
+    // a Haul Drone comes down from 30 m over its first 1.6 s (the mark and the dust are E's callDown, started in showTick)
+    const d = mem(u).dropAt; if (d !== undefined) { const k = Math.min(1, (g.time - d) / DROP); f.root.position.y += 30 * (1 - k * k * (3 - 2 * k)); if (k >= 1) mem(u).dropAt = undefined; }
+    return true;
+  },
 };
 defineUnits(looks);
 
@@ -151,6 +158,10 @@ export function showTick(g: Game, dt: number) {
   let mines = MINES.get(g); if (!mines) MINES.set(g, mines = new Map());
   for (const u of g.units) {
     if (fac(u.team) !== 0) continue;
+    if (u.kind === 'hauldrone' && u.alive && !mem(u).dropSeen) {
+      const m = mem(u); m.dropSeen = true;
+      if (g.time - (m.born ?? g.time) < .5) { m.dropAt = g.time; E.callDown(k, { root: new THREE.Group(), groups: {}, points: {} }, V(u.pos.x, 0, u.pos.z), DROP); }   // E's mark and dust; the pose above does the fall
+    }
     if (u.kind === 'shaftmine') {
       if (u.alive && !mines.has(u)) { const fx = E.shaftMine(k, V(u.pos.x, 0, u.pos.z), 1e5); fx.obj.visible = ours(g, u.team); mines.set(u, fx.obj); }
       continue;
@@ -160,7 +171,7 @@ export function showTick(g: Game, dt: number) {
     if (u.cast && m.castSeen !== u.cast) { m.castSeen = u.cast; const s = START[u.cast.key]; if (s) try { s(k, g, u, { x: u.cast.x, z: u.cast.z, id: u.cast.id }); } catch (e) { console.warn('ironhold fx', u.cast.key, e); } }
     if (m.seat && u !== g.me) { m.seat(); m.seat = null; }
   }
-  for (const [u, obj] of mines) if (!u.alive) { obj.visible = false; obj.scale.setScalar(1e-4); mines.delete(u); E.blast(k, V(u.pos.x, 0, u.pos.z), TUNE.mine.r); }
+  for (const [u, obj] of mines) if (!u.alive) { obj.visible = false; obj.scale.setScalar(1e-4); mines.delete(u); const mm = mem(u); if (mm.went || (g.net && !mm.fizzled)) E.blast(k, V(u.pos.x, 0, u.pos.z), TUNE.mine.r); else if (ours(g, u.team)) k.add(cloud({ x: u.pos.x, z: u.pos.z, r: .8, time: 1, color: '#d9a46a', puffs: 3 })); }
   for (const b of g.buildings) if (b.alive && fac(b.team) === 0) moveParts(g, b, dt);
 }
 /** The Flak Tower's gun follows what it shoots, the Hangar's doors open while it trains, and a crawling building rides on skids. */
@@ -181,6 +192,11 @@ function moveParts(g: Game, b: Building, dt: number) {
     if (b.queue.length) m.outT = g.time; const open = b.built && g.time - (m.outT ?? -9) < 3 ? 1 : 0;
     for (let i = 0; i < P.doors.length; i++) { const d = P.doors[i] as THREE.Object3D; d.userData.x0 ??= d.position.x; const want = d.userData.x0 + (i ? 1 : -1) * 2.1 * open; d.position.x += (want - d.position.x) * Math.min(1, dt * 2); }
   }
+  // A sunk Depot shows its lid flush with the ground, so a crewman walking over it walks on a plate, not on sand.
+  if (b.kind === 'depot') {
+    if (!ud.lid) { ud.lid = depotSunk(); b.obj.add(ud.lid); }
+    const sunk = b.obj.position.y < -.5; ud.lid.visible = sunk; if (sunk) ud.lid.position.y = -b.obj.position.y + .02;
+  }
   if (m.crawl && !ud.skids) { ud.skids = skids(b.hx, b.hz); b.obj.add(ud.skids); }
   else if (!m.crawl && ud.skids) { b.obj.remove(ud.skids); ud.skids = null; }
 }
@@ -198,4 +214,4 @@ queueMicrotask(() => {
   }
 });
 // For tests and pictures: the effect kit a page's game uses.
-if (typeof window !== 'undefined') (window as any).__ironShow = { kitOf };
+if (typeof window !== 'undefined') (window as any).__ironShow = { kitOf, mem };

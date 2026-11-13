@@ -13,7 +13,7 @@ import { FxKit, tell, beam, orb, cloud, ring as burst, veil, type Fx } from './f
 export { FxKit };
 
 /** The new Ironhold kinds this file draws (batch 1 on foot and wheels, batch 2 in the air). */
-export const KINDS = ['sapper', 'hauldrone', 'dustbike', 'piledriver', 'hopper', 'flakkite', 'gadfly', 'surveyor', 'claimbarge'] as const;
+export const KINDS = ['sapper', 'hauldrone', 'dustbike', 'piledriver', 'hopper', 'flakkite', 'gadfly', 'surveyor', 'claimbarge', 'staketurret'] as const;
 export type Kind = typeof KINDS[number];
 type Groups = Record<string, THREE.Group>;
 export interface Fig { root: THREE.Group; groups: Groups; points: Record<string, { group: THREE.Group; at: [number, number, number] }> }
@@ -145,6 +145,10 @@ export function animate(kind: Kind, f: Fig, s: State) {
     g.body.rotation.x = air * (s.speed * .08) + gnd * Math.abs(Math.sin(ph)) * .03 * Math.min(1, s.speed); g.body.rotation.z = air * -s.aim * .4;
     g.head.rotation.y = gnd * Math.sin(t * .8 + s.id) * .3 * (s.speed < .05 ? 1 : .3);
     g.arms.rotation.x = -s.pitch * .6; g.arms.position.z -= s.kick * .05;
+  } else if (kind === 'staketurret') {
+    // the Stake Gun's post: the rules turn the head to its target (aim, radians off forward); with none it looks slowly about,
+    // and the head kicks back a little on each shot
+    if (g.head) { g.head.rotation.y = s.aim || Math.sin(t * .6 + s.id) * .9; g.head.rotation.x = -s.pitch * .5 - s.kick * .08; g.head.position.z -= s.kick * .03; }
   } else if (kind === 'gadfly') {
     // a gunship: the rotor never stops, the tail fan buzzes, it dips its nose into speed, and the chin gun tracks its target
     if (g.rotor) g.rotor.rotation.y = t * 26; if (g.rotorT) g.rotorT.rotation.x = t * 44;
@@ -174,6 +178,7 @@ export const FIRST: Record<Kind, { eye: [number, number, number]; /** groups or 
   dustbike: { eye: [0, 1.62, .14], hide: ['head'], fov: 76, drop: .8 },           // the rider's eyes: bars, burner and tank ahead
   piledriver: { eye: [-.62, 2.12, -.45], hide: [], fov: 66, drop: .25 },  // head out of the cab hatch, looking past the frame along the barrel
   // fliers are flown from their cockpits; the glass is hidden in first person (it is not see-through), its frames stay as the cockpit
+  staketurret: { eye: [0, 1.3, -.32], hide: ['whip', 'flag'], fov: 70, drop: .25 },   // looking along the barrel from behind the box
   hopper: { eye: [-.25, 1.76, 2.32], hide: ['pilot', 'noseglass', 'noseframes'], vm: true, fov: 74, drop: .35 },     // the pilot's seat behind the glazed nose
   flakkite: { eye: [0, 2.17, .5], hide: ['pilothead', 'pilotgoggles', 'windshield'], vm: true, fov: 78, drop: .3 },   // open cockpit: cowl, guns and wings
   gadfly: { eye: [-.32, 1.72, 1.0], hide: ['canopy'], fov: 76, drop: .5 },      // in the bubble, the chin gun below and the rotor overhead
@@ -428,9 +433,11 @@ export function stakeGun(fx: FxKit, from: THREE.Vector3, to: THREE.Vector3, time
   q.add({ obj: new THREE.Group(), update(dt) { t += dt; return t < flight; } }); q.add(orb({ at: () => from.clone().lerp(to, Math.min(1, t / flight)), r: .1, color: IRON, time: flight, minPx: 3 }));
   q.after(flight, () => {
     q.add(burst({ x: to.x, z: to.z, y: to.y, r: 1.2, time: .4, color: DUST }));
-    const g = new THREE.Group(); g.position.copy(to); const stake = new THREE.Mesh(new THREE.CylinderGeometry(.05, .015, 1.2, 6), M.wood); stake.position.y = .5; g.add(stake);
-    const tag = new THREE.Mesh(new THREE.PlaneGeometry(.26, .14), new THREE.MeshBasicMaterial({ color: 0xff6a1a, side: THREE.DoubleSide })); tag.position.set(.14, 1.0, 0); g.add(tag);
-    const head = new THREE.Mesh(new THREE.BoxGeometry(.18, .12, .3), M.gunm); head.position.y = 1.15; g.add(head);
+    // the sculpted post when the art is loaded (staketurret), else a plain stake with a tag and a box for a gun
+    const sculpt = model('staketurret'), g = sculpt ? sculpt.root : new THREE.Group(); g.position.copy(to);
+    if (!sculpt) { const stake = new THREE.Mesh(new THREE.CylinderGeometry(.05, .015, 1.2, 6), M.wood); stake.position.y = .5; g.add(stake);
+      const tag = new THREE.Mesh(new THREE.PlaneGeometry(.26, .14), new THREE.MeshBasicMaterial({ color: 0xff6a1a, side: THREE.DoubleSide })); tag.position.set(.14, 1.0, 0); g.add(tag);
+      const head = new THREE.Mesh(new THREE.BoxGeometry(.18, .12, .3), M.gunm); head.position.y = 1.15; g.add(head); }
     prop(q, g, time, .15); q.add(tell({ x: to.x, z: to.z, y: to.y, r: .9, time, color: IRON }));
   });
 }

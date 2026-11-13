@@ -207,8 +207,9 @@ defineFaction(0, {
 });
 // The faction's own systems once a frame (charges, drones, casts, cloaks). The engine's per-frame `fx` hook is not called yet, so the
 // per-building `each` hook runs them too, once a frame whichever building comes first; the time check keeps it to once if both run.
-let tickedAt = -1;
-function ironTick(g: Game, dt: number) { syncStoryTree(g); if (g.net || g.time === tickedAt) return; tickedAt = g.time; tickCharges(g, dt); tickDrones(g); tickCasts(g); tickAir(g, dt); }
+/** Per game: a server runs many matches, and two at the same tick must each get their turn (K). */
+const TICKED = new WeakMap<Game, number>();
+function ironTick(g: Game, dt: number) { syncStoryTree(g); if (g.net || g.time === TICKED.get(g)) return; TICKED.set(g, g.time); tickCharges(g, dt); tickDrones(g); tickCasts(g); tickAir(g, dt); }
 { const was = factionRule(0).each; defineFaction(0, { each(g, b, dt) { ironTick(g, dt); was?.(g, b, dt); } }); }
 
 // Abilities the server checks for a player online. The Patch's pulse heals everyone near; the local game calls patchUp straight from the key.

@@ -41,7 +41,7 @@ export function refund(g: Game, team: number, c: Cost, n = 1) { pay(g, team, [-c
 export function shortOf(g: Game, team: number, c: Cost, n = 1) { const o = c[0] * n - g.cash(team), f = c[1] * n - g.flux(team); return [o > 0 ? `${Math.ceil(o)} ore` : '', f > 0 ? `${Math.ceil(f)} Flux` : ''].filter(Boolean).join(' and '); }
 
 // ---------------------------------------------------------------- vents
-let ventId = 1;
+
 const ventMat = new THREE.MeshBasicMaterial({ color: 0x46e8c8 }), rimMat = new THREE.MeshLambertMaterial({ color: 0x3a3430 });
 /** A plain vent: a dark lip of rock round a glowing mouth. The art streams dress it; this keeps it visible meanwhile. */
 function ventModel() {
@@ -78,7 +78,7 @@ export function ventSpots(g: Game): number[][] {
 /** Lays the vents in a new world. No dice are thrown, so the seeded matches run the same. */
 export function layVents(g: Game) {
   if (ECON.vents === 'off' || (ECON.vents === 'auto' && ![SIDE.home, SIDE.out].some(t => FACTION[t].builds.some(k => bldRule(k).tap)))) return;
-  for (const [x, z] of ventSpots(g)) { const obj = ventModel(); obj.position.set(x, 0, z); g.scene.add(obj); g.vents.push({ id: ventId++, pos: new THREE.Vector3(x, 0, z), amount: ECON.vent, max: ECON.vent, tap: null, obj }); }
+  for (const [x, z] of ventSpots(g)) { const obj = ventModel(); obj.position.set(x, 0, z); g.scene.add(obj); g.vents.push({ id: g.vents.length + 1 /* per game, so a replay names the same vents (K) */, pos: new THREE.Vector3(x, 0, z), amount: ECON.vent, max: ECON.vent, tap: null, obj }); }
 }
 /** The vent under a spot, if any (for placing a tap). */
 export function ventAt(g: Game, x: number, z: number, r = 2.5) { return g.vents.find(v => Math.hypot(v.pos.x - x, v.pos.z - z) < r) || null; }

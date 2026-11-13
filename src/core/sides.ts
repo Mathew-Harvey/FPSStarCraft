@@ -17,10 +17,25 @@ const allyOf = (t: number) => ALLY[t] ?? -1 - t;
 export const isEnemy = (a: number, b: number) => a !== b && allyOf(a) !== allyOf(b);
 export const isFriend = (a: number, b: number) => !isEnemy(a, b);
 
-/** The teams in a match, in start order. Set by the match setup; a one-on-one has just home and out. */
-export const MATCH = { teams: [] as number[] };
+/** The sides of a match with more than two. `teams` lists every team in the match and `at` the start spot each one holds (same order).
+ *  `n` is how many start spots the map has. `foe` is the enemy each side is going after right now (the Director picks it; foeOf reads it).
+ *  A match with one or two sides leaves `teams` empty, and every rule runs exactly as a one-on-one always did. */
+export const MATCH = { teams: [] as number[], at: [] as number[], n: 2, foe: [] as number[] };
+/** More than two sides on the map? */
+export const multi = () => MATCH.teams.length > 2;
+/** Sets up a match of more than two sides: teams and the start spot each holds, the map's start count, and who is allied with whom
+ *  (a list of teams per alliance; [] for a free-for-all). The first team must hold start 0 and the second the start opposite it. */
+export function setMatch(teams: number[], at: number[], n: number, groups: number[][]) {
+  MATCH.teams = teams.slice(); MATCH.at = at.slice(); MATCH.n = n; MATCH.foe = []; setAlliances(groups.length ? groups : teams.map(t => [t]));
+}
+/** Back to a plain one-on-one. */
+export function clearMatch() { MATCH.teams = []; MATCH.at = []; MATCH.n = 2; MATCH.foe = []; ALLY.length = 0; }
+/** The start spot a team holds in a match of more than two sides (-1 if it is not in the match). */
+export const startOf = (team: number) => { const i = MATCH.teams.indexOf(team); return i < 0 ? -1 : MATCH.at[i]; };
 /** Every enemy team of a team in this match. */
 export const enemiesOf = (team: number) => MATCH.teams.filter(t => isEnemy(team, t));
+/** Every friendly team (itself included). */
+export const friendsOf = (team: number) => MATCH.teams.length ? MATCH.teams.filter(t => !isEnemy(team, t)) : [team];
 
 /** Start spots for a map: the map's own list if it has one, else the two ends (the yard and the far base). */
 export function startSpots(map: { starts?: number[][] }, home: [number, number], far: [number, number]): number[][] {

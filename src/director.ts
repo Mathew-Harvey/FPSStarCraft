@@ -7,6 +7,7 @@ import type { Game } from './game';
 import { Kind, BKind, UNIT, BLD, UPGRADES, Unit, Building, Callout, OUTPOST, GATE, RALLY, RALLY_N, VRALLY, VRALLY_N, VHOME, NORTH_PATH, MAP, MAPS, ROAD, FACTION, SIDE, veylPt, roadPt, isSoldier, foeOf, fac, atHome, endPt, swapEnd, homeXZ, compass } from './data';
 import { Doctrine, DOCTRINES } from './doctrine';
 import { factionRule } from './core/registry';
+import { MATCH, multi, enemiesOf } from './core/sides';
 /** One line for whichever side holds the outpost: the Veyl's, or the Gloam's. */
 const VG = (team: number, veyl: string, gloam: string) => fac(team) === 2 ? gloam : veyl;
 /** Who calls out what they see, for each faction. */
@@ -39,7 +40,11 @@ export class Director implements Side {
   team = 0; flip = false; retarget = 0; auto = true; qmT = 0; hintI = 0; chatT = 55; barkT = 0;
   /** The Veyl side's brain, used when they run their own economy. */
   vs: Side = { team: 1, auto: true, qmT: 0, hintI: 0, chatT: 70, plan: null, nextPlan: 75, callout: null, pushes: 0, lastFailed: false, fails: 0, playbook: { name: '', steps: [], idx: 0 }, raidLive: false, retarget: 0 };
-  side(team: number): Side { return atHome(team) ? this : this.vs; }
+  /** The brains of the third side on, in a match of more than two sides (in MATCH.teams order). */
+  extras: Side[] = [];
+  /** Every side's brain: this one (the yard), the far end, then the rest. */
+  get sides(): Side[] { return [this, this.vs, ...this.extras]; }
+  side(team: number): Side { return multi() ? this.sides.find(s => s.team === team) || this : atHome(team) ? this : this.vs; }
   plan: { phase: 'ask' | 'count' | 'go'; t: number; target: Building | null; book: number; label: string; goT?: number; n0?: number } | null = null; brokeT = 0;
   nextPlan = 60; callout: Callout | null = null; pushes = 0; lastFailed = false; /** Pushes in a row that broke nothing. */ fails = 0;
   playbook = { name: '', steps: [] as string[], idx: 0 };
@@ -48,7 +53,8 @@ export class Director implements Side {
 
   constructor(public g: Game) {
     this.team = SIDE.home; this.vs.team = SIDE.out;
-    for (const s of [this, this.vs] as Side[]) { const b = this.books(s)[0]; s.playbook = { name: b.name, steps: b.steps, idx: 0 }; }
+    if (multi()) this.extras = MATCH.teams.slice(2).map(t => ({ ...this.vs, team: t, playbook: { name: '', steps: [], idx: 0 }, nextPlan: this.nextPlan, chatT: this.chatT }));
+    for (const s of this.sides) { const b = this.books(s)[0]; s.playbook = { name: b.name, steps: b.steps, idx: 0 }; }
     this.raidIn = g.eco ? 1e9 : 170 * g.diff.raid;
     // Two built bases that are not the classic Ironhold-against-Veyl pairing start on the same clock, so neither end plans its first push sooner.
     if (g.eco && (g.fair || !(fac(SIDE.home) === 0 && fac(SIDE.out) !== 0))) { this.vs.nextPlan = this.nextPlan; this.vs.chatT = this.chatT; }
@@ -63,19 +69,21 @@ export class Director implements Side {
   /** Where a side's squad waits: on its own end of the road, or toward the ridge when a flank is coming. The points belong to the end of the map, not
    *  the faction. The far end used to borrow the yard's points turned through the middle of the map, but the ridge path is not symmetric, so the
    *  turned ridge point landed on the wrong side of the far base: its army stood 40 m away while a back-door push ate its workers. */
-  rallyAt(i: number, north = false, s: Side = this) { const [hx, hz] = homeXZ(s.team), blind = !this.g.intel.knows(s.team), r = blind ? { x: hx + 17, z: hz + 15 } /* nowhere that points at anything */ : atHome(s.team) ? (north ? RALLY_N : RALLY) : north ? VRALLY_N : VRALLY; return { x: r.x + ((i % 4) - 1.5) * 2.4, z: r.z + Math.floor(i / 4) * 2.4 }; }
+  rallyAt(i: number, north = false, s: Side = this) { const [hx, hz] = homeXZ(s.team), blind = !this.g.intel.knows(s.team), r = blind ? { x: hx + 17, z: hz + 15 } /* nowhere that points at anything */ : multi() ? this.turned(s.team, RALLY) : atHome(s.team) ? (north ? RALLY_N : RALLY) : north ? VRALLY_N : VRALLY; return { x: r.x + ((i % 4) - 1.5) * 2.4, z: r.z + Math.floor(i / 4) * 2.4 }; }
+  /** A point written for the yard, turned to this team's start (matches of more than two sides). */
+  turned(team: number, p: { x: number; z: number }) { const [x, z] = endPt(team, p.x, p.z, true); return { x, z }; }
   following(s: Side = this) { return this.g.army(s.team).some(u => u.order.type === 'follow'); }
   books(s: Side) { return factionRule(s.team).books || []; }
-  pathFor(book: number, i: number, s: Side = this): number[][] | undefined { return book === 1 || (book === 2 && i % 2) ? (!atHome(s.team) ? [...NORTH_PATH] : [...NORTH_PATH].reverse()).map(p => [p[0], p[1]]) : undefined; }
+  pathFor(book: number, i: number, s: Side = this): number[][] | undefined { return multi() ? undefined : book === 1 || (book === 2 && i % 2) ? (!atHome(s.team) ? [...NORTH_PATH] : [...NORTH_PATH].reverse()).map(p => [p[0], p[1]]) : undefined; }
   targetFor(book: number, s: Side = this): Building | null {
     const g = this.g;
     if (g.eco) {
       // Every side that runs an economy: the enemy building nearest the way in, the nearest of their bases when it is all in, and a Ward Pylon first if one shields it.
-      const foe = foeOf(s.team), all = g.intel.known(s.team), hqs = all.filter(b => b.kind === FACTION[foe].hq), want = g.mission?.target?.(g) || null; if (want) return want; if (!all.length) return null;
-      const from = book === 1 ? (atHome(s.team) ? NORTH_PATH[0] : NORTH_PATH[NORTH_PATH.length - 1]) : atHome(s.team) ? [RALLY.x, RALLY.z] : [VRALLY.x, VRALLY.z];
+      const foe = foeOf(s.team), all = g.intel.known(s.team), hqs = all.filter(b => g.isHQ(b)), want = g.mission?.target?.(g) || null; if (want) return want; if (!all.length) return null;
+      const from = multi() ? homeXZ(s.team) : book === 1 ? (atHome(s.team) ? NORTH_PATH[0] : NORTH_PATH[NORTH_PATH.length - 1]) : atHome(s.team) ? [RALLY.x, RALLY.z] : [VRALLY.x, VRALLY.z];
       const near = (l: Building[]) => l.reduce((a, b) => Math.hypot(a.pos.x - from[0], a.pos.z - from[1]) < Math.hypot(b.pos.x - from[0], b.pos.z - from[1]) ? a : b);
       const t = book === 2 && hqs.length ? near(hqs) : near(all);
-      if (t.kind === FACTION[foe].hq) { const w = g.ward(t.pos, foe); if (w) return w; }   // a shielded home building: break its shield first
+      if (g.isHQ(t)) { const w = g.ward(t.pos, t.team); if (w) return w; }   // a shielded home building: break its shield first
       return t;
     }
     if (s.team) {
@@ -107,7 +115,7 @@ export class Director implements Side {
   buildingDone(b: Building) { factionRule(b.team).built?.(this, b); }
   buildingLost(b: Building) {
     const g = this.g;
-    const by = this.side(foeOf(b.team)); by.fails = 0; by.brokeT = g.time; const left = g.ownB(b.kind, false, b.team).length;
+    for (const by of multi() ? this.sides.filter(o => foeOf(o.team) === b.team) : [this.side(foeOf(b.team))]) { by.fails = 0; by.brokeT = g.time; } const left = g.ownB(b.kind, false, b.team).length;
     factionRule(b.team).lost?.(this, b, left);
   }
 
@@ -171,7 +179,7 @@ export class Director implements Side {
     // A crew with no Riggers and no money is not out of the game: the Charter fronts enough for one more.
     // Same rule for every side: only a side with no workers at all, and none on the way, gets the loan. It used to be fewer than three for the
     // Veyl and the Gloam, so a Gloam player could root every Grazer into buildings and live on 150 free ore a minute.
-    for (const t of [SIDE.home, SIDE.out]) { if (t === SIDE.out && !this.g.eco) continue; const F = FACTION[t], cap = UNIT[F.worker].cost; if (this.g.cash(t) < cap && !this.g.own(F.worker, t).length && !this.g.ownB(undefined, false, t).some(b => b.queue.some(q => q.kind === F.worker)) && this.g.ownB(F.hq, true, t).length) this.g.purse[t] = Math.min(cap, this.g.purse[t] + dt * 2.5); }
+    for (const t of multi() ? MATCH.teams : [SIDE.home, SIDE.out]) { if (t === SIDE.out && !this.g.eco) continue; const F = FACTION[t], cap = UNIT[F.worker].cost; if (this.g.cash(t) < cap && !this.g.own(F.worker, t).length && !this.g.ownB(undefined, false, t).some(b => b.queue.some(q => q.kind === F.worker)) && this.g.ownB(F.hq, true, t).length) this.g.purse[t] = Math.min(cap, this.g.purse[t] + dt * 2.5); }
     const g = this.g, now = g.time;
     // A drilled-out seam settles and the ore creeps back, a third of it, so a long shift never runs the yard dry for good.
     for (const n of g.ores) { if (n.amount > 0) { n.dryT = 0; continue; } n.dryT = (n.dryT || 0) + dt; if (n.dryT > 150) { n.amount = Math.round(n.max * .35); n.dryT = 0; g.oreCheck(n); if (!g.mission) this.say(FACTION[SIDE.home].voice, 'An old seam has settled and the green is showing again. Worth another dig.', '', SIDE.home); } }
@@ -179,7 +187,10 @@ export class Director implements Side {
     // outpost against a yard nobody plays the Veyl in, which breeds raids for free instead of running an economy.
     // The two sides take turns going first, so a tie (both armies ready to march in the same frame) does not always go to the yard.
     this.flip = !this.flip;
-    for (const s of (this.flip || !g.eco ? [this, this.vs] : [this.vs, this]) as Side[]) {
+    // With more than two sides each one picks the enemy it goes after, and the turn order goes round so no side always moves first.
+    let order: Side[] = this.flip || !g.eco ? [this, this.vs] : [this.vs, this];
+    if (multi()) { this.pickFoes(); const all = this.sides.filter(o => !g.outOf.includes(o.team)), k = (this.turnI = (this.turnI + 1) % Math.max(1, all.length)); order = [...all.slice(k), ...all.slice(0, k)]; }
+    for (const s of order) {
       if (s === this.vs && !g.eco) { factionRule(s.team).classic?.(this, dt); continue; }
       const f = fac(s.team), home = s === this, foe = foeOf(s.team);
       if (!g.human[s.team]) s.auto = true; if (s.callout) s.callout.t -= dt;
@@ -191,6 +202,15 @@ export class Director implements Side {
       this.squad(dt, s);
       s.chatT -= dt; if (s.chatT <= 0) { s.chatT = home ? R(38, 70) : R(40, 75); const a = g.army(s.team).filter(u => u !== g.me && !u.pilot && !u.target); if (a.length >= 2 && !s.raidLive && !s.callout) { const u = a[Math.floor(Math.random() * a.length)], C = factionRule(s.team).chatter?.(fac(foe)) || []; this.say(UNIT[u.kind].name, C[Math.floor(Math.random() * C.length)], '', s.team); } }
       const b = s.plan ? this.books(s)[s.plan.book] : this.books(s)[0]; s.playbook.name = b.name; s.playbook.steps = b.steps; s.playbook.idx = !g.ownB(FACTION[s.team].barracks, true, s.team).length ? 0 : s.plan?.phase === 'go' ? 2 : 1;
+    }
+  }
+  turnI = 0;
+  /** Matches of more than two sides: each side keeps going after the same enemy while it stands, then turns on the nearest one left. */
+  pickFoes() {
+    const g = this.g; for (const s of this.sides) {
+      const t = s.team, cur = MATCH.foe[t], up = (o: number) => !g.outOf.includes(o) && g.buildings.some(b => b.alive && b.team === o); if (cur !== undefined && up(cur)) continue;
+      const [hx, hz] = homeXZ(t), d = (o: number) => Math.min(...g.buildings.filter(b => b.alive && b.team === o).map(b => Math.hypot(b.pos.x - hx, b.pos.z - hz)));
+      const left = enemiesOf(t).filter(up).sort((a, b) => d(a) - d(b)); if (left.length) MATCH.foe[t] = left[0];
     }
   }
   /** A starting hint, with the lines about the enemy rewritten for whoever is really at the other end of the road. */

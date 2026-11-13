@@ -12,6 +12,8 @@ export type Hit = { unit?: Unit; b?: Building; ore?: OreNode; prop?: Prop; dist:
 export interface Weapon { name: string; mag: number; cd: number; reload: number }
 /** Tuning for an aimed, single-bullet gun: view model, damage to body, head and building, spread, aim-down-sights pull and zoom. */
 export interface Shot { vm: string; body: number; head: number; bld: number; sp: number; adsK: number; zoom: number; sens: number; kick: number }
+/** Poses a first-person view model: `k` how far it is pulled up to the eye, `kick` its recoil, `dip` how far it drops. */
+export type VmPose = (m: THREE.Group, k: number, kick: number, dip: number) => void;
 /** A light a body carries: its height, how far ahead of the body it sits, its reach, colour and strength. */
 export type BodyLamp = [number, number, number, [number, number, number], number];
 
@@ -57,8 +59,11 @@ export interface UnitRules {
   shot?: Shot;
   /** The lamp this body carries at night. */
   lamp?: BodyLamp;
-  /** Extra pose on top of the shared walk cycle (arms, halo, breathing). `s` is the leg swing, `ease` the blend this frame. */
-  pose?(g: Game, u: Unit, dt: number, s: number, ease: number): void;
+  /** Extra pose on top of the shared walk cycle (arms, halo, breathing). `s` is the leg swing, `ease` the blend this frame and `sc` the
+   *  body's drawn scale. On a two-legged body, returning true means the hook posed the arms itself and the shared arm swing is skipped. */
+  pose?(g: Game, u: Unit, dt: number, s: number, ease: number, sc: number): boolean | void;
+  /** Poses the first-person view model each frame. `rl` is how far through a reload the gun is, 0 to 1 and back. */
+  view?(g: Game, pose: VmPose, rl: number, gun: Weapon | null): void;
   /** One line for the Tab list: what a body of this kind is doing. */
   task?(g: Game, u: Unit): string | null;
 }
@@ -107,6 +112,8 @@ export interface FactionRules {
   pace?(g: Game, u: Unit): number;
   /** Walk cycle speed for this faction's bodies (default 11). */
   stride?: number;
+  /** Poses the first-person view model each frame. `rl` is how far through a reload the gun is, 0 to 1 and back. */
+  view?(g: Game, pose: VmPose, rl: number, gun: Weapon | null): void;
   /** The kinds listed in the Tab list, in order. */
   tab?: Kind[];
   /** One line for the Tab list: what a body of this faction is doing (default: the squad's task). */

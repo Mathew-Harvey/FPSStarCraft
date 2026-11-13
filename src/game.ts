@@ -838,20 +838,18 @@ export class Game {
         r.body.rotation.x += ((u.moving ? (u.dashT > 0 ? .25 : .06) : 0) - u.pop * .12 - (u.wind > 0 ? .25 : 0) + u.swing * .2 - r.body.rotation.x) * ease; r.body.rotation.z = u.moving ? Math.sin(u.phase * 2) * .03 : 0;
         if (r.head) { r.head.rotation.x = working ? Math.sin(t * 22 + u.id) * .12 + .15 : u.swing * .35; r.head.rotation.y += -r.head.rotation.y * Math.min(1, dt * 4); }
         if (r.flash) r.flash.visible = u.flashT > 0;
-        if (u.kind === 'blister') { const k = 1 + Math.sin(t * 7 + u.id) * .04 + (u.target ? .05 : 0); o.scale.set(sc * k, sc * k, sc * k); }
+        UR.pose?.(this, u, dt, 0, ease, sc);
       } else if (r.legL && r.legR) {
         const s = Math.sin(u.phase) * amp; r.legL.rotation.x += (s - r.legL.rotation.x) * ease; r.legR.rotation.x += (-s - r.legR.rotation.x) * ease; o.position.y = u.moving ? Math.abs(Math.cos(u.phase)) * .07 : 0;
         const working = u.state === 'mining' || u.state === 'build' || u.state === 'repair';
         r.body.rotation.x += ((u.moving ? .1 : working ? .16 : 0) - u.pop * .12 - r.body.rotation.x) * ease; r.body.rotation.z = u.moving ? Math.sin(u.phase) * .04 : 0;
         if (r.head) r.head.rotation.y += -r.head.rotation.y * Math.min(1, dt * 4);
-        if (u.kind === 'rigger') { if (r.armL) r.armL.rotation.x += (-s * .8 - r.armL.rotation.x) * ease; if (r.armR) r.armR.rotation.x = working ? -.5 + Math.sin(t * 34 + u.id) * .05 : s * .3; }
+        if (UR.pose?.(this, u, dt, s, ease, sc)) { /* the kind posed its own arms */ }
         else { if (r.arms) { r.arms.rotation.x += (-u.pitch * .8 + (u.moving && !u.target ? .25 : 0) - u.swing * .1 - r.arms.rotation.x) * ease; r.arms.position.z = .05 - u.swing * .1; } if (r.armL) r.armL.rotation.x = u.moving ? Math.sin(u.phase) * .12 : 0; if (r.flash) { r.flash.visible = u.flashT > 0; if (u.flashT > 0) r.flash.rotation.z = t * 40; } }
       } else {
-        const big = u.kind === 'warden'; o.position.y = (big ? .3 : .12) + Math.sin(t * (big ? 1.4 : 2.4) + u.id) * (big ? .12 : .07);
+        const big = !!UR.heavy; o.position.y = (big ? .3 : .12) + Math.sin(t * (big ? 1.4 : 2.4) + u.id) * (big ? .12 : .07);
         r.body.rotation.x += ((u.moving ? (u.dashT > 0 ? .5 : .16) : 0) - u.pop * .1 - r.body.rotation.x) * ease; if (r.halo) r.halo.rotation.z += dt * (u.wind > 0 ? 9 : 1.6);
-        if (u.kind === 'cantor' && r.armR) r.armR.rotation.x = -u.swing * 1.7;
-        if (u.kind === 'tender') { const work = u.state === 'mining' || u.state === 'build' || u.state === 'repair'; if (r.armR) r.armR.rotation.x += ((work ? -1.1 + Math.sin(t * 31 + u.id) * .07 : -u.swing * 1.3) - r.armR.rotation.x) * ease; if (r.armL) r.armL.rotation.x += ((work ? -.5 : u.moving ? Math.sin(u.phase) * .3 : 0) - r.armL.rotation.x) * ease; }
-        if (u.kind === 'lancer') { if (r.arms) r.arms.rotation.x = -u.pitch; if (r.flash) { r.flash.visible = u.wind > 0; const k = u.wind > 0 ? 1.4 - u.wind : 0; r.flash.scale.setScalar(Math.max(.01, k)); r.flash.rotation.z = t * 9; } }
+        UR.pose?.(this, u, dt, 0, ease, sc);
         if (big && r.armL && r.armR) { const k = u.wind > 0 ? Math.min(1, (1 - u.wind / .9) * 1.4) : 0; const a = u.wind > 0 ? -2.4 * k : u.swing * .9; r.armL.rotation.x += (a - r.armL.rotation.x) * Math.min(1, dt * 18); r.armR.rotation.x = r.armL.rotation.x; }
       }
     }
@@ -981,12 +979,7 @@ export class Game {
           g.rotation.set(a[3] + (b[3] - a[3]) * k + kick * 1.6 - dip * 2.4 - this.drawT * 1.6 + this.swayY * 2, a[4] + (b[4] - a[4]) * k - this.swayX * 2, a[5] + (b[5] - a[5]) * k + dip * 1.2);
         };
         const gun = unitRule(me.kind).gun, rl = this.reloadT > 0 && gun ? Math.sin(Math.min(1, this.reloadT / gun.reload) * Math.PI) : 0;
-        if (fac(me.team) === 2 && vm['g_' + me.kind]) { const v = vm['g_' + me.kind], j = Math.max(this.jaw, this.vWind > 0 && me.kind !== 'snapper' ? .6 : 0), L = v.userData.L, Rr = v.userData.R; pose(v, 0, this.recoil * .05 - this.bashT * .6 + (this.chargeT > 0 ? -.08 : 0), this.tool === 2 && me.kind === 'grazer' ? .12 : this.vWind > 0 && me.kind === 'mulcher' ? -.1 : 0); if (L) L.rotation.y = .35 - j * .55; if (Rr) Rr.rotation.y = -.35 + j * .55; }
-        else if (fac(me.team) === 1) pose(vm.veyl, 0, this.recoil * (me.kind === 'cantor' ? -.3 : .1) + (me.kind === 'tender' ? (this.lmb && this.tool === 1 ? -.02 + R(-.004, .004) : 0) - this.bashT * .8 : 0), this.vWind > 0 ? -.12 : me.kind === 'tender' && this.tool === 2 ? .12 : 0);
-        else if (me.kind === 'rigger') pose(vm.drill, 0, (this.lmb && this.tool === 1 ? -.03 + R(-.004, .004) : 0) - this.bashT * 1.1, this.tool === 2 ? .12 : 0);
-        else if (unitRule(me.kind).shot) { const v = vm[unitRule(me.kind).shot.vm], m = v.userData.mag; if (v.userData.magY === undefined) v.userData.magY = m.position.y; pose(v, this.ads, this.recoil * (me.kind === 'longshot' ? .11 : .05), rl * .14 + (me.kind === 'longshot' && this.fireCd > 0 && gun ? Math.sin(Math.min(1, 1 - this.fireCd / gun.cd) * Math.PI) * .05 * (1 - this.ads * .6) : 0)); m.position.y = v.userData.magY - (rl > .5 ? (rl - .5) * .5 : 0); }
-        else if (me.kind === 'gantry') { pose(vm.cannon, 0, 0, rl * .1); const k = this.recoil * .09; vm.cannon.userData.gunR.position.z = this.side > 0 ? k : 0; vm.cannon.userData.gunL.position.z = this.side < 0 ? k : 0; }
-        else { const pump = this.fireCd > 0 ? Math.sin(Math.min(1, (gun.cd - this.fireCd) / (gun.cd * .8)) * Math.PI) : 0; pose(vm.scatter, 0, this.recoil * .12, rl * .12 + this.ads * .16); vm.scatter.userData.mag.position.z = -.42 + pump * .12 + (rl > 0 ? Math.abs(Math.sin(this.reloadT * 9)) * .1 : 0); pose(vm.shield, this.ads, -this.bashT * 1.2, 0); }
+        (unitRule(me.kind).view || factionRule(me.team).view)?.(this, pose, rl, gun || null);
       }
     }
     cam.updateProjectionMatrix(); cam.updateMatrixWorld(); this.lamps(cam);

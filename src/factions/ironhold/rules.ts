@@ -18,6 +18,7 @@ import { fireRate, hobble, wrapHurt, tickCharges, tickDrones } from './ground';
 import { tickCasts, tickAir } from './air';
 import './bases';
 import './stand-in';
+import './arms';
 
 export const GUNS: Record<string, Weapon> = { linesman: { name: 'Rifle', mag: 24, cd: .12, reload: 1.5 }, breacher: { name: 'Scattergun', mag: 6, cd: .78, reload: 2.1 }, gantry: { name: 'Autocannon', mag: 12, cd: .36, reload: 2.4 }, longshot: { name: 'Long Rifle', mag: 5, cd: 1.15, reload: 2.4 }, patch: { name: 'Rivet Pistol', mag: 14, cd: .2, reload: 1.3 } };
 /** Tuning for the aimed, single-bullet guns. */

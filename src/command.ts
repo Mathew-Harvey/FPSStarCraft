@@ -6,8 +6,12 @@
 // that is switched off for a player who is up here.
 import * as THREE from 'three';
 import type { Game } from './game';
-import { UNIT, BLD, MAP, FACTION, Unit, Building, BKind, isWorker, fac } from './data';
-import { cardFor, Btn, Aim, KEYS } from './card';
+import { UNIT, BLD, MAP, FACTION, Unit, Building, BKind, Kind, isWorker, fac } from './data';
+import { cardFor, Btn, Aim, KEYS, casters, abilityWords, hasBoard, hasAutocast } from './card';
+import * as AB from './core/ability';
+import { abilityOf, whyNot } from './core/ability';
+import { roomOf } from './core/cargo';
+import { isEnemy } from './core/sides';
 import { bldRule } from './core/registry';
 import { costOf, canPay } from './core/econ';
 import { V3, L_FX } from './gfx';
@@ -97,7 +101,7 @@ export class Command {
     if (!this.on) this.focus.lerp(A.set(me.pos.x, 0, me.pos.z), Math.min(1, dt * 12));
     for (const u of this.sel) if (!u.alive || u.team !== g.myTeam) this.sel.delete(u);
     if (this.selB && !this.selB.alive) this.selB = null;
-    for (const b of g.buildings) if (b.team !== g.myTeam && !this.known.has(b) && g.fog.sees(b.pos.x, b.pos.z)) this.known.add(b);
+    for (const b of g.buildings) if (isEnemy(b.team, g.myTeam) && !this.known.has(b) && g.fog.sees(b.pos.x, b.pos.z)) this.known.add(b);
     this.watchNew(); this.runQueues(dt); this.landPending(dt);
     if (!this.sel.size && !this.selB) { this.aim = null; this.menu = ''; }
     const w = g.wheel, free = me.alive && g.staticT <= 0 && !g.tab && g.introT <= 0 && !this.locked;
@@ -169,6 +173,8 @@ export class Command {
     if (P.has('Mouse0')) { this.drag = [this.cx, this.cy]; this.wasL = true; }
     if (this.drag) { const [x0, y0] = this.drag, bw = Math.abs(this.cx - x0), bh = Math.abs(this.cy - y0); this.box = bw > 8 || bh > 8 ? [Math.min(x0, this.cx), Math.min(y0, this.cy), Math.max(x0, this.cx), Math.max(y0, this.cy)] : null; }
     if (this.wasL && !g.lmb && this.drag) { if (this.box) this.pickBox(this.box, shift); else this.pickAt(shift, ctrl); this.drag = null; this.box = null; this.wasL = false; }
+    if (P.has('Mouse2')) { const id = g.hud.cardAt(this.cx, this.cy); if (id) { P.delete('Mouse2'); g.rmb = false; if (id.startsWith('ab:')) this.autocast(id); return; } }
+    if (P.has('Mouse2') && this.sel.size && hasBoard(g) && this.ground(this.cx, this.cy, P3) && !this.unitAt(false) && this.carrierAt(P3.x, P3.z) && [...this.sel].some(u => !roomOf(u))) { P.delete('Mouse2'); this.board(P3.x, P3.z); }
     if (P.has('Mouse2') && this.ground(this.cx, this.cy, P3)) { if (this.sel.size) this.order(P3.x, P3.z, this.under(), shift); else if (this.selB) this.setRally(P3.x, P3.z, this.under(true)); }
   }
 
@@ -185,12 +191,12 @@ export class Command {
   private unitAt(own: boolean): Unit | null {
     const g = this.g, s = [0, 0], pxm = g.hud.H / (2 * this.h); let best: Unit | null = null, bd = 1e9;
     for (const u of g.units) {
-      if (own ? !this.mine(u) : (!u.alive || u.team === g.myTeam || !g.fog.sees(u.pos.x, u.pos.z))) continue; const st = UNIT[u.kind];
+      if (own ? !this.mine(u) : (!u.alive || !isEnemy(u.team, g.myTeam) || !g.fog.sees(u.pos.x, u.pos.z))) continue; const st = UNIT[u.kind];
       if (!this.screen(u.pos.x, st.bodyY, u.pos.z, s)) continue; const d = Math.hypot(s[0] - this.cx, s[1] - this.cy), r = Math.max(20, st.rad * pxm * 1.5 + 6); if (d < r && d < bd) { bd = d; best = u; }
     }
     return best;
   }
-  private buildingAt(p: THREE.Vector3, own: boolean): Building | null { const g = this.g; for (const b of g.buildings) if (b.alive && (b.team === g.myTeam) === own && (own || this.known.has(b)) && Math.abs(p.x - b.pos.x) < b.hx + 1.2 && Math.abs(p.z - b.pos.z) < b.hz + 1.2) return b; return null; }
+  private buildingAt(p: THREE.Vector3, own: boolean): Building | null { const g = this.g; for (const b of g.buildings) if (b.alive && (own ? b.team === g.myTeam : isEnemy(b.team, g.myTeam)) && (own || this.known.has(b)) && Math.abs(p.x - b.pos.x) < b.hx + 1.2 && Math.abs(p.z - b.pos.z) < b.hz + 1.2) return b; return null; }
   private pickAt(add: boolean, all = false) {
     const g = this.g, u = this.unitAt(true); this.aim = null; this.menu = '';
     if (u) {
@@ -282,6 +288,15 @@ export class Command {
     else if (a.t === 'buildMenu') { this.menu = 'build'; this.aim = null; sfx.blip(); }
     else if (a.t === 'back') { this.menu = ''; this.aim = null; sfx.blip(); }
     else if (a.t === 'cancel' && this.selB) this.cancel(this.selB, this.selB.queue.length - 1);
+    else if (a.t === 'bact' && this.selB) g.buildingAction(this.selB, a.key, true);
+    else if (a.t === 'unload') { const G = g as any; if (this.selB) G.unload(this.selB); else for (const c of us) if (roomOf(c) > 0 && c.cargo?.length) G.unload(c); sfx.blip(); }
+    else if (a.t === 'ability') {
+      const ab = abilityOf(a.kind, a.key)!, { ready } = casters(g, us, a.kind, ab);
+      // Smart cast: a self cast goes off on every picked body of that kind that can; an aimed one waits for a click, and then only
+      // one caster goes (the nearest that can reach).
+      if (ab.target === 'self') { for (const u of ready) g.useAbility(u, a.key); sfx.blip(); }
+      else { const same = this.aim && this.aim.k === 'ab' && this.aim.key === a.key && this.aim.kind === a.kind; this.aim = same ? null : { k: 'ab', kind: a.kind, key: a.key, name: ab.name }; sfx.blip(); }
+    }
   }
   /** The card button a controller's D-pad has moved to (-1 for none); A presses it. */
   padFocus = -1;
@@ -304,7 +319,41 @@ export class Command {
     else if (aim.k === 'gather') { if (on && on.k === 'o') this.order(x, z, on, shift); else { sfx.deny(); g.hud.feed(FACTION[g.myTeam].voice, 'Gather needs a seam: click on ore.', 'al'); keep = true; } }
     else if (aim.k === 'rally') this.setRally(x, z, on);
     else if (aim.k === 'stake') { if (!this.stake(aim.b, x, z)) keep = true; }
+    else if (aim.k === 'board') { if (!this.board(x, z)) keep = true; }
+    else if (aim.k === 'ab') { if (!this.cast(aim.kind, aim.key, x, z, on && on.k !== 'o' ? on.id : 0)) keep = true; }
     if (!keep) this.aim = null;
+  }
+
+  /** The picked bodies (not carriers themselves) are sent to get into the carrier or bunker of ours nearest the spot. */
+  board(x: number, z: number): boolean {
+    const g = this.g, riders = [...this.sel].filter(u => !roomOf(u)); if (!riders.length || !hasBoard(g)) return false;
+    const c = this.carrierAt(x, z); if (!c) { sfx.deny(); g.hud.feed(FACTION[g.myTeam].voice, 'Get in needs one of our carriers or bunkers: click on one.', 'al'); return false; }
+    for (const u of riders) { this.queue.delete(u); this.cur.delete(u); }
+    (g as any).board(riders, c); sfx.callout(); g.hud.ping(V3(c.pos.x, 0, c.pos.z), 'Getting in'); return true;
+  }
+  /** One of the player's carriers (a body or building with room) under the spot, if any. */
+  carrierAt(x: number, z: number): Unit | Building | null {
+    const g = this.g, t = g.myTeam; let best: Unit | Building | null = null, bd = 4;
+    for (const u of g.units) { if (!u.alive || u.team !== t || roomOf(u) <= 0 || this.sel.has(u)) continue; const d = Math.hypot(u.pos.x - x, u.pos.z - z) - UNIT[u.kind].rad; if (d < bd) { bd = d; best = u; } }
+    for (const b of g.buildings) { if (!b.alive || b.team !== t || !b.built || roomOf(b) <= 0) continue; const d = g.distToBox(b, x, z); if (d < bd) { bd = d; best = b; } }
+    return best;
+  }
+  /** A right click on an ability button flips whether the picked bodies of that kind cast it by themselves. */
+  autocast(id: string) {
+    const g = this.g, [, kind, key] = id.split(':'), a = abilityOf(kind, key);
+    if (!a || !a.autocast || !hasAutocast()) { sfx.deny(); return; }
+    const us = [...this.sel].filter(u => u.kind === kind), on = !us.some(u => !(u as any).autoOff?.[key]);
+    for (const u of us) (AB as any).setAutocast(g, u, key, on);
+    sfx.blip(); g.hud.feed(FACTION[g.myTeam].voice, `${a.name}: ${on ? 'cast by itself again' : 'only when told'}.`, '');
+  }
+  /** An aimed ability, given by the nearest picked body of that kind that can reach the spot (or the body clicked). */
+  cast(kind: Kind, key: string, x: number, z: number, id = 0): boolean {
+    const g = this.g, a = abilityOf(kind, key); if (!a) return false;
+    const t = { x, z, id: a.target === 'body' ? id || undefined : undefined }, us = [...this.sel].filter(u => u.kind === kind);
+    us.sort((p, q) => Math.hypot(p.pos.x - x, p.pos.z - z) - Math.hypot(q.pos.x - x, q.pos.z - z));
+    let why = '', who: Unit | undefined;
+    for (const u of us) { const w = whyNot(g, u, key, t); if (!w) { g.useAbility(u, key, t); sfx.blip(); g.hud.ping(V3(x, 0, z), a.name); return true; } if (!why) { why = w; who = u; } }
+    sfx.deny(); g.hud.feed(FACTION[g.myTeam].voice, `${a.name}: ${abilityWords(why, a, who)}.`, 'al'); return false;
   }
 
   // ------------------------------------------------------------ rally points
@@ -324,7 +373,7 @@ export class Command {
       for (const [b, r] of this.rally) {
         if (!b.alive || b.team !== g.myTeam) { this.rally.delete(b); continue; }
         if (Math.abs(u.pos.x - b.pos.x) > b.hx + 4 || Math.abs(u.pos.z - b.pos.z) > b.hz + 4) continue;
-        const [x, z] = this.rallyAt(r), foe = !!r.id && (g.units.some(o => o.alive && o.id === r.id && o.team !== g.myTeam) || g.buildings.some(o => o.alive && o.id === r.id && o.team !== g.myTeam));
+        const [x, z] = this.rallyAt(r), foe = !!r.id && (g.units.some(o => o.alive && o.id === r.id && isEnemy(o.team, g.myTeam)) || g.buildings.some(o => o.alive && o.id === r.id && isEnemy(o.team, g.myTeam)));
         const step: Step = r.ore !== undefined && isWorker(u.kind) ? { k: 'o', x, z, id: r.ore, n: 1, t: 0 } : foe && !isWorker(u.kind) ? { k: 'a', x, z, id: r.id!, n: 1, t: 0 } : { k: 'm', x, z, id: 0, n: 1, t: 0 };
         this.cur.set(u, step); this.sendIds([u.id], step.k, x, z, step.id); break;
       }
@@ -427,8 +476,8 @@ export class Command {
     const g = this.g;
     if (!on) { if (this.hid) { this.hid = false; for (const b of g.buildings) { b.obj.visible = true; if (b.holo) b.holo.visible = true; } if (this.fogMesh) this.fogMesh.visible = false; } return; }
     const fresh = !this.hid; this.hid = true; const fog = g.fog;
-    for (const u of g.units) if (u.team !== g.myTeam) u.obj.visible = fog.sees(u.pos.x, u.pos.z);
-    for (const b of g.buildings) if (b.team !== g.myTeam) { const v = this.known.has(b); b.obj.visible = v; if (b.holo) b.holo.visible = v; }
+    for (const u of g.units) if (isEnemy(u.team, g.myTeam)) u.obj.visible = fog.sees(u.pos.x, u.pos.z);
+    for (const b of g.buildings) if (isEnemy(b.team, g.myTeam)) { const v = this.known.has(b); b.obj.visible = v; if (b.holo) b.holo.visible = v; }
     const n = fog.n;
     if (!this.fogMesh || !this.fogTex || this.fogTex.image.width !== n) {
       if (this.fogMesh) g.scene.remove(this.fogMesh);

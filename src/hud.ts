@@ -3,7 +3,9 @@ import { drawMap as drawGround } from './terrain';
 import * as THREE from 'three';
 import type { Game } from './game';
 import { UNIT, BLD, FACTION, SIDE, fac, foeOf, atHome, homeXZ, Kind, Unit, Building, MAP, MAPS, OUTPOST, VHOME, ROAD, NORTH_PATH, roadPt, isWorker } from './data';
-import { keyName } from './card';
+import { keyName, abilityWords } from './card';
+import { abilitiesOf, whyNot } from './core/ability';
+import { isFriend, multi, enemiesOf } from './core/sides';
 const capW = (t: string) => t.charAt(0).toUpperCase() + t.slice(1);
 
 const V = new THREE.Vector3();
@@ -17,6 +19,8 @@ export class Hud {
   /** Set when keys are rebound: turns the default key printed in a prompt into the key the player chose. */
   keyLabel: ((k: string) => string) | null = null;
   private els = new Map<string, HTMLElement>(); private anchors: HTMLElement;
+  /** Status tags over bodies (slowed, stunned, hidden and so on). */
+  private sts: HTMLElement[] = [];
   /** Finds a part of this HUD. Split screen has two HUDs with the same parts, so the search starts inside this one. */
   private $(id: string): HTMLElement { let e = this.els.get(id); if (!e) { e = (this.root.querySelector('#' + id) as HTMLElement | null) || document.getElementById(id)!; this.els.set(id, e); } return e; }
   private cache = new Map<string, string>();
@@ -28,6 +32,7 @@ export class Hud {
   constructor(private root: HTMLElement = document.getElementById('hud')!) {
     this.anchors = this.$('anchors'); this.mini = (this.$('mini') as HTMLCanvasElement).getContext('2d')!;
     for (let i = 0; i < 48; i++) { const b = document.createElement('div'); b.className = 'hb'; const f = document.createElement('i'); b.appendChild(f); b.hidden = true; this.anchors.appendChild(b); this.bars.push(b); this.barFill.push(f); }
+    for (let i = 0; i < 32; i++) { const t = document.createElement('div'); t.className = 'st'; t.hidden = true; this.anchors.appendChild(t); this.sts.push(t); }
     for (let i = 0; i < 24; i++) { const l = document.createElement('div'); l.className = 'lab'; l.hidden = true; l.appendChild(document.createElement('div')); this.anchors.appendChild(l); this.labs.push(l); }
   }
   /** The smallest screen, in HUD pixels, the HUD is laid out for. Touch screens use a smaller one so the text is big enough to read. */
@@ -106,6 +111,10 @@ export class Hud {
     // Supply is out of 200 at most, however many supply buildings stand. Flux is the second resource; it reads 0 until the side has any.
     const used = g.supplyUsed(side), cap = Math.min(200, g.supplyCap(side)); this.set('sup', `${used}/${cap}`); this.cls('resSup', used >= cap ? 'low' : '');
     this.set('flux', String(Math.floor(g.flux(side))));
+    // The driven body's abilities: key, name, and what stops it now (energy or the wait).
+    { const list = !cv && !tab ? abilitiesOf(me.kind) : []; this.vis('abil', list.length > 0);
+      if (list.length) this.set('abil', list.map(a => { const w = whyNot(g, me, a.key, { x: me.pos.x, z: me.pos.z }), why = w === 'energy' || w === 'cooldown' || w === 'busy' || w === 'cannot act' ? abilityWords(w, a, me) : '', cd = me.abCd?.[a.key] ?? 0;
+        return `<div class="${why ? 'off' : ''}"><span class="k">${keyName(a.hotkey === 'Mouse0' ? 'LMB' : a.hotkey === 'Mouse2' ? 'RMB' : a.hotkey.length === 1 ? a.hotkey : a.hotkey)}</span><b>${a.name}</b><small>${why || [a.energy ? a.energy + ' energy' : '', a.cd ? a.cd + ' s' : ''].filter(Boolean).join(' · ') || 'Ready'}</small>${cd > 0 && a.cd ? `<i style="width:${(100 - cd / a.cd * 100).toFixed(0)}%"></i>` : ''}</div>`; }).join(''), true); }
     const m = Math.floor(g.time / 60), s = Math.floor(g.time % 60); { const ot = g.overtime(); this.set('clock', `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}` + (ot > 0 ? `<small>Overtime · buildings take +${Math.round(ot * 100)}%</small>` : ''), true); this.cls('clock', 'clock d out' + (ot > 0 ? ' ot' : '')); }
     const D = g.dir, S = D.side(side), pb = S.playbook, ph = pb.idx;
     // The squad's playbook means nothing until there is a squad: in the first minutes (and all of Job 1) it was a strip of jargon over the tutorial.
@@ -114,6 +123,7 @@ export class Hud {
     // On a hidden map the count is of the ones your side has seen: the true count would tell you they had expanded before any scout did.
     const nk = MAP.hid ? g.intel.known(side).filter(b => b.kind === fq).length : nq;
     if (g.eco && !g.story && MAP.hid && !g.intel.knows(side)) this.set('goal', `Find the ${FACTION[foe].short} · <em>nobody has seen them</em>` + (sq ? ` · ${['Squad', 'Chorus', 'Swarm'][fac(side)]} ${sq}` : ''), true);
+    else if (g.eco && !g.story && multi()) { const n = enemiesOf(g.myTeam).filter(t => !g.outOf.includes(t)).reduce((k, t) => k + g.hqs(t, false).length, 0); this.set('goal', `Break every enemy home building · <em>${n} standing</em>` + (sq ? ` · ${['Squad', 'Chorus', 'Swarm'][fac(side)]} ${sq}` : ''), true); }
     else if (g.eco && !g.story) this.set('goal', `${['Break', 'Silence', 'Squash'][fac(foe)]} ${nk > 1 ? 'every ' + BLD[fq].name : 'the ' + BLD[fq].name} · <em>${MAP.hid ? nk ? nk + ' seen' : 'not seen yet' : nk + ' standing'}</em>` + (sq ? ` · ${['Squad', 'Chorus', 'Swarm'][fac(side)]} ${sq}` : ''), true); else if (g.story) { const next = D.objectives().find(o => !o.done); this.set('goal', (next ? next.text : 'Job done') + clock + (sq ? ` · ${['Squad', 'Chorus', 'Swarm'][fac(side)]} ${sq}` : ''), true); } else this.set('goal', `${SIDE.out === 2 ? 'Squash the Mother Caps' : 'Smash the Choir Stones'} · <em>${st} left</em>` + (sq ? ` · Squad ${sq}` : ''), true);
     this.set('qm', `<span class="k" style="font-size:13px">G</span> ${F.voice} <b>${S.auto ? 'Auto' : 'Off'}</b>`, true); this.cls('qm', 'qm c out' + (S.auto ? '' : ' off'));
     // who
@@ -146,7 +156,7 @@ export class Hud {
     if (this.hitT > 0) { this.hitT -= dt; this.$('hitm').style.opacity = this.hitT > 0 ? '1' : '0'; }
 
     // world-anchored bars
-    let bi = 0, li = 0;
+    let bi = 0, li = 0, si = 0;
     const bar = (p: THREE.Vector3, y: number, frac: number, cls: string) => { if (bi >= this.bars.length) return; V.set(p.x, y, p.z); const q = V.clone(); if (!this.project(q, cam)) return; const b = this.bars[bi]; if (b.className !== cls) b.className = cls; b.hidden = false; b.style.transform = `translate(${V.x.toFixed(1)}px,${V.y.toFixed(1)}px)`; this.barFill[bi].style.width = Math.max(0, Math.min(1, frac)) * 100 + '%'; bi++; };
     const lab = (p: THREE.Vector3, y: number, html: string) => { if (li >= this.labs.length) return; const q = new THREE.Vector3(p.x, y, p.z); if (!this.project(q, cam)) return; const l = this.labs[li]; l.hidden = false; l.style.transform = `translate(${Math.max(150, Math.min(this.W - 150, V.x)).toFixed(1)}px,${Math.max(130, V.y).toFixed(1)}px)`; const k = 'l' + li; if (this.cache.get(k) !== html) { this.cache.set(k, html); l.firstElementChild!.innerHTML = html; } li++; };
     for (const p of g.pings) lab(V.set(p.x, 0, p.z).clone(), 2.2, `<div class="mark ping out">${g.names[p.pid] || 'Ping'} · ${Math.round(Math.hypot(p.x - me.pos.x, p.z - me.pos.z))}m</div>`);
@@ -154,10 +164,11 @@ export class Hud {
       if (!u.alive || u === me && !tab && !cv || !u.obj.visible) continue; const d = u.pos.distanceTo(ref), sel = cv && C.sel.has(u);
       if (u.pilot && u !== me && g.names[u.pilot] && d < (u.team === g.myTeam ? 120 : 30)) lab(u.pos, UNIT[u.kind].headY + 1.25, `<div class="mark out" style="color:var(--yel)">${g.names[u.pilot]}</div>`);
       if (!tab && !sel && d > Math.max(70, cv ? C.h * 2.2 : 0)) continue;
+      if (u.status && u.status.length && si < this.sts.length) { const w = statusWords(u); if (w) { V.set(u.pos.x, UNIT[u.kind].headY + 1.15, u.pos.z); if (this.project(V, cam)) { const t = this.sts[si++]; t.hidden = false; t.style.transform = `translate(${V.x.toFixed(1)}px,${V.y.toFixed(1)}px)`; const cls = 'st ' + w[1]; if (t.className !== cls) t.className = cls; if (t.textContent !== w[0]) t.textContent = w[0]; } } }
       const hurtU = u.hp < u.maxHp || u.shield < u.maxShield; if (u.team === g.myTeam && !hurtU && !tab && !sel) continue; if (u.team !== g.myTeam && !hurtU && d > 40) continue;
       const y = UNIT[u.kind].headY + .75;
       if (u.maxShield && u.shield > 0) bar(u.pos, y + .22, u.shield / u.maxShield, 'hb s');
-      bar(u.pos, y, u.hp / u.maxHp, u.team !== g.myTeam ? 'hb e' : 'hb');
+      bar(u.pos, y, u.hp / u.maxHp, u.team === g.myTeam ? 'hb' : isFriend(u.team, g.myTeam) ? 'hb f' : 'hb e');
       // Energy, for bodies that cast: under the health bar, own side only.
       { const me2 = u as any; if (me2.maxEnergy > 0 && u.team === g.myTeam) bar(u.pos, y - .2, me2.energy / me2.maxEnergy, 'hb n'); }
     }
@@ -165,7 +176,7 @@ export class Hud {
     for (const b of g.buildings as Building[]) {
       if (!b.alive || !b.obj.visible) continue; const d = cv ? 1 : b.pos.distanceTo(me.pos);
       if (!b.built) { bar(b.pos, BLD[b.kind].h + 1.2, b.progress, 'hb big p'); if (d < 60) lab(b.pos, BLD[b.kind].h + 1.6, `<div class="mark" style="color:var(--cyan)">${BLD[b.kind].name} ${Math.floor(b.progress * 100)}%</div>`); }
-      else if (b.hp < b.maxHp && (d < 90 || tab)) bar(b.pos, b.h + 1.2, b.hp / b.maxHp, b.team !== g.myTeam ? 'hb big e' : 'hb big');
+      else if (b.hp < b.maxHp && (d < 90 || tab)) bar(b.pos, b.h + 1.2, b.hp / b.maxHp, b.team === g.myTeam ? 'hb big' : isFriend(b.team, g.myTeam) ? 'hb big f' : 'hb big e');
       if (cv && b.team === side && b.built) {
         // From above, each of the player's buildings says what it is making, and each base how its seams are worked.
         const q = b.queue, hq = b.kind === FACTION[side].hq, sat = hq ? this.saturation(g, b) : null;
@@ -181,6 +192,7 @@ export class Hud {
     if (this.pingT > 0) { this.pingT -= dt; lab(this.pingPos, 1.5, `<div class="mark ping out">${this.pingText}</div>`); }
     for (let i = bi; i < this.bars.length; i++) if (!this.bars[i].hidden) this.bars[i].hidden = true;
     for (let i = li; i < this.labs.length; i++) if (!this.labs[i].hidden) this.labs[i].hidden = true;
+    for (let i = si; i < this.sts.length; i++) if (!this.sts[i].hidden) this.sts[i].hidden = true;
     // floating numbers
     for (let i = this.floats.length - 1; i >= 0; i--) {
       const f = this.floats[i]; f.t -= dt; if (f.t <= 0) { f.el.remove(); this.floats.splice(i, 1); continue; }
@@ -229,7 +241,7 @@ export class Hud {
     // The command card: one button per order, with its key, greyed with the reason when it cannot be given now.
     const cards = C.card; this.vis('ccard', !map && cards.length > 0);
     if (cards.length) this.set('ccard', cards.map((b, i) => `<div class="cb${b.off ? ' off' : ''}${b.on ? ' on' : ''}${i === C.padFocus ? ' pf' : ''}" data-cb="${b.id}"><span class="k">${keyName(b.key)}</span>${b.icon && this.portraits[b.icon] ? `<img src="${this.portraits[b.icon]}" alt="">` : ''}<b>${b.label}</b><small>${b.off || b.sub}</small></div>`).join(''), true);
-    const aim = C.aim; this.set('caim', aim ? (aim.k === 'stake' ? `<b>Click</b> stake out the ${BLD[aim.b].name} · <b>R</b> turn it · <b>Shift</b> keep staking · <b>Right click</b> stop` : `<b>Click</b> ${aim.k === 'move' ? 'where to go' : aim.k === 'patrol' ? 'the far end of the patrol' : aim.k === 'gather' ? 'a seam to work' : 'the rally point: ground, a body or a seam'} · <b>Shift</b> line up more · <b>Right click</b> stop`) : '', true); this.vis('caim', !!aim);
+    const aim = C.aim; this.set('caim', aim ? (aim.k === 'stake' ? `<b>Click</b> stake out the ${BLD[aim.b].name} · <b>R</b> turn it · <b>Shift</b> keep staking · <b>Right click</b> stop` : `<b>Click</b> ${aim.k === 'move' ? 'where to go' : aim.k === 'patrol' ? 'the far end of the patrol' : aim.k === 'gather' ? 'a seam to work' : aim.k === 'board' ? 'one of our carriers or bunkers to get into' : aim.k === 'ab' ? `where to use ${aim.name}` : 'the rally point: ground, a body or a seam'} · <b>Shift</b> line up more · <b>Right click</b> stop`) : '', true); this.vis('caim', !!aim);
     this.set('cnote', map ? '<b>Click</b> look there · <b>Right click</b> send the picked crew · <b>M</b> close' : `Your crew fight without your bonus while you are up here`, true);
     this.set('ckeysBar', map ? '' : '<span><span class="k">Wheel</span> Zoom, all the way in to jump</span><span><span class="k">MMB</span> Hold to slide</span><span><span class="k">M</span> Map</span><span><span class="k">N</span> Back to your body</span>', true);
   }
@@ -276,10 +288,12 @@ export class Hud {
       hx.globalCompositeOperation = 'source-in'; hx.fillStyle = this.hatchPat || '#211614'; hx.fillRect(0, 0, S, 180); c.drawImage(hc, 0, 0, S, 180); }
     for (const o of g.ores) { if (o.amount <= 0 || !fog.seen(o.pos.x, o.pos.z)) continue; c.fillStyle = '#b8f58c'; c.fillRect(X(o.pos.x) - 2.5, Z(o.pos.z) - 2.5, 5, 5); }
     c.lineWidth = 1.5; c.strokeStyle = '#0e0d14';
+    // Allies' buildings (a team game): in blue, always known.
+    for (const b of g.buildings) { if (!b.alive || b.team === g.myTeam || !isFriend(b.team, g.myTeam)) continue; const w = Math.max(5, b.hx * 2 * k), h = Math.max(5, b.hz * 2 * k); c.fillStyle = FRIEND; c.fillRect(X(b.pos.x) - w / 2, Z(b.pos.z) - h / 2, w, h); c.strokeRect(X(b.pos.x) - w / 2, Z(b.pos.z) - h / 2, w, h); }
     for (const b of g.buildings) { if (!b.alive || b.team !== g.myTeam) continue; const w = Math.max(5, b.hx * 2 * k), h = Math.max(5, b.hz * 2 * k); c.fillStyle = b.built ? '#ffc21a' : '#7ef0ff'; c.fillRect(X(b.pos.x) - w / 2, Z(b.pos.z) - h / 2, w, h); c.strokeRect(X(b.pos.x) - w / 2, Z(b.pos.z) - h / 2, w, h); }
     // Their buildings are drawn as your side last saw them: a new one shows when somebody looks at it, and a fallen one stays until somebody looks again.
     for (const r of I.seen[mi].values()) { const B = BLD[r.kind], w = Math.max(5, B.hx * 2 * k), h = Math.max(5, B.hz * 2 * k); c.fillStyle = r.kind === 'reedgate' ? '#c58bff' : '#35e0c8'; c.fillRect(X(r.x) - w / 2, Z(r.z) - h / 2, w, h); c.strokeRect(X(r.x) - w / 2, Z(r.z) - h / 2, w, h); }
-    for (const u of g.units) { if (!u.alive || (u === g.me && !g.cmd.on) || (u.team !== g.myTeam && !fog.sees(u.pos.x, u.pos.z))) continue; const foeU = u.team !== g.myTeam; c.fillStyle = foeU ? (u.kind === 'tender' ? '#c58bff' : this.cb ? '#ff9d1a' : '#ff4f9a') : isWorker(u.kind) ? (this.cb ? '#4da3ff' : '#8be04e') : '#f4ead2'; c.beginPath(); c.arc(X(u.pos.x), Z(u.pos.z), u.kind === 'warden' ? 5 : foeU ? 2.6 : 2.2, 0, 7); c.fill(); }
+    for (const u of g.units) { if (!u.alive || (u === g.me && !g.cmd.on) || (u.team !== g.myTeam && !isFriend(u.team, g.myTeam) && !fog.sees(u.pos.x, u.pos.z))) continue; const foeU = u.team !== g.myTeam, ally = foeU && isFriend(u.team, g.myTeam); c.fillStyle = ally ? FRIEND : foeU ? (u.kind === 'tender' ? '#c58bff' : this.cb ? '#ff9d1a' : '#ff4f9a') : isWorker(u.kind) ? (this.cb ? '#4da3ff' : '#8be04e') : '#f4ead2'; c.beginPath(); c.arc(X(u.pos.x), Z(u.pos.z), u.kind === 'warden' ? 5 : foeU ? 2.6 : 2.2, 0, 7); c.fill(); }
     for (const p of g.pings) { c.strokeStyle = '#ffc21a'; c.lineWidth = 2.5; c.beginPath(); c.arc(X(p.x), Z(p.z), 4 + (8 - p.t) % 1 * 7, 0, 7); c.stroke(); }
     for (const u of g.units) if (u.alive && u.pilot && u !== g.me && u.team === g.myTeam) { c.fillStyle = '#ffc21a'; c.strokeStyle = '#0e0d14'; c.lineWidth = 1.5; c.beginPath(); c.arc(X(u.pos.x), Z(u.pos.z), 3.6, 0, 7); c.fill(); c.stroke(); }
     const D = g.dir; if (g.myTeam === SIDE.home && !g.eco && (D.raidIn < 15 || D.raidLive) && g.stones().length && Math.floor(performance.now() / 300) % 2) { c.fillStyle = '#ff4b3a'; c.strokeStyle = '#0e0d14'; c.lineWidth = 2; c.beginPath(); { const n = NORTH_PATH.length, p = D.raidDir === 'north' ? [(NORTH_PATH[n - 1][0] + NORTH_PATH[n - 2][0]) / 2, (NORTH_PATH[n - 1][1] + NORTH_PATH[n - 2][1]) / 2] : roadPt(62), a = Math.atan2(-p[1], -p[0]); c.moveTo(X(p[0]) + Math.cos(a) * 9, Z(p[1]) + Math.sin(a) * 9); c.lineTo(X(p[0]) + Math.cos(a + 2.4) * 8, Z(p[1]) + Math.sin(a + 2.4) * 8); c.lineTo(X(p[0]) + Math.cos(a - 2.4) * 8, Z(p[1]) + Math.sin(a - 2.4) * 8); } c.closePath(); c.fill(); c.stroke(); }
@@ -300,3 +314,16 @@ export class Hud {
     if (me && me.alive) name(me.pos.x, me.pos.z + 12 / k, 'You', '#fff');
   }
 }
+
+/** What a body's statuses say over its head, most telling first, and whether that is bad or good for the body. */
+const ST_WORDS: Record<string, [string, string]> = { stun: ['Stunned', 'bad'], root: ['Rooted', 'bad'], blind: ['Blind', 'bad'], slow: ['Slowed', 'bad'], burning: ['Burning', 'bad'], borrowed: ['Taken over', 'bad'], revealed: ['Seen', 'bad'], lifted: ['Lifted', 'bad'], shielded: ['Shielded', 'good'], dug: ['Dug in', 'good'], unseen: ['Hidden', 'good'] };
+const ST_ORDER = ['stun', 'borrowed', 'root', 'lifted', 'blind', 'slow', 'burning', 'revealed', 'shielded', 'dug', 'unseen'];
+export function statusWords(u: Unit): [string, string] | null {
+  const on = (u.status || []).filter(x => x.t > 0).map(x => x.k as string); if (!on.length) return null;
+  on.sort((a, b) => ST_ORDER.indexOf(a) - ST_ORDER.indexOf(b));
+  const first = ST_WORDS[on[0]] || [on[0], ''], more = on.length > 1 ? ' +' + (on.length - 1) : '';
+  return [first[0] + more, first[1]];
+}
+
+/** Allies in a team game, on the map and their health bars. */
+const FRIEND = '#5ab4ff';

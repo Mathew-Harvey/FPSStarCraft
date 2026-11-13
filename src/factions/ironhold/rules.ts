@@ -10,7 +10,6 @@ import { UNIT, Unit, Building, isUnit, foeOf, fac } from '../../data';
 import { catOf } from '../../core/combat';
 import { isEnemy } from '../../core/sides';
 import { I_TUNE as TUNE } from './numbers';
-import { syncStoryTree } from './story-tree';   // STORY STAND-IN: see story-tree.ts
 import { defineUnits, defineBuildings, defineFaction, factionRule, DEFAULTS, type Weapon, type Shot } from '../../core/registry';
 import { defineAbilities } from '../../core/ability';
 import { mulOf, tagBonus, boosted, abilityKeys } from './kit';
@@ -210,7 +209,7 @@ defineFaction(0, {
 // per-building `each` hook runs them too, once a frame whichever building comes first; the time check keeps it to once if both run.
 /** Per game: a server runs many matches, and two at the same tick must each get their turn (K). */
 const TICKED = new WeakMap<Game, number>();
-function ironTick(g: Game, dt: number) { syncStoryTree(g); if (g.net || g.time === TICKED.get(g)) return; TICKED.set(g, g.time); tickCharges(g, dt); tickDrones(g); tickCasts(g); tickAir(g, dt); }
+function ironTick(g: Game, dt: number) { if (g.net || g.time === TICKED.get(g)) return; TICKED.set(g, g.time); tickCharges(g, dt); tickDrones(g); tickCasts(g); tickAir(g, dt); }
 { const was = factionRule(0).each; defineFaction(0, { each(g, b, dt) { ironTick(g, dt); was?.(g, b, dt); } }); }
 
 // Abilities the server checks for a player online. The Patch's pulse heals everyone near; the local game calls patchUp straight from the key.

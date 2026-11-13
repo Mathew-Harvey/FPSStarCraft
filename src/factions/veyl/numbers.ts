@@ -53,7 +53,7 @@ export const V_UNIT: Record<VKind, UnitDef> = {
   cantus: V({ name: 'Cantus', hp: 350, shield: 350, speed: 2.8, eye: 3, headY: 3.4, bodyY: 2.2, rad: 2.8, cost: 400, flux: 400, time: 70, supply: 8, air: true, energy: 200, tags: ['plated', 'huge', 'sung'], armour: 2, hits: 'both', quip: '"Every voice under me goes unheard."', ack: ['The Cantus listens.', 'Gather under me.', 'Slow, and certain.'] }),
 };
 export const V_BLD: Record<VBKind, BldDef> = {
-  choir: { name: 'Choir Stone', hp: 2000, hx: 1.5, hz: 1.5, h: 11, cost: 400, time: 50, blurb: 'A new Stone: Tenders bring ore here. Makes a song field', tags: ['sung', 'huge'], armour: 1 },
+  choir: { name: 'Choir Stone', hp: 2000, hx: 1.5, hz: 1.5, h: 11, cost: 400, time: 50, blurb: 'A new Stone: Tenders bring ore here. Makes a song field', tags: ['sung', 'huge'] },
   hushwell: { name: 'Hush Well', hp: 800, hx: 2.4, hz: 2.4, h: 4.4, cost: 100, time: 18, blurb: 'Eight more voices. Makes a song field', tags: ['sung'], armour: 1 },
   siphonbell: { name: 'Siphon Bell', hp: 450, hx: 1.6, hz: 1.6, h: 5, cost: 75, time: 18, blurb: 'Goes on a vent: Tenders carry Flux from it', tags: ['sung'], armour: 1 },
   broodpit: { name: 'Brood Pit', hp: 1500, hx: 3.2, hz: 3.2, h: 4.2, cost: 150, time: 30, blurb: 'Wakes Cantors, Lancers, Tuners, Mutes and Choirmasters', tags: ['sung', 'huge'], armour: 1 },

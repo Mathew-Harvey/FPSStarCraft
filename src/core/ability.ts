@@ -24,6 +24,10 @@ export interface AbilityDef {
   can?(g: Game, u: Unit, t: Target): boolean;
   /** What happens when it goes off (host only). `tgt` is the body or building when aimed at one. */
   effect(g: Game, u: Unit, t: Target, tgt: Unit | Building | null): void;
+  /** What it looks like when it goes off, for show only: no rule, no dice. It runs on every screen that can see the caster: here when
+   *  the game runs its own rules, and online on each player's, watcher's and replay's screen from the cast event the server sends (K).
+   *  Put an effect's drawing here, not in `effect`, which runs only where the rules run. A wind-up shows from `u.cast`, which is on the wire too. */
+  show?(g: Game, u: Unit, t: Target, tgt: Unit | Building | null): void;
   /** A bot's hook: where it would use this now, or null. Runs for bot bodies, and for autocast on any body nobody is driving. */
   ai?(g: Game, u: Unit): Target | null;
 }
@@ -65,7 +69,12 @@ export function useAbility(g: Game, u: Unit, key: string, t: Target = { x: u.pos
 function fire(g: Game, u: Unit, a: AbilityDef, t: Target) {
   const tgt = a.target === 'body' ? bodyOf(g, t.id) : null; if (a.target === 'body' && (!tgt || !tgt.alive)) return;
   if (a.target !== 'self') u.yaw = Math.atan2(t.x - u.pos.x, t.z - u.pos.z);
-  a.effect(g, u, t, tgt); g.evq?.push(['ab', u.id, a.key, Math.round(t.x * 10) / 10, Math.round(t.z * 10) / 10]);
+  a.effect(g, u, t, tgt);
+  if (g.evq) g.evq.push(['ab', u.id, a.key, Math.round(t.x * 10) / 10, Math.round(t.z * 10) / 10, t.id || 0]); else showCast(g, u, a, t, tgt);
+}
+/** Plays an ability's look (its `show`). A broken look never stops the game. */
+export function showCast(g: Game, u: Unit, a: AbilityDef, t: Target, tgt: Unit | Building | null) {
+  if (!a.show) return; try { a.show(g, u, t, tgt); } catch (e) { console.warn('ability look', a.key, e); }
 }
 
 /** Every frame: energy grows back, cooldowns count down, wind-ups go off, and bot bodies use what their hooks pick. */

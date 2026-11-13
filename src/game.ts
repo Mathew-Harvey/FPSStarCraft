@@ -18,7 +18,7 @@ import { unitRule, bldRule, factionRule, DEFAULTS, type Hit } from './core/regis
 import './factions';
 import { plainBody } from './core/plain';
 import { Stance } from './stance';
-import { levelMul, armourHit, canHit } from './core/combat';
+import { levelMul, armourHit, canHit, LEVELS } from './core/combat';
 import { tickStatus, statusPace, canAct, soak } from './core/status';
 import { initEnergy, tickAbilities, useAbility, type Target } from './core/ability';
 import { initAir, tickAir, airCollide, sameLayer, flyKeys } from './core/air';
@@ -123,7 +123,7 @@ export class Game {
     this.wxSalt = mapI + (net ? 0 : Date.now() % 50);   // the clock, not the dice: a draw here would move every bot match that follows
     const s = this.scene; s.add(makeSky()); MD.buildWorld(s, this.props, this.anim); this.spires = this.props.filter(p => p.solid); s.add(this.cam);
     this.vm = { drill: MD.vmDrill(), rifle: MD.vmRifle(), scatter: MD.vmScatter(), shield: MD.vmShield(), cannon: MD.vmCannon(), long: MD.vmLong(), pistol: MD.vmPistol(), veyl: MD.vmVeyl() };
-    if (fac(SIDE.home) === 2 || fac(SIDE.out) === 2) for (const k of ['grazer', 'snapper', 'quillback', 'blister', 'mulcher']) this.vm['g_' + k] = MD.vmG(k);
+    if (fac(SIDE.home) === 2 || fac(SIDE.out) === 2) for (const k of Object.keys(UNIT).filter(k => UNIT[k as Kind].team === 2)) { try { this.vm['g_' + k] = MD.vmG(k as any); } catch { /* no view model drawn for this kind yet */ } }
     this.carpet = new Bloom(s);
     for (const k in this.vm) { this.vm[k].visible = false; this.cam.add(this.vm[k]); this.vm[k].traverse(o => { const m = o as THREE.Mesh; if (m.isMesh && !Array.isArray(m.material)) m.material = heldMaterial(m.material); }); }
     for (const k of new Set([...BUILDABLE, ...FACTION[SIDE.home].builds, ...FACTION[SIDE.out].builds])) { const src = this.model(k); this.ghost[k] = MD.hologram(src, holoOK); this.ghostBad[k] = MD.hologram(src, holoBad); this.ghost[k].visible = this.ghostBad[k].visible = false; s.add(this.ghost[k], this.ghostBad[k]); }
@@ -205,6 +205,24 @@ export class Game {
     const st = UNIT[kind], rs = st.rad * 3.6; u.ring = mk(G.ringG, ringMat, [0, .08, 0], [rs, rs, 1], [-Math.PI / 2, 0, 0], md.obj); u.ring.layers.set(L_FX); u.ring.visible = false;
     md.obj.position.copy(u.pos); md.obj.rotation.y = u.yaw; md.obj.userData.team = u.team; md.obj.userData.worker = isWorker(kind); u.obj = md.obj; u.rig = md.rig; this.scene.add(md.obj); if (u === this.me) this.bodyLayer(u, true);
   }
+  /** How fast a finished building works (FactionRules.works): 0 silent, 1 normal, more when sped up. */
+  rate(b: Building) { const w = factionRule(b.team).works; return w ? w(this, b) : 1; }
+  /** Why a building is silent, in plain words, or ''. */
+  silent(b: Building) { return this.rate(b) ? '' : factionRule(b.team).whySilent?.(this, b) || `The ${BLD[b.kind].name} is not working.`; }
+  /** Swaps a building's kind and model in place (B's HQ forms, add-ons): the same id, share of health, queue and spot. */
+  rebuild(b: Building, kind: BKind) {
+    if (!b.alive || b.kind === kind) return false; const st = BLD[kind], k = b.maxHp ? b.hp / b.maxHp : 1, obj = this.model(kind);
+    obj.position.copy(b.obj.position); obj.rotation.copy(b.obj.rotation); tintMirror(obj, b.team); this.scene.remove(b.obj); this.scene.add(obj);
+    b.obj = obj; b.kind = kind; b.maxHp = st.hp; b.hp = Math.max(1, st.hp * k); b.h = st.h; b.hx = b.rot ? st.hz : st.hx; b.hz = b.rot ? st.hx : st.hz; b.stage = 0; return true;
+  }
+  /** Runs one of a building's commands (BldRules.actions): checks it, pays it, runs it. Online the browser asks ('ba') and the server does it. */
+  buildingAction(b: Building, key: string, manual = false) {
+    if (this.net) { this.net.cmd('ba', b.id, key); return true; }
+    const a = bldRule(b.kind).actions?.(this, b).find(x => x.key === key); if (!a || !b.alive) return false;
+    const why = a.ok?.(this, b) || (a.cost && !canPay(this, b.team, a.cost) ? `Short of ${shortOf(this, b.team, a.cost)}.` : '');
+    if (why) { if (manual) { sfx.deny(); this.feed(FACTION[b.team].voice, why, 'al', b.team); } return false; }
+    if (a.cost) pay(this, b.team, a.cost); a.run(this, b); if (manual) sfx.blip(); return true;
+  }
   /** Takes an order off a building's training queue and gives the price back. Online the client asks ('cq') and the server does it. */
   cancelTrain(b: Building, i: number) {
     if (this.net) { this.net.cmd('cq', b.id, i); return true; }
@@ -228,7 +246,11 @@ export class Game {
   soldiers() { return this.army(SIDE.home); }
   foes() { return this.units.filter(u => u.alive && u.team === SIDE.out); }
   /** The nearest finished Headframe: where Riggers bank, and where new bodies turn up. */
-  nearHQ(x: number, z: number, team = 0) { let best: Building | null = null, bd = 1e9; const hq = FACTION[team].hq; for (const b of this.buildings) if (b.alive && b.team === team && b.kind === hq && b.built) { const d = Math.hypot(b.pos.x - x, b.pos.z - z); if (d < bd) { bd = d; best = b; } } return best; }
+  /** A home building: the faction's own, or another form of it (BldRules.hq: a Survey Rig, a Bastion Head). */
+  isHQ(b: Building) { return b.kind === FACTION[b.team].hq || !!bldRule(b.kind).hq; }
+  /** A side's home buildings, finished or all. */
+  hqs(team: number, builtOnly = true) { return this.buildings.filter(b => b.alive && b.team === team && (!builtOnly || b.built) && this.isHQ(b)); }
+  nearHQ(x: number, z: number, team = 0) { let best: Building | null = null, bd = 1e9; for (const b of this.buildings) if (b.alive && b.team === team && b.built && this.isHQ(b)) { const d = Math.hypot(b.pos.x - x, b.pos.z - z); if (d < bd) { bd = d; best = b; } } return best; }
   /** Where a fresh Rigger turns up: in front of the first Headframe still standing. */
   hqSpot(team = 0): [number, number] { const k = FACTION[team].hq, h = this.ownB(k, true, team)[0] || this.ownB(k, false, team)[0]; return h ? [h.pos.x + 2 + Math.random() * 3, h.pos.z + h.hz + 2.4 + Math.random() * 2] : atHome(team) ? [2, 7] : [VHOME.x - 4, VHOME.z + 4]; }
   ownB(kind?: BKind, builtOnly = false, team = 0) { return this.buildings.filter(b => b.alive && b.team === team && (!kind || b.kind === kind) && (!builtOnly || b.built)); }
@@ -242,8 +264,8 @@ export class Game {
   wardFx = 0;
   gate() { return this.buildings.find(b => b.alive && b.kind === 'reedgate') || null; }
   supplyCap(team = 0) {
-    const F = FACTION[team], d = this.ownB(F.supply, true, team).length, h = Math.max(0, this.ownB(F.hq, true, team).length - 1);
-    const up = this.upOf(team), f = fac(team); return capSupply(12 + 8 * d + 8 * h + ((f === 1 ? up.vwide : f === 2 ? up.gfat : up.beds) ? 4 + 2 * d : 0));
+    const F = FACTION[team], d = this.ownB(F.supply, true, team).length, h = Math.max(0, this.hqs(team).length - 1);
+    const up = this.upOf(team), f = fac(team); return capSupply(12 + 8 * d + 8 * h + ((f === 1 ? up.vwide : f === 2 ? up.gfat : up.beds) ? 4 + 2 * d : 0) + (factionRule(team).beds?.(this, team) ?? 0));
   }
   supplyUsed(team = 0) { let n = 0; for (const u of this.units) if (u.alive && u.team === team) n += UNIT[u.kind].supply; for (const b of this.buildings) if (b.alive && b.team === team) for (const q of b.queue) n += UNIT[q.kind].supply; return n; }
   /** A side the bots run hits as hard as the shift says. A side somebody plays hits at full weight. */
@@ -280,7 +302,9 @@ export class Game {
   truce = false;
   /** The job's paperwork, for the side the player is on. The other side builds whatever it likes. */
   paper(team: number) { const m = this.story; return m && team === (m.out ? SIDE.out : SIDE.home) ? m : null; }
-  unlocked(k: BKind, team = 0) { const m = this.paper(team); if (m && k !== FACTION[team].hq && !m.allow.includes(k)) return false; return FACTION[team].builds.includes(k) && !this.missing(k, team).length; }
+  unlocked(k: BKind, team = 0) { const m = this.paper(team); if (m && k !== FACTION[team].hq && !m.allow.includes(k)) return false; return FACTION[team].builds.includes(k) && !this.missing(k, team).length && !this.gated(team, k); }
+  /** A faction's extra need for a building, body or research (FactionRules.gate): the plain name of what is missing, or ''. */
+  gated(team: number, what: string) { return factionRule(team).gate?.(this, team, what) || ''; }
 
   // ------------------------------------------------------------ helpers
   distToBox(b: Building, x: number, z: number) { const dx = Math.max(Math.abs(x - b.pos.x) - b.hx, 0), dz = Math.max(Math.abs(z - b.pos.z) - b.hz, 0); return Math.hypot(dx, dz); }
@@ -288,7 +312,7 @@ export class Game {
     if (u.air) { airCollide(u); return; }
     const r = UNIT[u.kind].rad * .75, p = u.pos, ai = u !== this.me;
     for (const b of this.buildings) {
-      if (!b.alive || b.air) continue; const ex = b.hx + r, ez = b.hz + r, dx = p.x - b.pos.x, dz = p.z - b.pos.z;
+      if (!b.alive || b.air) continue; const wo = bldRule(b.kind).walkOver; if (wo && wo(this, b, u)) continue; const ex = b.hx + r, ez = b.hz + r, dx = p.x - b.pos.x, dz = p.z - b.pos.z;
       if (Math.abs(dx) < ex && Math.abs(dz) < ez) {
         const px = ex - Math.abs(dx), pz = ez - Math.abs(dz);
         // Pushed back out of the wall, an AI body slides along it toward its goal. When the goal is straight through the building
@@ -442,8 +466,8 @@ export class Game {
     if (fac(b.team) === 2) this.carpet.drop(b);
     if (this.net) return;
     this.dir.buildingLost(b);
-    if (this.mission) { const mine = this.mission.out ? SIDE.out : SIDE.home; if (b.team === mine && b.kind === FACTION[mine].hq && !this.ownB(b.kind, true, mine).length && !this.mission.noHq) { this.endT = 2.4; this.endWon = false; this.pipe.flash = 1; } }
-    else if (b.team === SIDE.out && b.kind === FACTION[SIDE.out].hq && !(this.eco ? this.ownB(FACTION[SIDE.out].hq, true, SIDE.out) : this.stones()).length) { this.endT = 2.4; this.endWon = true; this.pipe.flash = 1; } else if (b.team === SIDE.home && b.kind === FACTION[SIDE.home].hq && !this.ownB(b.kind, true, SIDE.home).length) { this.endT = 2.4; this.endWon = false; this.pipe.flash = 1; }
+    if (this.mission) { const mine = this.mission.out ? SIDE.out : SIDE.home; if (b.team === mine && this.isHQ(b) && !this.hqs(mine).length && !this.mission.noHq) { this.endT = 2.4; this.endWon = false; this.pipe.flash = 1; } }
+    else if (b.team === SIDE.out && this.isHQ(b) && !(this.eco ? this.hqs(SIDE.out) : this.stones()).length) { this.endT = 2.4; this.endWon = true; this.pipe.flash = 1; } else if (b.team === SIDE.home && this.isHQ(b) && !this.hqs(SIDE.home).length) { this.endT = 2.4; this.endWon = false; this.pipe.flash = 1; }
   }
   end(won: boolean) { if (this.phase === 'over') return; this.phase = 'over'; this.won = won; won ? sfx.win() : sfx.lose(); drillSound(false, false); setMood(0); this.hud.showEnd(this); if (document.pointerLockElement) document.exitPointerLock(); }
   nearestStone(p: { x: number; z: number }) { let best: Building | null = null, bd = 1e9; for (const b of this.stones()) { const d = Math.hypot(b.pos.x - p.x, b.pos.z - p.z); if (d < bd) { bd = d; best = b; } } return best; }
@@ -608,15 +632,17 @@ export class Game {
       // One key per thing on offer: units first, then the research this building sells that has not been bought.
       const keys = 'ETYU', rows: string[] = [], notes: string[] = []; let i = 0;
       for (const k of TRAINS[lb.kind] || []) {
-        const nb = UNIT_NEEDS[k], ok = !nb || this.ownB(nb, true, side).length > 0, key = keys[i++], two = !!unitRule(k).pair;
-        if (ok) rows.push(`<b>${key}</b> ${UNIT[k].name}${two ? ' ×2' : ''} · ${UNIT[k].cost * (two ? 2 : 1)}`); else if (!notes.some(n => n.includes(BLD[nb!].name))) notes.push(`<i>${BLD[nb!].name} unlocks ${(TRAINS[lb.kind] || []).filter(x => UNIT_NEEDS[x] === nb).map(x => UNIT[x].name).join(' and ')}</i>`);
-        if (P.has('Key' + key)) { if (ok) this.train(lb, k, true); else { sfx.deny(); this.feed(voice, `${UNIT[k].name} needs ${/^[AEIOU]/.test(BLD[nb!].name) ? 'an' : 'a'} ${BLD[nb!].name} first.`, 'al'); } }
+        const nb = UNIT_NEEDS[k], gate = this.gated(side, k) || bldRule(lb.kind).trains?.(this, lb, k) || '', ok = (!nb || this.ownB(nb, true, side).length > 0) && !gate, key = keys[i++], two = !!unitRule(k).pair;
+        if (ok) rows.push(`<b>${key}</b> ${UNIT[k].name}${two ? ' ×2' : ''} · ${UNIT[k].cost * (two ? 2 : 1)}`); else if (gate) { if (!notes.some(n => n.includes(gate))) notes.push(`<i>${UNIT[k].name} needs ${gate}</i>`); } else if (!notes.some(n => n.includes(BLD[nb!].name))) notes.push(`<i>${BLD[nb!].name} unlocks ${(TRAINS[lb.kind] || []).filter(x => UNIT_NEEDS[x] === nb).map(x => UNIT[x].name).join(' and ')}</i>`);
+        if (P.has('Key' + key)) { if (ok || gate) this.train(lb, k, true); else { sfx.deny(); this.feed(voice, `${UNIT[k].name} needs ${/^[AEIOU]/.test(BLD[nb!].name) ? 'an' : 'a'} ${BLD[nb!].name} first.`, 'al'); } }
       }
       const sold = UPGRADES.filter(u => u.at === lb.kind && (u.team || 0) === fac(side)), open = sold.filter(u => !this.upOf(side)[u.key]);
       for (const u of open) {
         if (u.needs && !this.upOf(side)[u.needs]) { notes.push(`<i>${u.name} needs ${UPGRADES.find(x => x.key === u.needs)!.name}</i>`); continue; }
         if (i >= keys.length) break; const key = keys[i++]; rows.push(`<b>${key}</b> ${u.name} · ${u.cost} <i>${u.blurb}</i>`); if (P.has('Key' + key)) this.buyUpgrade(u.key, this.myTeam, true);
       }
+      for (const a of bldRule(lb.kind).actions?.(this, lb) || []) { const why = a.ok?.(this, lb) || ''; if (why) { notes.push(`<i>${a.name}: ${why}</i>`); continue; } rows.push(`<b>${a.hotkey}</b> ${a.name}${a.cost ? ' · ' + a.cost[0] + (a.cost[1] ? ' / ' + a.cost[1] + ' Flux' : '') : ''}${a.blurb ? ` <i>${a.blurb}</i>` : ''}`); if (P.has('Key' + a.hotkey)) this.buildingAction(lb, a.key, true); }
+      { const why = this.silent(lb); if (why) notes.unshift(`<i>${why}</i>`); }
       if (sold.length && !open.length) notes.push(fac(side) === 2 ? 'Everything here has grown in' : fac(side) ? 'Every song here is learned' : 'All research here is bought');
       const all = rows.concat(notes.slice(0, 2)); const note = bldRule(lb.kind).note; if (note) all.push(note(lb)); else if (lb.queue.length) all.push(`${lb.queue.length} queued`);
       this.prompt = all.join(all.length > 2 ? '<br>' : ' &nbsp; ');
@@ -628,7 +654,10 @@ export class Game {
     const st = UNIT[k];
     const pp = this.paper(b.team); if (pp && !isWorker(k) && !pp.units.includes(k)) { if (manual) { sfx.deny(); this.feed(FACTION[b.team].voice, fac(b.team) ? `No ${st.name}s on this job. Later.` : `No ${st.name}s on this job's paperwork. Later.`, 'al'); } return false; }
     if (this.net) { this.net.cmd('tn', b.id, k); sfx.blip(); return true; }
-    const t = b.team, v = FACTION[t].voice, n = unitRule(k).pair ? 2 : 1, bud = !!bldRule(b.kind).buds;
+    const t = b.team, v = FACTION[t].voice, n = unitRule(k).pair ? 2 : 1, bud = !!bldRule(b.kind).buds && !unitRule(k).noBud;
+    { const why = bldRule(b.kind).trains?.(this, b, k) || this.silent(b); if (why) { if (manual) { sfx.deny(); this.feed(v, why, 'al', t); } return false; } }
+    { const lim = unitRule(k).limit; if (lim !== undefined && this.own(k, t).length + this.buildings.reduce((n, x) => n + (x.alive && x.team === t ? x.queue.filter(q => q.kind === k).length : 0), 0) + n > lim) { if (manual) { sfx.deny(); this.feed(v, lim === 1 ? `Only one ${st.name} at a time.` : `No more than ${lim} ${st.name}s at a time.`, 'al', t); } return false; } }
+    { const need = this.gated(t, k); if (need) { if (manual) { sfx.deny(); this.feed(v, `${st.name} needs ${/^[AEIOU]/.test(need) ? 'an' : 'a'} ${need} first.`, 'al', t); } return false; } }
     if (bud && !(b.buds! > 0)) { if (manual) { sfx.deny(); this.feed(v, 'No Bud is ripe on this Cap. Give it a moment, or grow another Mother Cap.', 'al', t); } return false; }
     const price = costOf(k); if (!canPay(this, t, price, n)) { if (manual) { sfx.deny(); this.feed(v, this.cash(t) < price[0] * n ? (fac(t) === 2 ? 'The Overgrowth is hungry. Send the Grazers to chew.' : fac(t) ? 'The Chorus is out of ore. Send the Tenders to the seams.' : 'Can\'t. We\'re broke. Go hit a rock.') : `Short of ${shortOf(this, t, price, n)}. Tap a vent.`, 'al', t); } return false; }
     if (this.supplyUsed(t) + st.supply * n > this.supplyCap(t)) { if (manual) { sfx.deny(); this.feed(v, fac(t) === 2 ? 'No room to grow. Root a Spore Sac first.' : fac(t) ? 'No room in the song. Grow a Hush Well first.' : 'No beds. Build a Depot first.', 'al', t); } return false; }
@@ -639,10 +668,12 @@ export class Game {
     const u = UPGRADES.find(x => x.key === key)!; if (this.upOf(team)[key] || (u.team || 0) !== fac(team)) return false;
     if (this.net) { this.net.cmd('up', key); return true; }
     const t = team, v = FACTION[t].voice;
-    if (!this.ownB(u.at, true, t).length || (u.needs && !this.upOf(t)[u.needs])) { if (manual) sfx.deny(); return false; }
+    if (!this.ownB(u.at, true, t).some(b => this.rate(b) > 0) || (u.needs && !this.upOf(t)[u.needs])) { if (manual) { sfx.deny(); const at = this.ownB(u.at, true, t)[0]; if (at && !this.rate(at)) this.feed(v, this.silent(at), 'al', t); } return false; }
+    { const need = this.gated(t, key); if (need) { if (manual) { sfx.deny(); this.feed(v, `${u.name} needs ${/^[AEIOU]/.test(need) ? 'an' : 'a'} ${need} first.`, 'al', t); } return false; } }
     if (!canPay(this, t, costOf(key))) { if (manual) { sfx.deny(); this.feed(v, `${u.name} is ${u.cost} ore${u.flux ? ` and ${u.flux} Flux` : ''}. ${fac(t) === 2 ? 'Chew some more.' : fac(t) ? 'Hum some more.' : 'Keep digging.'}`, 'al', t); } return false; }
     pay(this, t, costOf(key)); this.upOf(t)[key] = true; sfx.built();
-    const plate = key === 'armor' || key === 'vglass' || key === 'garmor' ? 1.25 : key === 'armor2' || key === 'vglass2' || key === 'garmor2' ? 1.2 : key === 'armor3' || key === 'garmor3' ? 1.15 : 0; if (key === 'gbloom') this.carpet.deepen(t); if (plate) for (const x of this.own(undefined, t)) { x.maxHp *= plate; x.hp *= plate; if (fac(t)) { x.maxShield *= plate; x.shield *= plate; } }
+    // An armour level (percent mode) thickens every body the side already has, by that level's share.
+    const plate = u.line === 'arm' && u.lvl && LEVELS.mode === 'percent' ? u.pct ?? LEVELS.pct[u.lvl - 1] : 0; if (key === 'gbloom') this.carpet.deepen(t); if (plate) for (const x of this.own(undefined, t)) { x.maxHp *= plate; x.hp *= plate; if (fac(t)) { x.maxShield *= plate; x.shield *= plate; } } factionRule(t).bought?.(this, t, key);
     this.feed(v, u.say, '', t); return true;
   }
   canPlace(k: BKind, x: number, z: number, rot: boolean, team = 0) {
@@ -654,7 +685,7 @@ export class Game {
     // did not, so a Headframe 45 m out could put a Watchpost, Thorn Spire or Stinger Stalk right beside the enemy's ore line.
     for (const b of this.buildings) if (b.alive && b.team !== team && Math.hypot(b.pos.x - x, b.pos.z - z) < 45) return false;
     if (k === hq) { if (fromMid > MAP.rad! * .95) return false; }
-    else if ((team || Math.hypot(x, z) > 80) && !this.buildings.some(b => b.alive && b.team === team && b.kind === hq && b.built && Math.hypot(b.pos.x - x, b.pos.z - z) < 42)) return false;
+    else if ((team || Math.hypot(x, z) > 80) && !this.buildings.some(b => b.alive && b.team === team && b.built && this.isHQ(b) && Math.hypot(b.pos.x - x, b.pos.z - z) < 42)) return false;
     for (const b of this.buildings) if (b.alive && Math.abs(x - b.pos.x) < hx + b.hx + 1.6 && Math.abs(z - b.pos.z) < hz + b.hz + 1.6) return false;
     for (const o of this.ores) if (o.amount > 0 && Math.abs(x - o.pos.x) < hx + 2.4 && Math.abs(z - o.pos.z) < hz + 2.4) return false;
     for (const s of this.spires) if (Math.abs(x - s.x) < hx + s.r && Math.abs(z - s.z) < hz + s.r) return false;
@@ -662,8 +693,11 @@ export class Game {
     if (bldRule(k).tap) { const v = ventAt(this, x, z, 1.01); if (!v || (v.tap && v.tap.alive)) return false; }
     else for (const v of this.vents) if (Math.abs(x - v.pos.x) < hx + 1.6 && Math.abs(z - v.pos.z) < hz + 1.6) return false;
     if (fac(team) === 2 && !onBloom(this, k as GBKind, x, z, team)) return false;
+    const why = factionRule(team).placeOK?.(this, k, x, z, team); if (why) { this.placeWhy = why; return false; }
     return true;
   }
+  /** Why the last canPlace refused, when a faction's placeOK said (for the feed line). */
+  placeWhy = '';
   place(k: BKind, x: number, z: number, rot: boolean, team = 0, by: Unit | null = this.me) { if (this.net) { this.net.cmd('pl', k, x, z, rot ? 1 : 0); sfx.place(); this.puff(TMP.set(x, .3, z), 5, 1.2, M.dust, .5, 2); return null; }
     // A Gloam building is a Grazer that put down roots. No Grazer to spare, no building.
     let root: Unit | null = null; if (fac(team) === 2) { root = rootGrazer(this, x, z, by && by.team === team ? by : null, team); if (!root) return null; }
@@ -690,7 +724,7 @@ export class Game {
     if (this.tool === 2) {
       const k = list[this.buildSel], g = this.placePos;
       if (!this.groundPoint(g, 26)) g.set(me.pos.x + Math.sin(this.yaw) * 12, 0, me.pos.z + Math.cos(this.yaw) * 12);
-      g.x = Math.round(g.x); g.z = Math.round(g.z); if (bldRule(k).tap) { const v = ventAt(this, g.x, g.z, 4); if (v) { g.x = v.pos.x; g.z = v.pos.z; } }
+      g.x = Math.round(g.x); g.z = Math.round(g.z); if (bldRule(k).tap) { const v = ventAt(this, g.x, g.z, 4); if (v) { g.x = v.pos.x; g.z = v.pos.z; } } { const sp = bldRule(k).spot?.(this, side, g.x, g.z); if (sp) { g.x = sp[0]; g.z = sp[1]; } }
       this.placeOK = this.unlocked(k, side) && this.canPlace(k, g.x, g.z, this.buildRot, side) && canPay(this, side, costOf(k)) && Math.hypot(g.x - me.pos.x, g.z - me.pos.z) > Math.max(BLD[k].hx, BLD[k].hz) + 1;
       if (gl && !spareGrazers(this)) this.prompt = 'No spare Grazer: <b>you</b> will root into this one';
       if (P.has('Mouse0')) { if (this.placeOK) { this.place(k, g.x, g.z, this.buildRot, side); this.tool = 1; this.obj.built = true; this.feed(voice, gl ? `${BLD[k].name} rooted. A Grazer gave itself to it, and it grows by itself.` : veyl ? `${BLD[k].name} seeded. Hold click on it to sing it up faster.` : `${BLD[k].name} staked out. Hold the drill on it to speed things up.`, ''); } else { sfx.deny(); if (!this.unlocked(k, side)) this.feed(voice, this.missing(k, side).length ? `${BLD[k].name} needs a finished ${this.missing(k, side).map(n => BLD[n].name).join(' and ')} first.` : `No ${BLD[k].name} on this job's paperwork. Later.`, 'al'); else if (!canPay(this, side, costOf(k))) this.feed(voice, `A ${BLD[k].name} is ${BLD[k].cost} ore${BLD[k].flux ? ` and ${BLD[k].flux} Flux` : ''}. We are short of ${shortOf(this, side, costOf(k))}.`, 'al'); else if (bldRule(k).tap) this.feed(voice, `A ${BLD[k].name} goes square on an untapped vent.`, 'al'); } }
@@ -860,7 +894,7 @@ export class Game {
       if (u.kx || u.kz) { u.pos.x += u.kx * dt; u.pos.z += u.kz * dt; const k = Math.max(0, 1 - dt * 7); u.kx *= k; u.kz *= k; if (Math.abs(u.kx) + Math.abs(u.kz) < .05) u.kx = u.kz = 0; this.collide(u, u.pos.x, u.pos.z); }
       if (fac(u.team) === 0 && u.hp < u.maxHp && t - u.lastHit > 5) for (const b of this.buildings) if (b.team === u.team && b.built && bldRule(b.kind).mends && Math.abs(b.pos.x - u.pos.x) < 16 && Math.abs(b.pos.z - u.pos.z) < 16) { u.hp = Math.min(u.maxHp, u.hp + 5 * dt); break; }
       if (u.pilot) { u.kx = u.kz = 0; if (u.hp < u.maxHp && t - u.lastHit > 6) u.hp = Math.min(u.maxHp, u.hp + u.maxHp * .05 * dt); }
-      else if ((u !== me || this.staticT > 0) && (!u.status || canAct(u, !!unitRule(u.kind).dugFight))) { if (u.order.type === 'scout') this.intel.walk(u, dt); else if (isWorker(u.kind)) this.aiRigger(u, dt); else (unitRule(u.kind).ai || factionRule(u.team).ai || DEFAULTS.ai)?.(this, u, dt); }
+      else if ((u !== me || this.staticT > 0) && (!u.status || canAct(u, !!unitRule(u.kind).dugFight))) { if (u.order.type === 'scout') this.intel.walk(u, dt); else if (isWorker(u.kind)) { const w = unitRule(u.kind).work; if (!w || !w(this, u, dt)) this.aiRigger(u, dt); } else (unitRule(u.kind).ai || factionRule(u.team).ai || DEFAULTS.ai)?.(this, u, dt); }
     }
     // keep bodies apart
     for (let i = 0; i < us.length; i++) { const a = us[i]; if (!a.alive) continue; const ra = UNIT[a.kind].rad; for (let j = i + 1; j < us.length; j++) { const b = us[j]; if (!b.alive) continue; const dx = b.pos.x - a.pos.x; if (dx > 4 || dx < -4) continue; if ((a.air || b.air || a.inside || b.inside) && (!sameLayer(a, b) || a.inside || b.inside)) continue; const dz = b.pos.z - a.pos.z, mine = a === me || b === me, lim = (ra + UNIT[b.kind].rad) * (mine ? (a.team === b.team ? 1.8 : 1.25) : 1.12), d2 = dx * dx + dz * dz; if (d2 < lim * lim && d2 > 1e-5) { const d = Math.sqrt(d2), p = (lim - d) * .5; const wa = a === me || a.pilot ? 0 : unitRule(b.kind).heavy ? 2 : mine ? 2 : 1, wb = b === me || b.pilot ? 0 : unitRule(a.kind).heavy ? 2 : mine ? 2 : 1; a.pos.x -= dx / d * p * wa; a.pos.z -= dz / d * p * wa; b.pos.x += dx / d * p * wb; b.pos.z += dz / d * p * wb; } } }
@@ -928,7 +962,7 @@ export class Game {
     // A seam right under the enemy's guns is not worth the walk.
     if (u.state === 'idle' || (u.node && u.node.amount <= 0 && u.state !== 'toHQ')) { let best: OreNode | null = null, bd = 1e9; for (const n of this.ores) { if (n.amount <= 0 || seamFull(this, n, side, u) || this.buildings.some(b => b.alive && b.team !== side && Math.hypot(b.pos.x - n.pos.x, b.pos.z - n.pos.z) < 30)) continue; const d = n.pos.distanceTo(u.pos) + (this.units.filter(o => o.node === n).length) * 6 + (hq ? (() => { const h = this.nearHQ(n.pos.x, n.pos.z, side)!; return Math.hypot(n.pos.x - h.pos.x, n.pos.z - h.pos.z) * .6; })() : 0); if (d < bd) { bd = d; best = n; } } u.node = best; u.state = best ? 'toOre' : 'wait'; }
     if (u.state === 'toOre' && u.node) { if (this.moveTo(u, u.node.pos.x, u.node.pos.z, dt, 2.5)) { u.state = 'mining'; u.timer = 3; } }
-    else if (u.state === 'mining' && u.node) { u.yaw = Math.atan2(u.node.pos.x - u.pos.x, u.node.pos.z - u.pos.z); u.timer -= dt * (quick ? 1.3 : 1) * seamRate(this, u); if (u.think <= 0) { u.think = .5; if (this.vol(u.pos) > .3) this.debris(TMP.set(u.pos.x + Math.sin(u.yaw) * 1.1, 1, u.pos.z + Math.cos(u.yaw) * 1.1), 1, .1, M.ore, 3); } if (u.timer <= 0) { const n = Math.min((fac(side) === 0 && up.buckets) || (fac(side) === 2 && up.ggut) ? 10 : 7, u.node.amount); u.node.amount -= n; u.carrying = n; this.oreCheck(u.node); if (u.rig.pack) u.rig.pack.visible = true; u.state = 'toHQ'; } }
+    else if (u.state === 'mining' && u.node) { u.yaw = Math.atan2(u.node.pos.x - u.pos.x, u.node.pos.z - u.pos.z); u.timer -= dt * (quick ? 1.3 : 1) * seamRate(this, u) * (unitRule(u.kind).dig ?? 1); if (u.think <= 0) { u.think = .5; if (this.vol(u.pos) > .3) this.debris(TMP.set(u.pos.x + Math.sin(u.yaw) * 1.1, 1, u.pos.z + Math.cos(u.yaw) * 1.1), 1, .1, M.ore, 3); } if (u.timer <= 0) { const n = Math.min((fac(side) === 0 && up.buckets) || (fac(side) === 2 && up.ggut) ? 10 : 7, u.node.amount); u.node.amount -= n; u.carrying = n; this.oreCheck(u.node); if (u.rig.pack) u.rig.pack.visible = true; u.state = 'toHQ'; } }
     else if (u.state === 'toHQ') { if (!hq) { u.state = 'wait'; return; } if (this.distToBox(hq, u.pos.x, u.pos.z) < 1.7 + this.bankReach(hq)) { this.purse[side] += u.carrying * this.oreK(side); if (!atHome(side)) this.stats.minedV += u.carrying; else this.stats.mined += u.carrying; u.carrying = 0; if (u.rig.pack) u.rig.pack.visible = false; u.state = 'idle'; } else { /* Walk to the near face of the home building, so neither end of the map has a longer walk round it than the other. */ const x = Math.max(hq.pos.x - hq.hx - .8, Math.min(hq.pos.x + hq.hx + .8, u.pos.x)), z = Math.max(hq.pos.z - hq.hz - .8, Math.min(hq.pos.z + hq.hz + .8, u.pos.z)); this.moveTo(u, x, z, dt, .3); } }
   }
   acquire(u: Unit, range: number, bRange: number) {
@@ -973,15 +1007,15 @@ export class Game {
         // A site gains health as it goes up but keeps the damage it takes, so shooting a half-built site down works.
         b.progress = Math.min(1, b.progress); if (b.progress > b.pdone) { if (!this.net) b.hp = Math.min(b.maxHp, b.hp + b.maxHp * .9 * (b.progress - b.pdone)); b.pdone = b.progress; } b.obj.scale.y = Math.max(.06, b.progress);
         if (b.progress >= 1) { b.built = true; if (!this.net) b.hp = Math.min(b.maxHp, Math.max(1, b.hp)); b.obj.scale.y = 1; if (b.holo) { this.scene.remove(b.holo); b.holo = null; } if (b.builder) { b.builder.site = null; b.builder.state = 'idle'; b.builder = null; } sfx.built(); this.stats.built++; this.puff(TMP.copy(b.pos).setY(1.5), 8, 1.8, fac(b.team) === 2 ? M.gS : M.dust, .8, 2.5); bldRule(b.kind).done?.(this, b); this.dir.buildingDone(b); }
-        else if ((fac(b.team) !== 2 && (b.team === SIDE.home || this.eco)) && this.needsBuilder(b)) this.assignRigger(b);
+        else if ((!factionRule(b.team).grows && (b.team === SIDE.home || this.eco)) && this.needsBuilder(b)) this.assignRigger(b);
         continue;
       }
       if ((fac(b.team) !== 2 && (b.team === SIDE.home || this.eco)) && b.hp < b.maxHp * .7 && this.time - b.lastHit > 6 && this.needsBuilder(b)) this.assignRigger(b);
       if (b.hp < b.maxHp * .5 && fac(b.team) === 0) { b.smokeT -= dt; if (b.smokeT <= 0) { const bad = b.hp < b.maxHp * .25; b.smokeT = bad ? .18 : .4; const fire = bad && Math.random() < .5; this.puff(TMP.set(b.pos.x + R(-b.hx, b.hx) * .6, b.h * R(.6, 1), b.pos.z + R(-b.hz, b.hz) * .6), 1, fire ? 1.1 : 1.5, fire ? M.fire : M.smoke, 2.4, .5); } }
       // A Mother Cap ripens every Bud at once; everything else trains one at a time.
-      const br = bldRule(b.kind); if (b.air) { /* flying: no training, no tower */ continue; } if (br.hatch) br.hatch(this, b, dt);
-      else if (b.queue.length) { const q = b.queue[0]; q.t -= dt; if (q.t <= 0) { b.queue.shift(); const side = !!br.sideDoor && !b.rot; const u = this.spawn(q.kind, b.team, b.pos.x + (side ? b.hx + 1.2 : R(-1, 3)), b.pos.z + (side ? R(-.5, .5) : b.hz + 1.2)); this.puff(TMP.copy(u.pos).setY(1), 4, .8, fac(b.team) ? M.violet : M.dust); if (this.vol(b.pos) > .2) sfx.blip(); this.dir.trained(u); } }
-      if (this.truce) continue;
+      const br = bldRule(b.kind); if (b.air) { /* flying: no training, no tower */ continue; } const rate = this.rate(b); if (br.hatch) { if (rate) br.hatch(this, b, dt * rate); }
+      else if (b.queue.length) { const q = b.queue[0]; q.t -= rate === 1 ? dt : dt * rate; if (q.t <= 0) { b.queue.shift(); const side = !!br.sideDoor && !b.rot; const u = this.spawn(q.kind, b.team, b.pos.x + (side ? b.hx + 1.2 : R(-1, 3)), b.pos.z + (side ? R(-.5, .5) : b.hz + 1.2)); this.puff(TMP.copy(u.pos).setY(1), 4, .8, fac(b.team) ? M.violet : M.dust); if (this.vol(b.pos) > .2) sfx.blip(); this.dir.trained(u); } }
+      if (this.truce || !rate) continue;
       bldRule(b.kind).tick?.(this, b, dt);
     }
   }

@@ -19,7 +19,8 @@ export interface FightDef {
   /** Flat armour taken off every hit, before research. */ armour?: number;
   /** Extra damage per hit against bodies with a tag. */ bonus?: Partial<Record<Tag, number>>;
   /** What its weapon reaches. */ hits?: Reach;
-  /** Damage each attack level adds to one hit (flat mode). Default a tenth of the base hit, worked out by the caller. */ perLvl?: number;
+  /** Damage each attack level adds to one hit (flat mode). Default 1. */ perLvl?: number;
+  /** A tall walker: weapons that reach only the air can hit it too. */ tall?: boolean;
 }
 
 /** Dials. `flat` is the StarCraft way: each attack level adds damage to a hit and each armour level takes 1 off every hit.
@@ -52,7 +53,7 @@ export function levelMul(g: Game, team: number, line: Line) {
 
 /** Can this attacker's weapon reach this target? */
 export function canHit(from: Unit | Building | null, t: Unit | Building) {
-  if (!from) return true; const air = isAir(t), r = reachOf(from.kind); return air ? r !== 'ground' : r !== 'air';
+  if (!from) return true; const air = isAir(t), r = reachOf(from.kind); return air ? r !== 'ground' : r !== 'air' || !!(UNIT as any)[t.kind]?.tall;
 }
 /** The hit after armour and bonus. A target and attacker with none of these fields get the hit back unchanged. */
 export function armourHit(g: Game, t: Unit | Building, amt: number, from: Unit | Building | null) {

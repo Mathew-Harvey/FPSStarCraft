@@ -14,15 +14,15 @@ try {
   await sleep(1200);
   const b = await chromium.launch({ args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist', '--enable-webgl'] });
   const open = async name => { const p = await b.newPage({ viewport: { width: 1280, height: 720 } }); p.setDefaultTimeout(120000); p.on('pageerror', e => { console.log(`[${name} pageerror]`, e.message.slice(0, 400)); fail.push(name + ' page error'); }); await p.goto(URL); await p.waitForFunction('window.__ore'); await p.evaluate(n => { __ore.setFree(true); __ore.game.noRender = true; __ore.unlock(); document.getElementById('mName').value = n; }, name); return p; };
-  // A page drawing its menu makes the next page load about five times slower (70 s against 15 s here), enough to time out on a busy runner, so the first one holds still.
-  const A = await open('Ada'); await A.evaluate(() => { __ore.game.noRender = true; }); const B = await open('Bo'); await A.evaluate(() => { __ore.game.noRender = false; });
+  // Two pages drawing at once starve each other under software rendering: a menu alone made the next page load five times slower, and a kick-off could stall long enough to drop the connection. Both hold still until a check needs a picture.
+  const A = await open('Ada'); await A.evaluate(() => { __ore.hold(true); }); const B = await open('Bo'); await B.evaluate(() => { __ore.hold(true); });
   await A.click('#mCreate'); await A.waitForFunction(() => document.getElementById('mCodeShow').textContent.length === 5);
   const code = await A.evaluate(() => document.getElementById('mCodeShow').textContent); check(/^[A-Z]{5}$/.test(code), 'lobby created with a five-letter code: ' + code);
   await B.fill('#mCode', code); await B.click('#mJoinBtn'); await B.waitForFunction(() => !document.getElementById('mLobby').hidden);
   await A.waitForFunction(() => document.querySelectorAll('#mPlayers button').length === 2); check(true, 'second player joined and both see two names');
   check(await A.evaluate(() => document.getElementById('mStart').disabled), 'host cannot start until the crew is ready');
   await A.click('#mMaps button:nth-child(1)'); await B.click('#mReady'); await A.waitForFunction(() => !document.getElementById('mStart').disabled); await A.click('#mStart');
-  for (const p of [A, B]) { await p.waitForFunction(() => __ore.game.net && __ore.game.me && __ore.game.units.length > 6); await p.evaluate(() => { __ore.game.noRender = true; }); }
+  for (const p of [A, B]) { await p.waitForFunction(() => __ore.game.net && __ore.game.me && __ore.game.units.length > 6); await p.evaluate(() => { __ore.game.noRender = true; __ore.hold(false); }); }
   const state = p => p.evaluate(() => { const g = __ore.game; return { me: g.me && g.me.id, kind: g.me && g.me.kind, units: g.units.filter(u => u.alive).length, bld: g.buildings.filter(b => b.alive).length, ore: g.ore, time: g.time, pilots: g.units.filter(u => u.pilot).map(u => u.id).sort(), props: g.props.length, propsAlive: g.props.filter(q => q.alive).length, stones: g.stones().length }; });
   let a = await state(A), c = await state(B);
   check(a.me && c.me && a.me !== c.me, `each player drives a different body (${a.me}, ${c.me})`);
@@ -32,8 +32,11 @@ try {
   // Ada walks, drills and stakes out a Bunkhouse. Bo jumps into another Rigger.
   // She switches the Quartermaster off first, so the only new building is hers. The server only pays for drilling at a seam, a few ore at a time, and only once the pack reaches the Headframe.
   const ax = await A.evaluate(async () => { const g = __ore.game, n = g.ores[0], sleep = ms => new Promise(r => setTimeout(r, ms)); g.net.cmd('or', 'G');
-    // a driven Rigger's pack holds 15 ore, so it takes trips: fill it at the seam, then walk it to the Headframe
-    for (let trip = 0; trip < 5; trip++) { g.me.pos.x = n.pos.x + 3; g.me.pos.z = n.pos.z; await sleep(2500); for (let i = 0; i < 5; i++) { g.net.cmd('mn', 0, 3); await sleep(250); } g.me.pos.x = 0; g.me.pos.z = 7; await sleep(2500); }
+    // a driven Rigger's pack holds 15 ore, so it takes trips: fill it at the seam, then walk it to the Headframe.
+    // The server walks the body there at its own pace from the positions this page reports, and a page on a slow runner reports few of them,
+    // so a trip can come back empty: she keeps going until the scoreboard has her 60 ore, nine trips at most.
+    const mined = () => (g.score[g.net.id] || [0, 0])[1];
+    for (let trip = 0; trip < 9 && (trip < 5 || mined() < 60); trip++) { g.me.pos.x = n.pos.x + 3; g.me.pos.z = n.pos.z; await sleep(2500); for (let i = 0; i < 5; i++) { g.net.cmd('mn', 0, 3); await sleep(250); } g.me.pos.x = 0; g.me.pos.z = 7; await sleep(2500); }
     g.net.cmd('pl', 'bunkhouse', -14, 10, 0); return g.me.pos.x; });
   const bo = await B.evaluate(() => { const g = __ore.game; const u = g.units.find(u => u.team === 0 && !u.pilot && u.kind === 'rigger'); g.possess(u, true); return u.id; });
   const built = () => __ore.game.buildings.filter(b => b.alive).length === 11;
@@ -60,8 +63,8 @@ try {
   await B.close();
   check(await until(A, () => __ore.game.units.filter(u => u.pilot).length === 1), 'when Bo leaves, his body goes back to the crew and the match carries on');
   // Bo comes back mid-match with the same code and gets a body and the same world
-  const B2 = await open('Bo'); await B2.fill('#mCode', code); await B2.click('#mJoinBtn');
-  await B2.waitForFunction(() => __ore.game.net && __ore.game.me && __ore.game.units.length > 6); await B2.evaluate(() => { __ore.game.noRender = true; }); c = await state(B2);
+  const B2 = await open('Bo'); await B2.evaluate(() => { __ore.hold(true); }); await B2.fill('#mCode', code); await B2.click('#mJoinBtn');
+  await B2.waitForFunction(() => __ore.game.net && __ore.game.me && __ore.game.units.length > 6); await B2.evaluate(() => { __ore.game.noRender = true; __ore.hold(false); }); c = await state(B2);
   // Bo's body can be shot out from under him by a raid while this runs, so ask for whichever body he is in now.
   let back = false; for (let i = 0; i < 40 && !back; i++) { const id = await B2.evaluate(() => { const g = __ore.game; return g.me && g.me.alive ? g.me.id : 0; }); back = !!id && await A.evaluate(id => __ore.game.units.filter(u => u.pilot).length === 2 && !!__ore.game.uById.get(id)?.pilot, id); if (!back) await sleep(400); }
   check(back, 'Bo rejoins the running match with the code and gets a body'); await sleep(1500);

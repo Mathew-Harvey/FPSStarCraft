@@ -18,7 +18,10 @@ body{background:var(--bg);color:var(--paper);font-family:var(--cond);font-size:1
 .d{font-family:var(--display);text-transform:uppercase;letter-spacing:.02em;line-height:1;font-weight:400}
 .c{font-family:var(--cond);font-weight:700;text-transform:uppercase;letter-spacing:.08em}
 .k,.prompt b,.callout .ckeys b{display:inline-block;font-family:var(--display);font-weight:400;background:var(--paper);color:var(--ink);border:3px solid var(--ink);padding:1px 8px 2px;font-size:18px;line-height:1.2;box-shadow:2px 2px 0 var(--ink);letter-spacing:.02em}
-.out{text-shadow:2px 2px 0 var(--ink),-2px -2px 0 var(--ink),2px -2px 0 var(--ink),-2px 2px 0 var(--ink),0 3px 0 var(--ink),3px 0 0 var(--ink),4px 4px 0 var(--ink)}
+/* Outlined lettering: one clean pen stroke round each glyph and a short drop, so small labels stay crisp over the world. */
+.out,.who .sub,.hint{-webkit-text-stroke:.3em var(--ink);paint-order:stroke fill;text-shadow:0 .12em 0 var(--ink)}
+.d.out,.count .n.out,.streak.out,.lost .a.out{-webkit-text-stroke:.16em var(--ink);text-shadow:.07em .09em 0 var(--ink)}
+.out .k,.hint .k{-webkit-text-stroke:0;text-shadow:none}
 .ht{background-image:radial-gradient(rgba(255,255,255,.09) 1.3px,transparent 1.6px);background-size:8px 8px}
 .pan{background:rgba(14,13,20,.86);border:4px solid var(--ink);box-shadow:5px 5px 0 var(--ink);transform:skewX(-7deg)}
 .bar{position:absolute;height:22px;background:var(--ink);border:3px solid var(--ink);transform:skewX(-20deg);overflow:hidden}

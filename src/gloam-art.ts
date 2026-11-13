@@ -1,9 +1,10 @@
 // The Gloam: a fungal swarm that grows out of ore rot. Moss hide, ivory chitin, coral gills,
 // teal mushroom caps and lime spore sacs. Skins, the cast and their structures live here.
+import { figure } from './meshes';
 import * as THREE from 'three';
 import { INK, R, rnd, M, TX, EXTRA, paint, tone, T, mk, G, setLayer, L_FX } from './gfx';
 import type { Ctx } from './gfx';
-import { pen, hatch, brush, frame, sky, nicks } from './skins';
+import { pen, hatch, brush, frame, sky, nicks, cellular, sstep } from './skins';
 import { lathe, hard, spl, rbox, blob, tube, plate, ring, shard, warp, crescent, capsule } from './sculpt';
 import { grp, put } from './units';
 
@@ -22,12 +23,21 @@ function lichen(g: Ctx, s: number, n: number, dark: string, lite: string) {
 function wrinkles(g: Ctx, s: number, n: number, col = INK) {
   for (let i = 0; i < n; i++) { const x = R(.05, .95) * s, y = R(.05, .95) * s, l = R(16, 44), a = R(-.4, .4) + (rnd() < .3 ? H : 0); pen(g, [[x, y], [x + Math.cos(a) * l * .5, y + Math.sin(a) * l * .5 + R(4, 10)], [x + Math.cos(a) * l, y + Math.sin(a) * l]], R(2, 4), col); }
 }
+/** Hide blotched darker in patches and dotted with pale warts, each in a dark ring: the same marks the painted bodies carry. */
+function mottle(g: Ctx, s: number, seed: number) {
+  cellular(g, s, 9, seed, (c, o, _wall, mid, id, _other, drift) => {
+    const blot = sstep(.42, .62, drift), on = id > .45 && mid < .38;
+    const ring = on ? 1 - sstep(.19, .25, mid) * (1 - sstep(.3, .38, mid)) * .6 : 1, wart = on ? (1 - sstep(.15, .23, mid)) * .8 : 0;
+    const r = c[o] * (1 - blot * .42) * ring, gr = c[o + 1] * (1 - blot * .3) * ring, b = c[o + 2] * (1 - blot * .46) * ring;
+    if (wart) { c[o] = r * (1 - wart) + Math.min(255, r * 1.5 + 40) * wart; c[o + 1] = gr * (1 - wart) + Math.min(255, gr * 1.5 + 40) * wart; c[o + 2] = b * (1 - wart) + Math.min(255, b * 1.5 + 40) * wart; } else { c[o] = r; c[o + 1] = gr; c[o + 2] = b; }
+  });
+}
 /** Growth lines across chitin, like the rings on a shell. */
 function growth(g: Ctx, s: number, n: number) {
   for (let i = 0; i < n; i++) { const y = (i + R(.3, .7)) / n * s; pen(g, [[0, y], [s * .3, y + R(-6, 6)], [s * .7, y + R(-6, 6)], [s, y]], R(2, 3.5), '#6a5636', .4); g.globalAlpha = .6; pen(g, [[0, y - 6], [s * .5, y - 6 + R(-3, 3)], [s, y - 6]], 2, '#fffbe8', .5); g.globalAlpha = 1; }
 }
 const hide = (base: string, kind: 'box' | 'band' | 'none' | 'cap') => paint(base, (g, s) => {
-  brush(g, s, base, 30, 1.3); sky(g, s, 1.1); lichen(g, s, 46, tone(base, .55), tone(base, 1.45)); wrinkles(g, s, 16);
+  brush(g, s, base, 30, 1.3); sky(g, s, 1.1); lichen(g, s, 46, tone(base, .55), tone(base, 1.45)); wrinkles(g, s, 16); mottle(g, s, base === MOSS ? 3 : 8);
   for (let i = 0; i < 4; i++) hatch(g, R(.05, .65) * s, s * R(.55, .8), s * R(.16, .3), -1.0, 6, s * .022, s * .008);
   nicks(g, s, 10, tone(base, 1.7), 40, 3);
   if (kind !== 'none') frame(g, s, base, kind, 7);
@@ -58,13 +68,6 @@ const glow = () => paint(GLOW, (g, s) => {
   for (let i = 0; i < 6; i++) { let x = R(0, s), y = R(0, s); const pts = [[x, y]]; for (let k = 0; k < 4; k++) { x += R(-40, 40); y += R(-40, 40); pts.push([x, y]); } g.globalAlpha = .5; pen(g, pts, R(3, 6), '#3d6a12', .5); g.globalAlpha = 1; }
   pen(g, [[s * .2, s * .66], [s * .4, s * .32], [s * .7, s * .22]], 22, 'rgba(255,255,255,.8)');
 }, { blot: 0 });
-/** The living carpet the Gloam grow on. Tiled across a disc, so it is drawn to wrap. */
-const bloomTex = () => paint('#4d6a2a', (g, s) => {
-  brush(g, s, '#4d6a2a', 40, 0); lichen(g, s, 120, '#2c3f18', '#88a64a');
-  // Veins of root thread, each with a few lime nodes.
-  for (let i = 0; i < 10; i++) { let x = R(0, s), y = R(0, s); const pts = [[x, y]]; for (let k = 0; k < 6; k++) { x += R(-60, 60); y += R(-60, 60); pts.push([x, y]); } pen(g, pts, R(3, 7), '#22320f', .5); g.globalAlpha = .6; pen(g, pts.map(p => [p[0] - 3, p[1] - 3]), R(1.5, 3), '#b4d468', .5); g.globalAlpha = 1; }
-  for (let i = 0; i < 14; i++) { const x = R(0, s), y = R(0, s), r = R(4, 9); g.fillStyle = GLOW; g.beginPath(); g.arc(x, y, r, 0, 7); g.fill(); pen(g, [[x - r, y + r * .4], [x, y + r], [x + r, y + r * .4]], 2.5, INK, .6); }
-}, { blot: 0 });
 
 EXTRA.push(() => {
   const S = (n: string, tex: THREE.Texture, o: { emis?: number; rx?: number; ry?: number; hatch?: number; flat?: number } = {}) => { TX[n] = tex; M[n] = T(tex, o); };
@@ -77,10 +80,9 @@ EXTRA.push(() => {
   S('gS', glow(), { emis: .78 });
   S('gEye', paint('#ffb43a', (g, s) => { const gr = g.createRadialGradient(s * .4, s * .38, 6, s * .5, s * .5, s * .6); gr.addColorStop(0, '#fff6d0'); gr.addColorStop(.45, '#ffb43a'); gr.addColorStop(1, '#a8400c'); g.fillStyle = gr; g.fillRect(0, 0, s, s); g.fillStyle = INK; g.fillRect(s * .44, s * .12, s * .12, s * .76); }, { blot: 0 }), { emis: .9 });
   S('gMaw', paint('#3a1420', (g, s) => { g.fillStyle = '#3a1420'; g.fillRect(0, 0, s, s); for (let i = 0; i < 9; i++) { const y = (i + .5) / 9 * s; g.globalAlpha = .5; pen(g, [[0, y], [s, y + R(-6, 6)]], R(3, 6), '#8a2a3a', .3); g.globalAlpha = 1; } }, { blot: 0 }));
-  S('gBloom', bloomTex(), { hatch: .4 });
   M.gS.uniforms.uEmis.value = .78; M.gGlow = T(null, { color: GLOW, emis: 1 });
-  M.gBloomRim = T(null, { color: '#22320f', hatch: 0 });
-  for (const m of [M.gBloom, M.gBloomRim]) { m.polygonOffset = true; m.polygonOffsetFactor = -4; m.polygonOffsetUnits = -4; }
+  // The carpet is painted in the shader (see BLOOM in gfx.ts), so it never tiles and its lip is ragged.
+  M.gBloom = T(null, { bloom: true, flat: 1, hatch: 0 }); M.gBloom.polygonOffset = true; M.gBloom.polygonOffsetFactor = -4; M.gBloom.polygonOffsetUnits = -4; M.gBloom.alphaToCoverage = true;
   M.gSpit = T(null, { color: '#d8ff6a', emis: 1 });
 });
 
@@ -128,7 +130,10 @@ function jaw(parent: THREE.Object3D, p: P3, w: number, l: number, n: number, up 
 
 // ---------------------------------------------------------------- the cast
 /** Worker: a squat six-legged grazer with a cap on its back and a belly that swells with ore cud. */
+/** The grazer's cud: a glowing belly sac and the ore it has not finished with. */
+function cud(body: THREE.Object3D) { const pack = grp('pack', body); pack.visible = false; put(blob(.5, .36, .58), M.gS, pack, [0, .32, -.18]); for (let i = 0; i < 4; i++) put(shard(.06, .3, 5), M.ore, pack, [-.14 + i * .09, .74, -.5 + (i % 2) * .08], [-.7 + R(-.2, .2), R(0, 3), R(-.3, .3)]); }
 function grazer(): THREE.Group {
+  { const fig = figure('grazer'); if (fig) { cud(fig.groups.body); return fig.root; } }   // sculpted in Blender (art/gloam.py); below is what the match server builds
   const obj = new THREE.Group(), body = grp('body', obj);
   const legs = [[.22, .36], [-.04, .4], [-.28, .36]];
   legs.forEach(([z, r], i) => { for (const sx of [-1, 1]) bugLeg(obj, `lg${i}${sx < 0 ? 'L' : 'R'}`, [sx * .24, .4, z], sx, r, .4, z * .5 + .04, .062); });
@@ -136,7 +141,7 @@ function grazer(): THREE.Group {
   put(blob(.7, .4, .84), M.gV, body, [0, .36, -.02]);
   mushroom(body, [0, .7, -.12], .52, .34, [-.12, 0, 0], 1.1);
   sacs(body, [0, .82, -.42], 4, .08, 3);
-  const pack = grp('pack', body); pack.visible = false; put(blob(.5, .36, .58), M.gS, pack, [0, .32, -.18]); for (let i = 0; i < 4; i++) put(shard(.06, .3, 5), M.ore, pack, [-.14 + i * .09, .74, -.5 + (i % 2) * .08], [-.7 + R(-.2, .2), R(0, 3), R(-.3, .3)]);
+  cud(body);
   const head = grp('head', body, [0, .5, .38]);
   put(blob(.46, .36, .42, v => { if (v.z > 0) v.y *= 1 - v.z * .3; }, 'gzh'), M.gHn, head, [0, .02, .08]);
   put(lathe(spl([[.2, 0], [.22, .06], [.17, .14], [0, .17]], 6), 16, PI * 1.3, 1.2), M.gBc, head, [0, .1, .06], [-.4, PI, 0]);
@@ -150,6 +155,7 @@ function grazer(): THREE.Group {
 }
 /** Cheap fast biter that hatches in pairs: low, long, all jaw. */
 function snapper(): THREE.Group {
+  { const fig = figure('snapper'); if (fig) return fig.root; }
   const obj = new THREE.Group(), body = grp('body', obj);
   for (const sx of [-1, 1]) { const n = sx < 0 ? 'L' : 'R'; bugLeg(obj, 'lg0' + n, [sx * .17, .44, .3], sx, .3, .44, .42, .065); bugLeg(obj, 'lg1' + n, [sx * .17, .44, -.26], sx, .34, .44, -.34, .075); }
   put(tube([[0, .58, .36], [0, .6, .05], [0, .56, -.3], [0, .46, -.66], [0, .36, -.98]], [.24, .27, .22, .12, .03], 10, .85), M.gH, body);
@@ -166,7 +172,9 @@ function snapper(): THREE.Group {
   return obj;
 }
 /** Ranged: a hunched spitter with a fan of bone quills and a cap for a head. */
+const spitFlash = (arms: THREE.Object3D, p: P3) => { const f = grp('flash', arms, p); mk(G.sph, M.gSpit, [0, 0, 0], [.3, .3, .3], 0, f); mk(G.oct, M.gSpit, [0, 0, .1], [.12, .12, .6], 0, f); f.visible = false; setLayer(f, L_FX); };
 function quillback(): THREE.Group {
+  { const fig = figure('quillback'); if (fig) { const mz = fig.points.muzzle; if (mz) spitFlash(mz.group, mz.at); return fig.root; } }
   const top = new THREE.Group(), obj = grp('sc', top), body = grp('body', obj); obj.scale.setScalar(1.22);
   for (const [i, z, r] of [[0, .3, .46], [1, -.3, .5]] as const) for (const sx of [-1, 1]) bugLeg(obj, `lg${i}${sx < 0 ? 'L' : 'R'}`, [sx * .26, .72, z], sx, r, .72, z * 1.1, .1);
   put(blob(.72, .66, 1.1, v => { v.y += v.z * .3; }, 'qbb'), M.gH, body, [0, .98, -.02]);
@@ -186,11 +194,12 @@ function quillback(): THREE.Group {
   // The spit tube: a bone-ringed snout, and a muzzle flash where the quill leaves.
   put(tube([[0, -.06, -.02], [0, -.08, .2], [0, -.06, .38]], [.1, .085, .07], 8), M.gH, arms); for (const z of [.1, .22, .34]) put(ring(.08, .022), M.gB, arms, [0, -.07, z]);
   put(ring(.06, .02), M.gS, arms, [0, -.06, .4]);
-  const f = grp('flash', arms, [0, -.06, .48]); mk(G.sph, M.gSpit, [0, 0, 0], [.3, .3, .3], 0, f); mk(G.oct, M.gSpit, [0, 0, .1], [.12, .12, .6], 0, f); f.visible = false; setLayer(f, L_FX);
+  spitFlash(arms, [0, -.06, .48]);
   return top;
 }
 /** Suicide runner: a swollen lime sac on scuttling legs. Bursts into acid. */
 function blister(): THREE.Group {
+  { const fig = figure('blister'); if (fig) return fig.root; }
   const obj = new THREE.Group(), body = grp('body', obj);
   for (const [i, z] of [[0, .16], [1, -.04], [2, -.22]] as const) for (const sx of [-1, 1]) bugLeg(obj, `lg${i}${sx < 0 ? 'L' : 'R'}`, [sx * .17, .3, z], sx, .24, .3, z * .8, .045);
   put(blob(.4, .26, .5), M.gH, body, [0, .34, .02]);
@@ -204,6 +213,7 @@ function blister(): THREE.Group {
 }
 /** Heavy: a six-legged tusked beetle the size of a truck, with an old cap grown over its shell. */
 function mulcher(): THREE.Group {
+  { const fig = figure('mulcher'); if (fig) return fig.root; }
   const obj = new THREE.Group(), body = grp('body', obj, [0, -.42, 0]);
   [[1.0, 1.5, 1.6], [-.1, 1.7, .1], [-1.1, 1.6, -1.6]].forEach(([z, r, f], i) => { for (const sx of [-1, 1]) { const l = bugLeg(obj, `lg${i}${sx < 0 ? 'L' : 'R'}`, [sx * .9, 1.25, z], sx, r, 1.25, f, .2); spine(l, [sx * r * .6, r * .3, f * .55], .7, .12, [0, 0, -sx * .5]); } });
   put(blob(2.6, 1.7, 3.6, v => { if (v.y < 0) v.y *= .6; v.y += Math.max(0, v.z) * .12; }, 'mlb'), M.gH, body, [0, 1.85, -.1]);
@@ -235,6 +245,7 @@ export const GLOAM_HEIGHT: Record<string, number> = { grazer: 1.0, snapper: .9, 
 function root(g: THREE.Object3D, a: P3, b: P3, r: number) { const m: P3 = [(a[0] + b[0]) / 2 + R(-.4, .4), Math.max(a[1], b[1]) + r * .6, (a[2] + b[2]) / 2 + R(-.4, .4)]; put(tube([a, m, b], [r, r * .8, r * .2], 8), M.gD, g); }
 /** Mother Cap: the base. A huge mushroom over a lumpy stalk, Buds growing round its foot. */
 export function mothercap(anim: ((t: number) => void)[]) {
+  const fig = figure('mothercap'); if (fig) { const q = fig.groups; anim.push(t => { q.top.rotation.y = Math.sin(t * .3) * .03; q.top.scale.y = 1 + Math.sin(t * 1.1) * .02; }); return fig.root; }
   const g = new THREE.Group();
   put(blob(9, 2.2, 7.4, v => { if (v.y < 0) v.y = 0; v.y *= 1 + Math.sin(v.x * 7 + v.z * 5) * .08; }, 'mcbase'), M.gHn, g, [0, 0, 0]);
   put(lathe(spl([[2.4, 0], [2.1, 1.6], [1.6, 3.4], [1.8, 5], [2.4, 6.2]], 12), 20), M.gH, g);
@@ -256,6 +267,7 @@ export function mothercap(anim: ((t: number) => void)[]) {
 }
 /** Spore Sac: supply. A ribbed bulb that breathes. */
 export function sporesac(anim: ((t: number) => void)[]) {
+  const fig = figure('sporesac'); if (fig) { const q = fig.groups; anim.push(t => { const k = 1 + Math.sin(t * 1.6) * .04; q.bulb.scale.set(k, 1 / k, k); }); return fig.root; }
   const g = new THREE.Group();
   put(blob(4.6, 1.2, 4.2, v => { if (v.y < 0) v.y = 0; }, 'ssb'), M.gHn, g);
   const bulb = grp('bulb', g, [0, .4, 0]);
@@ -268,6 +280,7 @@ export function sporesac(anim: ((t: number) => void)[]) {
 }
 /** Warren: a burrow mound pocked with holes and propped with bone. Snappers come from here. */
 export function warren(anim: ((t: number) => void)[]) {
+  const fig = figure('warren'); if (fig) { const q = fig.groups;  return fig.root; }
   const g = new THREE.Group();
   put(blob(7.4, 4.2, 6, v => { if (v.y < 0) v.y = 0; v.y *= 1 + Math.sin(v.x * 5) * Math.cos(v.z * 4) * .12; }, 'wmound'), M.gH, g);
   for (const [x, y, z, r] of [[1.8, 1.2, 2.0, .7], [-1.6, 1.5, 1.8, .55], [0, 2.4, 1.4, .5], [2.5, 1.0, -1.2, .6], [-2.3, 1, -1.4, .55]]) {
@@ -280,6 +293,7 @@ export function warren(anim: ((t: number) => void)[]) {
 }
 /** Quill Garden: bone spines grown in rows out of a moss bed. Quillbacks, first research. */
 export function quillgarden(anim: ((t: number) => void)[]) {
+  const fig = figure('quillgarden'); if (fig) { const q = fig.groups;  return fig.root; }
   const g = new THREE.Group();
   put(blob(7.2, 1.8, 6.2, v => { if (v.y < 0) v.y = 0; }, 'qgb'), M.gHn, g);
   for (let i = 0; i < 16; i++) { const a = i / 16 * TAU, d = 1.2 + (i % 3) * .9, l = 3.2 + (i % 4) * 1.1 - d * .4; spine(g, [Math.cos(a) * d, .4, Math.sin(a) * d * .85], l, .26, [Math.sin(a) * .35, 0, -Math.cos(a) * .35]); }
@@ -290,6 +304,7 @@ export function quillgarden(anim: ((t: number) => void)[]) {
 }
 /** Blister Bed: a dish of swelling acid sacs. */
 export function blisterbed(anim: ((t: number) => void)[]) {
+  const fig = figure('blisterbed'); if (fig) { const q = fig.groups; anim.push(t => { for (let i = 0; i < 6; i++) { const k = 1 + Math.sin(t * 2 + i * 1.7) * .05; q['pod' + i].scale.set(k, 1 / k, k); } }); return fig.root; }
   const g = new THREE.Group();
   put(lathe(spl([[0, 1.0], [2.6, .9], [3.4, 1.4], [3.6, .6], [3.2, 0]], 10), 22), M.gH, g);
   const pods: THREE.Object3D[] = [];
@@ -300,6 +315,7 @@ export function blisterbed(anim: ((t: number) => void)[]) {
 }
 /** Tusk Hollow: a giant ribcage den. Mulchers, second research. */
 export function tuskhollow(anim: ((t: number) => void)[]) {
+  const fig = figure('tuskhollow'); if (fig) { const q = fig.groups;  return fig.root; }
   const g = new THREE.Group();
   put(blob(9.4, 2.4, 7.4, v => { if (v.y < 0) v.y = 0; }, 'thb'), M.gHn, g);
   for (let i = 0; i < 5; i++) { const z = -2.6 + i * 1.3, h = 5.6 - Math.abs(i - 2) * .6; for (const sx of [-1, 1]) put(tube([[sx * 3.6, .2, z], [sx * 3.6, h * .6, z], [sx * 1.6, h, z * .9], [sx * .2, h + .3, z * .8]], [.42, .36, .28, .16], 10), M.gB, g); }
@@ -311,6 +327,7 @@ export function tuskhollow(anim: ((t: number) => void)[]) {
 }
 /** Old Growth: a branching tree of fungus. Third research. */
 export function oldgrowth(anim: ((t: number) => void)[]) {
+  const fig = figure('oldgrowth'); if (fig) { const q = fig.groups; anim.push(t => { for (let i = 0; i < 5; i++) q['cap' + i].rotation.z = Math.sin(t * .8 + i) * .05; }); return fig.root; }
   const g = new THREE.Group();
   put(blob(6.4, 2, 6.4, v => { if (v.y < 0) v.y = 0; }, 'ogb'), M.gHn, g);
   put(tube([[0, 0, 0], [.4, 3, .2], [-.2, 6, 0], [.2, 9, -.2]], [1.4, 1.0, .8, .5], 10), M.gH, g);
@@ -326,6 +343,7 @@ export function oldgrowth(anim: ((t: number) => void)[]) {
 }
 /** Stinger Stalk: defence. A tall stalk with a curled stinger that whips at anything close. */
 export function stinger(anim: ((t: number) => void)[]) {
+  const fig = figure('stinger'); if (fig) { const q = fig.groups; anim.push(t => { q.tip.rotation.x = Math.sin(t * 1.3) * .12; q.tip.rotation.y = Math.sin(t * .7) * .3; }); return fig.root; }
   const g = new THREE.Group();
   put(blob(3.2, 1.2, 3.2, v => { if (v.y < 0) v.y = 0; }, 'stb'), M.gHn, g);
   put(tube([[0, 0, 0], [.2, 2.4, 0], [-.1, 4.8, .1], [0, 6.4, 0]], [.7, .5, .42, .36], 10), M.gH, g);
@@ -346,12 +364,13 @@ export function bloomPatch(seed: number, rad: number) {
   let s = seed * 7919 + 13; const rr = () => { s = (s * 16807) % 2147483647; return s / 2147483647; };
   const k = [rr() * 6, rr() * 6, rr() * 6], edge = (a: number) => .88 + Math.sin(a * 3 + k[0]) * .06 + Math.sin(a * 7 + k[1]) * .04 + Math.sin(a * 13 + k[2]) * .025;
   const disc = (scale: number, mat: THREE.Material, y: number) => {
-    const pos: number[] = [0, y, 0], uv: number[] = [.5, .5], idx: number[] = [];
-    for (let i = 0; i <= n; i++) { const a = i / n * TAU, r = edge(a) * rad * scale; pos.push(Math.cos(a) * r, y, Math.sin(a) * r); uv.push(.5 + Math.cos(a) * r / 6, .5 + Math.sin(a) * r / 6); if (i) idx.push(0, i + 1, i); }
+    const pos: number[] = [0, y, 0], uv: number[] = [0, 0], idx: number[] = [];
+    for (let i = 0; i <= n; i++) { const a = i / n * TAU, r = edge(a) * rad * scale; pos.push(Math.cos(a) * r, y, Math.sin(a) * r); uv.push(1, 0); if (i) idx.push(0, i + 1, i); }
     const geo = new THREE.BufferGeometry(); geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); geo.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2)); geo.setIndex(idx); geo.computeVertexNormals();
     const m = new THREE.Mesh(geo, mat); m.name = 'bloom'; grow.add(m); return m;
   };
-  disc(1.035, M.gBloomRim, 0); disc(1, M.gBloom, .006);
+  // one sheet, a little oversize: the shader frays its lip. uv.x runs 0 at the middle to 1 at the lip
+  disc(1.1, M.gBloom, .006);
   // Lime spore buds dotted near the rim.
   for (let i = 0; i < Math.round(4 + rad * .6); i++) { const a = rr() * TAU, e = edge(a) * rad * (.55 + rr() * .4), k = .18 + rr() * .2; put(blob(k, k * .7, k), M.gS, grow, [Math.cos(a) * e, .04, Math.sin(a) * e]); }
   return g;

@@ -56,17 +56,41 @@ export function rbox(w: number, h: number, d: number, r = .03, seg = 1) {
 }
 /** A ball pressed into shape. `fn` works on the unit sphere before it is stretched to size. */
 export function blob(sx: number, sy: number, sz: number, fn?: (v: THREE.Vector3) => void, key = '') {
-  return memo('s' + [sx, sy, sz, key], () => shape(new THREE.SphereGeometry(.5, 14, 9), v => { if (fn) fn(v); v.x *= sx; v.y *= sy; v.z *= sz; }));
+  return memo('s' + [sx, sy, sz, key], () => shape(new THREE.SphereGeometry(.5, 12, 8), v => { if (fn) fn(v); v.x *= sx; v.y *= sy; v.z *= sz; }));
+}
+/** A small rough ball for rivets, knuckles, bulbs and knots: a quarter of the triangles of a blob, and at that size nobody can tell. */
+export function nub(sx: number, sy: number, sz: number, fn?: (v: THREE.Vector3) => void, key = '', ws = 7, hs = 5) {
+  return memo('n' + [sx, sy, sz, key, ws, hs], () => shape(new THREE.SphereGeometry(.5, ws, hs), v => { if (fn) fn(v); v.x *= sx; v.y *= sy; v.z *= sz; }));
+}
+/** A straight thin bar with square ends, for poles, stays and rungs. Sixteen triangles. */
+export function rod(a: P3, b: P3, r: number, sides = 4) {
+  return memo('o' + [a, b, r, sides], () => {
+    const A = new THREE.Vector3(a[0], a[1], a[2]), B = new THREE.Vector3(b[0], b[1], b[2]), d = B.clone().sub(A), l = d.length() || 1e-4;
+    const g: THREE.BufferGeometry = new THREE.CylinderGeometry(r, r, l, sides, 1, false); g.applyQuaternion(new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), d.multiplyScalar(1 / l))); g.translate((a[0] + b[0]) / 2, (a[1] + b[1]) / 2, (a[2] + b[2]) / 2);
+    return g;
+  });
+}
+/** A blade of dry grass: a three-sided spike bent through three points, `w` wide at the root. Nine triangles. */
+export function blade(a: P3, b: P3, c: P3, w: number) {
+  const pos: number[] = [], uv: number[] = [], ax = [a, b, c].map(q => new THREE.Vector3(q[0], q[1], q[2])), V = (i: number, j: number) => { const an = j * 2.0944 + i * .5, r = i ? w * .62 : w; return new THREE.Vector3(ax[i].x + Math.cos(an) * r, ax[i].y, ax[i].z + Math.sin(an) * r); };
+  const n = new THREE.Vector3(), e1 = new THREE.Vector3(), e2 = new THREE.Vector3(), mid = new THREE.Vector3();
+  const tri = (p: THREE.Vector3, q: THREE.Vector3, r: THREE.Vector3, axis: THREE.Vector3, vs: number[]) => {
+    n.crossVectors(e1.subVectors(q, p), e2.subVectors(r, p)); mid.copy(p).add(q).add(r).multiplyScalar(1 / 3).sub(axis); const flip = n.dot(mid) < 0, o = flip ? [p, r, q] : [p, q, r], t = flip ? [vs[0], vs[2], vs[1]] : vs;
+    o.forEach((v, k) => { pos.push(v.x, v.y, v.z); uv.push(.5, t[k]); });
+  };
+  for (let j = 0; j < 3; j++) { const p0 = V(0, j), p1 = V(0, (j + 1) % 3), q0 = V(1, j), q1 = V(1, (j + 1) % 3), ax01 = ax[0].clone().lerp(ax[1], .5); tri(p0, p1, q0, ax01, [0, 0, .6]); tri(q0, p1, q1, ax01, [.6, 0, .6]); tri(q0, q1, ax[2], ax[1].clone().lerp(ax[2], .34), [.6, .6, 1]); }
+  const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2)); g.computeVertexNormals(); return g;
 }
 /**
  * A tube swept along a smooth path through `pts`, with its own radius at each point and rounded ends.
  * `flat` squashes the cross-section. The texture runs once around and once along.
  */
-export function tube(pts: P3[], rad: number | number[], seg = 10, flat = 1, closed = false) {
-  seg = Math.max(5, Math.round(seg * .75));
-  return memo('t' + pts.join(';') + rad + seg + flat + closed, () => {
+export function tube(pts: P3[], rad: number | number[], seg = 10, flat = 1, closed = false, len = 0) {
+  // A negative count is taken as it stands, and `len` sets the number of steps along the path: thin things need neither roundness nor many steps.
+  seg = seg < 0 ? -seg : Math.max(5, Math.round(seg * .75));
+  return memo('t' + pts.join(';') + rad + seg + flat + closed + len, () => {
     const curve = new THREE.CatmullRomCurve3(pts.map(p => new THREE.Vector3(p[0], p[1], p[2])), closed, 'centripetal');
-    const N = Math.max(3, (pts.length - 1) * 4), fr = curve.computeFrenetFrames(N, closed), R = Array.isArray(rad) ? rad : [rad];
+    const N = len || Math.max(3, (pts.length - 1) * 4), fr = curve.computeFrenetFrames(N, closed), R = Array.isArray(rad) ? rad : [rad];
     const rAt = (t: number) => { if (R.length === 1) return R[0]; const x = t * (R.length - 1), i = Math.min(R.length - 2, Math.floor(x)), f = x - i; return R[i] + (R[i + 1] - R[i]) * (f * f * (3 - 2 * f)); };
     const pos: number[] = [], uv: number[] = [], idx: number[] = [], c = new THREE.Vector3();
     const ring = (t: number, r: number, off: number) => {

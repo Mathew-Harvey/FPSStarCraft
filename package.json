@@ -21,6 +21,7 @@
     "@types/three": "0.160.0",
     "@types/ws": "^8.5.12",
     "esbuild": "0.21.5",
+    "fflate": "^0.6.11",
     "typescript": "5.4.5"
   }
 }

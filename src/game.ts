@@ -1,16 +1,18 @@
 // The simulation and the player: entities, combat, effects, the first-person bodies,
 // and jumping between them. Strategy (economy AI, raids, squad plans) lives in director.ts.
 import * as THREE from 'three';
-import { Pipeline, ViewPipe, V3, M, G, R, mk, setLayer, L_FX, L_SELF, holoOK, holoBad, ringMat, tracerMat, makeSky } from './gfx';
+import { Pipeline, ViewPipe, V3, M, G, R, mk, setLayer, L_FX, L_SELF, holoOK, holoBad, ringMat, tracerMat, makeSky, heldMaterial } from './gfx';
 import * as MD from './models';
 import { sfx, drillSound, setMood, babble } from './audio';
 import type { Hud } from './hud';
 import { Fog } from './fog';
 import { Kind, BKind, UNIT, BLD, BUILDABLE, UPGRADES, TRAINS, UNIT_NEEDS, UpKey, Unit, Building, Prop, OreNode, Difficulty, DIFFS, OUTPOST, GATE, MAP, MAPS, ROAD, VHOME, FACTION, SIDE, setMap, veylPt, isUnit, isSoldier, isWorker, isFighter, foeOf, fac, MIRROR, atHome, endPt, swapEnd , STORY } from './data';
 import { Director } from './director';
+import { ENV, hourOf, matchHour, matchWeather, lampsBegin, lamp, flashLamp, lampsCommit, flicker } from './light';
 import type { Mission } from './campaign';
 import type { Net } from './net';
 import { HitFx, Surface } from './hitfx';
+import { Stance } from './stance';
 import { applySnap, netTick } from './netgame';
 import { Bloom, G_PAIR, G_TUNE, GBKind } from './gloam';
 import { poseLegs } from './gloam-art';
@@ -30,6 +32,14 @@ const GREY = new THREE.Color(.86, .93, 1.08), greyed = new Map<THREE.Material, T
 /** The yard's home seams: x, z, crystals, size. */
 const YARD_SEAMS = [[17, -15, 9, 1.2], [21, -10, 7, 1.0], [23, -18, 8, 1.3], [15, -21, 6, .9], [-18, -24, 8, 1.1], [-24, -19, 7, 1.0]];
 export const beamMat = new THREE.MeshBasicMaterial({ color: 0x6dfff0, depthWrite: false });
+// Lamp colours, and where each kind of building and body carries its lamps.
+type C3 = [number, number, number];
+const WARM: C3 = [1, .6, .24], HEAD: C3 = [1, .78, .46], FLOOD: C3 = [1, .76, .42], FIRE: C3 = [1, .46, .12], TEAL: C3 = [.3, 1, .88], ROSE: C3 = [1, .36, .7], SICK: C3 = [.72, 1, .3], ORE: C3 = [.36, .9, 1], MUZZLE: C3 = [1, .82, .5];
+/** The cage lamps hung on the Ironhold sheds, in each building's own space: x, y, z and how far the light reaches. */
+const BLAMP: Record<string, [number, number, number, number][]> = { depot: [[3.42, 1.7, 1.5, 11]], assay: [[-1.6, 2.1, 3.2, 11]], machineshop: [[-3.2, 2.2, 3.5, 11], [-.6, 2.4, 2.8, 8]] };
+/** Bodies that carry a light: its height, how far ahead of the body it sits, its reach, colour and strength. */
+const ULAMP: Record<string, [number, number, number, C3, number]> = { rigger: [1.5, .5, 4.5, WARM, .6], linesman: [1.6, 1.2, 4, HEAD, .45], patch: [1.6, 1.2, 4, HEAD, .45], breacher: [1.6, 1.2, 4, HEAD, .45], gantry: [3, 2.4, 8, HEAD, .7],
+  tender: [1.3, .3, 4.5, TEAL, .6], cantor: [1.6, .4, 5, TEAL, .7], lancer: [1.4, .5, 4.5, ROSE, .55], warden: [3, .8, 8, TEAL, .85], blister: [.9, 0, 5, SICK, .7], mulcher: [3.4, 0, 7, SICK, .5] };
 const bubbleMat = new THREE.MeshBasicMaterial({ color: 0x6dfff0, transparent: true, opacity: .4, depthWrite: false, blending: THREE.AdditiveBlending });
 const warnMat = new THREE.MeshBasicMaterial({ color: 0xff4f9a, transparent: true, opacity: .9, depthWrite: false, side: THREE.DoubleSide });
 let nextId = 1;
@@ -67,7 +77,7 @@ export class Game {
   jaw = 0; chargeT = 0;
   time = 0; phase: 'menu' | 'play' | 'paused' | 'card' | 'over' | 'cut' = 'menu';
   /** A cut scene's camera: where it stands, what it looks at, and its lens. The world keeps moving under it when `cutSim` is on. */
-  shot: { pos: THREE.Vector3; look: THREE.Vector3; fov: number } | null = null; cutSim = false; cutSat = 1; /** Fixed light for a cut scene. */ duskFix: number | undefined = undefined; won = false;
+  shot: { pos: THREE.Vector3; look: THREE.Vector3; fov: number } | null = null; cutSim = false; cutSat = 1; /** Fixed light for a cut scene. */ duskFix: number | undefined = undefined; /** A fixed hour of the day (0 to 24) and weather, for looking at the light. */ hourFix: number | undefined = undefined; wxFix: string | undefined = undefined; /** Which run of weather this match gets. Everyone in a shared match has the same. */ wxSalt = 0; won = false;
   /** Research bought, by team. In a mirror match both sides have the same keys, so each team keeps its own list. */
   ups: Record<UpKey, boolean>[] = [0, 1, 2, 3, 4, 5].map(() => Object.fromEntries(UPGRADES.map(u => [u.key, false])) as Record<UpKey, boolean>);
   /** What a team has researched. */
@@ -85,11 +95,12 @@ export class Game {
   vm: Record<string, THREE.Group> = {};
   tracers: { m: THREE.Mesh; t: number }[] = []; puffs: { m: THREE.Mesh; t: number; life: number; v: THREE.Vector3; s: number }[] = [];
   bits: { m: THREE.Mesh; t: number; v: THREE.Vector3; spin: number }[] = []; scorch: { m: THREE.Mesh; t: number; s: number }[] = [];
+  bursts: { g: THREE.Group; t: number; s: number; rot: number; mats: THREE.MeshBasicMaterial[] }[] = [];
   bubbles: { m: THREE.Mesh; t: number; u: Unit | null }[] = []; warns: { m: THREE.Mesh; t: number; life: number; r: number }[] = [];
   projs: Proj[] = []; boltProto = MD.bolt(); nadeProto = MD.grenade();
   shake = 0; noRender = false; alertT = 0; mood = 0;
   /** Hit reactions, deaths and what a bullet does where it lands. All of it is for show. */
-  fx!: HitFx;
+  fx!: HitFx; stance!: Stance;
   introT = 0; menuPos = V3(); menuQuat = new THREE.Quaternion(); hitStop = 0; streak = 0; streakT = 0; kick = 0; stepPhase = 0; dustT = 0; hopT = 0; hopCd = 0; hopX = 0; hopZ = 0; endT = 0; endWon = false;
 
   constructor(public pipe: Pipeline | ViewPipe, public hud: Hud, public diff: Difficulty = DIFFS[1], public mapI = 0, public mission: Mission | null = null, public net: Net | null = null, /** The Veyl run a real economy (Tenders, building, training) instead of breeding raids for free. On whenever somebody plays the Veyl. */ public eco = false) {
@@ -97,21 +108,24 @@ export class Game {
     // anyone else at home always run a real economy on both sides.
     if (!(fac(SIDE.home) === 0 && fac(SIDE.out) === 1)) this.eco = true;
     setMap(mapI); (M.ground as any).uniforms.uColor.value.setRGB(MAP.ground[0], MAP.ground[1], MAP.ground[2]); (M.mesa as any).uniforms.uColor.value.setRGB(MAP.mesa[0], MAP.mesa[1], MAP.mesa[2]); (M.rock as any).uniforms.uColor.value.setRGB(MAP.rock[0], MAP.rock[1], MAP.rock[2]); 
+    this.wxSalt = mapI + (net ? 0 : Date.now() % 50);   // the clock, not the dice: a draw here would move every bot match that follows
     const s = this.scene; s.add(makeSky()); MD.buildWorld(s, this.props, this.anim); this.spires = this.props.filter(p => p.solid); s.add(this.cam);
     this.vm = { drill: MD.vmDrill(), rifle: MD.vmRifle(), scatter: MD.vmScatter(), shield: MD.vmShield(), cannon: MD.vmCannon(), long: MD.vmLong(), pistol: MD.vmPistol(), veyl: MD.vmVeyl() };
     if (fac(SIDE.home) === 2 || fac(SIDE.out) === 2) for (const k of ['grazer', 'snapper', 'quillback', 'blister', 'mulcher']) this.vm['g_' + k] = MD.vmG(k);
     this.carpet = new Bloom(s);
-    for (const k in this.vm) { this.vm[k].visible = false; this.cam.add(this.vm[k]); }
+    for (const k in this.vm) { this.vm[k].visible = false; this.cam.add(this.vm[k]); this.vm[k].traverse(o => { const m = o as THREE.Mesh; if (m.isMesh && !Array.isArray(m.material)) m.material = heldMaterial(m.material); }); }
     for (const k of new Set([...BUILDABLE, ...FACTION[SIDE.home].builds, ...FACTION[SIDE.out].builds])) { const src = this.model(k); this.ghost[k] = MD.hologram(src, holoOK); this.ghostBad[k] = MD.hologram(src, holoBad); this.ghost[k].visible = this.ghostBad[k].visible = false; s.add(this.ghost[k], this.ghostBad[k]); }
     const pool = (n: number, geo: THREE.BufferGeometry, mat: THREE.Material, fx: boolean) => { const out: THREE.Mesh[] = []; for (let i = 0; i < n; i++) { const m = mk(geo, mat, 0, 0, 0, s); if (fx) m.layers.set(L_FX); m.visible = false; out.push(m); } return out; };
-    this.tracers = pool(36, G.cyl8, tracerMat, true).map(m => ({ m, t: 0 }));
-    this.puffs = pool(80, G.sph, M.dust, false).map(m => ({ m, t: 0, life: 1, v: V3(), s: 1 }));
+    this.tracers = pool(36, G.oct, tracerMat, true).map(m => ({ m, t: 0 }));
+    this.puffs = pool(96, G.cloud, M.dust, false).map(m => ({ m, t: 0, life: 1, v: V3(), s: 1 }));
     this.bits = pool(90, G.box, M.rust, false).map(m => ({ m, t: 0, v: V3(), spin: 0 }));
     this.chunks = pool(240, G.dod, M.rock, false).map(m => ({ m, t: 0, v: V3(), w: V3(), s: 1, rest: false }));
-    this.scorch = pool(18, G.disc, M.scorch, false).map(m => { m.rotation.x = -Math.PI / 2; return { m, t: 0, s: 1 }; });
+    this.scorch = pool(18, G.blot, M.scorch, false).map(m => { m.rotation.x = -Math.PI / 2; return { m, t: 0, s: 1 }; });
+    // Blast flashes: an inked starburst that faces the camera for a fifth of a second, the way a comic draws a bang.
+    for (let i = 0; i < 6; i++) { const g = new THREE.Group(), mats = [0x0e0d14, 0xffb23a, 0xfff6c0].map(c => new THREE.MeshBasicMaterial({ color: c, transparent: true, depthWrite: false })); mats.forEach((m, j) => { const k = [1, .86, .5][j]; mk(G.burst, m, [0, 0, j * .03], [k, k, 1], [0, 0, j === 2 ? .24 : 0], g).renderOrder = 5 + j; }); setLayer(g, L_FX); g.visible = false; s.add(g); this.bursts.push({ g, t: 0, s: 1, rot: 0, mats }); }
     this.bubbles = pool(10, G.sph, bubbleMat, true).map(m => ({ m, t: 0, u: null }));
     this.warns = pool(6, G.ringG, warnMat, true).map(m => { m.rotation.x = -Math.PI / 2; return { m, t: 0, life: 1, r: 1 }; });
-    this.fx = new HitFx(this);
+    this.fx = new HitFx(this); this.stance = new Stance(this);
     const field = (list: number[][], amount: number) => { for (const [x, z, n, sc] of list) { const obj = MD.oreCluster(n, sc); obj.position.set(x, 0, z); s.add(obj); this.ores.push({ pos: V3(x, 0, z), amount, max: amount, obj }); } };
     field(YARD_SEAMS, 900);
     // the rich seam, then the other fields out on the map, each with room for a new Headframe on the side facing the yard
@@ -167,6 +181,7 @@ export class Game {
   addBuilding(kind: BKind, team: number, x: number, z: number, built: boolean, rot = false, id = 0): Building {
     const st = BLD[kind], obj = this.model(kind); obj.position.set(x, 0, z); if (rot) obj.rotation.y = Math.PI / 2; tintMirror(obj, team); this.scene.add(obj);
     const b: Building = { id: id || nextId++, kind, team, pos: V3(x, 0, z), hx: rot ? st.hz : st.hx, hz: rot ? st.hx : st.hz, h: st.h, hp: built ? st.hp : st.hp * .1, maxHp: st.hp, obj, holo: null, built, progress: built ? 1 : 0, pdone: built ? 1 : 0, queue: [], alive: true, cd: R(0, 1), builder: null, lastHit: -99, rot, smokeT: 0, stage: 0 };
+    for (const q of this.props) if (q.dress && q.alive && Math.abs(q.x - x) < b.hx + q.r * .6 && Math.abs(q.z - z) < b.hz + q.r * .6) this.damageProp(q, 1e4, null);
     if (!built) { b.holo = MD.hologram(obj, holoOK); b.holo.position.copy(obj.position); b.holo.rotation.copy(obj.rotation); this.scene.add(b.holo); obj.scale.y = .06; }
     if (fac(team) === 2) { this.carpet.add(b, kind as GBKind, x, z, built); if (kind === 'mothercap') { b.buds = built ? G_TUNE.buds : 0; b.budT = 0; } }
     this.buildings.push(b); return b;
@@ -259,12 +274,13 @@ export class Game {
   tracer(a: THREE.Vector3, b: THREE.Vector3, mat: THREE.Material = tracerMat, w = .07) {
     if (this.evq) { this.evq.push(['tr', r1(a.x), r1(a.y), r1(a.z), r1(b.x), r1(b.y), r1(b.z), mat === tracerMat ? 0 : 1, w]); return; }
     if (this.net && !this.applying) this.net.cmd('tr', r1(a.x), r1(a.y), r1(a.z), r1(b.x), r1(b.y), r1(b.z), mat === tracerMat ? 0 : 1, w);
+    flashLamp(a.x, a.y, a.z, 4.5 + w * 22, mat === tracerMat ? MUZZLE : mat === beamMat ? TEAL : ROSE, .09);
     const tr = this.tracers.find(t => t.t <= 0); if (!tr) return; const d = TMP.copy(b).sub(a), len = d.length(); if (len < .1) return;
-    tr.m.material = mat; tr.m.scale.set(w, len, w); tr.m.position.copy(a).addScaledVector(d, .5); tr.m.quaternion.setFromUnitVectors(UP, d.normalize()); tr.m.visible = true; tr.t = mat === tracerMat ? .06 : .16;
+    tr.m.material = mat; tr.m.scale.set(w * 1.7, len, w * 1.7); tr.m.position.copy(a).addScaledVector(d, .5); tr.m.quaternion.setFromUnitVectors(UP, d.normalize()); tr.m.visible = true; tr.t = mat === tracerMat ? .06 : .16;
   }
-  puff(p: THREE.Vector3, n: number, size: number, mat: THREE.Material = M.dust, up = 1.2, spread = 1) {
+  puff(p: THREE.Vector3, n: number, size: number, mat: THREE.Material = M.dust, up = 1.2, spread = 1, life = 1) {
     if (this.evq) return;
-    for (let i = 0; i < n; i++) { const f = this.puffs.find(x => x.t <= 0); if (!f) return; f.m.material = mat; f.m.position.copy(p); f.v.set(R(-1, 1) * spread, R(.3, 1) * up, R(-1, 1) * spread); f.s = size * R(.6, 1.2); f.life = f.t = R(.35, .7); f.m.visible = true; f.m.scale.setScalar(.01); }
+    for (let i = 0; i < n; i++) { const f = this.puffs.find(x => x.t <= 0); if (!f) return; f.m.material = mat; f.m.position.copy(p); f.v.set(R(-1, 1) * spread, R(.3, 1) * up, R(-1, 1) * spread); f.s = size * R(.6, 1.2); f.life = f.t = R(.35, .7) * life; f.m.rotation.set(R(0, 6), R(0, 6), R(0, 6)); f.m.visible = true; f.m.scale.setScalar(.01); }
   }
   /** Chunky debris that arcs, bounces once and shrinks away. */
   debris(p: THREE.Vector3, n: number, size: number, mat: THREE.Material, power = 6) {
@@ -272,6 +288,8 @@ export class Game {
     for (let i = 0; i < n; i++) { const f = this.bits.find(x => x.t <= 0); if (!f) return; f.m.material = mat; f.m.position.copy(p); f.v.set(R(-1, 1) * power, R(.5, 1.3) * power, R(-1, 1) * power); const s = size * R(.5, 1.3); f.m.scale.set(s, s * R(.4, 1), s * R(.6, 1.2)); f.m.rotation.set(R(0, 6), R(0, 6), 0); f.spin = R(-12, 12); f.t = R(.9, 1.6); f.m.visible = true; }
   }
   scorchAt(p: THREE.Vector3, size: number) { if (this.evq) return; let s = this.scorch.find(x => x.t <= 0); if (!s) s = this.scorch.reduce((a, b) => a.t < b.t ? a : b); s.m.position.set(p.x, .04 + Math.random() * .01, p.z); s.s = size; s.m.scale.set(size, size, 1); s.m.rotation.z = R(0, 6); s.m.visible = true; s.t = 40; }
+  /** The flash of a blast. `mode` 0 is fire, 1 Veyl light, 2 Gloam acid. */
+  pow(p: THREE.Vector3, size: number, mode = 0) { if (this.evq) return; const b = this.bursts.find(x => x.t <= 0) || this.bursts.reduce((a, c) => a.t < c.t ? a : c); b.g.position.set(p.x, Math.max(p.y, .9), p.z); b.s = size; b.t = .2; b.rot = R(0, 6); b.mats[1].color.setHex([0xffb23a, 0x35e0c8, 0xb8f04a][mode]); b.mats[2].color.setHex([0xfff6c0, 0xeafffb, 0xf4ffd2][mode]); b.g.scale.setScalar(.01); b.g.visible = true; }
   bubble(u: Unit) { if (this.evq) return; const b = this.bubbles.find(x => x.t <= 0); if (!b) return; b.u = u; b.t = .18; b.m.visible = true; const s = UNIT[u.kind].rad * 3.4; b.m.scale.set(s, UNIT[u.kind].headY * 1.15, s); }
   warn(x: number, z: number, r: number, life: number) { if (this.evq) { this.evq.push(['wn', r1(x), r1(z), r, life]); return; } const w = this.warns.find(x => x.t <= 0); if (!w) return; w.m.position.set(x, .12, z); w.r = r; w.t = w.life = life; w.m.visible = true; }
   explode(p: THREE.Vector3, team: number, dmg: number, radius: number, from: Unit | null, mode: boolean | number = false) {
@@ -280,8 +298,9 @@ export class Game {
     for (const u of this.units) { if (!u.alive || u.team === team) continue; const d = Math.hypot(u.pos.x - p.x, u.pos.z - p.z); if (d > radius + UNIT[u.kind].rad) continue; const k = 1 - .6 * Math.min(1, d / radius); this.damage(u, dmg * k, from); if (d > .1) { u.kx += (u.pos.x - p.x) / d * 9 * k; u.kz += (u.pos.z - p.z) / d * 9 * k; } }
     for (const b of this.buildings) { if (!b.alive || b.team === team) continue; if (this.distToBox(b, p.x, p.z) < radius * .7) this.damage(b, dmg * 1.4, from); }
     this.blastProps(p, radius, dmg, from); this.shove(p, radius * 1.6, 9);
-    const g = V3(p.x, .6, p.z); this.puff(g, 7, radius * .5, acid ? M.gS : veyl ? M.teal : M.fire, 2.2, 1.6); this.puff(g, 5, radius * .55, acid ? M.gGlow : veyl ? M.indigoL : M.smoke, 1.4, 2.2); this.debris(g, 8, .3, acid ? M.gH : veyl ? M.crys : M.rock, 7); this.scorchAt(p, radius * 1.5); if (radius >= 3.5) this.crater(p, radius * .55);
+    const g = V3(p.x, .6, p.z); this.puff(g, 5, radius * .62, acid ? M.gS : veyl ? M.teal : M.fire, 2.2, 1.5); this.puff(g, 3, radius * .5, acid ? M.gGlow : veyl ? M.cyan : M.fireD, 1.6, 2); this.puff(TMP2.set(p.x, 1.1, p.z), 5, radius * .7, acid ? M.gGlow : veyl ? M.indigoL : M.soot, 1.5, 1.7, 2.3); this.debris(g, 8, .3, acid ? M.gH : veyl ? M.crys : M.rock, 7); this.pow(g, radius * 1.5, acid ? 2 : veyl ? 1 : 0); this.scorchAt(p, radius * 1.5); if (radius >= 3.5) this.crater(p, radius * .55);
     const v = this.vol(p); this.shake = Math.max(this.shake, v * 1.1); if (!veyl) this.pipe.flash = Math.max(this.pipe.flash, v * .5); sfx.boom(v);
+    flashLamp(p.x, 1.4, p.z, radius * 3 + 7, acid ? SICK : veyl ? TEAL : FIRE, .4);
     this.hud.damage(V3(p.x, 2.2, p.z), acid ? 'SPLORCH!' : veyl ? 'WHUMM!' : 'BOOM!', team === this.myTeam || (team < 0 && !veyl) ? 'ko' : 'kobad');
   }
 
@@ -355,7 +374,7 @@ export class Game {
   crater(p: { x: number; z: number }, r: number) {
     if (this.evq) return;
     let c = this.craters.find(x => x.t <= 0);
-    if (!c) { if (this.craters.length < 16) { const m = new THREE.Group(); mk(G.disc, M.scorch, [0, .05, 0], [1, 1, 1], [-Math.PI / 2, 0, 0], m); for (let i = 0; i < 9; i++) { const a = i / 9 * 6.283 + R(-.2, .2); mk(G.dod, i % 3 ? M.rock : M.mesa, [Math.cos(a), .08, Math.sin(a)], [R(.3, .5), R(.14, .3), R(.24, .4)], [R(0, 3), R(0, 3), 0], m); } setLayer(m, L_FX); this.scene.add(m); c = { m, t: 0 }; this.craters.push(c); } else c = this.craters.reduce((a, b) => a.t < b.t ? a : b); }
+    if (!c) { if (this.craters.length < 16) { const m = new THREE.Group(); mk(G.blot, M.scorch, [0, .05, 0], [2.3, 2.3, 1], [-Math.PI / 2, 0, 0], m); for (let i = 0; i < 9; i++) { const a = i / 9 * 6.283 + R(-.2, .2); mk(G.dod, i % 3 ? M.rock : M.mesa, [Math.cos(a), .08, Math.sin(a)], [R(.3, .5), R(.14, .3), R(.24, .4)], [R(0, 3), R(0, 3), 0], m); } setLayer(m, L_FX); this.scene.add(m); c = { m, t: 0 }; this.craters.push(c); } else c = this.craters.reduce((a, b) => a.t < b.t ? a : b); }
     c.m.position.set(p.x, R(0, .02), p.z); c.m.rotation.y = R(0, 6); c.m.scale.set(r, Math.min(2.2, r * .55), r); c.m.visible = true; c.t = 150;
   }
   fallA = -1; possT = -9;
@@ -484,6 +503,7 @@ export class Game {
     for (const f of this.puffs) if (f.t > 0) { f.t -= dt; const k = 1 - f.t / f.life; f.m.position.addScaledVector(f.v, dt * 2.2); const s = f.s * (.4 + k) * (1 - k * k); f.m.scale.set(s, s, s); if (f.t <= 0) f.m.visible = false; }
     for (const f of this.bits) if (f.t > 0) { f.t -= dt; f.v.y -= 22 * dt; f.m.position.addScaledVector(f.v, dt); f.m.rotation.x += f.spin * dt; f.m.rotation.z += f.spin * .7 * dt; if (f.m.position.y < .08) { f.m.position.y = .08; f.v.y *= -.35; f.v.x *= .5; f.v.z *= .5; f.spin *= .4; } if (f.t < .3) f.m.scale.multiplyScalar(Math.max(0, 1 - dt * 6)); if (f.t <= 0) f.m.visible = false; }
     for (const s of this.scorch) if (s.t > 0) { s.t -= dt; if (s.t < 4) { const k = Math.max(.001, s.t / 4) * s.s; s.m.scale.set(k, k, 1); } if (s.t <= 0) s.m.visible = false; }
+    for (const b of this.bursts) if (b.t > 0) { b.t -= dt; const k = 1 - Math.max(0, b.t) / .2; b.g.scale.setScalar(b.s * (.5 + .8 * Math.sqrt(k))); b.g.quaternion.copy(this.cam.quaternion); b.g.rotateZ(b.rot); if (b.t <= 0) b.g.visible = false; }
     for (const b of this.bubbles) if (b.t > 0) { b.t -= dt; if (b.u) b.m.position.set(b.u.pos.x, UNIT[b.u.kind].bodyY, b.u.pos.z); if (b.t <= 0) b.m.visible = false; }
     for (const w of this.warns) if (w.t > 0) { w.t -= dt; const k = 1 - w.t / w.life, s = w.r * 2 * (.3 + .7 * k); w.m.scale.set(s, s, 1); if (w.t <= 0) w.m.visible = false; }
     this.fx.update(dt);
@@ -776,7 +796,7 @@ export class Game {
     if (p.obj) this.scene.remove(p.obj);
     if (!p.owner) {
       const mat = this.propMat(p), hh = Math.min(p.h - p.y0, 14), c = V3(p.x, p.y0, p.z), v = this.vol(c), big = p.maxHp >= 800;
-      if (p.kind === 'plant') this.puff(TMP.set(p.x, .6, p.z), 3, .5, M.violet, 1, .6);
+      if (p.kind === 'plant') this.puff(TMP.set(p.x, .6, p.z), 3, .5, p.dress ? M.dust : M.violet, 1, .6);
       else {
         const n = Math.max(3, Math.min(22, Math.round(2 + p.r * hh * .7))), sz = Math.min(2.6, Math.max(.16, p.r * (p.kind === 'rock' || p.kind === 'mesa' ? .55 : .42)));
         for (let k = 0; k < n; k++) { const a = R(0, 6.283), rr = p.r * R(0, .9); this.chunk(V3(p.x + Math.cos(a) * rr, p.y0 + R(.2, hh), p.z + Math.sin(a) * rr), sz * R(.55, 1.25), mat, 3 + Math.min(6, p.r), c, p.kind === 'metal' || p.kind === 'barrel'); }
@@ -935,7 +955,7 @@ export class Game {
   }
   /** Turns each unit's state into a pose: legs, arms, bob and muzzle flash. */
   poseUnits(dt: number) {
-    const us = this.units, t = this.time; this.fx.pre();
+    const us = this.units, t = this.time; this.fx.pre(); this.stance.pre();
     for (const u of us) {
       if (!u.alive) continue; const r = u.rig, o = u.obj; o.position.x = u.pos.x; o.position.z = u.pos.z;
       let dy = u.yaw - o.rotation.y; dy = Math.atan2(Math.sin(dy), Math.cos(dy)); o.rotation.y += dy * Math.min(1, dt * 12);
@@ -945,14 +965,14 @@ export class Game {
         poseLegs(o, u.phase, u.moving, ease); o.position.y = u.moving ? Math.abs(Math.sin(u.phase)) * .05 : 0;
         const working = u.state === 'mining' || u.state === 'build' || u.state === 'repair';
         r.body.rotation.x += ((u.moving ? (u.dashT > 0 ? .25 : .06) : 0) - u.pop * .12 - (u.wind > 0 ? .25 : 0) + u.swing * .2 - r.body.rotation.x) * ease; r.body.rotation.z = u.moving ? Math.sin(u.phase * 2) * .03 : 0;
-        if (r.head) { r.head.rotation.x = working ? Math.sin(t * 22 + u.id) * .12 + .15 : u.swing * .35; r.head.rotation.y += ((u.moving || u.target || working ? 0 : Math.sin(t * .9 + u.id) * .4) - r.head.rotation.y) * Math.min(1, dt * 4); }
+        if (r.head) { r.head.rotation.x = working ? Math.sin(t * 22 + u.id) * .12 + .15 : u.swing * .35; r.head.rotation.y += -r.head.rotation.y * Math.min(1, dt * 4); }
         if (r.flash) r.flash.visible = u.flashT > 0;
         if (u.kind === 'blister') { const k = 1 + Math.sin(t * 7 + u.id) * .04 + (u.target ? .05 : 0); o.scale.set(sc * k, sc * k, sc * k); }
       } else if (r.legL && r.legR) {
         const s = Math.sin(u.phase) * amp; r.legL.rotation.x += (s - r.legL.rotation.x) * ease; r.legR.rotation.x += (-s - r.legR.rotation.x) * ease; o.position.y = u.moving ? Math.abs(Math.cos(u.phase)) * .07 : 0;
         const working = u.state === 'mining' || u.state === 'build' || u.state === 'repair';
         r.body.rotation.x += ((u.moving ? .1 : working ? .16 : 0) - u.pop * .12 - r.body.rotation.x) * ease; r.body.rotation.z = u.moving ? Math.sin(u.phase) * .04 : 0;
-        if (r.head) r.head.rotation.y += ((u.moving || u.target || working ? 0 : Math.sin(t * .7 + u.id) * .5) - r.head.rotation.y) * Math.min(1, dt * 4);
+        if (r.head) r.head.rotation.y += -r.head.rotation.y * Math.min(1, dt * 4);
         if (u.kind === 'rigger') { if (r.armL) r.armL.rotation.x += (-s * .8 - r.armL.rotation.x) * ease; if (r.armR) r.armR.rotation.x = working ? -.5 + Math.sin(t * 34 + u.id) * .05 : s * .3; }
         else { if (r.arms) { r.arms.rotation.x += (-u.pitch * .8 + (u.moving && !u.target ? .25 : 0) - u.swing * .1 - r.arms.rotation.x) * ease; r.arms.position.z = .05 - u.swing * .1; } if (r.armL) r.armL.rotation.x = u.moving ? Math.sin(u.phase) * .12 : 0; if (r.flash) { r.flash.visible = u.flashT > 0; if (u.flashT > 0) r.flash.rotation.z = t * 40; } }
       } else {
@@ -964,7 +984,7 @@ export class Game {
         if (big && r.armL && r.armR) { const k = u.wind > 0 ? Math.min(1, (1 - u.wind / .9) * 1.4) : 0; const a = u.wind > 0 ? -2.4 * k : u.swing * .9; r.armL.rotation.x += (a - r.armL.rotation.x) * Math.min(1, dt * 18); r.armR.rotation.x = r.armL.rotation.x; }
       }
     }
-    this.fx.post(dt);
+    this.stance.post(dt); this.fx.post(dt);
   }
   /** A worker the AI drives: a Rigger or a Tender. Builds what it was sent to, otherwise mines the best seam and carries the ore home. */
   aiRigger(u: Unit, dt: number) {
@@ -1168,10 +1188,11 @@ export class Game {
   // ------------------------------------------------------------ render
   render(dt: number) {
     const me = this.me, cam = this.cam, pipe = this.pipe, vm = this.vm; this.drawT = Math.max(0, this.drawT - dt);
-    cam.aspect = pipe.w / pipe.h; const fix = this.duskFix ?? this.story?.dusk; pipe.setDusk(fix !== undefined ? fix : Math.min(1, MAP.dusk + Math.max(0, (this.time - 120) / 780)));
+    cam.aspect = pipe.w / pipe.h; this.lampDt = dt;
+    { const fix = this.duskFix ?? this.story?.dusk, hour = this.hourFix ?? (fix !== undefined ? hourOf(fix) : matchHour(MAP.dusk, this.time)), wx: [string, number] = this.wxFix ? [this.wxFix, 1] : fix !== undefined || this.hourFix !== undefined ? ['clear', 0] : matchWeather(this.wxSalt, this.time, hour); pipe.setSky(hour, wx[0], wx[1]); }
     const build = this.phase !== 'menu' && this.tool === 2 && !!me && isWorker(me.kind) && me.alive && !this.tab && this.staticT <= 0, blist = FACTION[me?.team || 0].builds;
     for (const k in this.ghost) { const on = build && blist[this.buildSel] === k; this.ghost[k].visible = on && this.placeOK; this.ghostBad[k].visible = on && !this.placeOK; if (on) { const g = this.placeOK ? this.ghost[k] : this.ghostBad[k]; g.position.copy(this.placePos); g.rotation.y = this.buildRot ? Math.PI / 2 : 0; } }
-    holoOK.opacity = .3 + Math.sin(pipe.time * 3) * .07; warnMat.opacity = .6 + Math.sin(pipe.time * 30) * .3;
+    holoOK.opacity = .2 + Math.sin(pipe.time * 3) * .05; warnMat.opacity = .6 + Math.sin(pipe.time * 30) * .3;
     const near = !this.tab && this.phase !== 'menu' && me ? me : null;
     for (const u of this.units) { u.ring.visible = this.tab && u.team === this.myTeam; u.obj.visible = !(near && u !== near && u.team === this.myTeam && Math.hypot(u.pos.x - near.pos.x, u.pos.z - near.pos.z) < 1.05); }
     pipe.static = this.staticT > 0 ? .85 : 0; pipe.sat = this.tab ? .8 : 1;
@@ -1179,16 +1200,16 @@ export class Game {
     if (this.phase === 'menu') {
       const a = pipe.time * .07; cam.fov = 46; cam.position.set(Math.sin(a) * 36 + 4, 8 + Math.sin(a * 2) * 2, Math.cos(a) * 36); cam.lookAt(2, 5.5, 0); if (me) this.bodyLayer(me, false);
       this.menuPos.copy(cam.position); this.menuQuat.copy(cam.quaternion);
-      cam.updateProjectionMatrix(); cam.updateMatrixWorld(); pipe.draw(this.scene, cam, V3(0, 0, 0), 120); return;
+      cam.updateProjectionMatrix(); cam.updateMatrixWorld(); this.lamps(cam); pipe.draw(this.scene, cam, V3(0, 0, 0), 120); return;
     }
     if (this.phase === 'cut' && this.shot) {
       pipe.sat = this.cutSat; const sh = this.shake * .05; cam.fov = this.shot.fov; cam.position.copy(this.shot.pos).add(TMP2.set(R(-sh, sh), R(-sh, sh), R(-sh, sh))); cam.lookAt(this.shot.look); if (me) this.bodyLayer(me, false);
-      cam.updateProjectionMatrix(); cam.updateMatrixWorld(); pipe.draw(this.scene, cam, this.shot.look, 130); return;
+      cam.updateProjectionMatrix(); cam.updateMatrixWorld(); this.lamps(cam); pipe.draw(this.scene, cam, this.shot.look, 130); return;
     }
     if (this.tab && me) {
       const iso = this.iso, h = 30, w = h * pipe.w / pipe.h; iso.left = -w; iso.right = w; iso.top = h; iso.bottom = -h; iso.updateProjectionMatrix();
       const shift = w * .28; iso.position.set(me.pos.x + shift, 150, me.pos.z + 120); iso.lookAt(me.pos.x + shift, 0, me.pos.z); iso.updateMatrixWorld();
-      this.bodyLayer(me, false); pipe.draw(this.scene, iso, me.pos, 150); this.hud.update(this, iso); this.bodyLayer(me, true); return;
+      this.bodyLayer(me, false); this.lamps(iso); pipe.draw(this.scene, iso, me.pos, 150); this.hud.update(this, iso); this.bodyLayer(me, true); return;
     }
     if (me) {
       if (me.alive) this.bodyLayer(me, true);
@@ -1212,11 +1233,37 @@ export class Game {
         else { const pump = this.fireCd > 0 ? Math.sin(Math.min(1, (gun.cd - this.fireCd) / (gun.cd * .8)) * Math.PI) : 0; pose(vm.scatter, 0, this.recoil * .12, rl * .12 + this.ads * .16); vm.scatter.userData.mag.position.z = -.42 + pump * .12 + (rl > 0 ? Math.abs(Math.sin(this.reloadT * 9)) * .1 : 0); pose(vm.shield, this.ads, -this.bashT * 1.2, 0); }
       }
     }
-    cam.updateProjectionMatrix(); cam.updateMatrixWorld();
+    cam.updateProjectionMatrix(); cam.updateMatrixWorld(); this.lamps(cam);
     pipe.draw(this.scene, cam, me ? me.pos : V3(), 110);
     this.hud.update(this, cam);
     // music follows how hot things are around the player
     if (me) { let hot = this.time - me.lastHit < 6 ? 1 : 0; if (!hot) for (const u of this.units) if (u.team !== this.myTeam && u.alive && Math.abs(u.pos.x - me.pos.x) < 45 && Math.abs(u.pos.z - me.pos.z) < 45) { hot = 1; break; } this.mood += (hot - this.mood) * Math.min(1, dt * (hot ? 2 : .4)); setMood(this.phase === 'play' ? .25 + this.mood * .75 : .15); }
+  }
+  private lampDt = 0;
+  /** Every lamp, fire and glowing thing near the camera, handed to the renderer for this frame. All for show. */
+  private lamps(cam: THREE.Camera) {
+    lampsBegin(); const t = this.pipe.time, c = cam.position, me = this.me, far = 95 * 95;
+    if (ENV.pool >= .02) {
+      for (const b of this.buildings) {
+        if (!b.alive || (b.pos.x - c.x) ** 2 + (b.pos.z - c.z) ** 2 > far * 2) continue; const f = fac(b.team), big = Math.max(b.hx, b.hz);
+        if (!b.built) { if (f === 0) lamp(b.pos.x, 2.2, b.pos.z, big + 6, WARM, .5); continue; }
+        const at = BLAMP[b.kind];
+        if (at) for (const [x, y, z, r] of at) { TMP.set(x, y, z).applyMatrix4(b.obj.matrixWorld); lamp(TMP.x, TMP.y, TMP.z, r, WARM, flicker(t, b.id + x, .08)); }
+        else if (f === 0) { TMP.set(0, Math.min(3, b.h * .45), (b.rot ? b.hx : b.hz) + 1).applyMatrix4(b.obj.matrixWorld); lamp(TMP.x, TMP.y, TMP.z, big + 8, WARM, flicker(t, b.id, .08)); }
+        else lamp(b.pos.x, b.h * .55, b.pos.z, big * 1.3 + 9, f === 1 ? (b.id % 3 ? TEAL : ROSE) : SICK, f === 1 ? .85 + .15 * Math.sin(t * 1.3 + b.id) : .7 + .2 * Math.sin(t * 2.1 + b.id));
+        // a building on fire lights the yard round it
+        if (f === 0 && b.hp < b.maxHp * .5) lamp(b.pos.x, b.h * .8, b.pos.z, big + 12, FIRE, (b.hp < b.maxHp * .25 ? 1.3 : .7) * flicker(t, b.id * 3, .45));
+      }
+      for (const u of this.units) {
+        if (!u.alive || u === me || (u.pos.x - c.x) ** 2 + (u.pos.z - c.z) ** 2 > far * .35) continue; const L = ULAMP[u.kind]; if (!L) continue;
+        const s = Math.sin(u.obj.rotation.y), q = Math.cos(u.obj.rotation.y); lamp(u.pos.x + s * L[1], L[0], u.pos.z + q * L[1], L[2], L[3], L[4]);
+      }
+      // what you are driving carries a lamp that lights the ground ahead of it
+      if (me && me.alive && !this.tab && this.phase !== 'menu' && this.phase !== 'cut') { const f = fac(me.team), s = Math.sin(this.yaw), q = Math.cos(this.yaw); lamp(me.pos.x + s * 3.2, UNIT[me.kind].eye * .7, me.pos.z + q * 3.2, f === 2 ? 8 : 11, f === 0 ? HEAD : f === 1 ? TEAL : SICK, f === 2 ? .7 : 1.1); }
+      for (const o of this.ores) { if (o.amount <= 0 || (o.pos.x - c.x) ** 2 + (o.pos.z - c.z) ** 2 > far * .5) continue; lamp(o.pos.x, 1.6, o.pos.z, 7, ORE, .55 + .08 * Math.sin(t * 1.7 + o.pos.x)); }
+      for (const p of this.props) { if (!p.alive || (p.kind !== 'crystal' && p.name !== 'Floodlight') || (p.x - c.x) ** 2 + (p.z - c.z) ** 2 > far) continue; if (p.name === 'Floodlight') lamp(p.x, 6.8, p.z, 18, FLOOD, 1.1 * flicker(t, p.id, .05)); else lamp(p.x, p.y0 + Math.min(3, p.h * .5), p.z, p.r * 1.6 + 5, ORE, .5); }
+    }
+    lampsCommit(c, this.lampDt); this.lampDt = 0;
   }
   /** Split screen halves are very wide or very tall. This keeps the view from stretching in the first and from feeling boxed in in the second. */
   fitFov(fov: number) { const a = this.pipe.w / this.pipe.h; return a > 2.6 ? 2 * Math.atan(Math.tan(fov * Math.PI / 360) * 2.6 / a) * 180 / Math.PI : a < 1.2 ? fov + 9 : fov; }

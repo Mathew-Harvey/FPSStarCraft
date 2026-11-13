@@ -14,14 +14,14 @@ try {
   await sleep(1200);
   const b = await chromium.launch({ args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist', '--enable-webgl'] });
   const open = async name => { const p = await b.newPage({ viewport: { width: 1280, height: 720 } }); p.setDefaultTimeout(120000); p.on('pageerror', e => { console.log(`[${name} pageerror]`, e.message.slice(0, 400)); fail.push(name + ' page error'); }); await p.goto(URL); await p.waitForFunction('window.__ore'); await p.evaluate(n => { __ore.setFree(true); __ore.game.noRender = true; __ore.unlock(); document.getElementById('mName').value = n; }, name); return p; };
-  // A page drawing its menu makes the next page load about five times slower (70 s against 15 s here), enough to time out on a busy runner, so the first one holds still.
-  const A = await open('Ada'); await A.evaluate(() => { __ore.game.noRender = true; }); const V = await open('Vex'); await A.evaluate(() => { __ore.game.noRender = false; });
+  // Two pages drawing at once starve each other under software rendering: a menu alone made the next page load five times slower, and a kick-off could stall long enough to drop the connection. Both hold still until a check needs a picture.
+  const A = await open('Ada'); await A.evaluate(() => { __ore.hold(true); }); const V = await open('Vex'); await V.evaluate(() => { __ore.hold(true); });
   await A.click('#mCreate'); await A.waitForFunction(() => document.getElementById('mCodeShow').textContent.length === 5);
   const code = await A.evaluate(() => document.getElementById('mCodeShow').textContent);
   await V.fill('#mCode', code); await V.click('#mJoinBtn'); await V.waitForFunction(() => !document.getElementById('mLobby').hidden);
   await V.click('#mSide'); await A.waitForFunction(() => /Veyl Chorus/.test(document.getElementById('mPlayers').textContent)); check(true, 'Vex picks the Veyl side and Ada sees it in the lobby');
   await A.click('#mDiff button:nth-child(1)'); await V.click('#mReady'); await A.waitForFunction(() => !document.getElementById('mStart').disabled); await A.click('#mStart');
-  for (const p of [A, V]) { await p.waitForFunction(() => __ore.game.net && __ore.game.me && __ore.game.units.length > 6); await p.evaluate(() => { __ore.game.noRender = true; }); }
+  for (const p of [A, V]) { await p.waitForFunction(() => __ore.game.net && __ore.game.me && __ore.game.units.length > 6); await p.evaluate(() => { __ore.game.noRender = true; __ore.hold(false); }); }
   const st = p => p.evaluate(() => { const g = __ore.game; return { me: g.me && g.me.id, team: g.me && g.me.team, kind: g.me && g.me.kind, my: g.myTeam, ore: g.ore, mined: g.stats.mined, bld: g.buildings.filter(b => b.alive).length, hq: g.ownB('headframe')[0]?.hp, phase: g.phase, won: g.won, raidIn: g.dir.raidIn }; });
   let a = await st(A), v = await st(V);
   check(a.team === 0 && v.team === 1 && v.my === 1, `Ada is a ${a.kind} for Ironhold and Vex is a ${v.kind} for the Veyl`);
@@ -49,10 +49,16 @@ try {
   check(!/(cantor|lancer|warden)!/.test(kinds), 'every Veyl fighter has its second move on right click');
   if (SHOTS) { await V.evaluate(() => { const g = __ore.game; g.noRender = false; g.pitch = 0; }); await sleep(2500); await V.screenshot({ path: `${SHOTS}/versus-vex.jpg`, type: 'jpeg', quality: 88 }); await V.evaluate(() => { __ore.game.noRender = true; }); }
   // each side hurts the other through the server
-  v = await st(V);
-  const hpV = await A.evaluate(id => { const g = __ore.game, u = g.uById.get(id); g.net.cmd('dm', id, 20, 0); return u.hp + u.shield; }, v.me);
+  // Letting go of Tab above jumps Vex into the listed body, and on a slow runner that jump can land after this point,
+  // so the shot is aimed at whichever body Vex is in and fired again if Vex has moved on.
   await V.evaluate(() => { const g = __ore.game, h = g.ownB('headframe')[0]; g.net.cmd('dm', h.id, 300, 0); });
-  check(await until(V, was => { const g = __ore.game; return !g.me.alive || g.me.hp + g.me.shield < was; }, hpV), "Ada's shot lands on the body Vex is driving");
+  let hit = false;
+  for (let i = 0; i < 4 && !hit; i++) {
+    v = await st(V);
+    const hpV = await A.evaluate(id => { const g = __ore.game, u = g.uById.get(id); if (!u) return -1; g.net.cmd('dm', id, 20, 0); return u.hp + u.shield; }, v.me);
+    hit = hpV >= 0 && await until(V, ([id, was]) => { const g = __ore.game, u = g.uById.get(id); return g.me === u && (!u.alive || u.hp + u.shield < was); }, [v.me, hpV], 4000);
+  }
+  check(hit, "Ada's shot lands on the body Vex is driving");
   check(await until(A, () => __ore.game.ownB('headframe')[0].hp <= 2100), "Vex's blow lands on the Headframe");
   a = await st(A); await A.evaluate(() => { const g = __ore.game; g.net.cmd('dm', g.ownB('headframe')[0].id, 300, 0); }); await sleep(1500);
   check((await st(A)).hq === a.hq, 'Ada cannot damage her own side');

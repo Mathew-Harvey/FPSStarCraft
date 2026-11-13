@@ -4,8 +4,7 @@
 import * as THREE from 'three';
 import { Game, beamMat } from './game';
 import { UNIT, BLD, BUILDABLE, UPGRADES, TRAINS, UNIT_NEEDS, FACTION, VOICE_SIDE, SIDE, fac, atHome, Kind, BKind, Unit, Building, UpKey, isSoldier, isWorker } from './data';
-import { burst } from './factions/gloam/rules';
-import { patchUp } from './factions/ironhold/rules';
+import { useAbility } from './core/ability';
 import type { Side } from './director';
 import { V3, M, R, tracerMat } from './gfx';
 import { sfx, babble } from './audio';
@@ -58,7 +57,11 @@ export function serverCmd(g: Game, pid: number, unit: Unit | null, c: any[]) {
     const bk = BUDGET.get(unit) || { left: 900, t: g.time }; BUDGET.set(unit, bk); bk.left = Math.min(900, bk.left + (g.time - bk.t) * 450); bk.t = g.time;
     const amt = Math.min(450, num(2), bk.left); if (amt <= 0) return; bk.left -= amt; g.damage(t, amt, unit, !!c[3]);
   }
-  else if (k === 'vs') { if (unit && unit.kind === 'warden' && fac(unit.team) === 1 && g.time >= ((unit as any).noteT || 0)) { (unit as any).noteT = g.time + 19; for (const o of g.units) if (o.alive && o.team === unit.team && Math.hypot(o.pos.x - unit.pos.x, o.pos.z - unit.pos.z) < 16) { o.shield = Math.min(o.maxShield, o.shield + 60); o.pop = .6; } } }
+  // Abilities (src/core/ability.ts): the server checks the body is the player's own (or one of their side's), then energy, cooldown and range.
+  // The old one-off calls are the same abilities under their old names.
+  else if (k === 'ab') { const u = g.units.find(x => x.id === num(1)); if (u && u.alive && (u === unit || (u.team === side && !u.pilot))) useAbility(g, u, String(c[2]), { x: num(3), z: num(4), id: num(5) || undefined }); }
+  else if (k === 'vs') { if (unit && unit.kind === 'warden') useAbility(g, unit, 'lownote'); }
+  else if (k === 'cq') { const b = g.buildings.find(x => x.id === num(1)); if (b && b.alive && b.team === side) g.cancelTrain(b, num(2)); }
   else if (k === 'hl') { const o = g.units.find(x => x.id === num(1)); if (unit && unit.kind === 'patch' && o && o.alive && o.team === unit.team && Math.hypot(o.pos.x - unit.pos.x, o.pos.z - unit.pos.z) < 70) { const bk = BUDGET.get(unit) || { left: 900, t: g.time }; BUDGET.set(unit, bk); bk.left = Math.min(900, bk.left + (g.time - bk.t) * 450); bk.t = g.time; if (bk.left >= 80) { bk.left -= 80; o.hp = Math.min(o.maxHp, o.hp + 10); } } }
   else if (k === 'dp') { if (!unit) return; const p = g.props[num(1)]; if (p && p.alive && Math.hypot(p.x - unit.pos.x, p.z - unit.pos.z) < 175 + p.r) { const a = allow(g, unit, 'dp', Math.min(900, num(2)), 2400, 1200); if (a > 0) g.damageProp(p, a, unit); } }
   else if (k === 'tr') { if (c.length === 9) g.evq!.push(['tr', ...c.slice(1).map(Number), pid]); }
@@ -77,12 +80,12 @@ export function serverCmd(g: Game, pid: number, unit: Unit | null, c: any[]) {
   else if (k === 'mn') { const n = g.ores[num(1)]; if (!n || !unit || !isWorker(unit.kind) || Math.hypot(n.pos.x - unit.pos.x, n.pos.z - unit.pos.z) > 8) return; const a = allow(g, unit, 'mn', Math.max(0, Math.min(3, num(2), n.amount, g.packCap(unit.team) - unit.carrying)), 12, 12); n.amount -= a; unit.carrying += a; g.oreCheck(n); }   // banked when the body reaches the Headframe
   else if (k === 'wd') { const b = g.buildings.find(x => x.id === num(1)); if (unit && isWorker(unit.kind) && b && b.alive && b.team === unit.team && !b.built && g.distToBox(b, unit.pos.x, unit.pos.z) < 8) b.progress += allow(g, unit, 'wd', Math.min(.6, Math.max(0, num(2))), 1, 1.25) / BLD[b.kind].time * 1.6; }
   else if (k === 'fx') { const b = g.buildings.find(x => x.id === num(1)); if (unit && isWorker(unit.kind) && b && b.alive && b.team === unit.team && b.built && g.distToBox(b, unit.pos.x, unit.pos.z) < 8) b.hp = Math.min(b.maxHp, b.hp + 40 * allow(g, unit, 'wd', Math.min(.6, Math.max(0, num(2))), 1, 1.25)); }
-  else if (k === 'gb') { if (unit && unit.alive && unit.kind === 'blister') burst(g, unit); }
+  else if (k === 'gb') { if (unit && unit.alive && unit.kind === 'blister') useAbility(g, unit, 'burst'); }
   else if (k === 'xx') { g.evq!.push(['ex', num(1), 0, num(2), Math.min(8, Math.max(1, num(3))), 1, pid]); }
   else if (k === 'rd') { /* the old raid call: the Veyl now march as a squad, answered with Z like Ironhold's */ }
   else if (k === 'pg') { const x = Math.max(-400, Math.min(400, num(1))), z = Math.max(-400, Math.min(400, num(2))); g.evq!.push(['pg', pid, x, z]); }
   else if (k === 'ch') { const t = String(c[1] || '').replace(/[<>&]/g, '').trim().slice(0, 120); if (t) g.evq!.push(['fd', g.names[pid] || 'Crew', t, 'ch']); }
-  else if (k === 'pt') { if (unit && unit.kind === 'patch' && allow(g, unit, 'pt', 1, 1, 1 / 6.5) >= 1) patchUp(g, unit); }
+  else if (k === 'pt') { if (unit && unit.kind === 'patch') useAbility(g, unit, 'pulse'); }
   else if (k === 'or') { const o = String(c[1]); if ('GVMXZCS'.includes(o) && o.length === 1 && (unit ? unit.team === side : side === SIDE.home)) g.dir.order(o, num(2), num(3), unit); }
 }
 /** The player's own body, as their browser last reported it. */

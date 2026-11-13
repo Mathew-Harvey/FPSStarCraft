@@ -23,13 +23,13 @@ export const V_BUILDABLE: VBKind[] = ['broodpit', 'hushwell', 'thornspire', 'war
 export const V_FACTION: Faction = { name: 'Veyl Chorus', short: 'Veyl', hq: 'choir', worker: 'tender', supply: 'hushwell', builds: V_BUILDABLE, voice: 'Conductor', squad: 'Chorus Lead', lead: 'cantor', ore: 'ore', barracks: 'broodpit' };
 export const V_TRAINS: Partial<Record<VBKind, VKind[]>> = { choir: ['tender'], broodpit: ['cantor', 'lancer'], reedgate: ['warden'] };
 /** Songs are learned at the buildings that sing them. */
-export const V_UPGRADES: { key: VUpKey; name: string; cost: number; blurb: string; at: VBKind; say: string; needs?: VUpKey }[] = [
-  { key: 'vedge', name: 'Keener Edges', cost: 150, blurb: '+25% Veyl damage', at: 'wardpylon', say: 'Keener Edges. The blades hum a half step higher.' },
-  { key: 'vglass', name: 'Thicker Glass', cost: 150, blurb: '+25% health and shields', at: 'wardpylon', say: 'Thicker Glass. Every shell rings a little lower.' },
+export const V_UPGRADES: { key: VUpKey; name: string; cost: number; blurb: string; at: VBKind; say: string; needs?: VUpKey; line?: 'atk' | 'arm' | 'shd'; lvl?: number; pct?: number; flux?: number }[] = [
+  { key: 'vedge', line: 'atk', lvl: 1, name: 'Keener Edges', cost: 150, blurb: '+25% Veyl damage', at: 'wardpylon', say: 'Keener Edges. The blades hum a half step higher.' },
+  { key: 'vglass', line: 'arm', lvl: 1, name: 'Thicker Glass', cost: 150, blurb: '+25% health and shields', at: 'wardpylon', say: 'Thicker Glass. Every shell rings a little lower.' },
   { key: 'vstep', name: 'Quick Step', cost: 100, blurb: 'Veyl move 12% faster', at: 'wardpylon', say: 'Quick Step. The Chorus learns to hurry.' },
   { key: 'vthorn', name: 'Twin Thorns', cost: 125, blurb: 'Thorn Spires fire faster and reach further', at: 'wardpylon', say: 'Twin Thorns. The Spires grow a second eye.' },
-  { key: 'vedge2', name: 'Bright Edges', cost: 200, blurb: '+20% Veyl damage', at: 'reedgate', needs: 'vedge', say: 'Bright Edges. You can hear them cut.' },
-  { key: 'vglass2', name: 'Deep Glass', cost: 200, blurb: '+20% health and shields', at: 'reedgate', needs: 'vglass', say: 'Deep Glass. Rivets ring off it now.' },
+  { key: 'vedge2', line: 'atk', lvl: 2, name: 'Bright Edges', cost: 200, blurb: '+20% Veyl damage', at: 'reedgate', needs: 'vedge', say: 'Bright Edges. You can hear them cut.' },
+  { key: 'vglass2', line: 'arm', lvl: 2, name: 'Deep Glass', cost: 200, blurb: '+20% health and shields', at: 'reedgate', needs: 'vglass', say: 'Deep Glass. Rivets ring off it now.' },
   { key: 'vbreath', name: 'Long Breath', cost: 125, blurb: 'Lancers reach further and hit 15% harder', at: 'reedgate', say: 'Long Breath. The Lancers hold the note longer.' },
   { key: 'vbloom', name: 'Quick Bloom', cost: 150, blurb: 'Shields come back twice as fast', at: 'reedgate', say: 'Quick Bloom. A broken shell grows back before the echo fades.' },
   { key: 'vhum', name: 'Low Hum', cost: 100, blurb: 'Tenders gather 30% faster', at: 'choir', say: 'Low Hum. The seams give up their ore sooner.' },

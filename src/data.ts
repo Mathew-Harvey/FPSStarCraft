@@ -1,6 +1,8 @@
 // Shared types, stat tables and map constants.
 import type * as THREE from 'three';
 import type { Rig } from './models';
+import type { FightDef, Line } from './core/combat';
+import type { Vent } from './core/econ';
 
 import { I_UNIT, I_BLD, I_BUILDABLE, I_FACTION, I_TRAINS, I_NEEDS, I_UPGRADES, type IKind, type IBKind, type IUpKey } from './factions/ironhold/numbers';
 import { V_UNIT, V_BLD, V_FACTION, V_TRAINS, V_UPGRADES, type VKind, type VBKind, type VUpKey } from './factions/veyl/numbers';
@@ -9,9 +11,14 @@ import { G_UNIT, G_BLD, G_UPGRADES, G_FACTION, G_TRAINS, G_UNLOCK, type GKind, t
 export type Kind = IKind | VKind | GKind;
 export type BKind = IBKind | VBKind | GBKind;
 
-export interface UnitDef { name: string; team: number; hp: number; shield: number; speed: number; eye: number; headY: number; bodyY: number; rad: number; cost: number; time: number; supply: number; quip: string; ack: string[] }
+export interface UnitDef { name: string; team: number; hp: number; shield: number; speed: number; eye: number; headY: number; bodyY: number; rad: number; cost: number; time: number; supply: number; quip: string; ack: string[]; /** Flux on top of the ore cost. */ flux?: number;
+  /** Flies (src/core/air.ts): over cliffs and buildings, hit only by weapons that reach the air. */ air?: boolean; /** Energy for abilities, up to this. */ energy?: number;
+  /** Unseen until detected (always, not just when an ability says so), and how far it sees unseen bodies. */ cloak?: boolean; detect?: number;
+  /** Cargo slots it carries, and the slots it takes up inside one. */ cargo?: number; slots?: number }
+export interface UnitDef extends FightDef {}
 export const UNIT: Record<Kind, UnitDef> = { ...I_UNIT, ...V_UNIT, ...(G_UNIT as Record<GKind, UnitDef>) };
-export interface BldDef { name: string; hp: number; hx: number; hz: number; h: number; cost: number; time: number; blurb: string; needs?: BKind[] }
+export interface BldDef { name: string; hp: number; hx: number; hz: number; h: number; cost: number; time: number; blurb: string; needs?: BKind[]; /** Flux on top of the ore cost. */ flux?: number; /** Sees unseen bodies this far. */ detect?: number; /** Bodies it can hold (a bunker). */ cargo?: number }
+export interface BldDef extends FightDef {}
 export const BLD: Record<BKind, BldDef> = { ...I_BLD, ...V_BLD, ...(G_BLD as Record<GBKind, BldDef>) };
 export const BUILDABLE: BKind[] = I_BUILDABLE;
 /** Everything about a side that the shared code needs to know. Keyed by team: 0 is the Ironhold Charter, 1 the Veyl Chorus. */
@@ -51,7 +58,7 @@ export const TRAINS: Partial<Record<BKind, Kind[]>> = { ...I_TRAINS, ...V_TRAINS
 export const UNIT_NEEDS: Partial<Record<Kind, BKind>> = { ...I_NEEDS, snapper: G_UNLOCK.snapper, quillback: G_UNLOCK.quillback, blister: G_UNLOCK.blister, mulcher: G_UNLOCK.mulcher };
 export type UpKey = IUpKey | VUpKey | GUpKey;
 /** Research. `at` is the building that sells it, and `needs` is the research that has to be bought first. */
-export interface UpDef { key: UpKey; name: string; cost: number; blurb: string; at: BKind; say: string; needs?: UpKey; /** The side that can buy it. Ironhold when left out. */ team?: number }
+export interface UpDef { key: UpKey; /** A research level: its line (attack, armour, shields) and level 1 to 3 (src/core/combat.ts). */ line?: Line; lvl?: number; /** Percent mode: what this level multiplies by (default 25%, 20%, 15%). */ pct?: number; name: string; cost: number; /** Flux on top of the ore cost. */ flux?: number; blurb: string; at: BKind; say: string; needs?: UpKey; /** The side that can buy it. Ironhold when left out. */ team?: number }
 export const UPGRADES: UpDef[] = [...I_UPGRADES, ...V_UPGRADES.map(u => ({ ...u, team: 1 })), ...G_UPGRADES.map(u => ({ ...u, team: 2 }))];
 /** Research a side can buy. */
 export const upsOf = (team: number) => UPGRADES.filter(u => (u.team || 0) === fac(team));
@@ -68,12 +75,23 @@ export interface Unit {
   dashCd: number; dashT: number; swing: number; slot: number; flashT: number; pop: number; wind: number; windX: number; windZ: number; kx: number; kz: number; pitch: number; brace: boolean; mend?: Unit | null;
   /** Multiplayer: which player is driving this body (0 for nobody), and where the server last said it was. */
   pilot: number; nx: number; nz: number;
+  /** The vent a worker carries Flux from, and the Flux it is carrying (src/core/econ.ts). */
+  vent?: Vent | null; fluxing?: number;
+  /** Up in the air (src/core/air.ts), and how high it flies now. */ air?: boolean; alt?: number;
+  /** Energy for abilities (src/core/ability.ts), seconds left on each ability's cooldown, and the cast it is winding up. */
+  energy?: number; maxEnergy?: number; abCd?: Record<string, number>; cast?: { key: string; t: number; x: number; z: number; id: number } | null;
+  /** What is on it now (src/core/status.ts): slowed, stunned, unseen and the rest. */ status?: Status[];
+  /** The transport or building it rides in, and what it carries (src/core/cargo.ts). */ inside?: Unit | Building | null; cargo?: Unit[];
 }
+/** One effect on a body: its key, seconds left, a strength (a slow's fraction, a shield's points, burning's damage a second) and who put it there. */
+export interface Status { k: StatusKey; t: number; n?: number; from?: number }
+export type StatusKey = 'slow' | 'stun' | 'root' | 'unseen' | 'revealed' | 'borrowed' | 'lifted' | 'shielded' | 'burning';
 export interface Building {
   id: number; kind: BKind; team: number; pos: THREE.Vector3; hx: number; hz: number; h: number; hp: number; maxHp: number; obj: THREE.Group; holo: THREE.Group | null;
   built: boolean; progress: number; /** progress already paid out as health, so damage to a site sticks */ pdone: number; queue: { kind: Kind; t: number }[]; alive: boolean; cd: number; builder: Unit | null; lastHit: number; rot: boolean; smokeT: number; stage: number;
   /** A Mother Cap's ripe Buds, and how far the next one has grown. */
   buds?: number; budT?: number;
+  /** Bodies sheltering inside (src/core/cargo.ts), and whether it has lifted off to fly (src/core/air.ts). */ cargo?: Unit[]; air?: boolean; alt?: number;
 }
 /** A piece of map scenery that can be shot, blown up or drilled apart. */
 export interface Prop {

@@ -87,6 +87,8 @@ export interface UnitRules {
   view?(g: Game, pose: VmPose, rl: number, gun: Weapon | null): void;
   /** One line for the Tab list: what a body of this kind is doing. */
   task?(g: Game, u: Unit): string | null;
+  /** It keeps thinking and fighting while dug in (status 'borrowed'), the way a burrowed ambusher does. */
+  dugFight?: boolean;
 }
 
 /** What a kind of building does. Every hook is optional. */
@@ -113,6 +115,8 @@ export interface BldRules {
   mends?: boolean;
   /** Lamps hung on the building, in its own space: x, y, z and reach. */
   lamps?: [number, number, number, number][];
+  /** Goes square on a vent and lets its side's workers carry Flux from it (src/core/econ.ts). */
+  tap?: boolean;
 }
 
 /** What a whole faction does that is not tied to one kind. */

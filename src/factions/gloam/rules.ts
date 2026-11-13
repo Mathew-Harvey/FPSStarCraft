@@ -7,6 +7,7 @@ import type { Game } from '../../game';
 import { UNIT, BLD, Unit, Building, isUnit, isWorker } from '../../data';
 import { G_TUNE, GBKind } from './numbers';
 import { defineUnits, defineBuildings, defineFaction } from '../../core/registry';
+import { defineAbilities } from '../../core/ability';
 
 const TMP = V3();
 export const quillMat = new THREE.MeshBasicMaterial({ color: 0xe9dab2 });
@@ -233,3 +234,6 @@ defineFaction(2, {
   pace(g, u) { const up = g.upOf(u.team); return (u.kind !== 'grazer' && g.carpet.on(u.pos.x, u.pos.z, 0, u.team) ? G_TUNE.bloomSpeed : 1) * (up.glegs && (u.kind === 'snapper' || u.kind === 'blister') ? 1.15 : 1); },
   task: (_g, u) => u.order.type === 'raid' || u.order.type === 'amove' ? 'Swarming the yard' : u.order.type === 'follow' ? 'At your heels' : 'Lurking in the Bloom',
 });
+
+// The Blister bursts, and itself with it. Online the server casts it when the player's browser asks.
+defineAbilities('blister', [{ key: 'burst', name: 'Burst', hotkey: 'Mouse0', energy: 0, cd: 9, cast: 0, range: 0, target: 'self', blurb: 'Bursts, hurting everything close by. The Blister dies.', effect: (g, u) => burst(g, u) }]);

@@ -7,6 +7,7 @@ import type { Game } from '../../game';
 import { TMP } from '../../game';
 import { UNIT, Unit, Building, isUnit, foeOf } from '../../data';
 import { defineUnits, defineBuildings, defineFaction, DEFAULTS, type Weapon, type Shot } from '../../core/registry';
+import { defineAbilities } from '../../core/ability';
 
 export const GUNS: Record<string, Weapon> = { linesman: { name: 'Rifle', mag: 24, cd: .12, reload: 1.5 }, breacher: { name: 'Scattergun', mag: 6, cd: .78, reload: 2.1 }, gantry: { name: 'Autocannon', mag: 12, cd: .36, reload: 2.4 }, longshot: { name: 'Long Rifle', mag: 5, cd: 1.15, reload: 2.4 }, patch: { name: 'Rivet Pistol', mag: 14, cd: .2, reload: 1.3 } };
 /** Tuning for the aimed, single-bullet guns. */
@@ -188,3 +189,6 @@ defineFaction(0, {
   tab: ['linesman', 'longshot', 'patch', 'gantry', 'breacher', 'rigger'],
   pace(g, u) { const up = g.upOf(u.team); return u.kind === 'gantry' ? (up.servo ? 1.2 : 1) : u.kind !== 'rigger' && up.pay ? 1.12 : 1; },
 });
+
+// Abilities the server checks for a player online. The Patch's pulse heals everyone near; the local game calls patchUp straight from the key.
+defineAbilities('patch', [{ key: 'pulse', name: 'Patch Pulse', hotkey: 'C', energy: 0, cd: 6.5, cast: 0, range: 0, target: 'self', blurb: 'Heals every friend close by.', effect: (g, u) => patchUp(g, u) }]);

@@ -34,19 +34,19 @@ export type GUpKey = 'gfat' | 'gtongue' | 'gdmg' | 'garmor' | 'gquill' | 'glegs'
 export const G_UPGRADES = [
   { key: 'gfat', name: 'Fat Buds', cost: 125, blurb: 'Mother Caps hold 4 Buds and grow them 30% faster', at: 'warren', say: 'Fat Buds. The Cap is heavy with them.' },
   { key: 'gtongue', name: 'Long Tongues', cost: 100, blurb: 'Grazers chew 30% faster', at: 'warren', say: 'Long Tongues. The rock goes down easier.' },
-  { key: 'gdmg', name: 'Sharp Mandibles', cost: 150, blurb: '+25% damage', at: 'quillgarden', say: 'Sharp Mandibles. Everything bites deeper.' },
-  { key: 'garmor', name: 'Thick Hide', cost: 150, blurb: '+25% health', at: 'quillgarden', say: 'Thick Hide grown over. Let them try.' },
+  { key: 'gdmg', line: 'atk', lvl: 1, name: 'Sharp Mandibles', cost: 150, blurb: '+25% damage', at: 'quillgarden', say: 'Sharp Mandibles. Everything bites deeper.' },
+  { key: 'garmor', line: 'arm', lvl: 1, name: 'Thick Hide', cost: 150, blurb: '+25% health', at: 'quillgarden', say: 'Thick Hide grown over. Let them try.' },
   { key: 'gquill', name: 'Barbed Quills', cost: 125, blurb: 'Quillbacks reach further and hit 15% harder', at: 'quillgarden', say: 'Barbed Quills. They stick, and they stay.' },
   { key: 'glegs', name: 'Quick Legs', cost: 100, blurb: 'Snappers and Blisters run 15% faster', at: 'warren', say: 'Quick Legs. Catch us if you can.' },
   { key: 'gsap', name: 'Volatile Sap', cost: 125, blurb: 'Blisters burst 40% harder', at: 'blisterbed', say: 'Volatile Sap. Mind where you step.' },
-  { key: 'gdmg2', name: 'Serrated Mandibles', cost: 200, blurb: '+20% damage', at: 'tuskhollow', needs: 'gdmg', say: 'Serrated Mandibles. Saw, then swallow.' },
-  { key: 'garmor2', name: 'Bark Hide', cost: 200, blurb: '+20% health', at: 'tuskhollow', needs: 'garmor', say: 'Bark Hide. Old and hard.' },
+  { key: 'gdmg2', line: 'atk', lvl: 2, name: 'Serrated Mandibles', cost: 200, blurb: '+20% damage', at: 'tuskhollow', needs: 'gdmg', say: 'Serrated Mandibles. Saw, then swallow.' },
+  { key: 'garmor2', line: 'arm', lvl: 2, name: 'Bark Hide', cost: 200, blurb: '+20% health', at: 'tuskhollow', needs: 'garmor', say: 'Bark Hide. Old and hard.' },
   { key: 'gcharge', name: 'Bull Charge', cost: 150, blurb: 'Mulchers charge twice as often', at: 'tuskhollow', say: 'Bull Charge. The old one is restless.' },
-  { key: 'gdmg3', name: 'Bone Mandibles', cost: 250, blurb: '+15% damage', at: 'oldgrowth', needs: 'gdmg2', say: 'Bone Mandibles. They crack steel now.' },
-  { key: 'garmor3', name: 'Stone Hide', cost: 250, blurb: '+15% health', at: 'oldgrowth', needs: 'garmor2', say: 'Stone Hide. We are the ground.' },
+  { key: 'gdmg3', line: 'atk', lvl: 3, name: 'Bone Mandibles', cost: 250, blurb: '+15% damage', at: 'oldgrowth', needs: 'gdmg2', say: 'Bone Mandibles. They crack steel now.' },
+  { key: 'garmor3', line: 'arm', lvl: 3, name: 'Stone Hide', cost: 250, blurb: '+15% health', at: 'oldgrowth', needs: 'garmor2', say: 'Stone Hide. We are the ground.' },
   { key: 'gbloom', name: 'Deep Bloom', cost: 175, blurb: 'Bloom spreads 40% wider and heals twice as fast', at: 'oldgrowth', say: 'Deep Bloom. The carpet runs to the horizon.' },
   { key: 'ggut', name: 'Fat Gut', cost: 175, blurb: 'Grazers carry 21 ore', at: 'oldgrowth', needs: 'gtongue', say: 'Fat Gut. Bellies dragging.' },
-] as { key: GUpKey; name: string; cost: number; blurb: string; at: GBKind; say: string; needs?: GUpKey }[];
+] as { key: GUpKey; name: string; cost: number; blurb: string; at: GBKind; say: string; needs?: GUpKey; line?: 'atk' | 'arm' | 'shd'; lvl?: number; pct?: number; flux?: number }[];
 
 /** Tuning the game reads. */
 export const G_TUNE = {

@@ -28,13 +28,13 @@ export const I_FACTION: Faction = { name: 'Ironhold Charter', short: 'Ironhold',
 export const I_TRAINS: Partial<Record<IBKind, IKind[]>> = { headframe: ['rigger'], bunkhouse: ['linesman', 'breacher', 'patch', 'longshot'], foundry: ['gantry'] };
 export const I_NEEDS: Partial<Record<IKind, IBKind>> = { breacher: 'machineshop', patch: 'machineshop', longshot: 'assay' };
 /** Research. `at` is the building that sells it, and `needs` is the research that has to be bought first. */
-export const I_UPGRADES: { key: IUpKey; name: string; cost: number; blurb: string; at: IBKind; say: string; needs?: IUpKey }[] = [
-  { key: 'dmg', name: 'Hollow Points', cost: 150, blurb: '+25% gun damage', at: 'machineshop', say: 'Hollow Points issued. Try to hit something with them.' },
-  { key: 'armor', name: 'Plating', cost: 150, blurb: '+25% health', at: 'machineshop', say: 'Plating bolted on. Everyone walk heavier.' },
-  { key: 'dmg2', name: 'Tungsten Core', cost: 200, blurb: '+20% gun damage', at: 'foundry', needs: 'dmg', say: 'Tungsten Core rounds. Each one costs more than you do.' },
-  { key: 'armor2', name: 'Reactive Plating', cost: 200, blurb: '+20% health', at: 'foundry', needs: 'armor', say: 'Reactive Plating fitted. It bites back, allegedly.' },
-  { key: 'dmg3', name: 'Charter Specials', cost: 250, blurb: '+15% gun damage', at: 'mast', needs: 'dmg2', say: 'Charter Specials. Head office signed for these in person.' },
-  { key: 'armor3', name: 'Vault Plate', cost: 250, blurb: '+15% health', at: 'mast', needs: 'armor2', say: 'Vault Plate. You are now worth more than the safe.' },
+export const I_UPGRADES: { key: IUpKey; name: string; cost: number; blurb: string; at: IBKind; say: string; needs?: IUpKey; line?: 'atk' | 'arm' | 'shd'; lvl?: number; pct?: number; flux?: number }[] = [
+  { key: 'dmg', line: 'atk', lvl: 1, name: 'Hollow Points', cost: 150, blurb: '+25% gun damage', at: 'machineshop', say: 'Hollow Points issued. Try to hit something with them.' },
+  { key: 'armor', line: 'arm', lvl: 1, name: 'Plating', cost: 150, blurb: '+25% health', at: 'machineshop', say: 'Plating bolted on. Everyone walk heavier.' },
+  { key: 'dmg2', line: 'atk', lvl: 2, name: 'Tungsten Core', cost: 200, blurb: '+20% gun damage', at: 'foundry', needs: 'dmg', say: 'Tungsten Core rounds. Each one costs more than you do.' },
+  { key: 'armor2', line: 'arm', lvl: 2, name: 'Reactive Plating', cost: 200, blurb: '+20% health', at: 'foundry', needs: 'armor', say: 'Reactive Plating fitted. It bites back, allegedly.' },
+  { key: 'dmg3', line: 'atk', lvl: 3, name: 'Charter Specials', cost: 250, blurb: '+15% gun damage', at: 'mast', needs: 'dmg2', say: 'Charter Specials. Head office signed for these in person.' },
+  { key: 'armor3', line: 'arm', lvl: 3, name: 'Vault Plate', cost: 250, blurb: '+15% health', at: 'mast', needs: 'armor2', say: 'Vault Plate. You are now worth more than the safe.' },
   { key: 'drill', name: 'Diamond Bits', cost: 100, blurb: 'Riggers dig 30% faster', at: 'headframe', say: 'Diamond Bits fitted. The rock has filed a complaint.' },
   { key: 'beds', name: 'Bunk Stacks', cost: 125, blurb: '+4 beds, and +2 more per Depot', at: 'headframe', say: 'Bunk Stacks in. Top bunk pays extra.' },
   { key: 'post', name: 'Twin Mounts', cost: 125, blurb: 'Watchposts fire faster and reach further', at: 'machineshop', say: 'Twin Mounts on every Watchpost. Twice the noise.' },

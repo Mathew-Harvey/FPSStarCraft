@@ -7,6 +7,7 @@ import type { Game } from '../../game';
 import { TMP, r1, beamMat } from '../../game';
 import { UNIT, Unit, Building, isUnit, foeOf, fac, SIDE, CLEAVE } from '../../data';
 import { defineUnits, defineBuildings, defineFaction } from '../../core/registry';
+import { defineAbilities } from '../../core/ability';
 
 /** First person as a Veyl fighter. */
 export function updateVeyl(g: Game, dt: number, P: Set<string>, eye: THREE.Vector3, dir: THREE.Vector3) {
@@ -148,3 +149,7 @@ defineFaction(1, {
   pace(g, u) { return g.upOf(u.team).vstep && u.kind !== 'tender' ? 1.12 : 1; },
   task: (_g, u) => u.order.type === 'raid' || u.order.type === 'amove' ? 'Marching on the yard' : u.order.type === 'follow' ? 'Following you' : 'Guarding the Stones',
 });
+
+// The Warden's low note: every friend within 16 m gets 60 shield back. Online the server casts it when the player's browser asks.
+defineAbilities('warden', [{ key: 'lownote', name: 'Low Note', hotkey: 'Mouse2', energy: 0, cd: 19, cast: 0, range: 0, target: 'self', radius: 16, blurb: 'Every friend close by gets 60 shield back.',
+  effect: (g, u) => { for (const o of g.units) if (o.alive && o.team === u.team && Math.hypot(o.pos.x - u.pos.x, o.pos.z - u.pos.z) < 16) { o.shield = Math.min(o.maxShield, o.shield + 60); o.pop = .6; } } }]);

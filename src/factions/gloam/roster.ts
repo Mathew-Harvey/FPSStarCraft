@@ -211,6 +211,8 @@ function aiSower(g: Game, u: Unit, dt: number) {
   if (u.think <= 0) { u.think = .4; const cur = u.target; if (!cur || !cur.alive || reach(g, u, cur) > S.range + 12) u.target = g.acquire(u, S.range + 8, raiding(u) ? S.range + 4 : 0); }
   const t = u.target;
   if (t && t.alive) { const d = reach(g, u, t); u.yaw = Math.atan2(t.pos.x - u.pos.x, t.pos.z - u.pos.z); if (d > S.range) g.moveTo(u, t.pos.x, t.pos.z, dt); else if (u.cd <= 0) { u.cd = S.cd; dropPup(g, u, t); } return; }
+  // Nothing in reach: fly over to the nearest fight of its own side, so the Pups land where they are wanted.
+  if (!g.human[u.team] || !u.pilot) { let f: Unit | null = null, bd = 90; for (const o of g.units) if (o.alive && o.team === u.team && o !== u && o.target && o.target.alive && !o.air) { const d = Math.hypot(o.pos.x - u.pos.x, o.pos.z - u.pos.z); if (d < bd) { bd = d; f = o; } } if (f) { g.moveTo(u, f.target!.pos.x, f.target!.pos.z, dt); return; } }
   g.vIdle(u, dt, raiding(u) ? 6 : 2, u.order.type !== 'guard' ? 1 : .6);
 }
 /** A Pup drops on (or beside) a target: the landing bites, and the Pup chews for 8 s. */

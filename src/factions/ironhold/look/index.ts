@@ -30,3 +30,9 @@ defineUnits({
   gantry: { view(g, pose, rl) { const vm = g.vm; pose(vm.cannon, 0, 0, rl * .1); const k = g.recoil * .09; vm.cannon.userData.gunR.position.z = g.side > 0 ? k : 0; vm.cannon.userData.gunL.position.z = g.side < 0 ? k : 0; } },
 });
 defineFaction(0, { view(g, pose, rl, gun) { (unitRule(g.me!.kind).shot ? shotView : scatterView)(g, pose, rl, gun); } });
+// How Ironhold bodies stand about once they have nothing to do (src/stance.ts).
+defineUnits({
+  rigger: { stance: { rest: h => h < .6 ? 1 : h < .8 ? 2 : 0, tool: true } },
+  breacher: { stance: { rest: () => 2, squat: { sp: .3, fw: .5, lean: .34, arms: .35, slide: 1, shield: true } } },
+  gantry: { stance: { rest: () => 2, squat: { sp: .34, fw: .1, lean: .1, arms: .5, slide: 0, shield: false }, idleTick: true } },
+});

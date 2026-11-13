@@ -17,6 +17,22 @@ export type VmPose = (m: THREE.Group, k: number, kick: number, dip: number) => v
 /** A light a body carries: its height, how far ahead of the body it sits, its reach, colour and strength. */
 export type BodyLamp = [number, number, number, [number, number, number], number];
 
+/** How a body of this kind stands about and falls over (src/stance.ts and src/hitfx.ts). All of it is for show. */
+export interface StanceLook {
+  /** Which rest pose the body takes once it has stood about: 0 stays up, 1 sits, 2 squats. `h` is a steady random number 0 to 1 for this body. */
+  rest?(h: number): number;
+  /** It carries a tool in the right hand (the Rigger's drill): its arms hang, sit and fall differently. */
+  tool?: boolean;
+  /** How it squats: leg spread, knee bend, forward lean, arm lift, how far the hips slide back (0 to 1), and whether a shield arm drops. */
+  squat?: { sp: number; fw: number; lean: number; arms: number; slide: number; shield: boolean };
+  /** A machine on legs: idles with its engine ticking and falls like a walker. */
+  idleTick?: boolean;
+  /** A big beast: breathes this slowly (default 2.6), falls heavily and leaves a big splat. */
+  breath?: number; bulk?: boolean;
+  /** It always bursts when it dies. */
+  burst?: boolean;
+}
+
 /** What a kind of body does. Every hook is optional. */
 export interface UnitRules {
   /** A bot drives this body. Without it the side's faction default runs (see FactionRules.ai), else the generic soldier brain. */
@@ -57,6 +73,8 @@ export interface UnitRules {
   gun?: Weapon;
   /** Tuning when the gun fires single aimed bullets. */
   shot?: Shot;
+  /** How it stands about and falls over. */
+  stance?: StanceLook;
   /** The lamp this body carries at night. */
   lamp?: BodyLamp;
   /** Extra pose on top of the shared walk cycle (arms, halo, breathing). `s` is the leg swing, `ease` the blend this frame and `sc` the

@@ -99,6 +99,8 @@ export interface Unit {
   energy?: number; maxEnergy?: number; abCd?: Record<string, number>; cast?: { key: string; t: number; x: number; z: number; id: number } | null;
   /** What is on it now (src/core/status.ts): slowed, stunned, unseen and the rest. */ status?: Status[];
   /** The transport or building it rides in, and what it carries (src/core/cargo.ts). */ inside?: Unit | Building | null; cargo?: Unit[];
+  /** The carrier it is walking to get into (g.board). */ boarding?: Unit | Building | null;
+  /** Abilities the player switched off casting by themselves, by key (the command card's right click). */ autoOff?: Record<string, boolean>;
 }
 /** One effect on a body: its key, seconds left, a strength (a slow's fraction, a shield's points, burning's damage a second) and who put it there. */
 export interface Status { k: StatusKey; t: number; n?: number; from?: number }

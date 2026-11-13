@@ -11,7 +11,7 @@ import { ECON, costOf, canPay, sendToVent, seamRate, ventSpots } from '../../src
 import { LEVELS, level, levelMul, canHit } from '../../src/core/combat';
 import { purseOf, staffVents } from '../../src/core/purse';
 import { addStatus, hasStatus, statusPace, canAct } from '../../src/core/status';
-import { defineAbilities, abilitiesOf, whyNot, useAbility, ENERGY } from '../../src/core/ability';
+import { defineAbilities, abilitiesOf, whyNot, useAbility, setAutocast, ENERGY } from '../../src/core/ability';
 import { AIR, liftOff, flyBuilding, land } from '../../src/core/air';
 import { seenBy, isHidden } from '../../src/core/sight';
 import { load, unload, CARGO } from '../../src/core/cargo';
@@ -146,6 +146,9 @@ const run = (g: Game, secs: number, each?: () => boolean | void) => { for (let i
   const n0 = zapped; c.abCd!.zap = 0; c.energy = 200; serverCmd(g, 7, null, ['ab', c.id, 'zap', foe.pos.x, foe.pos.z, foe.id]); run(g, .7);
   const other = g.spawn('xcaster' as Kind, O, 80, 80); other.pilot = 9; serverCmd(g, 7, null, ['ab', other.id, 'zap', foe.pos.x, foe.pos.z, foe.id]);
   check(zapped === n0 + 1 && !other.cast, 'online: the server casts for a body on the asking player\'s side and refuses one that is not theirs');
+  // Autocast switch: a body set not to cast by itself does not, and the server sets it for the player's own side only.
+  { const n1 = zapped; c.abCd!.zap = 0; c.energy = 200; setAutocast(g, c, 'zap', false); run(g, 1.2); check(zapped === n1 && !c.cast, 'a body with its autocast switched off leaves the ability alone');
+    serverCmd(g, 7, null, ['aa', c.id, 'zap', 1]); check(!c.autoOff?.zap, 'online: the server switches it back on'); serverCmd(g, 7, null, ['aa', other.id, 'zap', 0]); check(!other.autoOff?.zap, 'and refuses for a body on the other side'); }
 }
 
 // ---------------------------------------------------------------- 5. The air
@@ -190,6 +193,10 @@ const run = (g: Game, secs: number, each?: () => boolean | void) => { for (let i
   check(unload(g, truck) === 2 && !a.inside && a.obj.visible && Math.hypot(a.pos.x - 30, a.pos.z - 110) < 4, 'unloading sets them down beside it');
   load(g, truck, a); load(g, truck, b); g.damage(truck, 1e4, foe);
   check(!truck.alive && a.alive && near(a.hp, 100 * (1 - CARGO.spill)) && !a.inside, `a transport that dies on the ground spills its riders, each hurt by ${CARGO.spill * 100}%`);
+  { const t2 = g.spawn('xtruck' as Kind, H, 40, 104), r1 = g.spawn('xplain' as Kind, H, 50, 104), r2 = g.spawn('xplain' as Kind, H, 51, 106); t2.order = { type: 'guard', x: 40, z: 104 }; r1.order = { type: 'guard', x: 50, z: 104 }; r2.order = { type: 'guard', x: 51, z: 106 };
+    check(g.board([r1], t2) === 1, 'g.board sends a body to a carrier'); serverCmd(g, 7, null, ['ld', r2.id, t2.id]); run(g, 6, () => !!r1.inside && !!r2.inside);
+    check(r1.inside === t2 && r2.inside === t2 && !r1.boarding, `boarding bodies walk to the transport and climb in (${!!r1.inside}, ${!!r2.inside}; the second through the net command)`);
+    serverCmd(g, 7, null, ['ul', t2.id, r1.id]); check(!r1.inside && r2.inside === t2, 'online: letting one body out'); check(g.unload(t2) === 1 && !r2.inside, 'and then all of them'); }
   const ferry = g.spawn('xferry' as Kind, H, b.pos.x, b.pos.z); load(g, ferry, b); g.damage(ferry, 1e4, null); check(!b.alive, 'riders of a flier that goes down die with it');
   const bunker = g.addBuilding('xbunker' as BKind, H, 70, 110, true), c = g.spawn('xplain' as Kind, H, 70, 113); check(load(g, bunker, c), 'a bunker takes a body in');
   g.truce = false; const f2 = g.spawn('xplain' as Kind, O, 74, 118); f2.hp = 5; let shot = false; run(g, 6, () => { if (!f2.alive) { shot = true; return true; } });

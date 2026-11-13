@@ -4,7 +4,8 @@
 import * as THREE from 'three';
 import { Game, beamMat } from './game';
 import { UNIT, BLD, BUILDABLE, UPGRADES, TRAINS, UNIT_NEEDS, FACTION, VOICE_SIDE, SIDE, fac, atHome, Kind, BKind, Unit, Building, UpKey, isSoldier, isWorker, type StatusKey } from './data';
-import { useAbility } from './core/ability';
+import { useAbility, setAutocast } from './core/ability';
+import { board, unload } from './core/cargo';
 import { seenBy } from './core/sight';
 import { SideView, LINGER } from './net-fog';
 import { checkClaim, dropped } from './net-arms';
@@ -137,6 +138,11 @@ export function serverCmd(g: Game, pid: number, unit: Unit | null, c: any[]) {
   // Abilities (src/core/ability.ts): the server checks the body is the player's own (or one of their side's), then energy, cooldown and range.
   // The old one-off calls are the same abilities under their old names.
   else if (k === 'ab') { const u = g.units.find(x => x.id === num(1)); if (u && u.alive && (u === unit || (u.team === side && !u.pilot))) useAbility(g, u, String(c[2]), { x: num(3), z: num(4), id: num(5) || undefined }); }
+  // Autocast on or off for one body; boarding a carrier ('ld' then body ids, then the carrier's id last); letting out of a carrier.
+  else if (k === 'aa') { const u = g.units.find(x => x.id === num(1)); if (u && u.alive && u.team === side) setAutocast(g, u, String(c[2]), !!num(3)); }
+  else if (k === 'ld') { const ids = c.slice(1).map(Number).filter(Number.isFinite).slice(0, 40), cid = ids.pop(), car = g.units.find(x => x.id === cid) || g.buildings.find(x => x.id === cid);
+    if (car && car.alive && car.team === side) for (const id of ids) { const u = g.units.find(x => x.id === id); if (u && u.alive && u.team === side && (u === unit || !u.pilot)) board(g, u, car); } }
+  else if (k === 'ul') { const car = g.units.find(x => x.id === num(1)) || g.buildings.find(x => x.id === num(1)); if (car && car.alive && car.team === side) { const w = num(2) ? (car.cargo || []).find(u => u.id === num(2)) : undefined; if (!num(2) || w) unload(g, car, w); } }
   else if (k === 'vs') { if (unit && unit.kind === 'warden') useAbility(g, unit, 'lownote'); }
   else if (k === 'ba') { const b = g.buildings.find(x => x.id === num(1)); if (b && b.alive && b.team === side && b.built) { g.feedTo = pid; g.buildingAction(b, String(c[2]), true); g.feedTo = 0; } }
   else if (k === 'cq') { const b = g.buildings.find(x => x.id === num(1)); if (b && b.alive && b.team === side) g.cancelTrain(b, num(2)); }

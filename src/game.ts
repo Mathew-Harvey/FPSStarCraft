@@ -24,7 +24,7 @@ import { tickStatus, statusPace, canAct, soak, hasStatus } from './core/status';
 import { initEnergy, tickAbilities, useAbility, type Target } from './core/ability';
 import { initAir, tickAir, airCollide, sameLayer, flyKeys } from './core/air';
 import { seenBy, drawShimmer } from './core/sight';
-import { tickCargo, spill, fightsInside } from './core/cargo';
+import { tickCargo, spill, fightsInside, board, boardWork, unload } from './core/cargo';
 import { tickMorph } from './core/morph';
 import { isEnemy, isFriend, TEAM_SLOTS, MATCH, multi } from './core/sides';
 import { type Vent, layVents, costOf, canPay, pay, refund, shortOf, ventWork, ventAt, seamRate, seamFull, capSupply } from './core/econ';
@@ -236,6 +236,10 @@ export class Game {
     if (a.cost) pay(this, b.team, a.cost); a.run(this, b); if (manual) sfx.blip(); return true;
   }
   /** Takes an order off a building's training queue and gives the price back. Online the client asks ('cq') and the server does it. */
+  /** Sends bodies to get into a carrier of their side (a transport or a building with room); they walk there and climb in. */
+  board(list: Unit[], c: Unit | Building) { if (this.net) { this.net.cmd('ld', ...list.map(u => u.id), c.id); return list.length; } let n = 0; for (const u of list) if (board(this, u, c)) n++; return n; }
+  /** Lets one body (or with none given, every body) out of a carrier. */
+  unload(c: Unit | Building, which?: Unit) { if (this.net) { this.net.cmd('ul', c.id, which ? which.id : 0); return 0; } return unload(this, c, which); }
   cancelTrain(b: Building, i: number) {
     if (this.net) { this.net.cmd('cq', b.id, i); return true; }
     const q = b.queue[i]; if (!q || !b.alive) return false; b.queue.splice(i, 1); refund(this, b.team, costOf(q.kind)); return true;
@@ -946,7 +950,7 @@ export class Game {
       if (u.kx || u.kz) { u.pos.x += u.kx * dt; u.pos.z += u.kz * dt; const k = Math.max(0, 1 - dt * 7); u.kx *= k; u.kz *= k; if (Math.abs(u.kx) + Math.abs(u.kz) < .05) u.kx = u.kz = 0; this.collide(u, u.pos.x, u.pos.z); }
       if (fac(u.team) === 0 && u.hp < u.maxHp && t - u.lastHit > 5) for (const b of this.buildings) if (b.team === u.team && b.built && bldRule(b.kind).mends && Math.abs(b.pos.x - u.pos.x) < 16 && Math.abs(b.pos.z - u.pos.z) < 16) { u.hp = Math.min(u.maxHp, u.hp + 5 * dt); break; }
       if (u.pilot) { u.kx = u.kz = 0; if (u.hp < u.maxHp && t - u.lastHit > 6) u.hp = Math.min(u.maxHp, u.hp + u.maxHp * .05 * dt); }
-      else if ((u !== me || this.staticT > 0 || this.cmd.on) && (!u.status || canAct(u, !!unitRule(u.kind).dugFight))) { if (u.order.type === 'scout') this.intel.walk(u, dt); else if (isWorker(u.kind)) { const w = unitRule(u.kind).work; if (!w || !w(this, u, dt)) this.aiRigger(u, dt); } else (unitRule(u.kind).ai || factionRule(u.team).ai || DEFAULTS.ai)?.(this, u, dt); }
+      else if ((u !== me || this.staticT > 0 || this.cmd.on) && (!u.status || canAct(u, !!unitRule(u.kind).dugFight))) { if (u.boarding && boardWork(this, u, dt)) { /* walking to its carrier */ } else if (u.order.type === 'scout') this.intel.walk(u, dt); else if (isWorker(u.kind)) { const w = unitRule(u.kind).work; if (!w || !w(this, u, dt)) this.aiRigger(u, dt); } else (unitRule(u.kind).ai || factionRule(u.team).ai || DEFAULTS.ai)?.(this, u, dt); }
     }
     // keep bodies apart
     for (let i = 0; i < us.length; i++) { const a = us[i]; if (!a.alive) continue; const ra = UNIT[a.kind].rad; for (let j = i + 1; j < us.length; j++) { const b = us[j]; if (!b.alive) continue; const dx = b.pos.x - a.pos.x; if (dx > 4 || dx < -4) continue; if ((a.air || b.air || a.inside || b.inside) && (!sameLayer(a, b) || a.inside || b.inside)) continue; const dz = b.pos.z - a.pos.z, mine = a === me || b === me, lim = (ra + UNIT[b.kind].rad) * (mine ? (a.team === b.team ? 1.8 : 1.25) : 1.12), d2 = dx * dx + dz * dz; if (d2 < lim * lim && d2 > 1e-5) { const d = Math.sqrt(d2), p = (lim - d) * .5; const wa = a === me || a.pilot ? 0 : unitRule(b.kind).heavy ? 2 : mine ? 2 : 1, wb = b === me || b.pilot ? 0 : unitRule(a.kind).heavy ? 2 : mine ? 2 : 1; a.pos.x -= dx / d * p * wa; a.pos.z -= dz / d * p * wa; b.pos.x += dx / d * p * wb; b.pos.z += dz / d * p * wb; } } }

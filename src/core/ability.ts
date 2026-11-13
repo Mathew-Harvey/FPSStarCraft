@@ -70,6 +70,10 @@ function fire(g: Game, u: Unit, a: AbilityDef, t: Target) {
 
 /** Every frame: energy grows back, cooldowns count down, wind-ups go off, and bot bodies use what their hooks pick. */
 let aiT = 0;
+/** Switches a body's casting-by-itself of one ability off or back on (online it goes as 'aa'). */
+export function setAutocast(g: Game, u: Unit, key: string, on: boolean) {
+  if (g.net) { g.net.cmd('aa', u.id, key, on ? 1 : 0); return; } const m = u.autoOff || (u.autoOff = {}); if (on) delete m[key]; else m[key] = true;
+}
 export function tickAbilities(g: Game, dt: number) {
   aiT -= dt; const think = aiT <= 0; if (think) aiT = .5;
   for (const u of g.units) {
@@ -81,6 +85,6 @@ export function tickAbilities(g: Game, dt: number) {
     if (!think || u === g.me || u.pilot) continue;
     const list = ABS[u.kind]; if (!list) continue;
     const bot = !g.human[u.team] || !!g.dir?.side(u.team)?.auto;   // a player's own side casts only what is set to cast by itself
-    for (const a of list) { if (!a.ai || (!bot && !a.autocast) || (u.energy ?? 0) < a.energy || (u.abCd?.[a.key] ?? 0) > 0) continue; const t = a.ai(g, u); if (t && useAbility(g, u, a.key, t)) break; }
+    for (const a of list) { if (!a.ai || u.autoOff?.[a.key] || (!bot && !a.autocast) || (u.energy ?? 0) < a.energy || (u.abCd?.[a.key] ?? 0) > 0) continue; const t = a.ai(g, u); if (t && useAbility(g, u, a.key, t)) break; }
   }
 }

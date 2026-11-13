@@ -2,5 +2,5 @@
 // real map under the game's own light. Built by tools/veyl/bench.mjs; never shipped.
 import './opaque';
 import '../../src/main';
-import * as L from '../../src/look-veyl';
+import * as L from '../../src/factions/veyl/look/figures';
 (window as any).__veyl = L;

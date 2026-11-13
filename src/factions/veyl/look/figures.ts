@@ -4,8 +4,8 @@
 // page carries no meshes (the match server, tests). The sculpts are made in art/chorus.py (and the files after it); each comes with the named
 // groups hitfx.ts and stance.ts work through (body, head, armL, armR, halo) plus its own (orb, bodyB, headB ... for the Chord).
 import * as THREE from 'three';
-import { figure } from './meshes';
-import { M } from './gfx';
+import { figure } from '../../../meshes';
+import { M } from '../../../gfx';
 
 /** The Veyl figures this file dresses, in the plan's roster order. A kind is drawn from its sculpt when the page carries one. */
 export const VEYL_NEW = ['tuner', 'mute', 'choirmaster', 'chord', 'bell', 'reedwalker', 'knell', 'listener'] as const;

@@ -3,7 +3,7 @@
 // every vertex that the toon shader inks in. The match server has none of these and falls back to the code-built figures.
 import * as THREE from 'three';
 import { inflateSync } from 'fflate';
-import { artBin, artTex, artVersion } from './artfiles';
+import { artBin, artTex, artImg, artVersion } from './artfiles';
 import { M, toonMaterial, PRE_DRAW, SHADOW_SWAP, farInkOf, L_FX } from './gfx';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import * as FX from './fx/kit';
@@ -20,7 +20,8 @@ export const hasFigure = (kind: string) => !!artBin(kind);
 const PAINTED: Record<string, THREE.ShaderMaterial> = {};
 function painted(kind: string) {
   let m = PAINTED[kind]; if (m) return m;
-  const img = new Image(), tex = new THREE.Texture(img); tex.anisotropy = 4; img.onload = () => { tex.needsUpdate = true; }; img.src = artTex(kind + '.tex') || '';
+  const ready = artImg(kind + '.tex'), img = ready || new Image(), tex = new THREE.Texture(img); tex.anisotropy = 4;
+  if (ready) tex.needsUpdate = true; else { img.onload = () => { tex.needsUpdate = true; }; img.src = artTex(kind + '.tex') || ''; }
   m = PAINTED[kind] = toonMaterial(tex); m.uniforms.uShine.value = 0; m.userData.fig = kind; return m;   // the tag survives the copies a mirror match tints (game.ts tintMirror)
 }
 // A building keeps the game's tiled skins and lays its own picture of wear over them (art/kit/bake.py `coat`): rust runs, bleached roofs,
@@ -28,7 +29,7 @@ function painted(kind: string) {
 const WORN = new Map<string, THREE.ShaderMaterial>(), WEAR: Record<string, THREE.Texture> = {};
 function worn(kind: string, src: THREE.ShaderMaterial) {
   const key = kind + '/' + src.uuid; let m = WORN.get(key); if (m) return m;
-  let tex = WEAR[kind]; if (!tex) { const img = new Image(); tex = WEAR[kind] = new THREE.Texture(img); img.onload = () => { tex.needsUpdate = true; }; img.src = artTex(kind + '.wear.tex') || ''; }
+  let tex = WEAR[kind]; if (!tex) { const ready = artImg(kind + '.wear.tex'), img = ready || new Image(), t = tex = WEAR[kind] = new THREE.Texture(img); if (ready) t.needsUpdate = true; else { img.onload = () => { t.needsUpdate = true; }; img.src = artTex(kind + '.wear.tex') || ''; } }
   m = src.clone(); m.uniforms = { ...src.uniforms, uWear: { value: tex } }; m.defines = { ...src.defines, WEAR: 1 }; WORN.set(key, m); return m;
 }
 // A building is made afresh every time one is placed, so the unpacked geometry is kept. Whoever takes a figure merges it (bake) before changing it, which copies it.

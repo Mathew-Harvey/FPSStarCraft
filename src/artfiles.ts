@@ -13,6 +13,10 @@ import { G_UNIT, G_BLD } from './factions/gloam/numbers';
 const BIN: Record<string, Uint8Array> = {};
 /** Picture address by key (`<kind>.tex` for a painted figure, `<kind>.wear.tex` for a building's wear). */
 const TEX: Record<string, string> = {};
+/** The same pictures, already decoded (files beside the page only). */
+const IMG: Record<string, HTMLImageElement> = {};
+/** A decoded picture for `key`, when there is one. */
+export const artImg = (key: string): HTMLImageElement | null => IMG[key] || null;
 const b64 = (s: string) => { const bin = atob(s), u8 = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i); return u8; };
 
 /** The model bytes for `kind`, or null when this build has none (the caller builds the code-made stand-in). */
@@ -91,7 +95,11 @@ async function fetchSet(files: ArtFile[], progress: (f: number) => void) {
       else {
         artState.got++; version++;
         if (f.name.endsWith('.wasm')) { if (!NOPIC.has(kindOf(f.name)) || isLevel(f.name)) BIN[f.name.slice(0, -5)] = new Uint8Array(ab); }
-        else if (f.name.endsWith('.webp')) TEX[f.name.slice(0, -5) + '.tex'] = URL.createObjectURL(new Blob([ab], { type: 'image/webp' }));
+        else if (f.name.endsWith('.webp')) {
+          // Decoded here, before anyone asks: a picture decoded only when its first body is drawn leaves that body black for a moment.
+          const key = f.name.slice(0, -5) + '.tex', url = TEX[key] = URL.createObjectURL(new Blob([ab], { type: 'image/webp' }));
+          if (typeof Image !== 'undefined') { const img = new Image(); img.src = url; try { await img.decode(); IMG[key] = img; } catch { /* drawn when it loads */ } }
+        }
       }
       ends.get(f.name)!();
     }
@@ -109,6 +117,8 @@ export const artHas = (facs: number[]) => filesFor(facs, false).every(f => DONE.
 export function artFor(facs: number[], progress: (f: number) => void = () => {}): Promise<void> {
   return fetchSet(filesFor(facs, false), progress).then(() => { void fetchSet(filesFor(facs, true), () => {}); });
 }
+/** Everything, middle and far models too, before the game starts: for the browser tests (play.html?art=all). */
+export async function artAll(progress: (f: number) => void) { await fetchSet(filesFor([0, 1, 2], false), progress); await fetchSet(filesFor([0, 1, 2], true), () => {}); }
 /** The first load (src/boot.ts): the factions the player last played, or Ironhold and the Veyl on a first visit. */
 export function loadArt(progress: (f: number) => void, facs = lastFactions()): Promise<void> {
   if (!ART_FILES.length) { artState.done = true; progress(1); return Promise.resolve(); }

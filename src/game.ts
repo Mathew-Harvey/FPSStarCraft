@@ -237,12 +237,13 @@ export class Game {
     b.obj = obj; b.kind = kind; b.maxHp = st.hp; b.hp = Math.max(1, st.hp * k); b.h = st.h; b.hx = b.rot ? st.hz : st.hx; b.hz = b.rot ? st.hx : st.hz; b.stage = 0; return true;
   }
   /** Runs one of a building's commands (BldRules.actions): checks it, pays it, runs it. Online the browser asks ('ba') and the server does it. */
-  buildingAction(b: Building, key: string, manual = false) {
-    if (this.net) { this.net.cmd('ba', b.id, key); return true; }
+  buildingAction(b: Building, key: string, manual = false, aim?: { x: number; z: number }) {
+    // Online the ask carries where the player is looking, for actions aimed at the ground (a Scan, a Crawl): the server has no camera.
+    if (this.net) { const p = V3(), at = aim || (this.me && this.groundPoint(p, 400) ? p : null); this.net.cmd('ba', b.id, key, ...(at ? [Math.round(at.x * 10) / 10, Math.round(at.z * 10) / 10] : [])); return true; }
     const a = bldRule(b.kind).actions?.(this, b).find(x => x.key === key); if (!a || !b.alive) return false;
     const why = a.ok?.(this, b) || (a.cost && !canPay(this, b.team, a.cost) ? `Short of ${shortOf(this, b.team, a.cost)}.` : '');
     if (why) { if (manual) { sfx.deny(); this.feed(FACTION[b.team].voice, why, 'al', b.team); } return false; }
-    if (a.cost) pay(this, b.team, a.cost); a.run(this, b); if (manual) sfx.blip(); return true;
+    if (a.cost) pay(this, b.team, a.cost); a.run(this, b, aim); if (manual) sfx.blip(); return true;
   }
   /** Takes an order off a building's training queue and gives the price back. Online the client asks ('cq') and the server does it. */
   /** Sends bodies to get into a carrier of their side (a transport or a building with room); they walk there and climb in. */

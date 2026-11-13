@@ -4,8 +4,9 @@
 import * as THREE from 'three';
 import { Game, beamMat } from './game';
 import { UNIT, BLD, BUILDABLE, UPGRADES, TRAINS, UNIT_NEEDS, FACTION, VOICE_SIDE, SIDE, fac, atHome, Kind, BKind, Unit, Building, UpKey, isSoldier, isWorker, type StatusKey } from './data';
-import { useAbility, setAutocast } from './core/ability';
+import { useAbility, abilityOf, whyNot, setAutocast, type Target } from './core/ability';
 import { board, unload } from './core/cargo';
+import { abilityWords } from './card';
 import { seenBy } from './core/sight';
 import { SideView, LINGER } from './net-fog';
 import { checkClaim, dropped } from './net-arms';
@@ -135,16 +136,19 @@ export function serverCmd(g: Game, pid: number, unit: Unit | null, c: any[]) {
     const V = WIRES.get(g)?.views.get(unit.team); if (V && !(V.sentU.has(id) || V.sentB.has(id))) { dropped.unseen = (dropped.unseen || 0) + 1; return; }
     const amt = checkClaim(g, unit, t, Math.min(450, num(2))); if (amt > 0) g.damage(t, amt, unit, !!c[3]);
   }
-  // Abilities (src/core/ability.ts): the server checks the body is the player's own (or one of their side's), then energy, cooldown and range.
-  // The old one-off calls are the same abilities under their old names.
-  else if (k === 'ab') { const u = g.units.find(x => x.id === num(1)); if (u && u.alive && (u === unit || (u.team === side && !u.pilot))) useAbility(g, u, String(c[2]), { x: num(3), z: num(4), id: num(5) || undefined }); }
+  // Abilities (src/core/ability.ts). Every check reads the ability's own definition (energy, cooldown, range, what it may be aimed at),
+  // so a new ability is covered the day it is defined. On top of those: the body is the player's own (or an undriven one of their side),
+  // and a body-aimed ability needs a target this side can see. A refusal is counted (dropped['ab ...']) and the player is told why.
+  // The old one-off calls ('vs', 'gb', 'pt') are the same abilities under their old names.
+  else if (k === 'ab') abilityAsk(g, pid, unit, side, c, num);
   // Autocast on or off for one body; boarding a carrier ('ld' then body ids, then the carrier's id last); letting out of a carrier.
   else if (k === 'aa') { const u = g.units.find(x => x.id === num(1)); if (u && u.alive && u.team === side) setAutocast(g, u, String(c[2]), !!num(3)); }
   else if (k === 'ld') { const ids = c.slice(1).map(Number).filter(Number.isFinite).slice(0, 40), cid = ids.pop(), car = g.units.find(x => x.id === cid) || g.buildings.find(x => x.id === cid);
     if (car && car.alive && car.team === side) for (const id of ids) { const u = g.units.find(x => x.id === id); if (u && u.alive && u.team === side && (u === unit || !u.pilot)) board(g, u, car); } }
   else if (k === 'ul') { const car = g.units.find(x => x.id === num(1)) || g.buildings.find(x => x.id === num(1)); if (car && car.alive && car.team === side) { const w = num(2) ? (car.cargo || []).find(u => u.id === num(2)) : undefined; if (!num(2) || w) unload(g, car, w); } }
   else if (k === 'vs') { if (unit && unit.kind === 'warden') useAbility(g, unit, 'lownote'); }
-  else if (k === 'ba') { const b = g.buildings.find(x => x.id === num(1)); if (b && b.alive && b.team === side && b.built) { g.feedTo = pid; g.buildingAction(b, String(c[2]), true); g.feedTo = 0; } }
+  // A building's action: the building's own rules check it (BldAction.ok and cost). An aim, if sent, is kept on the map.
+  else if (k === 'ba') { const b = g.buildings.find(x => x.id === num(1)); if (b && b.alive && b.team === side && b.built) { const aim = typeof c[3] === 'number' && typeof c[4] === 'number' ? { x: Math.max(-900, Math.min(900, num(3))), z: Math.max(-900, Math.min(900, num(4))) } : undefined; g.feedTo = pid; g.buildingAction(b, String(c[2]).slice(0, 24), true, aim); g.feedTo = 0; } }
   else if (k === 'cq') { const b = g.buildings.find(x => x.id === num(1)); if (b && b.alive && b.team === side) g.cancelTrain(b, num(2)); }
   else if (k === 'hl') { const o = g.units.find(x => x.id === num(1)); if (unit && unit.kind === 'patch' && o && o.alive && o.team === unit.team && Math.hypot(o.pos.x - unit.pos.x, o.pos.z - unit.pos.z) < 70) { const bk = BUDGET.get(unit) || { left: 900, t: g.time }; BUDGET.set(unit, bk); bk.left = Math.min(900, bk.left + (g.time - bk.t) * 450); bk.t = g.time; if (bk.left >= 80) { bk.left -= 80; o.hp = Math.min(o.maxHp, o.hp + 10); } } }
   else if (k === 'dp') { if (!unit) return; const p = g.props[num(1)]; if (p && p.alive && Math.hypot(p.x - unit.pos.x, p.z - unit.pos.z) < 175 + p.r) { const a = allow(g, unit, 'dp', Math.min(900, num(2)), 2400, 1200); if (a > 0) g.damageProp(p, a, unit); } }
@@ -176,6 +180,18 @@ export function serverCmd(g: Game, pid: number, unit: Unit | null, c: any[]) {
     g.dir.command(side, ids, o, Math.max(-900, Math.min(900, num(2))), Math.max(-900, Math.min(900, num(3))), Math.round(num(4)));
   }
   else if (k === 'or') { const o = String(c[1]); if ('GVMXZCS'.includes(o) && o.length === 1 && (unit ? unit.team === side : side === SIDE.home)) g.dir.order(o, num(2), num(3), unit); }
+}
+/** Refused ability asks since the server started, by reason, and how many went through. For tests and /healthz. */
+export const abAsks = { ok: 0 };
+function abilityAsk(g: Game, pid: number, unit: Unit | null, side: number, c: any[], num: (i: number) => number) {
+  const no = (why: string, tell = '') => { dropped['ab ' + why] = (dropped['ab ' + why] || 0) + 1; if (tell) { g.feedTo = pid; g.feed(FACTION[side].voice, tell, 'al', side); g.feedTo = 0; } };
+  const u = g.units.find(x => x.id === num(1)), key = String(c[2]).slice(0, 24), t: Target = { x: num(3), z: num(4), id: num(5) || undefined };
+  if (!u || !u.alive) return no('gone');
+  if (!(u === unit || (u.team === side && !u.pilot))) return no('not yours');
+  const a = abilityOf(u.kind, key); if (!a) return no('no such ability');
+  if (a.target === 'body' && t.id && !WIRE.trustHits) { const V = WIRES.get(g)?.views.get(u.team); if (V && !(V.sentU.has(t.id) || V.sentB.has(t.id))) return no('unseen', `${a.name}: you cannot see that.`); }
+  const why = whyNot(g, u, key, t); if (why) return no(why, `${a.name}: ${abilityWords(why, a, u)}.`);
+  if (useAbility(g, u, key, t)) abAsks.ok++;
 }
 /** The player's own body, as their browser last reported it. */
 export function serverMove(g: Game, unit: Unit, m: any[]) {

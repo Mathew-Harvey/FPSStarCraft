@@ -9,9 +9,11 @@ import { figure } from './meshes';
 import { M } from './gfx';
 import { put, can } from './units';
 import { rbox, ring } from './sculpt';
+import { FxKit, tell, beam, orb, cloud, ring as burst, veil, type Fx } from './fx/kit';
+export { FxKit };
 
-/** The new Ironhold kinds this file draws (batch 1). */
-export const KINDS = ['sapper', 'hauldrone', 'dustbike', 'piledriver'] as const;
+/** The new Ironhold kinds this file draws (batch 1 on foot and wheels, batch 2 in the air). */
+export const KINDS = ['sapper', 'hauldrone', 'dustbike', 'piledriver', 'hopper', 'flakkite', 'gadfly', 'surveyor', 'claimbarge'] as const;
 export type Kind = typeof KINDS[number];
 type Groups = Record<string, THREE.Group>;
 export interface Fig { root: THREE.Group; groups: Groups; points: Record<string, { group: THREE.Group; at: [number, number, number] }> }
@@ -55,6 +57,8 @@ export interface State {
   /** carrying ore (the drone shows its load) */ load: boolean;
   /** Pile Driver: 0 on the road, 1 anchored; anything between is the 3 s change-over */ anchor: number;
   /** seconds stood with nothing to do: after a few the body settles into a rest pose */ idle: number;
+  /** fliers: 0 sat on the ground (the Flak Kite walking on its legs), 1 in the air; between is take-off or landing. Defaults to 1. */ air?: number;
+  /** Claim Barge: 0..1 through Foreclosure's 3 s charge (the coil and muzzle light up) */ charge?: number;
 }
 const hash = (a: number, b: number) => { const v = Math.sin(a * 127.1 + b * 311.7) * 43758.5453; return v - Math.floor(v); };
 const ease = (k: number) => k * k * (3 - 2 * k);
@@ -121,17 +125,60 @@ export function animate(kind: Kind, f: Fig, s: State) {
     if (g.ram) g.ram.position.z -= Math.sin(clamp(s.kick) * Math.PI) * .35;
     for (const k of ['trackL', 'trackR']) if (g[k]) g[k].position.y += (s.speed > .05 ? Math.sin(s.dist * 9) * .01 : 0);
     g.body.rotation.x = a > 0 ? 0 : -s.speed * .03 + (s.kick > 0 ? -s.kick * .05 : 0); f.root.position.y = legs * .08;
+  } else if (kind === 'hopper') {
+    // the crew bus: slow or hovering, both jet pods swing nose-up to lift; at speed they swing level to push. On the ground the legs
+    // show and the ramp drops while a squad climbs in or out (work). It noses down a little into speed and rocks on its jets.
+    const air = s.air ?? 1, lift = 1 - clamp(s.speed), up = air > .02;
+    for (const k of ['podL', 'podR']) if (g[k]) g[k].rotation.x = -Math.PI / 2 * Math.max(lift, 1 - air) + Math.sin(t * 2 + s.id + (k === 'podL' ? 0 : 1)) * .03 * air;
+    if (g.pack) g.pack.visible = air < .6;
+    if (g.ramp) g.ramp.rotation.x = s.work && air < .1 ? -1.25 : 0;
+    g.body.rotation.x = s.speed * .1 * air; g.body.rotation.z = up ? Math.sin(t * 1.3 + s.id) * .02 : 0;
+    f.root.position.y = up ? Math.sin(t * 1.9 + s.id) * .06 * air : 0;
+  } else if (kind === 'flakkite') {
+    // in the air its box wings spread, the legs tuck back under the tail and the prop spins; landed the wings swing back along its sides
+    // and it walks on its two bird legs with the guns still under its chin, bobbing its head like a bird.
+    const air = s.air ?? 1, gnd = 1 - air;
+    const fold = ease(gnd); if (g.wingL) { g.wingL.rotation.y = -1.4 * fold; g.wingL.rotation.z = -.2 * fold; } if (g.wingR) { g.wingR.rotation.y = 1.4 * fold; g.wingR.rotation.z = .2 * fold; }   // swept back along its sides
+    if (g.rotor) g.rotor.rotation.z = t * (6 + 30 * air);
+    const ph = s.dist * 2.6, sw = Math.min(1, s.speed) * .55 * gnd;
+    if (g.legL) g.legL.rotation.x = 1.3 * air + Math.sin(ph) * sw; if (g.legR) g.legR.rotation.x = 1.3 * air - Math.sin(ph) * sw;
+    g.body.rotation.x = air * (s.speed * .08) + gnd * Math.abs(Math.sin(ph)) * .03 * Math.min(1, s.speed); g.body.rotation.z = air * -s.aim * .4;
+    g.head.rotation.y = gnd * Math.sin(t * .8 + s.id) * .3 * (s.speed < .05 ? 1 : .3);
+    g.arms.rotation.x = -s.pitch * .6; g.arms.position.z -= s.kick * .05;
+  } else if (kind === 'gadfly') {
+    // a gunship: the rotor never stops, the tail fan buzzes, it dips its nose into speed, and the chin gun tracks its target
+    if (g.rotor) g.rotor.rotation.y = t * 26; if (g.rotorT) g.rotorT.rotation.x = t * 44;
+    g.body.rotation.x = s.speed * .18; g.body.rotation.z = -s.aim * .15 + Math.sin(t * 1.1 + s.id) * .02;
+    f.root.position.y = Math.sin(t * 1.6 + s.id) * .07;
+    g.arms.rotation.y = s.aim; g.arms.rotation.x = -s.pitch; g.arms.position.z -= s.kick * .05;
+  } else if (kind === 'surveyor') {
+    // the balloon floats and turns its pushers slowly; the searchlight sweeps when idle and locks onto the aim when it looks at something
+    if (g.rotorL) g.rotorL.rotation.z = t * (4 + 8 * s.speed); if (g.rotorR) g.rotorR.rotation.z = -t * (4 + 8 * s.speed);
+    f.root.position.y = Math.sin(t * .7 + s.id) * .12; g.body.rotation.z = Math.sin(t * .5 + s.id) * .03; g.body.rotation.x = s.speed * .04;
+    g.head.rotation.y = s.work ? s.aim : Math.sin(t * .4 + s.id) * .9; g.head.rotation.x = s.work ? -s.pitch : .25 + Math.sin(t * .3) * .1;
+    g.arms.rotation.x = -s.pitch * .8; g.arms.position.z -= s.kick * .1;
+  } else if (kind === 'claimbarge') {
+    // heavy and slow: four fans in the gunwales, a long slow roll, and the Foreclosure gun lifting a little to its target
+    for (let i = 0; i < 4; i++) if (g['rotor' + i]) g['rotor' + i].rotation.y = t * 9 * (i % 2 ? -1 : 1);
+    f.root.position.y = Math.sin(t * .5 + s.id) * .1; g.body.rotation.z = Math.sin(t * .35 + s.id) * .015; g.body.rotation.x = s.speed * .03 - s.kick * .04;
+    g.arms.rotation.x = -clamp(s.pitch) * .25; g.arms.position.z -= s.kick * .4;
   }
 }
 
 /** First person: where the eye sits in the figure (its own space, metres) and which groups are hidden so the camera is not inside them.
  *  Every new body is drivable this way: the player sees the body's own hands, bars, boom or gun frame from where its crew would sit. */
 // vm: this kind has a view model (see viewModel below) to hang on the camera.
-export const FIRST: Record<Kind, { eye: [number, number, number]; hide: string[]; fov: number; /** how far the look drops over 3 m ahead */ drop: number; vm?: boolean }> = {
+export const FIRST: Record<Kind, { eye: [number, number, number]; /** groups or part names */ hide: string[]; fov: number; /** how far the look drops over 3 m ahead */ drop: number; vm?: boolean }> = {
   sapper: { eye: [0, 1.66, .12], hide: ['head', 'arms'], fov: 70, drop: .12, vm: true },
   hauldrone: { eye: [0, 1.05, .62], hide: ['head', 'arms'], fov: 80, drop: .5, vm: true },   // from the camera eye itself, framed by its housing, the boom reaching out below
   dustbike: { eye: [0, 1.62, .14], hide: ['head'], fov: 76, drop: .8 },           // the rider's eyes: bars, burner and tank ahead
   piledriver: { eye: [-.62, 2.12, -.45], hide: [], fov: 66, drop: .25 },  // head out of the cab hatch, looking past the frame along the barrel
+  // fliers are flown from their cockpits; the glass is hidden in first person (it is not see-through), its frames stay as the cockpit
+  hopper: { eye: [-.25, 1.76, 2.32], hide: ['pilot', 'noseglass', 'noseframes'], vm: true, fov: 74, drop: .35 },     // the pilot's seat behind the glazed nose
+  flakkite: { eye: [0, 2.17, .5], hide: ['pilothead', 'pilotgoggles', 'windshield'], fov: 78, drop: .3 },   // open cockpit: cowl, guns and wings
+  gadfly: { eye: [-.32, 1.72, 1.0], hide: ['canopy'], fov: 76, drop: .5 },      // in the bubble, the chin gun below and the rotor overhead
+  surveyor: { eye: [.42, 1.82, .45], hide: ['surveyorman'], fov: 72, drop: .7 },   // stood in the gondola, the searchlight below and ahead
+  claimbarge: { eye: [0, 3.65, -3.0], hide: ['bridgeglass'], fov: 66, drop: .45 },   // the bridge: the whole hull, the ore and the gun ahead
 };
 
 /** A first person view model: the body's own sculpted hands, gun or boom, copied out of the figure and hung in front of the camera
@@ -177,46 +224,175 @@ export function viewModel(kind: Kind, mode: 'gun' | 'charge' = 'gun'): THREE.Gro
     // the boom, swung up from under the camera so its bit sits in the bottom of the window
     const E: [number, number, number] = [0, 1.05, .62], boom = about(fromEye(['boom', 'boomram', 'bit', 'chuck'], E), cam(new THREE.Vector3(0, .86, .42), E));
     boom.rotation.x = .6; boom.position.set(0, -.3, -.05); out.add(boom);
+  } else if (kind === 'hopper') {
+    // the pilot's seat: a dashboard along the bottom of the view with two gauges and a hazard lip, the glazing bars of the nose
+    // running up the sides and over the top, so the view reads as a cockpit without glass in the way
+    put(rbox(1.1, .16, .3, .04), M.gunm, out, [0, -.36, -.42], [-.25, 0, 0]);
+    put(rbox(1.1, .02, .05, .01), M.haz, out, [0, -.27, -.3]);
+    for (const x of [-.18, .12]) { put(ring(.045, .01, 1, 32), M.bS, out, [x, -.31, -.34], [-.25 + Math.PI / 2, 0, 0]); put(can(.04, .01), M.nW, out, [x, -.31, -.35], [-.25 + Math.PI / 2, 0, 0]); }
+    put(can(.012, .01), M.red, out, [.32, -.3, -.34], [-.25 + Math.PI / 2, 0, 0]);
+    for (const sx of [-1, 1]) put(rbox(.035, .9, .04, .012), M.gunm, out, [sx * .46, .02, -.55], [0, 0, sx * .38]);
+    put(rbox(1.0, .035, .04, .012), M.gunm, out, [0, .36, -.6]);
   } else return null;
   out.userData.kind = kind; out.userData.mode = mode; return out;
 }
 
-// ---------------------------------------------------------------- ability effects: sketches until stream H's effect kit lands
-// Each returns an object to add to the scene and a step function; step(dt) returns false when the effect is over and can be removed.
-export interface Fx { obj: THREE.Object3D; step: (dt: number) => boolean }
-const dustMat = () => new THREE.MeshBasicMaterial({ color: 0xd9a46a, transparent: true, opacity: .7, depthWrite: false });
-const fireMat = () => new THREE.MeshBasicMaterial({ color: 0xffb23a, transparent: true, opacity: .95, depthWrite: false, blending: THREE.AdditiveBlending });
-function puffs(n: number, mat: THREE.Material, r: number) { const g = new THREE.Group(), geo = new THREE.IcosahedronGeometry(1, 1); for (let i = 0; i < n; i++) { const m = new THREE.Mesh(geo, mat); const a = i / n * Math.PI * 2; m.userData.d = new THREE.Vector3(Math.cos(a), .3 + hash(i, 7) * .4, Math.sin(a)); m.scale.setScalar(r); g.add(m); } return g; }
+// ---------------------------------------------------------------- ability effects, built from stream H's effect kit (src/fx/kit.ts)
+// Each takes the kit the game keeps for the scene and adds its pieces to it; the kit ticks them, keeps them readable from high up
+// and removes them when done. Pieces that are not in the kit (a mound of dirt, a stake, a falling flare's light) are small Fx of
+// their own, added the same way. Times and sizes are the rules' (plan-rosters.md); the rules stream passes them in where they vary.
+// All of it is for show: no dice, no rule.
+const DUST = '#d9a46a', FIRE = '#ffb23a', HOT = '#fff1c4', SOOT = '#5a5048', HAZ = '#ffc21a', SPARK = '#7ff6ff', IRON = '#ff6a1a';
+const V = (x = 0, y = 0, z = 0) => new THREE.Vector3(x, y, z);
+/** Where a figure's named point (or a spot in one of its groups) is in the world right now. */
+const worldOf = (f: Fig, name: string, fallback: [number, number, number] = [0, 1, 0]) => () => { const p = f.points[name]; const o = p ? p.group : f.root; o.updateWorldMatrix(true, false); return o.localToWorld(V(...(p ? p.at : fallback))); };
+/** One effect's timeline, added to the kit as a single piece: it holds its own pieces and timers, so pieces made partway through (a
+ *  blast after a fuse, a ring every 0.7 s) are ticked too (the kit's own list cannot take new pieces while it is ticking). It passes
+ *  the kit's far-zoom call on to every piece it holds. */
+interface Seq { add<T extends Fx>(f: T): T; after(s: number, fn: () => void): void; every(gap: number, until: number, fn: (t: number) => void): void }
+function seq(fx: FxKit): Seq {
+  const obj = new THREE.Group(), list: Fx[] = [], timers: { at: number; fn: () => void }[] = []; let t = 0;
+  const q: Seq = {
+    add(f) { obj.add(f.obj); list.push(f); return f; },
+    after(s, fn) { timers.push({ at: t + s, fn }); },
+    every(gap, until, fn) { for (let k = 0; k * gap < until; k++) { const at = k * gap; timers.push({ at: t + at, fn: () => fn(at) }); } },
+  };
+  fx.add({ obj, update(dt) { t += dt; for (let i = 0; i < timers.length; i++) if (timers[i].at <= t) { const f = timers.splice(i--, 1)[0]; f.fn(); }
+      for (let i = 0; i < list.length; i++) if (!list[i].update(dt)) { obj.remove(list[i].obj); list[i].dispose?.(); list.splice(i--, 1); }
+      return list.length > 0 || timers.length > 0; },
+    view(perPx, far, cam) { for (const f of list) f.view?.(perPx, far, cam); } });
+  return q;
+}
+/** A small solid prop that stands for `time` seconds (a mound, a stake) and sinks away at the end. */
+function prop(q: Seq, mesh: THREE.Object3D, time: number, grow = .3): Fx { let t = 0; const y0 = mesh.position.y; return q.add({ obj: mesh, update(dt) { t += dt; mesh.scale.setScalar(Math.min(1, t / grow)); if (t > time - .5) mesh.position.y = y0 - (t - time + .5) * .6; return t < time; } }); }
 
-/** Shaft Mine: the Sapper digs in. A ring of dust kicks out, a mound rises, and a scrap of red flag is left over the buried charge. */
-export function shaftMine(at: THREE.Vector3): Fx {
-  const g = new THREE.Group(); g.position.copy(at); const dm = dustMat(), ring = puffs(10, dm, .25); g.add(ring);
-  const mound = new THREE.Mesh(new THREE.SphereGeometry(.5, 12, 6, 0, Math.PI * 2, 0, Math.PI / 2), new THREE.MeshLambertMaterial({ color: 0x9a6a44 })); mound.scale.set(1, 0, 1); g.add(mound);
-  const flag = new THREE.Mesh(new THREE.PlaneGeometry(.18, .12), new THREE.MeshBasicMaterial({ color: 0xd8382a, side: THREE.DoubleSide })); flag.position.set(.2, .35, 0); flag.visible = false; g.add(flag);
-  let t = 0;
-  return { obj: g, step(dt) { t += dt; for (const m of ring.children) { m.position.copy(m.userData.d).multiplyScalar(t * 1.6); m.scale.setScalar(.25 + t * .5); } dm.opacity = Math.max(0, .7 - t * .5); mound.scale.y = Math.min(.35, t * .3); flag.visible = t > 1; flag.rotation.y = Math.sin(t * 5) * .3; return t < 30; } };
+/** Overtime (Linesman): he takes the hit and speeds up. A hot flash on him, a ring off his boots, and a warm glow that rides with
+ *  him for the 11 s. `at` follows the body. */
+export function overtime(fx: FxKit, at: () => THREE.Vector3, time = 11) {
+  const q = seq(fx);
+  const p = at(); q.add(burst({ x: p.x, z: p.z, y: p.y, r: 2.2, time: .5, color: FIRE }));
+  q.add(orb({ at: () => at().add(V(0, 1.2, 0)), r: .5, color: '#ff4a1a', time: .25 }));
+  q.add(orb({ at: () => at().add(V(0, 1.0, 0)), r: .35, color: FIRE, time, pulse: 1.5, minPx: 3 }));
 }
-/** Satchel: the charge goes off against a building. A white flash, a fireball, then a column of brown smoke. */
-export function satchel(at: THREE.Vector3): Fx {
-  const g = new THREE.Group(); g.position.copy(at); const fm = fireMat(), ball = puffs(12, fm, .4), dm = dustMat(), smoke = puffs(8, dm, .5); g.add(ball, smoke);
-  let t = 0;
-  return { obj: g, step(dt) { t += dt; for (const m of ball.children) { m.position.copy(m.userData.d).multiplyScalar(t * 4); m.scale.setScalar(.4 + t * 2.5); } fm.opacity = Math.max(0, .95 - t * 2.2); for (const m of smoke.children) { m.position.set(m.userData.d.x * t * .8, t * 2.4 * m.userData.d.y * 3, m.userData.d.z * t * .8); m.scale.setScalar(.5 + t * .8); } dm.opacity = Math.max(0, .7 - t * .25); return t < 3; } };
+/** Shaft Mine (Sapper): he digs in. Dust kicks out in a ring, a mound rises with a scrap of red flag on it, and it stays as long as
+ *  the mine does (`time`; the rules remove it when it goes off, through the returned Fx's obj). */
+export function shaftMine(fx: FxKit, at: THREE.Vector3, time = 600): Fx {
+  const q = seq(fx);
+  q.add(burst({ x: at.x, z: at.z, y: at.y, r: 2.4, time: .7, color: DUST })); q.add(cloud({ x: at.x, z: at.z, y: at.y, r: 1.4, time: 1.6, color: DUST, puffs: 6 }));
+  const g = new THREE.Group(); g.position.copy(at); const mound = new THREE.Mesh(new THREE.SphereGeometry(.5, 12, 6, 0, Math.PI * 2, 0, Math.PI / 2), M.lea); mound.scale.y = .35; g.add(mound);
+  const pole = new THREE.Mesh(new THREE.CylinderGeometry(.012, .012, .5, 5), M.wood); pole.position.set(.2, .25, 0); g.add(pole);
+  const flag = new THREE.Mesh(new THREE.PlaneGeometry(.18, .11), new THREE.MeshBasicMaterial({ color: 0xd8382a, side: THREE.DoubleSide })); flag.position.set(.29, .44, 0); g.add(flag);
+  return prop(q, g, time);
 }
-/** Kick Start: the Dustbike's boost. A burst of flame from the muffler and a rooster tail of dust off the back tyre. */
-export function kickStart(bike: Fig): Fx {
-  const g = new THREE.Group(); g.position.set(.21, .9, -.95); const fm = fireMat(), flame = puffs(5, fm, .12); g.add(flame); bike.groups.body.add(g);
-  const dm = dustMat(), tail = puffs(8, dm, .2); tail.position.set(0, .2, -1.1); bike.groups.body.add(tail);
-  let t = 0;
-  return { obj: g, step(dt) { t += dt; for (const m of flame.children) { m.position.set(m.userData.d.x * .05, m.userData.d.y * .05, -t * 3 * (1 + m.userData.d.y)); m.scale.setScalar(.12 * (1 - t)); } fm.opacity = Math.max(0, 1 - t); for (const m of tail.children) { m.position.set(m.userData.d.x * .3, t * 2 * m.userData.d.y, -t * 2.5); m.scale.setScalar(.2 + t * .8); } dm.opacity = Math.max(0, .7 - t * .5); const on = t < 1.4; if (!on) { g.removeFromParent(); tail.removeFromParent(); } return on; } };
+/** The mine going off, or a Satchel against a wall: a short red warning on the ground for the fuse, then a white flash, a blast ring,
+ *  a fireball and a column of brown smoke. */
+export function blast(fx: FxKit, at: THREE.Vector3, r = 5, fuse = 0) {
+  const q = seq(fx);
+  if (fuse > 0) q.add(tell({ x: at.x, z: at.z, y: at.y, r, time: fuse, color: '#ff3a2a' }));
+  q.after(fuse, () => {
+    q.add(orb({ at: at.clone().add(V(0, .8, 0)), r: r * .5, color: '#ffffff', time: .12 })); q.add(orb({ at: at.clone().add(V(0, 1, 0)), r: r * .35, color: FIRE, time: .5, pulse: 4 }));
+    q.add(burst({ x: at.x, z: at.z, y: at.y, r: r * 1.2, time: .6, color: FIRE }));
+    q.add(cloud({ x: at.x, z: at.z, y: at.y, r: r * .6, time: 4, color: '#7a5a40', puffs: 9 }));
+  });
 }
-/** Haul Drone call-down: it drops out of the sky from 30 m with its fans screaming, brakes hard at the end, and throws a ring of dust. */
-export function callDown(drone: Fig, to: THREE.Vector3): Fx {
-  const dm = dustMat(), ring = puffs(12, dm, .3); ring.position.copy(to); let t = 0; drone.root.position.set(to.x, to.y + 30, to.z);
-  return { obj: ring, step(dt) { t += dt; const k = Math.min(1, t / 1.6), y = 30 * (1 - ease(k)); drone.root.position.y = to.y + y + .35; ring.visible = k > .8; if (k > .8) { const q = (k - .8) * 5 + Math.max(0, t - 1.6); for (const m of ring.children) { m.position.copy(m.userData.d).multiplyScalar(q * 2); m.scale.setScalar(.3 + q * .6); } dm.opacity = Math.max(0, .7 - Math.max(0, t - 1.6) * .6); } return t < 3; } };
+/** Satchel (Sapper): set against a building, a 1.5 s fuse, then the blast. */
+export const satchel = (fx: FxKit, at: THREE.Vector3) => blast(fx, at, 3.5, 1.5);
+/** Ghillie (Longshot): he goes to ground. For his own side the body shimmers; for the other side it is gone. Returns the undo. */
+export function ghillie(fx: FxKit, body: THREE.Object3D, mySide: boolean) { const q = seq(fx), p = body.getWorldPosition(V()); q.add(cloud({ x: p.x, z: p.z, y: p.y, r: 1.2, time: 1.2, color: '#8a8a60', puffs: 5 })); return veil(body, mySide); }
+/** Tranq (Longshot): a dart that bursts into a pale cloud; in its circle energy and shields bleed away. */
+export function tranq(fx: FxKit, from: THREE.Vector3, to: THREE.Vector3, r = 3) {
+  const q = seq(fx);
+  const flight = Math.max(.1, from.distanceTo(to) / 60), at = () => from.clone().lerp(to, Math.min(1, t / flight)); let t = 0;
+  q.add({ obj: new THREE.Group(), update(dt) { t += dt; return t < flight; } }); q.add(orb({ at, r: .12, color: '#b8ffcf', time: flight, minPx: 3 }));
+  q.after(flight, () => { q.add(burst({ x: to.x, z: to.z, y: to.y, r, time: .6, color: '#b8ffcf' })); q.add(cloud({ x: to.x, z: to.z, y: to.y, r, time: 3, color: '#a8e8c0', puffs: 8 })); });
 }
-/** Anchor: dust jets where each stake bites, then settles. Call it as the stakes reach the ground. */
-export function anchorDust(pd: Fig): Fx {
-  const g = new THREE.Group(), dm = dustMat(); const feet: [number, number][] = [[-1.55, 1.5], [1.55, 1.5], [-1.55, -1.55], [1.55, -1.55]];
-  for (const [x, z] of feet) { const p = puffs(5, dm, .15); p.position.set(x, .05, z); g.add(p); } pd.groups.body.add(g); let t = 0;
-  return { obj: g, step(dt) { t += dt; for (const p of g.children) for (const m of p.children) { m.position.copy(m.userData.d).multiplyScalar(t * .9); m.scale.setScalar(.15 + t * .4); } dm.opacity = Math.max(0, .7 - t * .6); const on = t < 1.3; if (!on) g.removeFromParent(); return on; } };
+/** Deep Charge (Longshot, from the Signal Mast): the company's big charge, called onto a spot. A long warning so the other side can
+ *  run, a falling glint, then a blast twice the size of a Satchel. */
+export function deepCharge(fx: FxKit, at: THREE.Vector3, r = 8, fuse = 10) {
+  const q = seq(fx);
+  q.add(tell({ x: at.x, z: at.z, y: at.y, r, time: fuse, color: '#ff3a2a' }));
+  let t = 0; q.add({ obj: new THREE.Group(), update(dt) { t += dt; return t < fuse; } });
+  q.add(orb({ at: () => at.clone().add(V(0, Math.max(0, (fuse - t) * 4), 0)), r: .3, color: HAZ, time: fuse, pulse: 2, minPx: 4 }));
+  blast(fx, at, r, fuse);
+}
+/** Kick Start (Dustbike): a bang of flame out of the muffler and a rooster tail of dust off the back tyre. */
+export function kickStart(fx: FxKit, bike: Fig, time = 2) {
+  const q = seq(fx);
+  const tyre = () => { const g = bike.groups.body; g.updateWorldMatrix(true, false); return g.localToWorld(V(0, .1, -1.1)); };
+  const blow = () => { const g = bike.groups.body; g.updateWorldMatrix(true, false); return g.localToWorld(V(.21, .9, -1.1)); };
+  q.add(orb({ at: blow, r: .35, color: FIRE, time: .35 })); q.add(beam({ a: () => { const g = bike.groups.body; return g.localToWorld(V(.21, .9, -.95)); }, b: () => { const g = bike.groups.body; return g.localToWorld(V(.21, .95, -1.9)); }, width: .18, color: FIRE, time: .4 }));
+  let t = 0; q.add({ obj: new THREE.Group(), update(dt) { t += dt; if (Math.floor(t / .25) !== Math.floor((t - dt) / .25)) { const p = tyre(); q.add(cloud({ x: p.x, z: p.z, y: 0, r: 1, time: 1.2, color: DUST, puffs: 4, seed: Math.floor(t * 9) + 1 })); } return t < time; } });
+}
+/** Haul Drone call-down: a mark on the ground where it will land, then it drops from 30 m with its fans screaming, brakes hard, and
+ *  throws a ring of dust. Moves the drone's root itself. */
+export function callDown(fx: FxKit, drone: Fig, to: THREE.Vector3, time = 1.6) {
+  const q = seq(fx);
+  q.add(tell({ x: to.x, z: to.z, y: to.y, r: 1.6, time, color: HAZ })); let t = 0; drone.root.position.set(to.x, to.y + 30, to.z);
+  q.add({ obj: new THREE.Group(), update(dt) { t += dt; const k = Math.min(1, t / time); drone.root.position.y = to.y + .35 + 30 * (1 - ease(k)); return k < 1; } });
+  q.after(time, () => { q.add(burst({ x: to.x, z: to.z, y: to.y, r: 3, time: .6, color: DUST })); q.add(cloud({ x: to.x, z: to.z, y: to.y, r: 2, time: 1.5, color: DUST, puffs: 6 })); });
+}
+/** Anchor (Pile Driver): dust jets where each stake bites. Call it as the stakes reach the ground. */
+export function anchorDust(fx: FxKit, pd: Fig) {
+  const q = seq(fx);
+  for (const [x, z] of [[-1.55, 1.5], [1.55, 1.5], [-1.55, -1.55], [1.55, -1.55]]) { const p = pd.root.localToWorld(V(x, 0, z)); q.add(burst({ x: p.x, z: p.z, y: p.y, r: 1, time: .4, color: DUST })); q.add(cloud({ x: p.x, z: p.z, y: p.y, r: .7, time: 1.2, color: DUST, puffs: 3 })); }
+}
+/** Afterburn (Hopper): both jet pods throw a long white-hot tongue and a trail of soot for its 3 s. */
+export function afterburn(fx: FxKit, hop: Fig, time = 3) {
+  const q = seq(fx);
+  for (const k of ['jetL', 'jetR']) {
+    const at = worldOf(hop, k), back = () => { const p = hop.points[k]; return p.group.localToWorld(V(p.at[0], p.at[1], p.at[2] - 2.2)); };
+    q.add(beam({ a: at, b: back, width: .32, color: HOT, time, minPx: 2 })); q.add(orb({ at, r: .45, color: FIRE, time, pulse: 3 }));
+  }
+  let t = 0; q.add({ obj: new THREE.Group(), update(dt) { t += dt; if (Math.floor(t / .3) !== Math.floor((t - dt) / .3)) { const p = worldOf(hop, 'jetL')(); q.add(cloud({ x: p.x, z: p.z, y: p.y - 1, r: 1.2, time: 2, color: SOOT, puffs: 3, seed: Math.floor(t * 7) + 3 })); } return t < time; } });
+}
+/** Smoke Cloak (Gadfly): the old spray booms lay a thick grey bank round it, and the ship goes unseen inside (veil). */
+export function smokeCloak(fx: FxKit, ship: Fig, mySide: boolean, r = 6, time = 10) {
+  const q = seq(fx);
+  const p = ship.root.getWorldPosition(V()); q.add(cloud({ x: p.x, z: p.z, y: Math.max(0, p.y - 2), r, time, color: '#9a9488', puffs: 16 }));
+  const off = veil(ship.root, mySide); q.after(time, off); return off;
+}
+/** Flare (Surveyor): a parachute flare pops overhead and drifts down; the circle under it is blinded for 8 s (no one inside sees
+ *  out past it). A white glare on the ground marks the circle from any zoom. */
+export function flare(fx: FxKit, at: THREE.Vector3, r = 7, time = 8) {
+  const q = seq(fx);
+  let t = 0; const fall = () => at.clone().add(V(0, 14 - t * 1.4, 0));
+  const lamp = new THREE.PointLight(0xffe6b8, 60, r * 4, 1.6); const g = new THREE.Group(); g.add(lamp);
+  const chute = new THREE.Mesh(new THREE.SphereGeometry(.7, 12, 6, 0, Math.PI * 2, 0, Math.PI / 2), M.nW); chute.position.y = 1.2; g.add(chute);
+  q.add({ obj: g, update(dt) { t += dt; g.position.copy(fall()); lamp.intensity = 60 * Math.min(1, (time - t)) * (.85 + Math.sin(t * 31) * .15); return t < time; } });
+  q.add(orb({ at: fall, r: .45, color: '#fff4d0', time, pulse: 5, minPx: 5 }));
+  q.add(cloud({ x: at.x, z: at.z, y: at.y, r, time, color: '#fff6dc', puffs: 10 }));
+}
+/** Jam (Surveyor): a machine stops for 6 s. Rings of static keep rolling off it and a blue spark sits on it. `at` follows the body. */
+export function jam(fx: FxKit, at: () => THREE.Vector3, time = 6) {
+  const q = seq(fx);
+  let t = 0, n = 0; q.add(orb({ at: () => at().add(V(0, 1.6, 0)), r: .3, color: SPARK, time, pulse: 7 }));
+  q.add({ obj: new THREE.Group(), update(dt) { t += dt; if (t > n * .7) { n++; const p = at(); q.add(burst({ x: p.x, z: p.z, y: p.y, r: 3, time: .7, color: SPARK, band: .08 })); } return t < time; } });
+}
+/** Stake Gun (Surveyor): a survey stake shot into the ground that stands as a turret for 10 s, a puff where it bites. */
+export function stakeGun(fx: FxKit, from: THREE.Vector3, to: THREE.Vector3, time = 10) {
+  const q = seq(fx);
+  const flight = Math.max(.1, from.distanceTo(to) / 40); let t = 0;
+  q.add({ obj: new THREE.Group(), update(dt) { t += dt; return t < flight; } }); q.add(orb({ at: () => from.clone().lerp(to, Math.min(1, t / flight)), r: .1, color: IRON, time: flight, minPx: 3 }));
+  q.after(flight, () => {
+    q.add(burst({ x: to.x, z: to.z, y: to.y, r: 1.2, time: .4, color: DUST }));
+    const g = new THREE.Group(); g.position.copy(to); const stake = new THREE.Mesh(new THREE.CylinderGeometry(.05, .015, 1.2, 6), M.wood); stake.position.y = .5; g.add(stake);
+    const tag = new THREE.Mesh(new THREE.PlaneGeometry(.26, .14), new THREE.MeshBasicMaterial({ color: 0xff6a1a, side: THREE.DoubleSide })); tag.position.set(.14, 1.0, 0); g.add(tag);
+    const head = new THREE.Mesh(new THREE.BoxGeometry(.18, .12, .3), M.gunm); head.position.y = 1.15; g.add(head);
+    prop(q, g, time, .15); q.add(tell({ x: to.x, z: to.z, y: to.y, r: .9, time, color: IRON }));
+  });
+}
+/** Foreclosure (Claim Barge): a 3 s charge (light gathering at the muzzle and a warning on the target's ground, so the other side
+ *  sees it coming), then one shell: a long streak and a heavy blast. */
+export function foreclosure(fx: FxKit, barge: Fig, target: THREE.Vector3, charge = 3) {
+  const q = seq(fx);
+  const muzzle = worldOf(barge, 'muzzle');
+  q.add(tell({ x: target.x, z: target.z, y: target.y, r: 3.5, time: charge, color: SPARK })); q.add(orb({ at: muzzle, r: 1.1, color: SPARK, time: charge, pulse: 2.5 }));
+  let t = 0; q.add({ obj: new THREE.Group(), update(dt) { t += dt; if (Math.floor(t / .6) !== Math.floor((t - dt) / .6)) { const p = muzzle(); q.add(burst({ x: p.x, z: p.z, y: p.y - 1, r: 2, time: .5, color: SPARK })); } return t < charge; } });
+  q.after(charge, () => { q.add(beam({ a: muzzle(), b: target.clone(), width: .5, color: '#e8ffff', time: .3, minPx: 3 })); blast(fx, target, 5); });
+}
+/** Relocate (Claim Barge): the fans go to full, a ring of dust under it, and a mark where it is going. */
+export function relocate(fx: FxKit, barge: Fig, to: THREE.Vector3, time = 2) {
+  const q = seq(fx);
+  const p = barge.root.getWorldPosition(V()); q.add(burst({ x: p.x, z: p.z, y: 0, r: 9, time: .9, color: DUST })); q.add(cloud({ x: p.x, z: p.z, y: 0, r: 6, time: 2.5, color: DUST, puffs: 10 }));
+  q.add(tell({ x: to.x, z: to.z, y: to.y, r: 7, time, color: HAZ }));
 }

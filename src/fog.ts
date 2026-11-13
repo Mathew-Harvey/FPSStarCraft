@@ -2,6 +2,7 @@
 // It is worked out on each player's own screen from the bodies it can see, so the server never needs it.
 import type { Game } from './game';
 import { MAP } from './data';
+import { isFriend } from './core/sides';
 import { TER, STEP, BEACON, h as groundH } from './terrain';
 
 const CELL = 4;
@@ -34,8 +35,8 @@ export class Fog {
   update(g: Game, dt: number, force = false) {
     this.t -= dt; if (this.t > 0 && !force) return; this.t = .25; const c = this.cells, team = g.myTeam;
     for (let i = 0; i < c.length; i++) if (c[i] === 2) c[i] = 1;
-    for (const u of g.units) if (u.alive && u.team === team) this.stamp(u.pos.x, u.pos.z, SIGHT[u.kind] || 30, u.pos.y);
-    for (const b of g.buildings) if (b.alive && b.team === team) this.stamp(b.pos.x, b.pos.z, SIGHT[b.kind] || (b.built ? 26 : 14), b.pos.y);
+    for (const u of g.units) if (u.alive && (u.team === team || isFriend(u.team, team))) this.stamp(u.pos.x, u.pos.z, SIGHT[u.kind] || 30, u.pos.y);
+    for (const b of g.buildings) if (b.alive && (b.team === team || isFriend(b.team, team))) this.stamp(b.pos.x, b.pos.z, SIGHT[b.kind] || (b.built ? 26 : 14), b.pos.y);
     // A Survey Beacon this side holds sees round it, high ground included.
     for (const B of TER.beacons) if (B.alive && B.held & (1 << team)) this.stamp(B.x, B.z, BEACON.SEE);
   }

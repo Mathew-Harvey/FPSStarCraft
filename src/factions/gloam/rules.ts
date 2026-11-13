@@ -5,6 +5,7 @@ import { V3, R, M } from '../../gfx';
 import { sfx } from '../../audio';
 import type { Game } from '../../game';
 import { UNIT, BLD, Unit, Building, isUnit, isWorker } from '../../data';
+import { isEnemy } from '../../core/sides';
 import { G_TUNE, GBKind } from './numbers';
 import { defineUnits, defineBuildings, defineFaction } from '../../core/registry';
 import { defineAbilities } from '../../core/ability';
@@ -43,7 +44,7 @@ export function gloamBuilding(g: Game, b: Building, dt: number) {
     b.cd -= dt; if (b.cd <= 0) { b.cd = G_TUNE.stinger.cd; const t = nearestFoe(g, b, G_TUNE.stinger.range + 16); if (t) { lash(g, b, t, G_TUNE.stinger.dmg * gMul(g, b.team), 7.4); const tip = b.obj.getObjectByName('tip'); if (tip) tip.rotation.x = -1; } else b.cd = .3; }
   }
 }
-function nearestFoe(g: Game, b: Building, r: number) { let best: Unit | null = null, bd = r; for (const o of g.units) { if (!o.alive || o.team === b.team) continue; const d = o.pos.distanceTo(b.pos); if (d < bd) { bd = d; best = o; } } return best; }
+function nearestFoe(g: Game, b: Building, r: number) { let best: Unit | null = null, bd = r; for (const o of g.units) { if (!o.alive || !isEnemy(o.team, b.team)) continue; const d = o.pos.distanceTo(b.pos); if (d < bd) { bd = d; best = o; } } return best; }
 function lash(g: Game, b: Building, t: Unit, dmg: number, y: number) {
   const a = V3(b.pos.x, y, b.pos.z), e = V3(t.pos.x, UNIT[t.kind].bodyY, t.pos.z); g.tracer(a, e, spitMat, .14); g.puff(e, 2, .5, M.gS, .6); sfx.slash(g.vol(b.pos) * .7); g.damage(t, dmg, b);
 }

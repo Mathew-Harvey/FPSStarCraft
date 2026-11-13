@@ -37,22 +37,33 @@ export const VOICE_SIDE: Record<string, number> = { 'Held Fifth': 1,  Conductor:
 /** Who holds each end of the map this match, as teams: `home` the yard at the origin, `out` the outpost at the far end of the road.
  *  Any faction can hold either end. A mirror match puts the same faction at both ends, the outpost side as team faction + 3. Set before a Game is made. */
 export const SIDE = { home: 0, out: 1 };
-/** Sets who holds each end from the two factions, and returns the two teams. */
-export const setSides = (homeFac: number, outFac: number) => { SIDE.home = homeFac; SIDE.out = outFac === homeFac ? outFac + MIRROR : outFac; layoutSites(); return [SIDE.home, SIDE.out]; };
+/** Sets who holds each end from the two factions, and returns the two teams. It also ends any team game setup (see setTeamGame). */
+export const setSides = (homeFac: number, outFac: number) => { clearMatch(); SIDE.home = homeFac; SIDE.out = outFac === homeFac ? outFac + MIRROR : outFac; layoutSites(); return [SIDE.home, SIDE.out]; };
 /** A match code for the lobby and the menus: home faction times 3 plus outpost faction. The old codes 1 and 2 (Ironhold against the Veyl or the Gloam) still mean the same. */
 export const sidesCode = () => fac(SIDE.home) * 3 + fac(SIDE.out);
+/** Sets up a team game or free-for-all from a plan (see planTeams), or with null goes back to a plain one-on-one. Returns the plan's
+ *  teams, or null when the plan does not hold (and then it is a one-on-one). A plan with only two sides is a one-on-one. Set before a Game is made. */
+export function setTeamGame(p: TeamPlan | null) {
+  const t = p ? planTeams(p) : null; if (!t) { clearMatch(); return null; }
+  setSides(fac(t.home), fac(t.out)); if (t.teams.length > 2) setMatch(t.teams, t.at, p!.n, t.groups); else clearMatch(); return t;
+}
 export const setSidesCode = (code: number) => { const c = Number.isInteger(code) && code >= 0 && code < 9 ? code : 1; return setSides(Math.floor(c / 3), c % 3); };
-/** The side two sides fight: every match has two. */
-export const foeOf = (team: number) => team === SIDE.home ? SIDE.out : SIDE.home;
+/** The side a side fights. A one-on-one has two; with more sides it is the enemy this side is going after now (MATCH.foe, set by the Director). */
+export const foeOf = (team: number) => multi() ? MATCH.foe[team] ?? enemiesOf(team)[0] ?? team : team === SIDE.home ? SIDE.out : SIDE.home;
 /** True for the side that holds the yard. */
 export const atHome = (team: number) => team === SIDE.home;
 /** Turns a point in one end's frame into the same spot at the other end: a half turn about the middle of the two bases.
  *  Each brain is written for its own end (the Quartermaster for the yard, the Conductor and the Overgrowth for the outpost); this moves it. */
 /** Where a team's home base stands: the yard for the side at home, the outpost for the side at the far end. */
-export const homeXZ = (team: number): [number, number] => atHome(team) ? [0, 0] : [VHOME.x, VHOME.z];
+export const homeXZ = (team: number): [number, number] => multi() ? startXZ(startOf(team)) : atHome(team) ? [0, 0] : [VHOME.x, VHOME.z];
+/** With more than two sides, the start spots stand round the middle of the two ends, each the yard turned by the same step: start 0 is the yard,
+ *  start n/2 the far base. `turnPt` turns a point from start 0's frame to start i's. (On a ring map MAP.starts is the same list.) */
+export const turnPt = (i: number, x: number, z: number): [number, number] => { if (!i) return [x, z]; const cx = VHOME.x / 2, cz = VHOME.z / 2, a = i * 2 * Math.PI / ((MAP_ as any).ring || MATCH.n), c = Math.cos(a), sn = Math.sin(a), dx = x - cx, dz = z - cz; return [cx + dx * c - dz * sn, cz + dx * sn + dz * c]; };
+/** Where start spot i stands. */
+export const startXZ = (i: number): [number, number] => { const s: number[] | undefined = (MAP_ as any).starts?.[i]; return s ? [s[0], s[1]] : turnPt(i, 0, 0); };
 export const swapEnd = (x: number, z: number): [number, number] => [VHOME.x - x, VHOME.z - z];
 /** A point written for the yard (`yard` true) or the outpost, moved to wherever this team actually stands. */
-export const endPt = (team: number, x: number, z: number, yard: boolean): [number, number] => atHome(team) === yard ? [x, z] : swapEnd(x, z);
+export const endPt = (team: number, x: number, z: number, yard: boolean): [number, number] => { if (multi()) { const [yx, yz] = yard ? [x, z] : swapEnd(x, z); return turnPt(startOf(team), yx, yz); } return atHome(team) === yard ? [x, z] : swapEnd(x, z); };
 export const isWorker = (k: Kind) => k === 'rigger' || k === 'tender' || k === 'grazer' || !!UNIT[k]?.worker;
 export const isGloam = (k: Kind) => fac(UNIT[k]?.team ?? 0) === 2;
 /** What each building trains, and the extra building a unit needs standing before it can be trained. */
@@ -65,7 +76,7 @@ export const UPGRADES: UpDef[] = [...I_UPGRADES, ...V_UPGRADES.map(u => ({ ...u,
 /** Research a side can buy. */
 export const upsOf = (team: number) => UPGRADES.filter(u => (u.team || 0) === fac(team));
 
-export interface Order { type: 'guard' | 'amove' | 'follow' | 'raid' | 'scout'; x: number; z: number; path?: number[][]; lead?: Unit; /** Seconds to stand and let the rest of the march catch up. */ waitT?: number; /** A scout: on its way home, walking round a find, and turned back hurt. */ back?: boolean; loop?: boolean; fled?: boolean }
+export interface Order { type: 'guard' | 'amove' | 'follow' | 'raid' | 'scout'; x: number; z: number; path?: number[][]; lead?: Unit; /** Seconds to stand and let the rest of the march catch up. */ waitT?: number; /** Given by a player from the command view: the side's own brain leaves this body alone until it is handed back. */ mine?: boolean; /** The one enemy body or building this body was told to attack. */ prey?: Unit | Building; /** A scout: on its way home, walking round a find, and turned back hurt. */ back?: boolean; loop?: boolean; fled?: boolean }
 export interface Unit {
   /** Set once a Veyl guard has broken off to regrow its shield, so it only does that once. */
   fled?: boolean; leashed?: boolean;
@@ -75,6 +86,10 @@ export interface Unit {
   obj: THREE.Group; rig: Rig; ring: THREE.Mesh; alive: boolean; speed: number; moving: boolean; phase: number; cd: number; think: number;
   target: Unit | Building | null; order: Order; lastHit: number; state: string; timer: number; carrying: number; node: OreNode | null; site: Building | null;
   dashCd: number; dashT: number; swing: number; slot: number; flashT: number; pop: number; wind: number; windX: number; windZ: number; kx: number; kz: number; pitch: number; brace: boolean; mend?: Unit | null;
+  /** A seam a worker was sent to from the command view: it keeps going back there while the seam has ore. */
+  pref?: OreNode | null;
+  /** Multiplayer: the player driving this body is up in the command view, so it leads nobody. */
+  aloft?: boolean;
   /** Multiplayer: which player is driving this body (0 for nobody), and where the server last said it was. */
   pilot: number; nx: number; nz: number;
   /** The vent a worker carries Flux from, and the Flux it is carrying (src/core/econ.ts). */
@@ -115,7 +130,8 @@ export const DIFFS: Difficulty[] = [
 // The maps live in src/maps.ts; they are passed on from here so everything can keep importing them from data.
 export { GATE, MAP, MAPS, NORTH_PATH, OUTPOST, RALLY, RALLY_N, ROAD, SIZES, TURNS, VAST, VHOME, VRALLY, VRALLY_N, baseOf, compass, mapCode, roadPt, rollMap, setMap, sizeOf, turnOf, validMap, veylPt } from './maps';
 export type { MapDef } from './maps';
-import { VHOME, layoutSites } from './maps';
+import { VHOME, MAP as MAP_, layoutSites } from './maps';
+import { MATCH, multi, startOf, enemiesOf, planTeams, setMatch, clearMatch, type TeamPlan } from './core/sides';
 /** Story state the engine reads while a campaign job is running. Set before a Game is made, cleared for everything else. */
 export const STORY = {
   /** The Ironhold team that is Charter Security on this job (they wear company grey), or -1. */

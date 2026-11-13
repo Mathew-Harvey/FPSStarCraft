@@ -10,6 +10,8 @@ import { defineUnits, unitRule, type VmPose } from '../../core/registry';
 import { abilitiesOf, type Target } from '../../core/ability';
 import { ripening } from '../../core/morph';
 import { isEnemy } from '../../core/sides';
+import { hasStatus } from '../../core/status';
+import { defineBuildingLook } from '../../net-look';
 import { plainBody } from '../../core/plain';
 import { heldMaterial, setLayer } from '../../gfx';
 import type { Model } from '../../models';
@@ -113,8 +115,9 @@ const DONE: Record<string, (k: FxKit, g: Game, u: Unit, t: Target, tgt: Unit | B
   kick(k, _g, u) { const f = figOf(u); if (f) E.kickStart(k, f, TUNE.kick.t); },
   anchor(k, _g, u) { const f = figOf(u); if (f) later(k, TUNE.pile.anchor * .6, () => { if (u.alive) E.anchorDust(k, f); }); },
   afterburn(k, _g, u) { const f = figOf(u); if (f) E.afterburn(k, f, TUNE.afterburn.t); },
-  cloak(k, _g, u) { if (mem(u).smoke) { const p = at(u)(); k.add(cloud({ x: p.x, z: p.z, y: Math.max(0, p.y - 2), r: 6, time: 4, color: '#9a9488', puffs: 16 })); } },
-  ghillie(k, _g, u) { if (mem(u).ghillie) k.add(cloud({ x: u.pos.x, z: u.pos.z, r: 1.2, time: 1.2, color: '#8a8a60', puffs: 5 })); },
+  // (K) from the status, not the rule's own note, which only the host keeps: so it shows the same on every screen
+  cloak(k, _g, u) { if (hasStatus(u, 'unseen')) { const p = at(u)(); k.add(cloud({ x: p.x, z: p.z, y: Math.max(0, p.y - 2), r: 6, time: 4, color: '#9a9488', puffs: 16 })); } },
+  ghillie(k, _g, u) { if (hasStatus(u, 'unseen')) k.add(cloud({ x: u.pos.x, z: u.pos.z, r: 1.2, time: 1.2, color: '#8a8a60', puffs: 5 })); },
   tranq(k, _g, u, t) { E.tranq(k, V(u.pos.x, 1.5, u.pos.z), ground(t), TUNE.tranq.r); },
   stake(k, _g, u, t) { E.stakeGun(k, V(u.pos.x, (u.alt || 0) + 1, u.pos.z), ground(t), TUNE.stake.t); },
   jam(k, _g, _u, _t, o) { if (o && 'kind' in o) E.jam(k, () => V(o.pos.x, (o as Unit).alt || 0, o.pos.z), TUNE.jam.t); },
@@ -123,16 +126,21 @@ const DONE: Record<string, (k: FxKit, g: Game, u: Unit, t: Target, tgt: Unit | B
 /** Runs `fn` after `s` seconds of game time, through the kit (so a paused game waits too). */
 function later(k: FxKit, s: number, fn: () => void) { let t = 0; k.add({ obj: new THREE.Group(), update(dt) { t += dt; if (t >= s) { fn(); return false; } return true; } }); }
 
-/** Wraps every Ironhold ability so its effect is shown when it goes off. Called once every rule file has defined its abilities. */
+/** Gives every Ironhold ability its look (AbilityDef.show), played when it goes off: here, or online on every screen that can see the
+ *  caster, from the server's cast event (K). Called once every rule file has defined its abilities. */
 export function wrapCasts() {
   for (const kind of Object.keys(UNIT) as Kind[]) {
     if (UNIT[kind].team !== 0) continue;
     for (const a of abilitiesOf(kind)) {
-      const show = DONE[a.key]; if (!show || (a as any).shown) continue; const was = a.effect; (a as any).shown = true;
-      a.effect = (g, u, t, tgt) => { was(g, u, t, tgt); const k = kitOf(g); if (k) try { show(k, g, u, t, tgt); } catch (e) { console.warn('ironhold fx', a.key, e); } };
+      const show = DONE[a.key]; if (!show || a.show) continue;
+      a.show = (g, u, t, tgt) => { const k = kitOf(g); if (k) show(k, g, u, t, tgt); };
     }
   }
 }
+// The Flak Tower's aim and a crawling building, sent to every screen (src/net-look.ts): the rules keep both only where they run.
+defineBuildingLook({ key: 'iaim', get(g, b) { const m = mem(b), t = m.aim as Unit | undefined; return t && t.alive && g.time - (m.aimT || 0) < 2 ? t.id : 0; },
+  set(g, b, v) { if (!v) return; const m = mem(b); m.aim = g.uById.get(v) || null; m.aimT = g.time; } });
+defineBuildingLook({ key: 'icrawl', get(_g, b) { return mem(b).crawl ? 1 : 0; }, set(_g, b, v) { const m = mem(b); if (!v) { if (m.crawl) m.crawl = null; } else if (!m.crawl) m.crawl = { x: b.pos.x, z: b.pos.z, t: 0 }; } });
 
 // ---------------------------------------------------------------- once a frame, on every screen (online too)
 const MINES = new WeakMap<Game, Map<Unit, THREE.Object3D>>();

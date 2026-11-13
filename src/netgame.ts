@@ -4,7 +4,8 @@
 import * as THREE from 'three';
 import { Game, beamMat } from './game';
 import { UNIT, BLD, BUILDABLE, UPGRADES, TRAINS, UNIT_NEEDS, FACTION, VOICE_SIDE, SIDE, fac, atHome, Kind, BKind, Unit, Building, UpKey, isSoldier, isWorker, type StatusKey } from './data';
-import { useAbility, abilityOf, whyNot, type Target } from './core/ability';
+import { useAbility, abilityOf, whyNot, bodyOf, showCast, type Target } from './core/ability';
+import { packLook, applyLook } from './net-look';
 import { abilityWords } from './card';
 import { seenBy } from './core/sight';
 import { multi, MATCH } from './core/sides';
@@ -22,7 +23,7 @@ const F_MOVE = 1, F_TGT = 2, F_WORK = 4, F_CARRY = 8, F_FIRE = 16, F_BRACE = 128
 const unitRow = (x: Unit) => [x.id, KINDS.indexOf(x.kind), x.team, r1(x.pos.x), r1(x.pos.z), Math.round(x.yaw * 100), Math.ceil(x.hp), Math.ceil(x.maxHp), Math.floor(x.shield),
   (x.moving ? F_MOVE : 0) | (x.target ? F_TGT : 0) | (x.state === 'mining' || x.state === 'build' || x.state === 'repair' ? F_WORK : 0) | (x.carrying ? F_CARRY : 0) | (x.swing > .6 || x.flashT > 0 ? F_FIRE : 0) | (ORD.indexOf(x.order.type === 'scout' ? 'amove' : x.order.type) << 5)   /* two bits on the wire: a scout goes as a body on the march */ | (x.brace ? F_BRACE : 0),
   x.pilot, Math.round(x.pitch * 100), Math.round(x.wind * 10)];
-const bldRow = (x: Building) => [x.id, BKINDS.indexOf(x.kind), x.team, x.pos.x, x.pos.z, x.rot ? 1 : 0, Math.ceil(x.hp), x.built ? 1 : 0, Math.round(x.progress * 100), x.queue.length, x.queue[0] ? KINDS.indexOf(x.queue[0].kind) : 0, x.queue[0] ? r1(x.queue[0].t) : 0, x.buds || 0];
+const bldRow = (x: Building, g: Game) => [x.id, BKINDS.indexOf(x.kind), x.team, x.pos.x, x.pos.z, x.rot ? 1 : 0, Math.ceil(x.hp), x.built ? 1 : 0, Math.round(x.progress * 100), x.queue.length, x.queue[0] ? KINDS.indexOf(x.queue[0].kind) : 0, x.queue[0] ? r1(x.queue[0].t) : 0, x.buds || 0, 0, packLook(g, x)];
 /** Switches for test servers, never set on a real one. `trustHits` (ORE_TRUST_HITS=1) checks hit claims the way the server did before
  *  claims were checked per attack (any hit, up to 450 a second from 175 m), so the browser sync tests (test/coop.mjs, test/versus.mjs) can end a match quickly with big hits. */
 export const WIRE = { trustHits: false, /** Off: every side is sent the whole world, the way it was before fog on the wire. ORE_WIRE_FOG=0, for the same tests. */ fog: true };
@@ -30,6 +31,8 @@ export const WIRE = { trustHits: false, /** Off: every side is sent the whole wo
 const WIRES = new WeakMap<Game, Wire>();
 /** Index 13 of a building row: 1 when the side is not looking at it now and is sent its last sighting. */
 const GHOST = 13;
+/** Index 14: the numbers that only change how it looks (src/net-look.ts), or 0. */
+const LOOK = 14;
 
 /** One match's line out: takes each tick's events off the match once, and builds a snapshot for each side from what that side can see.
  *  `snap(null)` is the whole world, for an observer seat or a test. */
@@ -47,7 +50,7 @@ export class Wire {
     let u: any[][], b: any[][], foeSeen = !V;
     // events first, against what the side was sent last time: a body that died this tick is not in this snapshot
     const ev = V ? this.ev.filter(e => this.shows(V, e)) : this.ev;
-    if (!V) { u = g.units.filter(x => x.alive).map(unitRow); b = g.buildings.filter(x => x.alive).map(bldRow); }
+    if (!V) { u = g.units.filter(x => x.alive).map(unitRow); b = g.buildings.filter(x => x.alive).map(x => bldRow(x, g)); }
     else {
       u = []; const sentU = new Set<number>();
       for (const x of g.units) { if (!x.alive) continue; const mine = V.friend(x.team);
@@ -57,10 +60,10 @@ export class Wire {
       for (const id of V.lastSeen.keys()) if (!sentU.has(id) && !this.byId.get(id)?.alive) V.lastSeen.delete(id);
       b = []; const sentB = new Set<number>(), live = new Set<number>();
       for (const x of g.buildings) { if (!x.alive) continue; live.add(x.id);
-        if (V.friend(x.team) || V.seesBuilding(g, x)) { const r = bldRow(x); b.push(r); if (!V.friend(x.team)) { V.memory.set(x.id, r); foeSeen = true; sentB.add(x.id); } }
+        if (V.friend(x.team) || V.seesBuilding(g, x)) { const r = bldRow(x, g); b.push(r); if (!V.friend(x.team)) { V.memory.set(x.id, r); foeSeen = true; sentB.add(x.id); } }
       }
       // A remembered building stays until somebody looks at the spot again and finds it gone, the same rule as the scouting records (src/scout.ts).
-      for (const [id, r] of V.memory) { if (sentB.has(id)) continue; if (!live.has(id) && V.sees(r[3], r[4])) { V.memory.delete(id); continue; } const gr = r.slice(); gr[GHOST] = 1; b.push(gr); }
+      for (const [id, r] of V.memory) { if (sentB.has(id)) continue; if (!live.has(id) && V.sees(r[3], r[4])) { V.memory.delete(id); continue; } const gr = r.slice(); gr[GHOST] = 1; gr[LOOK] = 0; b.push(gr); }
       V.sentU = sentU; V.sentB = sentB;
     }
     const st = g.stats, sts = [Math.floor(st.mined), st.built, st.kills, st.lost, Math.floor(st.minedV)]; if (V && !V.friend(H)) sts[0] = 0; if (V && !V.friend(Ot)) sts[4] = 0;
@@ -72,7 +75,7 @@ export class Wire {
       st: sts, mo: g.mission ? D.objectives() : 0, mc: g.mission && g.ms.clock !== undefined ? r1(g.ms.clock) : -1, sc: Object.keys(g.score).map(k => [+k, g.score[+k][0], Math.floor(g.score[+k][1]), g.score[+k][2]]),
     };
     // Extra fields only some bodies have: energy, effects, height and the carrier it rides in. Only for bodies this side is sent.
-    { const sent = new Set<number>(u.map(r => r[0] as number)); out.ux = g.units.filter(x => x.alive && sent.has(x.id) && (x.maxEnergy || x.status?.length || x.alt || x.inside)).map(x => [x.id, Math.floor(x.energy || 0), statusBits(x), Math.round((x.alt || 0) * 10), x.inside ? x.inside.id : 0]); }
+    { const sent = new Set<number>(u.map(r => r[0] as number)); out.ux = g.units.filter(x => x.alive && sent.has(x.id) && (x.maxEnergy || x.status?.length || x.alt || x.inside || x.cast)).map(x => [x.id, Math.floor(x.energy || 0), statusBits(x), Math.round((x.alt || 0) * 10), x.inside ? x.inside.id : 0, castRow(x)]); }
     out.fl = [ok(H) ? Math.floor(g.flux(H)) : null, ok(Ot) ? Math.floor(g.flux(Ot)) : null];   // Flux: each side its own
     const ups = (t: number) => UPS.map((k, i) => g.upOf(t)[k] ? i : -1).filter(i => i >= 0);
     // A side's own purse, plan and research. The other side's research only while some of it is in sight, because it shows on the bodies (shields, the Bloom).
@@ -94,10 +97,14 @@ export class Wire {
       case 'ku': return V.sentU.has(e[1]);
       case 'kb': return V.sentB.has(e[1]) || g.buildings.some(b => b.id === e[1] && V.friend(b.team));
       case 'ht': { const u = this.byId.get(e[1]); return !!u && V.friend(u.team); }
+      // a cast going off: only to a side that was sent the caster (its own, or one looking at it)
+      case 'ab': { const u = this.byId.get(e[1]); return !!u && (V.friend(u.team) || V.sentU.has(e[1])); }
       default: return true;
     }
   }
 }
+/** A wind-up under way, so every screen shows it coming: which ability, seconds left, the aim. 0 for none. */
+const castRow = (x: Unit) => x.cast ? [x.cast.key, r1(x.cast.t), r1(x.cast.x), r1(x.cast.z), x.cast.id || 0] : 0;
 const SBITS: StatusKey[] = ['slow', 'stun', 'root', 'unseen', 'revealed', 'dug', 'lifted', 'shielded', 'burning', 'borrowed', 'blind'];
 const statusBits = (u: Unit) => (u.status || []).reduce((n, s) => s.t > 0 ? n | (1 << SBITS.indexOf(s.k)) : n, 0);
 /** One snapshot without a Wire: the whole world (team -1, as an observer or split screen sees it), or what one side can see right now.
@@ -218,10 +225,20 @@ function event(g: Game, e: any[]) {
   else if (k === 'kb') { const b = g.bById.get(e[1]); if (b && b.alive) { g.fallA = e[2]; g.killBuilding(b); } }
   else if (k === 'pr') { const p = g.props[e[1]]; if (p && p.alive && p.hp > e[2]) g.damageProp(p, p.hp - e[2], null); }
   else if (k === 'wn') g.warn(e[1], e[2], e[3], e[4]);
+  else if (k === 'ab') CASTS.push(e);   // played once the snapshot is in, so the caster's state after the cast (cloaked, say) is there
   else if (k === 'ht') { const me = g.me; if (me && e[1] === me.id) { g.shake = Math.min(1, g.shake + .45); const a = Math.atan2(e[2] - me.pos.x, e[3] - me.pos.z) - g.yaw; g.hud.hurt(Math.atan2(Math.sin(a), Math.cos(a))); sfx.hurt(); me.lastHit = g.time; if (g.brace) { g.payback = Math.min(1, g.payback + .2); sfx.clang(); } } }
 }
+/** Casts that went off, from this snapshot's events: played at its end. */
+const CASTS: any[][] = [];
+function playCasts(g: Game) {
+  for (const e of CASTS) { const u = g.uById.get(e[1]); if (!u) continue; const a = abilityOf(u.kind, e[2]); if (!a) continue;
+    if (u.cast && u.cast.key === a.key) u.cast = null;
+    const tgt = a.target === 'body' ? bodyOf(g, e[5]) : null; if (a.target === 'body' && !tgt) continue;
+    showCast(g, u, a, { x: e[3], z: e[4], id: e[5] || undefined }, tgt); }
+  CASTS.length = 0;
+}
 export function applySnap(g: Game, s: any) {
-  const net = g.net!; g.applying = true;
+  const net = g.net!; g.applying = true; CASTS.length = 0;
   for (const e of s.e) event(g, e);
   g.time = s.time; if (s.ore !== undefined) g.purse[SIDE.home] = s.ore; if (s.vo !== undefined) g.purse[SIDE.out] = s.vo; if (s.fl) { if (typeof s.fl[0] === 'number') g.fluxPurse[SIDE.home] = s.fl[0]; if (typeof s.fl[1] === 'number') g.fluxPurse[SIDE.out] = s.fl[1]; }
   for (const [t, list] of [[SIDE.home, s.up], [SIDE.out, s.uo]] as [number, number[] | undefined][]) { if (!list) continue; const on = new Set<number>(list), U = g.upOf(t); UPS.forEach((k, i) => { const was = U[k]; U[k] = on.has(i); if (k === 'gbloom' && U[k] && !was) g.carpet.deepen(t); }); }
@@ -242,17 +259,20 @@ export function applySnap(g: Game, s: any) {
   const ext = new Map<number, any[]>(); for (const r of s.ux || []) ext.set(r[0], r);
   for (const u of g.units) { if (!u.alive) continue; const r = ext.get(u.id);
     if (u.maxEnergy) u.energy = r ? r[1] : u.energy; u.status = r && r[2] ? SBITS.filter((_, i) => r[2] & (1 << i)).map(k => ({ k, t: 1 })) : undefined;
+    // a wind-up: the same record kept while it runs (the looks notice a new one by identity), counted down here between snapshots
+    const c0 = r && r[5]; if (!c0) u.cast = null; else if (u.cast && u.cast.key === c0[0] && u.cast.x === c0[2] && u.cast.z === c0[3]) u.cast.t = c0[1]; else u.cast = { key: c0[0], t: c0[1], x: c0[2], z: c0[3], id: c0[4] };
     if (r) u.alt = r[3] / 10; else if (!u.air) u.alt = 0; const c = r && r[4] ? (g.uById.get(r[4]) || g.bById.get(r[4]) || null) : null; u.inside = c; if (c) { u.obj.visible = false; u.obj.userData.netHid = true; } else if (u.obj.userData.netHid) { u.obj.visible = true; u.obj.userData.netHid = false; } }
   const seenB = new Set<number>();
   for (const r of s.b) {
     let b = g.bById.get(r[0]); if (b && !b.alive) continue;
     if (!b) { b = g.addBuilding(BKINDS[r[1]], r[2], r[3], r[4], !!r[7], !!r[5], r[0]); g.bById.set(b.id, b); if (!r[7] && r[2] === 0) g.puff(V3(r[3], .3, r[4]), 5, 1.2, M.dust, .5, 2); }
-    seenB.add(b.id); (b as any).ghost = r[GHOST] === 1;   // an enemy building this side is not looking at now: as it was when last seen
+    seenB.add(b.id); (b as any).ghost = r[GHOST] === 1; (b as any).nx = r[3]; (b as any).nz = r[4];   // where it is now: one that crawls or flies moves   // an enemy building this side is not looking at now: as it was when last seen
     if (!b.built && r[7]) { b.built = true; b.obj.scale.y = 1; if (b.holo) { g.scene.remove(b.holo); b.holo = null; } sfx.built(); g.puff(V3(b.pos.x, 1.5, b.pos.z), 8, 1.8, M.dust, .8, 2.5); }
     b.progress = r[8] / 100; if (!b.built) b.obj.scale.y = Math.max(.06, b.progress);
     if (r[6] < b.hp - .5) b.lastHit = g.time; b.hp = r[6];
     if (b.built) { const st = b.hp < b.maxHp * .33 ? 2 : b.hp < b.maxHp * .66 ? 1 : 0; if (st > b.stage) g.crack(b, st); }
     const q: { kind: Kind; t: number }[] = []; for (let i = 0; i < r[9]; i++) q.push({ kind: KINDS[r[10]], t: r[11] }); b.queue = q; b.buds = r[12] || 0;
+    applyLook(g, b, r[GHOST] === 1 ? 0 : r[LOOK]);
   }
   for (const b of g.buildings) if (b.alive && !seenB.has(b.id)) { b.alive = false; g.scene.remove(b.obj); if (b.holo) g.scene.remove(b.holo); g.carpet.drop(b); if (b.team !== g.myTeam) g.bById.delete(b.id); }
   const D = g.dir, d = s.d; if (d) { D.raidIn = d[0]; D.raidDir = d[1] ? 'north' : 'east'; D.raidLive = !!d[2]; D.auto = !!d[3];
@@ -260,6 +280,7 @@ export function applySnap(g: Game, s: any) {
   if (d[5] && !g.myTeam) { if (!D.callout || D.callout.text !== d[5][1]) sfx.callout(); D.callout = { who: d[5][0], text: d[5][1], t: d[5][2], dur: d[5][3], keys: d[5][4] }; } else D.callout = null;
   D.playbook.name = d[6][0]; D.playbook.steps = d[6][1]; D.playbook.idx = d[6][2]; }
   if (s.v) sideApply(g, D.vs, s.v);
+  playCasts(g);
   g.applying = false;
 }
 
@@ -291,7 +312,7 @@ export function netTick(g: Game, dt: number) {
   if (!W && me && me.alive && me.pilot && me.pilot !== net.id && g.staticT <= 0) { g.feed('Signal', 'Someone else got to that body first.', 'al'); g.staticT = .3; }
   for (const u of g.units) {
     if (!u.alive) continue; const f = (u as any).nf | 0;
-    u.swing = Math.max(0, u.swing - dt * 4); u.flashT -= dt; u.pop = Math.max(0, u.pop - dt * 7);
+    u.swing = Math.max(0, u.swing - dt * 4); u.flashT -= dt; u.pop = Math.max(0, u.pop - dt * 7); if (u.cast) u.cast.t = Math.max(0, u.cast.t - dt);
     if (u === me && !W) continue;
     const dx = u.nx - u.pos.x, dz = u.nz - u.pos.z, d2 = dx * dx + dz * dz;
     if (d2 > 200) { u.pos.x = u.nx; u.pos.z = u.nz; } else { const k = Math.min(1, dt * 11); u.pos.x += dx * k; u.pos.z += dz * k; }
@@ -301,6 +322,9 @@ export function netTick(g: Game, dt: number) {
   }
   // keep our own body out of the others
   if (me && me.alive) for (const o of g.units) { if (o === me || !o.alive) continue; const dx = me.pos.x - o.pos.x, dz = me.pos.z - o.pos.z, lim = (UNIT[me.kind].rad + UNIT[o.kind].rad) * (o.team === me.team ? 1.1 : 1.25), d2 = dx * dx + dz * dz; if (d2 < lim * lim && d2 > 1e-5) { const d = Math.sqrt(d2); me.pos.x += dx / d * (lim - d); me.pos.z += dz / d * (lim - d); } }
+  // a building that crawls or flies eases to where it was last sent
+  for (const b of g.buildings) { if (!b.alive) continue; const bx = (b as any).nx, bz = (b as any).nz; if (bx === undefined || (bx === b.pos.x && bz === b.pos.z)) continue;
+    const dx = bx - b.pos.x, dz = bz - b.pos.z, k = dx * dx + dz * dz > 400 ? 1 : Math.min(1, dt * 8); b.pos.x = Math.abs(dx) < .01 ? bx : b.pos.x + dx * k; b.pos.z = Math.abs(dz) < .01 ? bz : b.pos.z + dz * k; b.obj.position.x = b.pos.x; b.obj.position.z = b.pos.z; }
   // damaged friendly buildings smoke, as they do offline
   for (const b of g.buildings) if (b.alive && b.built && b.team === 0 && b.hp < b.maxHp * .5) { b.smokeT -= dt; if (b.smokeT <= 0) { const bad = b.hp < b.maxHp * .25; b.smokeT = bad ? .18 : .4; g.puff(V3(b.pos.x + R(-b.hx, b.hx) * .6, b.h * R(.6, 1), b.pos.z + R(-b.hz, b.hz) * .6), 1, 1.5, bad && Math.random() < .5 ? M.fire : M.smoke, 2.4, .5); } }
   for (let i = g.pings.length - 1; i >= 0; i--) if ((g.pings[i].t -= dt) <= 0) g.pings.splice(i, 1);

@@ -33,7 +33,9 @@ const nearSpot = (h: Building, k: BKind, x: number, z: number) => addonSpots(h, 
 const hasLab = (b: Building) => { const a = addonOf(b); return !!a && a.built && a.kind === 'labbay'; };
 const hasTwin = (b: Building) => { const a = addonOf(b); return !!a && a.built && a.kind === 'twinbay'; };
 /** Bolts an add-on to a host. */
-export function link(host: Building, a: Building) { mem(host).addon = a; mem(a).host = host; }
+export function link(host: Building, a: Building) { mem(host).addon = a; mem(a).host = host; face(host, a); }
+/** Turns an add-on so its joining tunnel (the model's +x side) points at its host, whichever wall it sits on. */
+function face(host: Building, a: Building) { if (a.obj) a.obj.rotation.y = -Math.atan2(host.pos.z - a.pos.z, host.pos.x - a.pos.x); }
 /** A free host of this side whose add-on spot is near a point, for snapping a Rigger's ghost and for linking a new add-on. */
 function freeHost(g: Game, team: number, k: BKind, x: number, z: number, r = 6): Building | null {
   let best: Building | null = null, bd = r;

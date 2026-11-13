@@ -31,7 +31,7 @@ function world() {
 const run = (g: Game, secs: number, each?: () => boolean | void) => { for (let i = 0; i < secs * 30; i++) { g.update(1 / 30); g.evq!.length = 0; if (each?.()) return true; } return false; };
 const H = () => SIDE.home, O = () => SIDE.out;
 const IRON_UNITS: Kind[] = ['rigger', 'linesman', 'breacher', 'patch', 'sapper', 'longshot', 'dustbike', 'piledriver', 'gantry', 'hopper', 'flakkite', 'gadfly', 'surveyor', 'claimbarge'] as Kind[];
-const spots: Record<string, [number, number]> = { bunkhouse: [15, 8], machineshop: [0, -15], foundry: [-14, -14], hangar: [-16, 18], assay: [-15, 6], mast: [15, -17], annex: [-24, -4], depot: [-13, -9], watchpost: [24, 0], dugout: [24, 12], flaktower: [8, -10] };
+const spots: Record<string, [number, number]> = { bunkhouse: [15, 8], machineshop: [0, -24], foundry: [-24, -24], hangar: [-22, 26], assay: [-15, 6], mast: [15, -17], annex: [-24, -4], depot: [-13, -9], watchpost: [24, 0], dugout: [24, 12], flaktower: [8, -10] };
 const raise = (g: Game, k: BKind) => { const at = spots[k] || g.dir.freeSpot(k, 10, 10, H()) || [10, 10]; return g.addBuilding(k, H(), at[0], at[1], true); };
 const bolt = (g: Game, host: Building, k: 'labbay' | 'twinbay') => { const ok = g.buildingAction(host, k); const a = addonOf(host); if (a) { a.built = true; a.progress = 1; a.hp = a.maxHp; } return ok && !!a; };
 

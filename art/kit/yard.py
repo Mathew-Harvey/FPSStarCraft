@@ -49,7 +49,7 @@ def sheet(c, w, h, R=None, t=.06, corr=0.0, pitch=.42, seed=1.0, dent=.035, peel
     return f
 
 
-def clad(fig, tag, o, R, w, h, mats, seed, holes=(), group='body', voxel=.028, out=-.085, rows=True, wide=(1.5, 2.7), corr=0.0, tris=1.0, curl=(.3, .03, .07)):
+def clad(fig, tag, o, R, w, h, mats, seed, holes=(), group='body', voxel=.028, out=-.085, rows=True, wide=(1.5, 2.7), corr=0.0, tris=1.0, curl=(.3, .03, .07), ragged=.2):
     """Covers a wall with lapped sheets of scrap. o is the middle of the wall's bottom edge, R the way it faces, and the
     sheets fill w across and h up. curl is (how often, least, most) a sheet's corner has come away. holes are (x0, x1, y0, y1) openings in the wall's own coordinates (x from the middle,
     y from the bottom). The sheets stop just short of the wall's nominal face, so what the game hangs there still shows."""
@@ -69,10 +69,10 @@ def clad(fig, tag, o, R, w, h, mats, seed, holes=(), group='body', voxel=.028, o
             y0, y1 = cuts[j], cuts[j + 1]
             if any(x0 >= a - .05 and x1 <= b + .05 and y0 >= c0 - .05 and y1 <= c1 + .05 for a, b, c0, c1 in holes):
                 continue                                         # a door swallowed this sheet whole
-            sw, sh = x1 - x0 + .16, y1 - y0 + (.14 if j < len(cuts) - 2 else 0)
+            sw, sh = x1 - x0 + .16, y1 - y0 + (.14 if j < len(cuts) - 2 else float(rng.uniform(0, ragged)))      # the top row stops wherever each sheet happened to end
             mat = mats[int(rng.integers(len(mats)))]
-            lift = out + .03 * ((i + j) % 2) + rng.uniform(0, .01)
-            Rs = (R @ rot(0, 0, rng.uniform(-.022, .022))).astype(F)
+            lift = out + .035 * ((i + j) % 2) + rng.uniform(0, .03)
+            Rs = (R @ rot(0, 0, rng.uniform(-.04, .04))).astype(F)
             c = o + R @ V((x0 + x1) / 2, y0 + sh / 2, lift)
             peel = (int(rng.choice([-1, 1])), int(rng.choice([-1, 1])), float(rng.uniform(curl[1], curl[2]))) if rng.random() < curl[0] else None
             wavy = mat in CORR
@@ -240,5 +240,6 @@ def roof(fig, tag, c, w, d, mats, seed, pitch=0.0, sag=.0, group='body', over=.2
     c = V(c)
     R = (rot(pitch, 0, 0) @ FLAT).astype(F)
     o = c + R @ V(0, -(d / 2 + over), 0)
-    kw.setdefault('curl', (.25, .01, .022))                   # a roof sheet lifts a little at a corner; any more and two of them make a tent
+    kw.setdefault('curl', (.25, .01, .022))
+    kw.setdefault('ragged', 0.0)                   # a roof sheet lifts a little at a corner; any more and two of them make a tent
     clad(fig, tag, o, R, w + over * 2, d + over * 2, mats, seed, group=group, out=.04, rows=True, **kw)

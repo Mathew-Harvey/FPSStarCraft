@@ -5,6 +5,7 @@ given UVs for the game's inked skins and a per-vertex crease value, then written
 edit, and a compact .bin the game loads.
 """
 import json
+import os
 import struct
 import time
 import numpy as np
@@ -28,10 +29,16 @@ TINT = {'fabT': '#a8744a', 'fab': '#4d577c', 'fabG': '#6f7a55', 'fabR': '#b3362b
 
 
 class Part:
-    def __init__(self, name, group, mat, fn, tris, voxel=.003, uv=('cyl',), sharp=42.0, lo=None, hi=None, planar=0.0, cull=True):
+    def __init__(self, name, group, mat, fn, tris, voxel=.003, uv=('cyl',), sharp=42.0, lo=None, hi=None, planar=0.0, cull=True, detail=None, texel=1.0, twin=None, marks=()):
         """planar (degrees) is for flat-sided things: faces that lie within that angle of each other are merged first, so plate stays plate.
         cull=False keeps the faces a neighbour buries: a pipe cut into open lengths under its own collars falls apart when it is thinned."""
         self.name, self.group, self.mat, self.fn, self.tris, self.voxel, self.uv, self.sharp, self.lo, self.hi, self.planar, self.cull = name, group, mat, fn, tris, voxel, uv, sharp, lo, hi, planar, cull
+        # detail is cut into the surface for the painted picture only (seams, stitches, panel lines: things too fine for triangles);
+        # texel gives a part more or less of the picture than its size earns (a face more, a boot sole less)
+        self.true = fn if detail is None else sdf.bump(fn, detail)
+        self.texel = texel
+        self.marks = marks                     # paint laid on the part for the picture: [(where(p) -> 0..1, (r, g, b)), ...], worn like the rest
+        self.twin = twin                       # the name of the part this one is the mirror image of (a left leg of a right one): it takes that part's mesh and its place in the picture
 
 
 def field(fn, lo, hi, voxel):
@@ -92,7 +99,7 @@ def material(name):
     return m
 
 
-def mesh_object(part, v, f):
+def mesh_object(part, v, f, thin=True):
     me = bpy.data.meshes.new(part.name)
     bv = to_blender(v)
     me.vertices.add(len(bv))
@@ -107,7 +114,7 @@ def mesh_object(part, v, f):
     ob = bpy.data.objects.new(part.name, me)
     bpy.context.scene.collection.objects.link(ob)
     ntri = len(me.polygons)
-    if part.tris and ntri > part.tris:
+    if thin and part.tris and ntri > part.tris:
         # two passes: a first cut that keeps the form, then the budget
         bm = bmesh.new()
         bm.from_mesh(me)
@@ -203,11 +210,17 @@ def crease(whole, pos, nrm, unit=1.0):
 
 
 class Figure:
-    def __init__(self, name, scale=1.0, lo=(-1.2, -.2, -1.2), hi=(1.2, 2.5, 1.2), coarse=.02, detail=1.0, unit=1.0, ink=1.0):
+    def __init__(self, name, scale=1.0, lo=(-1.2, -.2, -1.2), hi=(1.2, 2.5, 1.2), coarse=.02, detail=1.0, unit=1.0, ink=1.0, paint=0, dust=(.78, .6, .44), grade=(.86, .9), brush=None, shade=0.0):
         """lo and hi box in everything the figure could reach; coarse is the grid that finds each part inside it.
         unit is how big the thing is next to a person (a building is 4 or 5): it widens the creases and the buried-face test to suit."""
         self.name, self.parts, self.groups, self.scale, self.points, self.unit = name, [], {}, scale, {}, unit
         self.lo, self.hi, self.coarse, self.detail = lo, hi, coarse, detail      # detail scales every part's triangle budget
+        paint = int(os.environ['PAINT']) if 'PAINT' in os.environ else paint
+        self.brush = brush or unit             # how big the painter's hand is: a machine four metres tall is inked with a broader pen than a man
+        self.texel = {}                        # group name: how much more of the painted picture its parts get (set before adding parts)
+        self.grade = grade                     # (how much colour, how much light) the painted picture keeps of the game's skins
+        self.paint, self.dust = paint, dust      # paint: the size of the figure's own painted picture (0 = wear the game's shared skins); dust: what settles on it
+        self.shade = shade                     # buildings: how dark a corner goes for being shut in by eaves, neighbours and the ground (see bake.sky)
         self.ink = ink                         # how strongly creases are inked. Flat plate cut down to a few big triangles has corners only, and a corner is always tucked under its neighbour, so plate buildings turn it off
 
     def group(self, name, pivot=(0, 0, 0), parent=None, scale=1.0):
@@ -233,6 +246,7 @@ class Figure:
         self.points[name] = (group, [float(x) for x in at])
 
     def add(self, name, group, mat, fn, tris, **kw):
+        kw['texel'] = kw.get('texel', 1.0) * self.texel.get(group, 1.0)
         self.parts.append(Part(name, group, mat, fn, max(24, int(tris * self.detail)), **kw))
 
     def whole(self):
@@ -264,13 +278,47 @@ class Figure:
                 part.lo, part.hi = bounds(part.fn, self.lo, self.hi, self.coarse, .012 * self.unit)
         blob = bytearray()
         total = 0
-        for part in self.parts:
+        done = []
+        cache = os.path.join(os.path.dirname(__file__), '..', 'out', self.name + '.cache.npz')
+        again = os.environ.get('REPAINT') and os.path.exists(cache)      # only the picture is being worked on: reuse the meshes from the last full build
+        if again:
+            z = np.load(cache)
+            for i, part in enumerate(self.parts):
+                done.append(dict(part=part, ob=None, me=None, pos=z[f'pos{i}'], tri=z[f'tri{i}'], cnrm=z[f'cnrm{i}'], suv=z[f'suv{i}'], cav=z[f'cav{i}'] if f'cav{i}' in z else np.zeros(len(z[f'pos{i}']), F), n=len(z[f'pos{i}']), raw=0, t0=0))
+        for part in ([] if again else self.parts):
             t0 = time.time()
-            v, f = surface(part)
-            if part.cull:
-                f = self.hidden(part, v, f)
-            ob = mesh_object(part, v, f)
+            src = next((d for d in done if d['part'].name == part.twin), None) if part.twin else None
+            if src:                                   # the other side's mesh, turned over
+                v, f = src['pos'] * np.array([-1, 1, 1], F), src['tri'][:, ::-1]
+            else:
+                v, f = surface(part)
+                if part.cull and not self.paint:      # a painted figure is thinned whole and loses its unseen faces afterwards (bake.seen): cutting first leaves torn edges for the thinning to chew on
+                    f = self.hidden(part, v, f)
+            ob = mesh_object(part, v, f, thin=not src)
             me = ob.data
+            if part.cull and self.paint and not src:              # thinning leaves some faces wholly inside a neighbour (the underside of a strap, say): they would only waste paint
+                n = len(me.vertices)
+                co = np.empty(n * 3, F)
+                me.vertices.foreach_get('co', co)
+                pos = to_game(co.reshape(-1, 3))
+                tri = np.empty(len(me.polygons) * 3, np.int32)
+                me.loops.foreach_get('vertex_index', tri)
+                tri = tri.reshape(-1, 3)
+                q = np.concatenate([pos, pos[tri].mean(1)])
+                deep = np.full(len(q), 1.0, F)
+                for o in self.parts:
+                    if o is part or o.group != part.group or np.any(np.asarray(o.lo) > np.asarray(part.hi)) or np.any(np.asarray(o.hi) < np.asarray(part.lo)):
+                        continue
+                    deep = np.minimum(deep, o.fn(q))
+                gone = (deep[tri] < -.0005 * self.unit).all(1) & (deep[n:] < -.0005 * self.unit)
+                if gone.any() and (~gone).sum() > 8:
+                    bm = bmesh.new()
+                    bm.from_mesh(me)
+                    bm.faces.ensure_lookup_table()
+                    bmesh.ops.delete(bm, geom=[bm.faces[int(k)] for k in np.nonzero(gone)[0]], context='FACES')
+                    bm.to_mesh(me)
+                    bm.free()
+                    me.update()
             n = len(me.vertices)
             co = np.empty(n * 3, F)
             me.vertices.foreach_get('co', co)
@@ -286,19 +334,78 @@ class Figure:
             me.corner_normals.foreach_get('vector', cn)
             cnrm = to_game(cn.reshape(-1, 3)).reshape(-1, 3, 3)
             uv = uv_for(part, pos, tri).astype(F)
-            if part.uv[-1] == 'swap':                 # the skin's stripes run the other way on this part
+            if isinstance(part.uv[-1], str) and part.uv[-1] == 'swap':                 # the skin's stripes run the other way on this part
                 uv = np.ascontiguousarray(uv[..., ::-1])
-            cav = crease(whole, pos, vnrm, self.unit) * self.ink if self.ink else np.zeros(len(pos), F)
-            # the .blend keeps the UVs and the crease value too
-            layer = me.uv_layers.new(name='UVMap')
-            layer.data.foreach_set('uv', uv.reshape(-1, 2).ravel())
-            col = me.color_attributes.new('crease', 'FLOAT_COLOR', 'POINT')
-            c4 = np.stack([.5 - cav * .5] * 3 + [np.ones(n, F)], -1)
-            col.data.foreach_set('color', c4.ravel())
+            cav = crease(whole, pos, vnrm, self.unit) * self.ink if self.ink and not self.paint else np.zeros(len(pos), F)
+            if src and len(tri) != len(src['tri']):
+                raise ValueError(part.name + ' lost faces when it was mirrored')
+            done.append(dict(part=part, ob=ob, me=me, pos=pos, tri=tri, cnrm=cnrm, suv=uv, cav=cav, n=n, raw=len(f), t0=time.time() - t0))
+        if not again and not os.environ.get('NOCACHE'):
+            os.makedirs(os.path.dirname(cache), exist_ok=True)
+            np.savez(cache, **{f'{k}{i}': d[k] for i, d in enumerate(done) for k in ('pos', 'tri', 'cnrm', 'suv', 'cav')})
+        if self.shade:                  # a building: how shut in each corner is, on top of whatever its creases gave
+            from . import bake
+            t0 = time.time()
+            for d, occ in zip(done, bake.sky(done)):
+                d['cav'] = np.maximum(d['cav'], np.clip((occ - .1) * 1.35, 0, 1) * self.shade).astype(F)
+            log(f'shade from what stands around each corner in {time.time() - t0:.0f}s')
+        if self.paint:                                # one painted picture for the whole figure; every part's UVs become its place in it
+            from . import bake
+            t0 = time.time()
+            # faces nothing outside their own joint can ever see are dropped: they cost triangles and room in the picture for nothing
+            see = bake.seen(done)
+            byname = {d['part'].name: i for i, d in enumerate(done)}
+            lost = 0
+            for i, d in enumerate(done):
+                j = byname.get(d['part'].twin) if d['part'].twin else None
+                keep = see[i][0] if j is None else (see[i][0] | see[j][0][: len(see[i][0])]) if j < i else None
+                if j is not None and j > i:
+                    raise ValueError('a mirrored part must come after the part it mirrors')
+                if j is not None:
+                    op = np.maximum(see[i][1], see[j][1])
+                    see[i], see[j] = (keep, op), (keep, op)
+            for i, d in enumerate(done):
+                keep = see[i][0]
+                if keep.sum() < 4:
+                    keep = np.ones(len(keep), bool)
+                d['open'] = see[i][1][keep]
+                if keep.all():
+                    continue
+                lost += int((~keep).sum())
+                if d['me'] is not None:
+                    bm = bmesh.new()
+                    bm.from_mesh(d['me'])
+                    bm.faces.ensure_lookup_table()
+                    bmesh.ops.delete(bm, geom=[bm.faces[int(k)] for k in np.nonzero(~keep)[0]], context='FACES_ONLY')
+                    bm.to_mesh(d['me'])
+                    bm.free()
+                    d['me'].update()
+                    chk = np.empty(len(d['me'].polygons) * 3, np.int32)
+                    d['me'].loops.foreach_get('vertex_index', chk)
+                    if not np.array_equal(chk.reshape(-1, 3), d['tri'][keep]):
+                        raise ValueError(d['part'].name + ': faces moved when the unseen ones were dropped')
+                d['tri'], d['cnrm'], d['suv'] = d['tri'][keep], d['cnrm'][keep], d['suv'][keep]
+            log(f'{lost} faces nobody can ever see dropped in {time.time() - t0:.0f}s')
+            picture, lay = bake.paint(self, done, self.paint, log, self.brush)
+            for d, u in zip(done, lay):
+                d['suv'] = u
+            from PIL import Image
+            Image.fromarray(picture).save(out_bin[:-4] + '.webp', quality=88, method=6)
+            head['tex'] = 1
+            log(f'painted {self.paint}x{self.paint} in {time.time() - t0:.0f}s, {os.path.getsize(out_bin[:-4] + ".webp") / 1024:.0f} KB')
+        for d in done:
+            part, ob, me, pos, tri, cnrm, uv, cav, n, t0 = (d[k] for k in ('part', 'ob', 'me', 'pos', 'tri', 'cnrm', 'suv', 'cav', 'n', 't0'))
+            T = len(tri)
+            if me is not None:                        # the .blend keeps the UVs and the crease value too
+                layer = me.uv_layers.new(name='UVMap')
+                layer.data.foreach_set('uv', uv.reshape(-1, 2).ravel())
+                col = me.color_attributes.new('crease', 'FLOAT_COLOR', 'POINT')
+                c4 = np.stack([.5 - cav * .5] * 3 + [np.ones(n, F)], -1)
+                col.data.foreach_set('color', c4.ravel())
             # one record per distinct corner
             piv = np.asarray(self.abs_pivot(part.group), F)
             rec = np.concatenate([(pos[tri] - piv).reshape(-1, 3), cnrm.reshape(-1, 3), uv.reshape(-1, 2), cav[tri].reshape(-1, 1)], 1)
-            key = np.round(rec * np.array([1e4, 1e4, 1e4, 60, 60, 60, 2e3, 2e3, 15], F))
+            key = np.round(rec * np.array([1e4, 1e4, 1e4, 60, 60, 60, 2e4, 2e4, 15], F))
             _, first, inv = np.unique(key, axis=0, return_index=True, return_inverse=True)
             rec = rec[first]
             idx = inv.reshape(-1).astype(np.uint32)
@@ -316,9 +423,10 @@ class Figure:
                 m[k] = len(blob)
                 blob += arr.tobytes()
             head['meshes'].append(m)
-            ob.parent = empties[part.group]
+            if ob is not None:
+                ob.parent = empties[part.group]
             total += T
-            log(f'{part.name:14s} {part.mat:7s} {len(f):7d} -> {T:5d} tris  {len(rec):5d} verts  {time.time() - t0:4.1f}s')
+            log(f'{part.name:14s} {part.mat:7s} {d["raw"]:7d} -> {T:5d} tris  {len(rec):5d} verts  {t0:4.1f}s')
         js = json.dumps(head, separators=(',', ':')).encode()
         while len(js) % 4:
             js += b' '
@@ -332,7 +440,7 @@ class Figure:
         for ob in bpy.data.objects:
             if ob.type == 'MESH' and ob.parent:
                 ob.matrix_parent_inverse = Matrix.Translation(-ob.parent.matrix_world.translation)   # keeps the group's own scale
-        if out_blend:
+        if out_blend and not again:
             bpy.ops.wm.save_as_mainfile(filepath=out_blend)
         return total
 

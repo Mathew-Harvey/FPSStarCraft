@@ -9,7 +9,7 @@ sys.path.insert(0, __file__.rsplit('/', 1)[0])
 from kit import sdf as S, build as B, human as Hu
 from kit.sdf import V, rot
 
-fig = B.Figure('rigger', scale=1.06, detail=.85)
+fig = B.Figure('rigger', scale=1.06, detail=.85, paint=1024)
 HIP = .93
 fig.group('body', (0, 0, 0))
 fig.group('legL', (-.105, HIP, 0))

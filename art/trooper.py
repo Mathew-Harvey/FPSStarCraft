@@ -20,19 +20,43 @@ capm = 'hazC' if heavy else 'cW' if patch else 'cD' if long_ else 'cY'
 pants = 'fabG' if long_ else 'fab'
 steel = 'bD' if heavy else 'bS'
 
-fig = B.Figure(ROLE, scale=1.2 if heavy else 1.08, detail=.8)
+fig = B.Figure(ROLE, scale=1.2 if heavy else 1.08, detail=.8, paint=1024)
 HIP = .93
 fig.group('body', (0, 0, 0))
 fig.group('legL', (-.105, HIP, 0))
 fig.group('legR', (.105, HIP, 0))
-fig.group('head', (0, 1.5, 0), 'body', scale=1.14)
+fig.group('head', (0, 1.5, 0), 'body', scale=.99)        # a helmet the size of a head, not of a barrel
+fig.texel = {'head': 1.25}
 AP = V(0, 1.36, .04)
 fig.group('arms', AP, 'body')
 if heavy:
     fig.group('armL', (-.24, 1.42, 0), 'body')
 
 # ---------------------------------------------------------------- legs
-Hu.both_legs(fig, Hu.leg_parts(HIP, pants=pants, boot='leaB', strapm='leaB', pocket=False, plate=bl, greave='bD', boss='nS'))
+Hu.both_legs(fig, Hu.leg_parts(HIP, pants=pants, boot='leaB', strapm='leaB', pocket=False, plate=bl if heavy else steel, greave='bD', boss='nS'))
+# what hangs off the thighs is different each side: a holstered sidearm on the right, a dump bag on the left
+TH = lambda sx, y: V(sx * (.111 + (.93 - y) * .03), y, .012 * (.93 - y) / .43)          # the middle of a thigh at height y
+hol = S.box((.222, .7, .012), (.03, .1, .056), .016, rot(.06, 0, -.05))
+hol = S.union(hol, S.box((.226, .612, .02), (.026, .03, .04), .014, rot(.06, 0, -.05)), k=.01)                    # the muzzle end
+hol = S.cut(hol, S.box((.25, .8, .012), (.03, .03, .1), .0, rot(.06, 0, -.35)))                                    # cut away at the top so the gun draws
+flapo = S.box((.238, .745, .012), (.03, .034, .06), .01, rot(.06, 0, -.05))
+fig.add('holster', 'legR', 'lea', hol, 320, voxel=.003, uv=('side',), sharp=38,
+        detail=S.fine(S.outline(S.grow(hol, -.012), .004, .004), S.studs([V(.252, .64, .045), V(.252, .64, -.02), V(.252, .76, .05)], .008, .004),
+                      S.only(S.stitch(V(0, .66, 0), (0, 1, 0), .014, .004, .003, along=(0, 0, 1)), lambda p: p[..., 0] > .235)))
+pg = S.union(S.box((.228, .835, -.012), (.02, .05, .028), .012, rot(.32, 0, 0)), S.box((.228, .8, .03), (.022, .028, .05), .008), k=.006)
+pg = S.bump(pg, lambda p: .003 * np.sin(p[..., 1] * 320) * (p[..., 2] < .01))
+fig.add('sidearm', 'legR', 'gunm', pg, 220, voxel=.0025, uv=('side',), sharp=35)
+for i, y in enumerate((.775, .64)):
+    st = S.torus(TH(1, y), .1 - (.93 - y) * .03, .011, rot(0, 0, .03), squash=2.0)
+    fig.add('holsterstrap%d' % i, 'legR', 'leaB', S.union(st, S.box(TH(1, y) + V(.02, 0, .098 - (.93 - y) * .03), (.014, .016, .006), .004)), 110, voxel=.003,
+            detail=S.weave(520, .0012))
+bag = S.union(S.box((-.228, .69, -.005), (.045, .085, .07), .035), S.box((-.236, .752, -.005), (.042, .034, .074), .02), k=.012)
+Bg = S.Limb((-.228, .78, 0), (-.228, .6, 0))
+bag = S.bump(bag, Bg.folds([(.35, 1.57, 1.6, .008, .08, .1), (.6, -1.2, 1.4, .008, .08, -.1), (.8, 2.6, 1.4, .007, .07, .1)]))
+fig.add('dumpbag', 'legL', 'fabT', bag, 380, voxel=.003, uv=('side',),
+        detail=S.fine(S.slit((0, .722, 0), (0, 1, 0), .005, .005), S.stitch((0, .708, 0), (0, 1, 0), .015, .004, .003, along=(0, 0, 1)), S.studs([V(-.283, .705, -.005)], .01, .005)))
+st = S.torus(TH(-1, .74), .098, .012, rot(0, 0, -.03), squash=2.0)
+fig.add('bagstrap', 'legL', 'leaB', st, 110, voxel=.003, detail=S.weave(520, .0012))
 
 # ---------------------------------------------------------------- hips and belt
 ring = Hu.ring
@@ -55,29 +79,51 @@ side = S.union(S.box((.225, .955, -.03), (.034, .08, .06), .022), S.box((.232, 1
 fig.add('sidepouch', 'body', 'lea', side, 200, voxel=.0028, uv=('side',))
 
 # ---------------------------------------------------------------- torso: undersuit, breastplate, the company colour
-chest = S.ellipsoid((0, 1.31, -.005), (.2, .165, .125))
+chest = S.ellipsoid((0, 1.32, -.002), (.208, .165, .13))
 shoulders = S.union(S.rcone((0, 1.455, -.014), (-.2, 1.41, -.012), .078, .064), S.rcone((0, 1.455, -.014), (.2, 1.41, -.012), .078, .064), k=.03)
-belly = S.ellipsoid((0, 1.13, .01), (.178, .15, .125))
+belly = S.ellipsoid((0, 1.13, .008), (.16 if not heavy else .175, .15, .118))
 back = S.ellipsoid((0, 1.24, -.04), (.185, .21, .105))
 torso = S.union(chest, shoulders, belly, back, k=.07)
 torso = S.cut(torso, S.below(1.0))
 suit = S.bump(torso, lambda p: .005 * np.sin(p[..., 1] * 150) * np.clip((1.2 - p[..., 1]) * 12, 0, 1))          # ribbed where the plate stops
 fig.add('undersuit', 'body', 'rib', suit, 620, voxel=.0035, uv=('cyl', V(0, 1.25, 0)))
-plate = S.cut(S.grow(torso, .03), S.below(1.135))
+plate = S.cut(S.grow(torso, .03), S.below(1.19), S.plane((0, 1.235, .13), (0, 1, -.9)))               # the bottom edge lifts at the front, the way a real breastplate clears the belt
 plate = S.cut(plate, S.sphere((-.262, 1.4, -.005), .1), S.sphere((.262, 1.4, -.005), .1))                         # arm holes
-rim = S.both(S.cut(S.grow(torso, .04), S.grow(torso, .02)), S.slab((0, 1.148, 0), (0, 1, 0), .014))               # a rolled edge along the bottom
+rim = S.both(S.cut(S.grow(torso, .04), S.grow(torso, .02)), S.slab((0, 1.202, 0), (0, 1, 0), .013))               # a rolled edge along the bottom
+rim = S.both(rim, S.plane((0, 0, .02), (0, 0, 1)))
 plate = S.union(plate, rim, k=.008)
 plate = S.bump(plate, lambda p: -.007 * np.clip(1 - np.abs(S.noise(p, 16, 7.7) - .5) * 7, 0, 1) * (p[..., 2] > -.02))
 plate = S.groove(plate, [V(-.17, 1.2, .12), V(-.1, 1.26, .16)], .004, .005)                                       # an old scar
-fig.add('cuirass', 'body', steel, plate, 1200, voxel=.0035, uv=('cyl', V(0, 1.3, 0)))
+rv = [S.skin(plate, (0, 1.245, -.01), (np.sin(a), 0, np.cos(a))) for a in np.linspace(.75, 2.4, 6)] + [S.skin(plate, (0, 1.245, -.01), (-np.sin(a), 0, np.cos(a))) for a in np.linspace(.75, 2.4, 6)]
+plated = S.fine(S.slit((0, 1.3, -.02), (1, 0, 0), .0045, .005) if not heavy else S.slit((0, 1.3, -.02), (1, 0, .1), .0045, .005),         # the join down the back and front
+                S.only(S.slit((0, 1.265, 0), (0, 1, 0), .004, .004), lambda p: np.abs(p[..., 0]) > .12), S.studs(rv, .009, .004),
+                S.trace([V(.2, 1.3, -.02), V(.21, 1.4, -.02)], .004, .004))
+fig.add('cuirass', 'body', steel, plate, 1200, voxel=.0035, uv=('cyl', V(0, 1.3, 0)), detail=plated,
+        marks=[(S.only(S.band((0, 1.225, 0), (0, 1, 0), .012), lambda p: p[..., 2] < .0), (.1, .09, .08))])
 front = S.grow(torso, .03)
 cz = .22 if heavy else .2
 badge = S.both(S.cut(S.grow(front, .022), front), S.box((0, 1.34, cz), (.165, .115, .12), .035, rot(-.1, 0, 0)), k=.006)
-fig.add('chestplate', 'body', chestm, badge, 440, voxel=.003, uv=('front',))
+fig.add('chestplate', 'body', chestm, badge, 440, voxel=.003, uv=('front',), texel=1.5)
 bolts = S.union(*[S.sphere(S.skin(badge, (x, y, .09), (0, 0, 1), out=-.002), .012) for x, y in ((-.13, 1.42), (.13, 1.42), (-.135, 1.26), (.135, 1.26))])
 fig.add('chestbolts', 'body', 'nS', bolts, 110, voxel=.002, uv=('front',))
-gut = S.both(S.cut(S.grow(torso, .028), S.grow(torso, .004)), S.box((0, 1.085, .15), (.13, .045, .1), .02, rot(.12, 0, 0)), k=.006)
-fig.add('gutplate', 'body', 'pS' if bl == 'bY' else pl, gut, 220, voxel=.003, uv=('front',))
+# the rig: a band of webbing round the belly with a row of magazine pouches on the front of it
+web = S.both(S.cut(S.grow(torso, .017), S.grow(torso, .002)), S.slab((0, 1.11, 0), (0, 1, 0), .036))
+fig.add('rigband', 'body', 'leaB', web, 260, voxel=.003, uv=('wrap', V(0, 1.11, 0)), detail=S.fine(S.weave(480, .0012), S.stitch((0, 1.138, 0), (0, 1, 0), .014, .004, .003, along=(1, 0, 0))))
+pcs, flaps, tabs = [], [], []
+for x in ((-.094, 0, .094) if not patch else (-.094, .094)):
+    c = S.skin(torso, (x * .5, 1.105, -.02), (x * 1.6, 0, 1), out=.034)
+    R = rot(.05, x * 2.6, 0)
+    pcs.append(S.box(c, (.04, .062, .03), .012, R))
+    flaps.append(S.box(c + R @ V(0, .04, .004), (.043, .027, .033), .009, R))
+    tabs.append(c + R @ V(0, .012, .04))
+pouches = S.union(S.union(*pcs), S.union(*flaps), k=.004)
+fig.add('rigpouches', 'body', 'fabT' if not heavy else 'lea', pouches, 520, voxel=.0028, uv=('front',), sharp=36,
+        detail=S.fine(S.outline(S.grow(S.union(*flaps), -.007), .004, .004), S.studs(tabs, .009, .005), S.only(S.weave(300, .0012, (1, 0, 0)), lambda p: p[..., 1] < 1.105)))
+if patch:      # the medic's roll in the middle of the rig, with the cross on it
+    c = S.skin(torso, (0, 1.105, -.02), (0, 0, 1), out=.036)
+    med = S.box(c, (.05, .066, .034), .014)
+    cross = S.union(S.box(c, (.03, .01, .1)), S.box(c, (.01, .03, .1)))
+    fig.add('medroll', 'body', 'pW', med, 200, voxel=.003, uv=('front',), marks=[(S.inside(cross), (.72, .12, .09))], detail=S.outline(S.grow(med, -.01), .004, .004))
 for sx, nm in ((-1, 'strapL'), (1, 'strapR')):
     o = V(sx * .125, 1.3, -.01)                                  # laid on the plate: up the front, over the shoulder, down the back
     st = S.chain([S.skin(plate, o, (0, np.sin(a), np.cos(a)), out=.004) for a in np.linspace(-.75, 3.6, 14)], .017)
@@ -107,7 +153,8 @@ pack = S.box((0, 1.28, -.25), (.2, .22, .095), .05)
 pack = S.union(pack, S.box((0, 1.4, -.33), (.15, .07, .05), .03), k=.02)                                         # the lid pocket
 pack = S.groove(pack, [V(-.2, 1.33, -.345), V(.2, 1.33, -.345)], .005, .006)
 pack = S.bump(pack, lambda p: (S.noise(p, 14, 6.1) - .5) * .008)
-fig.add('pack', 'body', 'pD', pack, 420, voxel=.004, uv=('front',))
+fig.add('pack', 'body', 'pD', pack, 420, voxel=.004, uv=('front',), texel=.8,
+        detail=S.fine(S.outline(S.grow(pack, -.02), .005, .005), S.only(S.stitch((0, 1.2, 0), (0, 1, 0), .018, .005, .003, along=(1, 0, 0)), lambda p: p[..., 2] < -.3)))
 tank = S.union(S.rcone((.115, 1.13, -.385), (.115, 1.44, -.385), .072), S.cyl((.115, 1.5, -.385), (.115, 1.54, -.385), .03, .006), S.torus((.115, 1.3, -.385), .073, .009), k=.008)
 fig.add('airtank', 'body', 'tankT' if patch else 'tank', tank, 320, voxel=.003, uv=('cyl', V(.115, 1.3, -.385)))
 can = S.union(S.rcone((-.115, 1.14, -.375), (-.115, 1.4, -.375), .058), S.cyl((-.115, 1.44, -.375), (-.115, 1.475, -.375), .024, .005), k=.008)
@@ -144,10 +191,15 @@ ridge = S.both(S.torus(HC + V(0, .02, 0), .158, .014, rot(0, 0, np.pi / 2), squa
 dome = S.union(dome, ridge, k=.012)
 brimr = S.cut(S.ecyl(HC + V(0, -.024, 0), .172, .192, .016, .008), S.ecyl(HC + V(0, -.024, 0), .14, .16, .05, .0))
 dome = S.union(dome, brimr, k=.01)
-dome = S.bump(dome, lambda p: -.006 * np.clip(1 - np.abs(S.noise(p, 15, 12.5) - .5) * 8, 0, 1))
+dome = S.bump(dome, lambda p: -.004 * np.clip(1 - np.abs(S.noise(p, 9, 12.5) - .5) * 9, 0, 1))
 for a in (-2.2, -1.2, 1.2, 2.2):
     dome = S.union(dome, S.sphere(HC + V(np.sin(a) * .16, .01, np.cos(a) * .18), .01))
-fig.add('helmet', 'head', hel, dome, 1000, voxel=.003, uv=('cyl', HC))
+hrv = [HC + V(np.sin(a) * .15, .004, np.cos(a) * .17) for a in np.linspace(0, 2 * np.pi, 13)[:-1] + .26]
+tally = S.fine(*[S.trace([HC + V(.17, .05 + .0, -.06 + i * .016), HC + V(.17, .1, -.055 + i * .016)], .003, .004) for i in range(4)],
+               S.trace([HC + V(.17, .06, -.075), HC + V(.17, .09, .0)], .003, .004))
+fig.add('helmet', 'head', hel, dome, 1300, voxel=.0028, uv=('cyl', HC), texel=1.15,
+        detail=S.fine(S.only(S.slit(HC + V(0, .045, 0), (0, 1, .12), .004, .004), lambda p: np.abs(p[..., 0]) > .03), S.studs(hrv, .008, .004), tally),
+        marks=[(S.band(HC, (1, 0, 0), .02), (.1, .09, .08))][:(1 if not long_ else 0)])
 neck = S.rcone((0, 1.46, -.015), (0, 1.62, -.01), .062, .06)
 neck = S.bump(neck, lambda p: .004 * np.sin(p[..., 1] * 180))
 skull = S.union(neck, S.ellipsoid(HC + V(0, -.03, 0), (.138, .13, .155)), k=.03)
@@ -156,7 +208,7 @@ mask = S.both(S.cut(S.ellipsoid(HC + V(0, -.06, .01), (.15, .13, .178)), S.above
 mask = S.union(mask, S.both(S.ellipsoid(HC + V(0, -.12, .1), (.085, .07, .09)), S.plane(HC + V(0, 0, .06), (0, 0, -1))), k=.03)   # the snout
 mask = S.groove(mask, [HC + V(-.11, -.1, .13), HC + V(-.05, -.15, .16)], .004, .005)
 mask = S.groove(mask, [HC + V(.11, -.1, .13), HC + V(.05, -.15, .16)], .004, .005)
-fig.add('mask', 'head', 'gunB', mask, 560, voxel=.003, uv=('front',))
+fig.add('mask', 'head', 'gunB', mask, 560, voxel=.003, uv=('front',), detail=S.fine(S.only(S.slit(HC, (1, 0, 0), .004, .004), lambda p: p[..., 1] < HC[1] - .09), S.studs([HC + V(sx * .125, -.1, .1) for sx in (-1, 1)], .009, .004)))
 if long_:      # one big glass for the shooting eye, a small one for the other
     cups = S.union(S.cyl(HC + V(.06, -.045, .12), HC + V(.06, -.04, .225), .058, .008), S.cyl(HC + V(-.07, -.045, .13), HC + V(-.07, -.043, .19), .03, .006), S.torus(HC + V(.06, -.04, .222), .054, .008, rot(np.pi / 2, 0, 0)))
     fig.add('scopecups', 'head', 'gunB', cups, 420, voxel=.0025, uv=('front',), sharp=50)
@@ -191,8 +243,8 @@ for sx in (-1, 1):
     fl += [S.cyl(a, b, .04, .008), S.cyl(b - (b - a) * .12, b + (b - a) * .08, .045, .006)]
     ears.append(S.cyl(HC + V(sx * .135, -.045, -.005), HC + V(sx * .178, -.045, -.005), .062, .012))
     eard.append(S.cyl(HC + V(sx * .176, -.045, -.005), HC + V(sx * .19, -.045, -.005), .04, .005))
-fig.add('filters', 'head', bl, S.union(*fl), 420, voxel=.0025, uv=('front',), sharp=45)
-fig.add('earcups', 'head', bl, S.union(*ears), 300, voxel=.003, uv=('side',), sharp=45)
+fig.add('filters', 'head', bl if heavy else 'bS', S.union(*fl), 420, voxel=.0025, uv=('front',), sharp=45)
+fig.add('earcups', 'head', bl if heavy else 'bD', S.union(*ears), 300, voxel=.003, uv=('side',), sharp=45)
 fig.add('eardiscs', 'head', 'rib', S.union(*eard), 120, voxel=.0025, uv=('side',))
 ant = S.chain([HC + V(.17, .0, -.03), HC + V(.185, .22, -.05), HC + V(.192, .44, -.085)], [.009, .007, .005])
 fig.add('antenna', 'head', 'rubber', ant, 70, voxel=.002)
@@ -291,16 +343,38 @@ armR, _ = Hu.armoured_arm(1, ShR, ElR, WrR, RhR, -1, sleeve=pants, guard=steel)
 Hu.add_arm(fig, 'arms', 'R', armR)
 pauls = []
 for sx, Sh in ((1, ShR), (-1, V(-.24, 1.42, -.01))):
-    R = rot(0, 0, -sx * .42)
-    c = Sh + V(sx * .03, .03, -.005)
-    pd = S.cut(S.ellipsoid(c, (.118, .092, .125), R), S.ellipsoid(c + V(-sx * .012, -.022, 0), (.1, .084, .108), R))
-    pd = S.cut(pd, S.plane(c + V(-sx * .02, -.035, 0), V(-sx * .5, -1, 0) * -1))
-    pd = S.union(pd, S.both(S.cut(S.ellipsoid(c, (.125, .098, .132), R), S.ellipsoid(c, (.108, .092, .115), R)), S.slab(c + V(-sx * .02, -.03, 0), V(sx * .5, 1, 0), .012)), k=.006)   # rolled rim
-    pd = S.union(pd, S.sphere(c + R @ V(sx * .02, .092, .0), .013))
-    pauls.append((sx, pd))
+    big = sx < 0 or heavy
+    k = 1.0 if big else .84
+    R = rot(0, 0, -sx * .5)
+    c = Sh + V(sx * .034, .034, -.005)
+    lames, rvs = [], []
+    for j in range(3 if big else 2):                         # each lame sits lower and further out than the one above, which laps over it
+        cj = c + V(sx * .017 * j, -.04 * j, 0)
+        e = V(.112 + .005 * j, .086, .122 + .006 * j) * k
+        ell = S.ellipsoid(cj, e, R)
+        lam = S.both(ell, S.plane(cj + R @ V(0, -.03, 0), R @ V(0, -1, 0)))                                 # a straight lower edge, standing proud of the lame below
+        lam = S.both(lam, S.slab(cj, (0, 0, 1), e[2] * (.88 - .03 * j)), k=.004)                            # squared off front and back
+        lam = S.both(lam, S.plane(cj + V(0, 0, e[2] * .5), V(0, -.62, 1)), k=.004)                          # the lower corners clipped at an angle
+        lam = S.both(lam, S.plane(cj - V(0, 0, e[2] * .5), V(0, -.62, -1)), k=.004)
+        lames.append(lam)
+        rvs += [S.skin(ell, cj, R @ V(sx * .5, .16 if j == 0 else -.02, z)) for z in (-.8, .8)]
+    pd = S.union(*lames)
+    pd = S.cut(pd, S.grow(S.union(*[S.moved(l, d=(-sx * .012, -.014, 0)) for l in lames]), -.004), k=.003)          # hollow underneath: plates, not blocks
+    pd = S.cut(pd, S.below(c[1] - (.135 if big else .1)), k=.004)                                                   # the tails trimmed level
+    top = S.skin(S.ellipsoid(c, V(.118, .09, .13) * k, R), c, R @ V(0, 1, 0))
+    pd = S.union(pd, S.cyl(top - R @ V(0, .01, 0), top + R @ V(0, .014, 0), .02, .005), k=.004)                     # the pivot bolt on top
+    det = S.fine(S.studs(rvs, .009, .004), S.outline(S.sphere(top, .034), .004, .003))
+    marks = []
+    if big and not long_:
+        lo = c + V(sx * .06, -.104, 0)
+        marks = [(S.chevrons(lo, (0, .5, 1), .05, lambda p: (p[..., 1] < lo[1] + .012) * (p[..., 1] > lo[1] - .05)), (.1, .09, .08))]
+    elif not long_:
+        marks = [(S.band(c, (0, 0, 1), .016), tuple(np.array((.86, .62, .12)) if not patch else (.8, .78, .72)))]
+    pauls.append((sx, pd, det, marks, big))
+PM = lambda big: capm if big else steel
 if heavy:   # the off arm carries a slab of a shield
-    fig.add('pauldronR', 'arms', capm, pauls[0][1], 340, voxel=.003, uv=('top',))
-    fig.add('pauldronL', 'armL', capm, pauls[1][1], 340, voxel=.003, uv=('top',))
+    fig.add('pauldronR', 'arms', capm, pauls[0][1], 900, voxel=.0026, uv=('top',), sharp=36, detail=pauls[0][2], marks=pauls[0][3])
+    fig.add('pauldronL', 'armL', capm, pauls[1][1], 900, voxel=.0026, uv=('top',), sharp=36, detail=pauls[1][2], marks=pauls[1][3])
     ShL, ElL = V(-.24, 1.42, -.01), V(-.36, 1.2, .02)
     RhL = S.basis(V(.55, .05, .83), (-1, 0, .4))
     SR = rot(0, .12, 0)
@@ -322,8 +396,8 @@ if heavy:   # the off arm carries a slab of a shield
     fig.add('shieldboss', 'armL', 'nO', S.ellipsoid(sc + SR @ V(0, .05, .04), (.1, .1, .04), SR), 120, voxel=.004, uv=('front',))
     fig.add('shieldbrace', 'armL', 'gunm', S.chain([sc + SR @ V(-.2, .12, -.04), sc + SR @ V(-.07, .04, -.12), sc + SR @ V(.1, .12, -.04)], .016), 90, voxel=.004)
 else:       # the off hand under the fore-end
-    for sx, pd in pauls:
-        fig.add('pauldron' + ('R' if sx > 0 else 'L'), 'arms', capm, pd, 340, voxel=.003, uv=('top',))
+    for sx, pd, det, marks, big in pauls:
+        fig.add('pauldron' + ('R' if sx > 0 else 'L'), 'arms', PM(big), pd, 900 if big else 620, voxel=.0026, uv=('top',), sharp=36, detail=det, marks=marks)
     ShL, ElL = V(-.24, 1.42, -.01), V(-.16, 1.2, .17)
     RhL = S.basis((1, .12, 0), (0, -1, .1))
     gripL = V(GX - .012, GY - .085, .36)

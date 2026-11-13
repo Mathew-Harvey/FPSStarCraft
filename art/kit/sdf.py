@@ -366,3 +366,81 @@ def skin(fn, o, d, tmax=1.0, n=800, out=.0):
     v = fn(o[None, :] + ts[:, None] * d[None, :])
     i = np.argmax(v > 0) if (v > 0).any() else n - 1
     return o + d * (ts[i] + out)
+
+
+# ---------------------------------------------------------------- fine work for the painted picture only
+# These return how far to push a surface out (+) or in (-) at each point, for Part(detail=...): seams, stitching, rivets and
+# panel lines that are far too fine for the mesh but that the painter (kit/bake.py) inks, shades and wears like anything else.
+def fine(*fs):
+    """Several pieces of fine work added together."""
+    return lambda p: sum(f(p) for f in fs)
+
+
+def only(f, where):
+    """Fine work kept to where `where(p)` is true (or 0..1)."""
+    return lambda p: f(p) * where(p)
+
+
+def slit(c, n, w=.0035, depth=.004):
+    """A scored line where the plane through c facing n crosses the surface: a seam, a panel join."""
+    c, n = V(c), V(n) / np.linalg.norm(V(n))
+    return lambda p: -depth * np.clip(1 - np.abs((p - c) @ n) / w, 0, 1) ** 2
+
+
+def trace(pts, w=.0035, depth=.004):
+    """A scored line along a path through space (it only shows where the path runs along the surface)."""
+    g = chain([V(q) for q in pts], .0004)
+    return lambda p: -depth * np.clip(1 - np.maximum(g(p), 0) / w, 0, 1) ** 2
+
+
+def outline(shape, w=.0035, depth=.004):
+    """A scored line round wherever another shape would break through the surface: the edge of a patch, a hatch, a plate."""
+    return lambda p: -depth * np.clip(1 - np.abs(shape(p)) / w, 0, 1) ** 2
+
+
+def raised(shape, h=.003, soft=.004):
+    """Everything inside another shape stands proud by h: a patch sewn on, a plate riveted over."""
+    return lambda p: h * np.clip(-shape(p) / soft, 0, 1)
+
+
+def stitch(c, n, pitch=.011, w=.0028, h=.0028, along=(0, 1, 0), gap=.4):
+    """A row of stitches where the plane through c facing n crosses the surface, running roughly along `along`."""
+    c, n, a = V(c), V(n) / np.linalg.norm(V(n)), V(along) / np.linalg.norm(V(along))
+    return lambda p: h * np.clip(1 - np.abs((p - c) @ n) / w, 0, 1) * (((p - c) @ a / pitch) % 1.0 > gap)
+
+
+def studs(points, r=.007, h=.004):
+    """Rivet heads at these points (points on or near the surface)."""
+    pts = [V(q) for q in points]
+
+    def f(p):
+        o = np.zeros(p.shape[:-1], F)
+        for q in pts:
+            d = np.linalg.norm(p - q, axis=-1)
+            o = np.maximum(o, h * np.sqrt(np.clip(1 - (d / r) ** 2, 0, 1)) - h * .6 * np.clip(1 - np.abs(d - r * 1.25) / (r * .3), 0, 1))
+        return o
+    return f
+
+
+def weave(freq=420.0, h=.0012, axis=(0, 1, 0)):
+    """A ribbed weave across everything (webbing, a canvas strap)."""
+    a = V(axis) / np.linalg.norm(V(axis))
+    return lambda p: h * np.sin((p @ a) * freq)
+
+
+# marks: paint laid on a surface. Each returns 0..1, how much paint is there, for Part(marks=[(mark, (r, g, b)), ...]).
+def band(c, n, half):
+    """A stripe: everything within `half` of the plane through c facing n."""
+    c, n = V(c), V(n) / np.linalg.norm(V(n))
+    return lambda p: np.clip((half - np.abs((p - c) @ n)) / .002, 0, 1)
+
+
+def chevrons(c, n, pitch, where=None):
+    """Hazard stripes marching along n from c, half paint and half not."""
+    c, n = V(c), V(n) / np.linalg.norm(V(n))
+    return lambda p: (np.clip((.25 - np.abs(((p - c) @ n / pitch) % 1.0 - .5)) / .02, 0, 1)) * (where(p) if where else 1)
+
+
+def inside(shape):
+    """Paint wherever the surface lies inside another shape."""
+    return lambda p: np.clip(-shape(p) / .002, 0, 1)

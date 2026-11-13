@@ -3,6 +3,7 @@
 // document wrapper, for hosts that supply their own.
 import { build } from 'esbuild';
 import { readFileSync, writeFileSync, mkdirSync, readdirSync } from 'node:fs';
+import { deflateRawSync } from 'node:zlib';
 
 // `import BANK from 'sfx:bank'` gives the page every sound in assets/sfx as base64, keyed by file name.
 // The match server never plays a sound, so it gets an empty bank.
@@ -14,11 +15,13 @@ const sfxBank = (empty) => ({ name: 'sfx-bank', setup(b) {
   });
 } });
 // `import MESHES from 'mesh:bank'` gives the page every sculpted model in assets/mesh as base64, keyed by file name (see art/).
+// The meshes are deflated first (src/meshes.ts opens them with fflate); a figure's painted picture rides along as `<kind>.tex`.
+// A model that has its own painted picture (art/kit/bake.py) brings it along as <name>.tex.
 // The match server never draws, so it gets none and builds the simple code-made stand-ins.
 const meshBank = (empty) => ({ name: 'mesh-bank', setup(b) {
   b.onResolve({ filter: /^mesh:bank$/ }, () => ({ path: 'mesh-bank', namespace: 'mesh' }));
   b.onLoad({ filter: /.*/, namespace: 'mesh' }, () => {
-    const bank = {}; if (!empty) for (const f of readdirSync('assets/mesh').sort()) if (f.endsWith('.bin')) bank[f.slice(0, -4)] = readFileSync('assets/mesh/' + f).toString('base64');
+    const bank = {}; if (!empty) for (const f of readdirSync('assets/mesh').sort()) { if (f.endsWith('.bin')) bank[f.slice(0, -4)] = deflateRawSync(readFileSync('assets/mesh/' + f), { level: 9 }).toString('base64'); if (f.endsWith('.webp')) bank[f.slice(0, -5) + '.tex'] = readFileSync('assets/mesh/' + f).toString('base64'); }
     return { contents: 'export default ' + JSON.stringify(bank), loader: 'js' };
   });
 } });

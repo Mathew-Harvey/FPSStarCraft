@@ -49,7 +49,7 @@ def filigree(f, c, r, turns=1.6, w=.004, depth=.005, zs=1.0, n=40, y_rise=.0):
 
 
 def build_tender():
-    fig = B.Figure('tender', hi=(1.2, 2.8, 1.2), detail=1.0)
+    fig = B.Figure('tender', hi=(1.2, 2.8, 1.2), detail=1.0, paint=1024, brush=1.2)
     for g, p, par in (('body', (0, 0, 0), None), ('head', (0, 1.46, 0), 'body'), ('halo', (0, 1.95, -.26), 'body'), ('armL', (-.27, 1.26, 0), 'body'), ('armR', (.27, 1.26, 0), 'body')):
         fig.group(g, p, par)
     sw = Vk.tail_sweep(.84, .3)
@@ -97,7 +97,7 @@ def build_tender():
 
 
 def build_cantor():
-    fig = B.Figure('cantor', lo=(-1.4, -.1, -1.2), hi=(1.4, 3.3, 1.2), detail=1.0)
+    fig = B.Figure('cantor', lo=(-1.4, -.1, -1.2), hi=(1.4, 3.3, 1.2), detail=1.0, paint=1024, brush=1.3)
     for g, p, par in (('body', (0, 0, 0), None), ('head', (0, 1.96, 0), 'body'), ('halo', (0, 2.44, -.32), 'body'), ('armL', (-.37, 1.76, 0), 'body'), ('armR', (.37, 1.76, 0), 'body')):
         fig.group(g, p, par)
     sw = Vk.tail_sweep(1.14, .38)
@@ -179,7 +179,7 @@ def build_cantor():
 
 
 def build_lancer():
-    fig = B.Figure('lancer', lo=(-1.2, -.1, -1.4), hi=(1.2, 3.0, 2.6), detail=1.0)
+    fig = B.Figure('lancer', lo=(-1.2, -.1, -1.4), hi=(1.2, 3.0, 2.6), detail=1.0, paint=1024, brush=1.3)
     for g, p, par in (('body', (0, 0, 0), None), ('head', (0, 1.74, 0), 'body'), ('halo', (0, 2.2, -.36), 'body'), ('arms', (0, 1.52, .05), 'body')):
         fig.group(g, p, par)
     sw = Vk.tail_sweep(1.0, .5)
@@ -239,7 +239,7 @@ def build_lancer():
 
 
 def build_warden():
-    fig = B.Figure('warden', lo=(-2.9, -.1, -2.2), hi=(2.9, 6.1, 2.2), coarse=.04, detail=1.0)
+    fig = B.Figure('warden', lo=(-2.9, -.1, -2.2), hi=(2.9, 6.1, 2.2), coarse=.04, detail=1.0, paint=1536, brush=2.6)
     for g, p, par in (('body', (0, 0, 0), None), ('head', (0, 3.7, .25), 'body'), ('halo', (0, 4.4, -.75), 'body'), ('armL', (-1.6, 3.3, 0), 'body'), ('armR', (1.6, 3.3, 0), 'body')):
         fig.group(g, p, par)
     sw = Vk.tail_sweep(2.0, .7)

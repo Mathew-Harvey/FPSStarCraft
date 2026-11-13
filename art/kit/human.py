@@ -15,7 +15,11 @@ def both_legs(fig, parts):
         if 'uv' in kw2 and len(kw2['uv']) > 1:
             o = np.array(kw2['uv'][1], np.float32) * np.array([-1, 1, 1], np.float32)
             kw2['uv'] = (kw2['uv'][0], o) + tuple(kw2['uv'][2:])
-        fig.add(name + 'L', 'legL', mat, S.flipx(fn), tris, **kw2)
+        if kw2.get('detail') is not None:
+            kw2['detail'] = S.flipx(kw2['detail'])
+        if kw2.get('marks'):
+            kw2['marks'] = [(S.flipx(w), c) for w, c in kw2['marks']]
+        fig.add(name + 'L', 'legL', mat, S.flipx(fn), tris, twin=name + 'R', **kw2)
 
 
 def add_arm(fig, group, tag, parts):
@@ -41,7 +45,12 @@ def leg_parts(HIP=.93, pants='fabT', boot='leaN', pad='leaN', strapm='leaB', poc
     cloth = S.bump(cloth, lambda p: (S.noise(p, 22, 3.1) - .5) * .006)
     if pocket:
         cloth = S.union(S.union(cloth, S.box(V(xk + .074, .69, .0), (.02, .075, .06), .014, rot(0, 0, -.06)), k=.008), S.box(V(xk + .082, .752, .0), (.018, .026, .066), .01, rot(0, 0, -.06)), k=.004)
-    out['trouser'] = (pants, S.cut(cloth, S.below(.235)), 1500, dict(voxel=.0032, uv=('cyl', hip * .5 + ank * .5)))
+    # for the painter: the side seams with a row of stitching beside each, a patch sewn over the knee and a double-sewn seat
+    kneepatch = S.ellipsoid(knee + V(0, .0, .03), (.1, .15, .1))
+    sewn = S.fine(S.slit(hip, (.06, 0, 1), .005, .005), S.stitch(hip + V(0, 0, .013), (.06, 0, 1), .016, .004, .003),
+                  S.only(S.outline(kneepatch, .005, .005), lambda p: p[..., 2] > .0), S.only(S.raised(kneepatch, .003), lambda p: p[..., 2] > .0),
+                  S.only(S.stitch(V(0, .73, 0), (0, 1, .1), .016, .004, .003, along=(1, 0, 0)), lambda p: p[..., 2] > .02))
+    out['trouser'] = (pants, S.cut(cloth, S.below(.235)), 1500, dict(voxel=.0032, uv=('cyl', hip * .5 + ank * .5), detail=sewn))
     # knee pad: a leather cup with a steel boss, strapped round the back
     if plate:                                                   # a pressed steel knee cop with a ridge down it, bolted through
         cup = S.both(S.ellipsoid(knee + V(0, .005, .05), (.082, .1, .07)), S.plane(knee + V(0, 0, .02), (0, 0, -1)), k=.012)
@@ -77,7 +86,9 @@ def leg_parts(HIP=.93, pants='fabT', boot='leaN', pad='leaN', strapm='leaB', poc
     cuff = S.torus(V(xa, .288, -.014), .074, .013, squash=1.5)
     upper = S.union(upper, cuff, k=.01)
     upper = S.cut(upper, S.below(.034))
-    out['boot'] = (boot, turned(upper), 620, dict(voxel=.003, uv=('cyl', V(xa, .15, 0))))
+    welt = S.fine(S.slit(V(xa, .052, 0), (0, 1, 0), .005, .004), S.stitch(V(xa, .066, 0), (0, 1, 0), .015, .004, .003, along=(0, 0, 1)),
+                  S.slit(V(xa, .2, 0), (0, 1, -.35), .005, .004), S.stitch(V(xa, .212, 0), (0, 1, -.35), .015, .004, .003, along=(1, 0, 0)))
+    out['boot'] = (boot, turned(upper), 620, dict(voxel=.003, uv=('cyl', V(xa, .15, 0)), detail=turned(welt)))
     cap = S.both(S.ellipsoid(V(xa, .07, .17), (.08, .066, .096)), S.plane(V(xa, 0, .148), (0, -.25, 1)))
     cap = S.cut(cap, S.below(.034))
     out['toecap'] = ('nD', turned(cap), 170, dict(voxel=.003, uv=('top',)))
@@ -86,7 +97,7 @@ def leg_parts(HIP=.93, pants='fabT', boot='leaN', pad='leaN', strapm='leaB', poc
     sole = S.cut(sole, S.box(V(xa, -.012, .035), (.09, .022, .034), .008))          # the step between heel and tread
     for i in range(5):
         sole = S.cut(sole, S.box(V(xa, -.004, .11 + i * .03), (.1, .008, .006)))    # tread
-    out['sole'] = ('sole', turned(sole), 300, dict(voxel=.0028, uv=('side',), sharp=30))
+    out['sole'] = ('sole', turned(sole), 300, dict(voxel=.0028, uv=('side',), sharp=30, texel=.6))
     laces = [S.rcone(V(xa - .036, .118 + i * .034, .058 - i * .01), V(xa + .036, .126 + i * .034, .058 - i * .01), .0075) for i in range(4)]
     laces += [S.rcone(V(xa - .036, .118 + i * .034, .058 - i * .01), V(xa + .036, .16 + i * .034, .048 - i * .01), .006) for i in range(3)]
     out['laces'] = ('nD', turned(S.union(*laces)), 150, dict(voxel=.002, uv=('front',)))

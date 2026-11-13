@@ -25,7 +25,7 @@ def eyes(pts, r, look=.4):
 
 
 def build_grazer():
-    fig = B.Figure('grazer', lo=(-1.2, -.1, -1.2), hi=(1.2, 1.6, 1.2))
+    fig = B.Figure('grazer', lo=(-1.2, -.1, -1.2), hi=(1.2, 1.6, 1.2), paint=768)
     fig.group('body', (0, 0, 0))
     fig.group('head', (0, .5, .38), 'body')
     G.add_legs(fig, [(.22, .36, .15, .24), (-.04, .4, .02, .24), (-.28, .36, -.1, .24)], .062, .4)
@@ -65,7 +65,7 @@ def build_grazer():
 
 
 def build_snapper():
-    fig = B.Figure('snapper', lo=(-1.2, -.1, -1.5), hi=(1.2, 1.4, 1.4))
+    fig = B.Figure('snapper', lo=(-1.2, -.1, -1.5), hi=(1.2, 1.4, 1.4), paint=768)
     fig.group('body', (0, 0, 0))
     fig.group('head', (0, .6, .48), 'body')
     G.add_legs(fig, [(.3, .3, .42, .17), (-.26, .34, -.34, .17)], .07, .44)
@@ -101,7 +101,7 @@ def build_snapper():
 
 
 def build_quillback():
-    fig = B.Figure('quillback', scale=1.22, lo=(-1.4, -.1, -1.6), hi=(1.4, 2.6, 1.5))
+    fig = B.Figure('quillback', scale=1.22, lo=(-1.4, -.1, -1.6), hi=(1.4, 2.6, 1.5), paint=1024, brush=1.25)
     fig.group('body', (0, 0, 0))
     fig.group('head', (0, 1.64, .4), 'body')
     fig.group('arms', (0, 1.6, .5), 'body')
@@ -144,7 +144,7 @@ def build_quillback():
 
 
 def build_blister():
-    fig = B.Figure('blister', lo=(-1.0, -.1, -1.0), hi=(1.0, 1.5, 1.0))
+    fig = B.Figure('blister', lo=(-1.0, -.1, -1.0), hi=(1.0, 1.5, 1.0), paint=768)
     fig.group('body', (0, 0, 0))
     fig.group('halo', (0, .64, -.06), 'body')
     fig.group('head', (0, .36, .28), 'body')
@@ -172,7 +172,7 @@ def build_blister():
 
 
 def build_mulcher():
-    fig = B.Figure('mulcher', lo=(-3.2, -.1, -3.4), hi=(3.2, 4.0, 4.6), coarse=.04)
+    fig = B.Figure('mulcher', lo=(-3.2, -.1, -3.4), hi=(3.2, 4.0, 4.6), coarse=.04, paint=1536, brush=2.6)
     Y = -.42                                                     # the old figure's body hung this far below its own numbers
     fig.group('body', (0, 0, 0))
     fig.group('head', (0, 1.85 + Y, 1.62), 'body')

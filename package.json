@@ -10,6 +10,7 @@
     "start": "node dist/server.mjs",
     "test:rules": "node tools/run-ts.mjs test/matchups.ts",
     "test:scout": "node tools/run-ts.mjs test/scouting.ts",
+    "test:terrain": "node tools/run-ts.mjs test/terrain.ts",
     "test:core": "node tools/run-ts.mjs test/core/registry.ts && node tools/run-ts.mjs test/core/systems.ts",
     "sim": "node tools/run-ts.mjs tools/sim.ts",
     "test": "node tools/test-all.mjs",

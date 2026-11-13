@@ -120,7 +120,7 @@ export interface Prop {
   /** Litter on the ground: scrub, stones, scrap. A new building flattens whatever of it is underfoot. */
   dress?: boolean;
 }
-export interface OreNode { pos: THREE.Vector3; amount: number; max: number; obj: THREE.Group; /** Seconds the seam has been empty. */ dryT?: number }
+export interface OreNode { pos: THREE.Vector3; amount: number; max: number; obj: THREE.Group; /** Seconds the seam has been empty. */ dryT?: number; /** A bright seam: each load from it holds this much more (terrain.ts). */ rich?: number }
 export interface Callout { who: string; text: string; t: number; dur: number; keys: [string, string][] }
 export interface Difficulty { name: string; enemy: number; raid: number; blurb: string }
 export const DIFFS: Difficulty[] = [

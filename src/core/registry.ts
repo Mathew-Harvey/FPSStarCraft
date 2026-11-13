@@ -25,6 +25,16 @@ export interface UnitRules {
   hurt?(g: Game, u: Unit, amt: number, from: Unit | Building | null): number;
   /** The body is about to be marked dead (host and replica). */
   dying?(g: Game, u: Unit, from: Unit | Building | null): void;
+  /** A body of the far side died. Returns true when the kind said its own line, so nobody else barks. `v` is how loud it was where the player stands. */
+  downed?(g: Game, u: Unit, v: number): boolean;
+  /** Words over the body when it dies (default KO!). */
+  koWord?: string;
+  /** Seconds the game holds still when the player kills this kind, and when the player kills anything while driving this kind. */
+  koStop?: number; killStop?: number;
+  /** Hits from a player do not shove this body back or break its stride. */
+  steady?: boolean;
+  /** How hard this body's hits shove a target back when a player drives it (default from the damage). */
+  shove?: number;
   /** Speed multiplier from research and ground, on top of UnitDef.speed. */
   pace?(g: Game, u: Unit): number;
   /** The first-person gun, if this body has one. */

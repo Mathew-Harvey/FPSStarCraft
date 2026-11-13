@@ -38,13 +38,9 @@ const GREY = new THREE.Color(.86, .93, 1.08), greyed = new Map<THREE.Material, T
 const YARD_SEAMS = [[17, -15, 9, 1.2], [21, -10, 7, 1.0], [23, -18, 8, 1.3], [15, -21, 6, .9], [-18, -24, 8, 1.1], [-24, -19, 7, 1.0]];
 export const beamMat = new THREE.MeshBasicMaterial({ color: 0x6dfff0, depthWrite: false });
 // Lamp colours, and where each kind of building and body carries its lamps.
-type C3 = [number, number, number];
-const WARM: C3 = [1, .6, .24], HEAD: C3 = [1, .78, .46], FLOOD: C3 = [1, .76, .42], FIRE: C3 = [1, .46, .12], TEAL: C3 = [.3, 1, .88], ROSE: C3 = [1, .36, .7], SICK: C3 = [.72, 1, .3], ORE: C3 = [.36, .9, 1], MUZZLE: C3 = [1, .82, .5];
+import { WARM, HEAD, FLOOD, FIRE, TEAL, ROSE, SICK, ORE, MUZZLE } from './core/lamps';
 /** The cage lamps hung on the Ironhold sheds, in each building's own space: x, y, z and how far the light reaches. */
-const BLAMP: Record<string, [number, number, number, number][]> = { depot: [[3.42, 1.7, 1.5, 11]], assay: [[-1.6, 2.1, 3.2, 11]], machineshop: [[-3.2, 2.2, 3.5, 11], [-.6, 2.4, 2.8, 8]] };
 /** Bodies that carry a light: its height, how far ahead of the body it sits, its reach, colour and strength. */
-const ULAMP: Record<string, [number, number, number, C3, number]> = { rigger: [1.5, .5, 4.5, WARM, .6], linesman: [1.6, 1.2, 4, HEAD, .45], patch: [1.6, 1.2, 4, HEAD, .45], breacher: [1.6, 1.2, 4, HEAD, .45], gantry: [3, 2.4, 8, HEAD, .7],
-  tender: [1.3, .3, 4.5, TEAL, .6], cantor: [1.6, .4, 5, TEAL, .7], lancer: [1.4, .5, 4.5, ROSE, .55], warden: [3, .8, 8, TEAL, .85], blister: [.9, 0, 5, SICK, .7], mulcher: [3.4, 0, 7, SICK, .5] };
 const bubbleMat = new THREE.MeshBasicMaterial({ color: 0x6dfff0, transparent: true, opacity: .4, depthWrite: false, blending: THREE.AdditiveBlending });
 const warnMat = new THREE.MeshBasicMaterial({ color: 0xff4f9a, transparent: true, opacity: .9, depthWrite: false, side: THREE.DoubleSide });
 let nextId = 1;
@@ -171,7 +167,7 @@ export class Game {
   /** Frees this world's own meshes on the graphics card once the game is thrown away. Shared shapes stay; three.js re-uploads anything used again. */
   dispose() { const keep = new Set<THREE.BufferGeometry>(Object.values(G) as THREE.BufferGeometry[]); this.scene.traverse((o: any) => { if (o.geometry && !keep.has(o.geometry)) o.geometry.dispose(); }); for (const w of this.wrecks) w.b.obj.traverse((o: any) => { if (o.geometry) o.geometry.dispose(); }); }
   model(k: BKind): THREE.Group { return MD.atlasify(this.rawModel(k)); }
-  rawModel(k: BKind): THREE.Group { if (BLD[k] && (k as string) in G_TUNE.bloomR) return MD.gloamB(k, this.anim); return k === 'headframe' ? MD.headframe(this.anim) : k === 'bunkhouse' ? MD.bunkhouse() : k === 'depot' ? MD.depot() : k === 'watchpost' ? MD.watchpost() : k === 'machineshop' ? MD.machineshop(this.anim) : k === 'foundry' ? MD.foundry(this.anim) : k === 'assay' ? MD.assay(this.anim) : k === 'mast' ? MD.mast(this.anim) : k === 'reedgate' ? MD.reedgate(this.anim) : k === 'broodpit' ? MD.broodpit(this.anim) : k === 'thornspire' ? MD.thornspire(this.anim) : k === 'wardpylon' ? MD.wardpylon(this.anim) : k === 'hushwell' ? MD.hushwell(this.anim) : MD.choir(this.anim); }
+  rawModel(k: BKind): THREE.Group { const m = bldRule(k).model; if (m) return m(this.anim); const d = BLD[k], g = new THREE.Group(); mk(G.box, M.steel, [0, d.h / 2, 0], [d.hx * 2, d.h, d.hz * 2], [0, 0, 0], g); return g; }
 
   // ------------------------------------------------------------ entities
   /** Multiplayer server: things clients need to see or hear, queued until the next snapshot. */
@@ -334,15 +330,15 @@ export class Game {
     if (!u) amt *= 1 + this.overtime(); else if (from && !isUnit(from)) amt /= 1 + this.overtime();
     // A unit sheltering behind scenery: shots from the far side by anything but a player mostly chew up the scenery instead.
     if (u && u.cover && u.cover.alive && from && from !== me && isUnit(from) && !from.pilot) { const c = u.cover, cx = c.x - u.pos.x, cz = c.z - u.pos.z; if (Math.hypot(cx, cz) < c.r + 2.4 && cx * (from.pos.x - u.pos.x) + cz * (from.pos.z - u.pos.z) > 0 && Math.random() < .55) { this.damageProp(c, amt, from); return; } }
-    if (u && u.kind === 'breacher' && from) { const dx = from.pos.x - u.pos.x, dz = from.pos.z - u.pos.z, d = Math.hypot(dx, dz) || 1; if ((dx * Math.sin(u.yaw) + dz * Math.cos(u.yaw)) / d > .25) { if (u === me && this.brace) { this.payback = Math.min(1, this.payback + amt * .75 / 50); amt *= .25; sfx.clang(); } else if (u.pilot) { if (u.brace) amt *= .25; } else if (u !== me) amt *= .55; } }
+    if (u && from) { const h = unitRule(u.kind).hurt; if (h) amt = h(this, u, amt, from); }
     let warded = false;
     if (!u && fac(t.team) === 1 && (t as Building).kind !== 'wardpylon') { const w = this.ward(t.pos, t.team); if (w) { amt *= .7; warded = true; if (this.time > this.wardFx) { this.wardFx = this.time + .35; this.tracer(V3(w.pos.x, 4.6, w.pos.z), V3(t.pos.x, (t as Building).h * .6, t.pos.z), beamMat, .22); this.puff(TMP.set(t.pos.x, (t as Building).h * .6, t.pos.z), 3, .7, M.cyan, .5); } } }
     const dealt = amt, shielded = (!!u && u.shield > 0) || warded;
     // A paid-for Veyl body the AI drives shrugs off part of each hit (see vBoost). A body a player drives takes hits at face value, the same as an Ironhold one.
-    if (u && fac(u.team) === 1 && this.eco && !u.pilot && u.kind !== 'tender') amt /= this.vBoost.hp;
+    if (u && fac(u.team) === 1 && this.eco && !u.pilot && !isWorker(u.kind)) amt /= this.vBoost.hp;
     if (u) { u.pop = 1; this.fx.hit(u, dealt, from, crit, shielded); if (u.shield > 0) { const a = Math.min(u.shield, amt); u.shield -= a; amt -= a; this.bubble(u); } }
     // A hit from a body somebody is driving lands with weight: the target is shoved back and loses a beat.
-    if (u && u.kind !== 'warden' && u.kind !== 'gantry' && !u.pilot && from && isUnit(from) && from.team !== u.team && (from === me || from.pilot) && dealt >= 5) { const sx = u.pos.x - from.pos.x, sz = u.pos.z - from.pos.z, sd = Math.hypot(sx, sz) || 1, k = from.kind === 'rigger' ? 14 : Math.min(10, dealt * .16); u.kx += sx / sd * k; u.kz += sz / sd * k; u.cd = Math.max(u.cd, Math.min(.5, dealt * .012)); }
+    if (u && !unitRule(u.kind).steady && !u.pilot && from && isUnit(from) && from.team !== u.team && (from === me || from.pilot) && dealt >= 5) { const sx = u.pos.x - from.pos.x, sz = u.pos.z - from.pos.z, sd = Math.hypot(sx, sz) || 1, k = unitRule(from.kind).shove ?? Math.min(10, dealt * .16); u.kx += sx / sd * k; u.kz += sz / sd * k; u.cd = Math.max(u.cd, Math.min(.5, dealt * .012)); }
     t.hp -= amt;
     if (this.evq && u && u.pilot && from) this.evq.push(['ht', u.id, r1(from.pos.x), r1(from.pos.z)]);
     const head = V3(t.pos.x, u ? UNIT[u.kind].headY + .4 : (t as Building).h * .7, t.pos.z);
@@ -369,15 +365,15 @@ export class Game {
   vCd = 0; combo = 0; comboT = 0;
   killUnit(u: Unit, from: Unit | Building | null) {
     if (this.evq) { this.evq.push(['ku', u.id, from ? from.id : 0]); const kp = from && (from as Unit).pilot; if (kp && u.team !== from!.team && this.score[kp]) this.score[kp][0]++; }
-    if (u.kind === 'gantry' && u.alive && !this.net) { u.alive = false; this.explode(V3(u.pos.x, 0, u.pos.z), u.team, 40, 6, null); u.alive = true; }
+    if (u.alive) unitRule(u.kind).dying?.(this, u, from);
     u.alive = false; const away = u.team !== SIDE.home, v = this.vol(u.pos), st = UNIT[u.kind];
-    this.hud.damage(V3(u.pos.x, st.headY + .4, u.pos.z), u.kind === 'warden' ? 'KRAKA-THOOM!' : 'KO!', u.team !== this.myTeam ? 'ko' : 'kobad');
+    this.hud.damage(V3(u.pos.x, st.headY + .4, u.pos.z), unitRule(u.kind).koWord || 'KO!', u.team !== this.myTeam ? 'ko' : 'kobad');
     u.ring.visible = false; if (u.rig.flash) u.rig.flash.visible = false; this.bodyLayer(u, false);
     R(-1, 1); R(-1, 1);   // two draws the old fall used: kept so the match's seeded random numbers run exactly as before
     this.fx.kill(u, from);
-    if (u.team !== this.myTeam && from === this.me && this.me) { sfx.kill(); this.hud.hitmark(false, true); this.hitStop = u.kind === 'warden' ? .25 : this.me.kind === 'longshot' ? .12 : .06; this.streak = this.time < this.streakT ? this.streak + 1 : 1; this.streakT = this.time + 4; if (this.streak >= 2) { this.hud.streak(['', '', 'DOUBLE KO!', 'TRIPLE!', 'OVERTIME!', 'RAMPAGE!'][Math.min(5, this.streak)]); sfx.streak(this.streak); } }
+    if (u.team !== this.myTeam && from === this.me && this.me) { sfx.kill(); this.hud.hitmark(false, true); this.hitStop = unitRule(u.kind).koStop || unitRule(this.me.kind).killStop || .06; this.streak = this.time < this.streakT ? this.streak + 1 : 1; this.streakT = this.time + 4; if (this.streak >= 2) { this.hud.streak(['', '', 'DOUBLE KO!', 'TRIPLE!', 'OVERTIME!', 'RAMPAGE!'][Math.min(5, this.streak)]); sfx.streak(this.streak); } }
     if (away) { const kk = from ? from.kind : 'other'; this.stats.lostToV[kk] = (this.stats.lostToV[kk] || 0) + 1; }
-    if (away) { this.stats.kills++; if (u.kind === 'warden' && fac(SIDE.home) === 0) { this.shake = Math.max(this.shake, v); this.feed('Alpha', 'Warden down! Did everybody see that? I did that.', '', SIDE.home); } else if (from && isUnit(from) && from.team !== u.team && from !== this.me && Math.random() < .12) this.dir.bark(from, 'kill'); if (this.eco && u !== this.me && isFighter(u) && Math.random() < .3) this.dir.bark(u, 'down'); }
+    if (away) { this.stats.kills++; if (unitRule(u.kind).downed?.(this, u, v)) { /* the kind said its own line */ } else if (from && isUnit(from) && from.team !== u.team && from !== this.me && Math.random() < .12) this.dir.bark(from, 'kill'); if (this.eco && u !== this.me && isFighter(u) && Math.random() < .3) this.dir.bark(u, 'down'); }
     else { this.stats.lost++; { const kk = from ? from.kind : 'other'; this.stats.lostTo[kk] = (this.stats.lostTo[kk] || 0) + 1; } if (u !== this.me && isFighter(u) && Math.random() < .35) this.dir.bark(u, 'down'); if (this.eco && from && isUnit(from) && from.team !== u.team && from !== this.me && Math.random() < .12) this.dir.bark(from, 'kill'); }
     if (u.site) u.site.builder = null;
     if (u === this.me) { this.staticT = 1.9; this.feed('Signal', 'Body lost. Finding you a new one.', 'al'); sfx.deny(); drillSound(false, false); }
@@ -1017,7 +1013,7 @@ export class Game {
       for (const b of this.buildings) {
         if (!b.alive || (b.pos.x - c.x) ** 2 + (b.pos.z - c.z) ** 2 > far * 2) continue; const f = fac(b.team), big = Math.max(b.hx, b.hz);
         if (!b.built) { if (f === 0) lamp(b.pos.x, 2.2, b.pos.z, big + 6, WARM, .5); continue; }
-        const at = BLAMP[b.kind];
+        const at = bldRule(b.kind).lamps;
         if (at) for (const [x, y, z, r] of at) { TMP.set(x, y, z).applyMatrix4(b.obj.matrixWorld); lamp(TMP.x, TMP.y, TMP.z, r, WARM, flicker(t, b.id + x, .08)); }
         else if (f === 0) { TMP.set(0, Math.min(3, b.h * .45), (b.rot ? b.hx : b.hz) + 1).applyMatrix4(b.obj.matrixWorld); lamp(TMP.x, TMP.y, TMP.z, big + 8, WARM, flicker(t, b.id, .08)); }
         else lamp(b.pos.x, b.h * .55, b.pos.z, big * 1.3 + 9, f === 1 ? (b.id % 3 ? TEAL : ROSE) : SICK, f === 1 ? .85 + .15 * Math.sin(t * 1.3 + b.id) : .7 + .2 * Math.sin(t * 2.1 + b.id));
@@ -1025,7 +1021,7 @@ export class Game {
         if (f === 0 && b.hp < b.maxHp * .5) lamp(b.pos.x, b.h * .8, b.pos.z, big + 12, FIRE, (b.hp < b.maxHp * .25 ? 1.3 : .7) * flicker(t, b.id * 3, .45));
       }
       for (const u of this.units) {
-        if (!u.alive || u === me || (u.pos.x - c.x) ** 2 + (u.pos.z - c.z) ** 2 > far * .35) continue; const L = ULAMP[u.kind]; if (!L) continue;
+        if (!u.alive || u === me || (u.pos.x - c.x) ** 2 + (u.pos.z - c.z) ** 2 > far * .35) continue; const L = unitRule(u.kind).lamp; if (!L) continue;
         const s = Math.sin(u.obj.rotation.y), q = Math.cos(u.obj.rotation.y); lamp(u.pos.x + s * L[1], L[0], u.pos.z + q * L[1], L[2], L[3], L[4]);
       }
       // what you are driving carries a lamp that lights the ground ahead of it

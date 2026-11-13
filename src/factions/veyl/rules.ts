@@ -5,7 +5,7 @@ import { V3, R, M } from '../../gfx';
 import { sfx } from '../../audio';
 import type { Game } from '../../game';
 import { TMP, r1, beamMat } from '../../game';
-import { UNIT, Unit, Building, isUnit, foeOf, CLEAVE } from '../../data';
+import { UNIT, Unit, Building, isUnit, foeOf, fac, SIDE, CLEAVE } from '../../data';
 import { defineUnits, defineBuildings, defineFaction } from '../../core/registry';
 
 /** First person as a Veyl fighter. */
@@ -132,4 +132,8 @@ defineBuildings({
     b.cd -= dt; if (b.cd <= 0) { b.cd = 1.15; let tgt: Unit | null = null, bd = 21; for (const o of g.units) { if (!o.alive || o.team === b.team) continue; const d = o.pos.distanceTo(b.pos); if (d < bd) { bd = d; tgt = o; } }
       if (tgt) { g.tracer(V3(b.pos.x, 9.6, b.pos.z), V3(tgt.pos.x, 1.1, tgt.pos.z), beamMat, .16); sfx.zap(g.vol(b.pos) * .8); g.damage(tgt, 6 * g.vMul(b.team), b); g.puff(TMP.copy(tgt.pos).setY(1), 2, .5, M.teal, .5); } }
   } },
+});
+
+defineUnits({
+  warden: { steady: true, koWord: 'KRAKA-THOOM!', koStop: .25, downed(g, _u, v) { if (fac(SIDE.home) !== 0) return false; g.shake = Math.max(g.shake, v); g.feed('Alpha', 'Warden down! Did everybody see that? I did that.', '', SIDE.home); return true; } },
 });

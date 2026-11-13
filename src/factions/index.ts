@@ -2,3 +2,6 @@
 import './ironhold/rules';
 import './veyl/rules';
 import './gloam/rules';
+import './ironhold/look';
+import './veyl/look';
+import './gloam/look';

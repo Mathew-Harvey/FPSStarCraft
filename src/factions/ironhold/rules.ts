@@ -167,3 +167,12 @@ defineBuildings({
       if (tgt) { g.tracer(V3(b.pos.x, b.h + .6, b.pos.z), V3(tgt.pos.x, UNIT[tgt.kind].bodyY, tgt.pos.z), tracerMat, .08); sfx.turret(g.vol(b.pos) * .4); g.damage(tgt, 9 * g.gunMul(b.team), b); } else b.cd = .3; }
   } },
 });
+
+defineUnits({
+  // The Breacher's shield faces forward: a braced player takes a quarter and banks Payback, a bot takes a bit over half.
+  breacher: { hurt(g, u, amt, from) { if (!from) return amt; const me = g.me, dx = from.pos.x - u.pos.x, dz = from.pos.z - u.pos.z, d = Math.hypot(dx, dz) || 1; if ((dx * Math.sin(u.yaw) + dz * Math.cos(u.yaw)) / d > .25) { if (u === me && g.brace) { g.payback = Math.min(1, g.payback + amt * .75 / 50); amt *= .25; sfx.clang(); } else if (u.pilot) { if (u.brace) amt *= .25; } else if (u !== me) amt *= .55; } return amt; } },
+  // A Gantry's fuel goes up when it falls.
+  gantry: { steady: true, dying(g, u) { if (g.net) return; u.alive = false; g.explode(V3(u.pos.x, 0, u.pos.z), u.team, 40, 6, null); u.alive = true; } },
+  rigger: { shove: 14 },
+  longshot: { killStop: .12 },
+});

@@ -134,6 +134,9 @@ export function overgrowth2(D: Director, dt: number, V: Side): number {
     const u = g.own(from, T).filter(u => !u.pilot && u !== g.me && !u.target).sort((x, y) => y.hp / y.maxHp - x.hp / x.maxHp)[0];
     if (u && !ripenWhy(g, u) && afford([0, 0], true)) useAbility(g, u, 'ripen');
   }
+  // 6b. A Sower that ripened at home joins the push: ripening keeps the Bloater's old order, which is often 'guard the Cap'.
+  const push = army.find(u => !u.air && (u.order.type === 'raid' || u.order.type === 'amove'));
+  if (push) for (const u of g.own('sower', T)) if (!u.pilot && u !== g.me && u.order.type === 'guard' && !u.target) u.order = { ...push.order };
   // 7. Spore Pods plant their one more pod toward the enemy.
   for (const p of g.ownB('sporepod' as BKind, true, T)) if ((p as any).hops > 0 && g.time - (p as any).bornT > 20) g.buildingAction(p, 'hop'); else if ((p as any).bornT === undefined) (p as any).bornT = g.time;
   // 8. Dig In: Blisters wait under the road as mines (up to four), a step in front of the rally point.

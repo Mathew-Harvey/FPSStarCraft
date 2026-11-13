@@ -245,6 +245,8 @@ function oneMatch(sp: { home: number; out: number; map: number; seed: number; mi
   const T = sp.home === 2 ? SIDE.home : SIDE.out, mine = (t: number) => t === T || (sp.home === 2 && sp.out === 2 && fac(t) === 2), seen = new Map<Unit, string>(), made: Record<string, number> = {}, spend: Record<string, number> = {};
   const note = (u: Unit, from?: string) => { const k = u.kind; made[k] = (made[k] || 0) + 1; const c = costOf(k as Kind), f = from ? costOf(from as Kind) : [0, 0]; spend[k] = (spend[k] || 0) + Math.max(0, c[0] - f[0]) + Math.max(0, c[1] - f[1]); };
   for (const u of g.units) if (mine(u.team)) seen.set(u, u.kind);
+  // Every body counts from the moment it is made, even one that dies before the once-a-second count (a Pup under fire).
+  const spawn0 = g.spawn.bind(g); (g as any).spawn = (...a: Parameters<Game['spawn']>) => { const u = spawn0(...a); if (u && mine(u.team) && fac(u.team) === 2 && !seen.has(u)) { note(u); seen.set(u, u.kind); lastNew = g.time; } return u; };
   let res = 'draw', lastNew = 0, stall = '';
   for (let i = 0; i < sp.mins * 60 * 30; i++) {
     g.update(1 / 30); g.evq!.length = 0;

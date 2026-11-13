@@ -2,7 +2,7 @@
 // dist/index.html is the standalone game. dist/fragment.html is the same page without the
 // document wrapper, for hosts that supply their own.
 import { build } from 'esbuild';
-import { readFileSync, writeFileSync, mkdirSync, readdirSync, rmSync } from 'node:fs';
+import { readFileSync, writeFileSync, mkdirSync, readdirSync, rmSync, existsSync, statSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { deflateRawSync } from 'node:zlib';
 
@@ -42,8 +42,16 @@ function artList() {
   rmSync('dist/art', { recursive: true, force: true }); mkdirSync('dist/art', { recursive: true });
   // A model is published as <kind>.wasm: the artifact service only serves standard web media types and refuses .bin (415), and
   // application/wasm is served byte for byte. The bytes are the deflated model, not WebAssembly.
-  listed = artNames().map(f => { const b = artBytes(f), name = f.replace(/\.bin$/, '.wasm'); writeFileSync('dist/art/' + name, b); return { name, bytes: b.length, v: createHash('sha1').update(b).digest('hex').slice(0, 10) }; });
+  const fac = artFactions();
+  listed = artNames().map(f => { const b = artBytes(f), name = f.replace(/\.bin$/, '.wasm'), kind = name.replace(/\.(wasm|webp)$/, '').replace(/\.(mid|far|wear|top)$/, ''); writeFileSync('dist/art/' + name, b); return { name, bytes: b.length, v: createHash('sha1').update(b).digest('hex').slice(0, 10), f: fac(kind) }; });
   return listed;
+}
+// Which faction's art each kind is: the faction whose code names it ('kind' or kind:), so the page fetches it only for a match with that
+// faction (src/artfiles.ts). A kind named by more than one faction's code, or by none, is shared (-1) and comes with any match.
+function artFactions() {
+  const read = d => existsSync(d) ? (statSync(d).isDirectory() ? readdirSync(d).flatMap(n => read(d + '/' + n)) : d.endsWith('.ts') ? [readFileSync(d, 'utf8')] : []) : [];
+  const src = [read('src/factions/ironhold').concat(read('src/look-ironhold.ts')).join('\n'), read('src/factions/veyl').join('\n'), read('src/factions/gloam').join('\n')];
+  return kind => { const re = new RegExp(`['"]${kind}['"]|\\b${kind}\\s*:`); const hit = src.map((t, i) => re.test(t) ? i : -1).filter(i => i >= 0); return hit.length === 1 ? hit[0] : -1; };
 }
 import { createServer } from 'node:http';
 
@@ -64,6 +72,10 @@ async function bundle(minify) {
   if (INLINE) rmSync('dist/art', { recursive: true, force: true });
   // The match server: the same game code, bundled for Node, with the page beside it.
   await build({ entryPoints: ['server/main.ts'], bundle: true, minify: false, platform: 'node', format: 'esm', target: 'node20', outfile: 'dist/server.mjs', legalComments: 'none', plugins: [sfxBank(true), artModules('none')], banner: { js: "import { createRequire as __cr } from 'node:module'; const require = __cr(import.meta.url);" }, logLevel: 'warning' });
+  // ---- stream K: the replay player (src/replay-worker.ts), a Web Worker the page starts beside itself to play a replay. It is the match
+  // server's code, built the same way (no art, no sound), so a replay rolls the same dice in the page as the match did on the server.
+  // A file of its own, dist/replay-worker.js, so it adds nothing to the page's size; the match server serves it too.
+  await build({ entryPoints: ['src/replay-worker.ts'], bundle: true, minify, format: 'iife', target: 'es2020', outfile: 'dist/replay-worker.js', legalComments: 'none', plugins: [sfxBank(true), artModules('none')], logLevel: 'warning' });
   const art = (listed || []).reduce((s, f) => s + f.bytes, 0);
   return { inl: wrap(inl), side, art, files: (listed || []).length };
 }

@@ -222,7 +222,7 @@ export function applySnap(g: Game, s: any) {
     if (!u) { u = g.spawn(KINDS[r[1]], r[2], r[3], r[4], r[0]); g.uById.set(u.id, u); }
     seen.add(u.id); u.nx = r[3]; u.nz = r[4]; u.maxHp = r[7]; if (g.eco && UNIT[u.kind].shield) u.maxShield = UNIT[u.kind].shield * g.armorMul(u.team);   // Veyl glass upgrades thicken shields too
     if (r[8] < u.shield - 1) g.bubble(u); if (r[6] < u.hp - .5 || r[8] < u.shield - 1) g.fx.remote(u, Math.max(1, u.hp - r[6], u.shield - r[8]), r[8] < u.shield - 1); u.hp = r[6]; u.shield = u.maxShield ? Math.min(r[8], u.maxShield) : r[8]; (u as any).nf = r[9]; u.wind = r[12] / 10;
-    if (u !== g.me) { u.yaw = r[5] / 100; u.pitch = r[11] / 100; u.pilot = r[10]; } else if (r[10] === net.id || s.time > g.possT + 1.5) u.pilot = r[10];
+    if (u !== g.me || net.watch) { u.yaw = r[5] / 100; u.pitch = r[11] / 100; u.pilot = r[10]; } else if (r[10] === net.id || s.time > g.possT + 1.5) u.pilot = r[10];
   }
   // A body that is no longer sent has died, or (an enemy) gone out of sight. A hidden one is dropped entirely, so it can be drawn again when it is next seen.
   for (const u of g.units) if (u.alive && !seen.has(u.id)) { u.alive = false; g.scene.remove(u.obj); if (u === g.me) g.staticT = .2; if (u.team !== g.myTeam) g.uById.delete(u.id); }
@@ -251,6 +251,18 @@ export function applySnap(g: Game, s: any) {
 }
 
 /** Client, every frame: take in what the server sent, ease every other body toward where it should be, and report our own. */
+/** What a watcher is looking through: one player's body (their id), or failing that any body on one side. */
+export interface WatchView { follow: number; team: number }
+/** Puts a watcher's view in the body that the followed player drives. When they have none (dead, waiting for a fresh body) the view stays
+ *  where it is until that body is gone, then takes any body on the same side. */
+function follow(g: Game, w: WatchView) {
+  let u: Unit | undefined = w.follow ? g.units.find(x => x.alive && x.pilot === w.follow) : undefined;
+  if (w.follow && u) w.team = u.team;
+  if (!u && g.me && g.me.alive && g.me.team === w.team) return;
+  if (!u) u = g.units.find(x => x.alive && x.team === w.team && x.pilot) || g.units.find(x => x.alive && x.team === w.team);
+  if (!u || u === g.me) return;
+  const pilot = u.pilot; u.pilot = 0; g.myTeam = u.team; g.possess(u, true); u.pilot = pilot; g.staticT = 0; g.net!.out = [];
+}
 export function netTick(g: Game, dt: number) {
   const net = g.net!;
   for (const m of net.inbox) {
@@ -261,12 +273,13 @@ export function netTick(g: Game, dt: number) {
   net.inbox.length = 0;
   // a body the server has given us and we are not yet driving
   if (net.unit) { const u = g.uById.get(net.unit); if (u && u.alive) { net.unit = 0; u.pilot = net.id; g.staticT = 0; g.jumpCd = 0; const first = !g.me; g.possess(u, true); if (!first) { sfx.jump(); g.pipe.flash = .4; } } }
-  const me = g.me;
-  if (me && me.alive && me.pilot && me.pilot !== net.id && g.staticT <= 0) { g.feed('Signal', 'Someone else got to that body first.', 'al'); g.staticT = .3; }
+  if (net.watch) follow(g, net.watch);
+  const me = g.me, W = !!net.watch;
+  if (!W && me && me.alive && me.pilot && me.pilot !== net.id && g.staticT <= 0) { g.feed('Signal', 'Someone else got to that body first.', 'al'); g.staticT = .3; }
   for (const u of g.units) {
     if (!u.alive) continue; const f = (u as any).nf | 0;
     u.swing = Math.max(0, u.swing - dt * 4); u.flashT -= dt; u.pop = Math.max(0, u.pop - dt * 7);
-    if (u === me) continue;
+    if (u === me && !W) continue;
     const dx = u.nx - u.pos.x, dz = u.nz - u.pos.z, d2 = dx * dx + dz * dz;
     if (d2 > 200) { u.pos.x = u.nx; u.pos.z = u.nz; } else { const k = Math.min(1, dt * 11); u.pos.x += dx * k; u.pos.z += dz * k; }
     u.moving = !!(f & F_MOVE) || d2 > .25; u.target = f & F_TGT ? u : null; u.state = f & F_WORK ? 'mining' : 'idle'; u.brace = !!(f & F_BRACE);
@@ -279,6 +292,8 @@ export function netTick(g: Game, dt: number) {
   for (const b of g.buildings) if (b.alive && b.built && b.team === 0 && b.hp < b.maxHp * .5) { b.smokeT -= dt; if (b.smokeT <= 0) { const bad = b.hp < b.maxHp * .25; b.smokeT = bad ? .18 : .4; g.puff(V3(b.pos.x + R(-b.hx, b.hx) * .6, b.h * R(.6, 1), b.pos.z + R(-b.hz, b.hz) * .6), 1, 1.5, bad && Math.random() < .5 ? M.fire : M.smoke, 2.4, .5); } }
   for (let i = g.pings.length - 1; i >= 0; i--) if ((g.pings[i].t -= dt) <= 0) g.pings.splice(i, 1);
   const D = g.dir; D.raidIn -= dt; for (const S of [D, D.vs] as Side[]) { if (S.callout) S.callout.t -= dt; if (S.plan) S.plan.t -= dt; }
+  // A watcher sends nothing: the view follows a player, and the server would drop anything they sent.
+  if (W) { net.out = []; if (me && me.alive) { const k = Math.min(1, dt * 12); let dy = me.yaw - g.yaw; dy = Math.atan2(Math.sin(dy), Math.cos(dy)); g.yaw += dy * k; g.pitch += (me.pitch - g.pitch) * k; } return; }
   net.sendT -= dt;
   if (net.sendT <= 0) {
     net.sendT = .05;

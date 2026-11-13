@@ -24,6 +24,7 @@
       <div class="cross" id="cross"></div>
       <div class="hitm" id="hitm"></div>
       <div class="prompt" id="prompt" hidden></div>
+      <div class="abil" id="abil" hidden></div>
       <div class="who"><div class="frame"><img id="whoImg" alt=""></div><div class="nm d out" id="whoName">Rigger</div><div class="sub c" id="whoSub">You · Ironhold Charter</div><div class="bar"><i id="whoBar"></i></div><div class="hp out" id="whoHp">45</div></div>
       <div class="hint" id="hint"></div>
       <div class="slots" id="slots"><div><b>1</b><span>Drill</span></div><div><b>2</b><span>Build</span></div></div>
@@ -101,6 +102,7 @@
             <button type="button" data-b="7">Wheel<small>Eight bases round a hub, six left empty to take</small></button>
           </div>
           <div class="diff" id="maker"><button type="button" id="makerBtn">Map maker<small id="makerNote">Lay out your own map and share it as a code</small></button></div>
+          <div class="diff" id="teams" role="group" aria-label="Kind of game" hidden></div>
           <div class="diff" id="sizes" role="group" aria-label="Map size">
             <button type="button" data-s="1">Small<small>Close quarters, three fields</small></button>
             <button type="button" data-s="0">Medium<small>Four ore fields to take</small></button>
@@ -160,7 +162,11 @@
             <button class="go" id="mCreate">Create lobby</button>
             <label>Code <input type="text" id="mCode" maxlength="5" autocomplete="off" spellcheck="false" placeholder="ABCDE" class="code"></label>
             <button type="button" class="mini-btn big" id="mJoinBtn">Join</button>
+            <button type="button" class="mini-btn" id="mWatch">Watch</button>
+            <button type="button" class="mini-btn" id="mReplays">Replays</button>
+            <button type="button" class="mini-btn" id="mRanked">Ranked</button>
           </div>
+          <div id="mRankBox" class="rk" hidden></div>
           <p class="small" id="mErr" role="status"></p>
         </div>
         <div class="brief" id="mLobby" hidden>
@@ -174,10 +180,20 @@
             <div class="diff" id="mHome" role="group" aria-label="Who holds the yard"><button type="button">Yard: Ironhold</button><button type="button">Yard: Veyl</button><button type="button">Yard: Gloam</button></div>
             <div class="diff" id="mFoes" role="group" aria-label="Who holds the outpost"><button type="button">The Veyl</button><button type="button">The Gloam</button><button type="button">Ironhold</button></div>
           </div>
+          <div class="row" id="mTeamRow" hidden>
+            <div class="diff" id="mTeams" role="group" aria-label="Kind of game"></div>
+            <div class="diff" id="mStarts" role="group" aria-label="Your start"></div>
+          </div>
+          <div class="row form" id="mRules">
+            <label>Start ore <select id="mRuleOre"><option value="0">None</option><option value="50">50</option><option value="100">100 (usual)</option><option value="250">250</option><option value="500">500</option><option value="1000">1000</option><option value="2500">2500</option><option value="5000">5000</option></select></label>
+            <label>Start Flux <select id="mRuleFlux"><option value="0">None (usual)</option><option value="50">50</option><option value="100">100</option><option value="250">250</option><option value="500">500</option><option value="1000">1000</option><option value="2000">2000</option></select></label>
+            <label>Game speed <select id="mRuleSpeed"><option value="0.5">Half</option><option value="0.75">Slow</option><option value="1">Normal</option><option value="1.25">Fast</option><option value="1.5">Faster</option><option value="2">Double</option></select></label>
+          </div>
           <div class="row form">
             <button class="go" id="mStart">Clock in</button>
             <button type="button" class="mini-btn big" id="mReady">Ready</button>
             <button type="button" class="mini-btn" id="mSide">Play as the Veyl</button>
+            <button type="button" class="mini-btn" id="mWatchSide">Watch instead</button>
             <button type="button" class="mini-btn" id="mLeave">Leave lobby</button>
           </div>
           <p class="small" id="mErr2" role="status"></p>
@@ -237,6 +253,7 @@
       </div>
       <div id="intel" hidden><h3 class="treeh">What we know about them</h3><div class="intel" id="intelBody"></div></div>
       <h3 class="treeh">Tech tree</h3>
+      <div class="ttabs" id="ttabs"></div>
       <div class="tree" id="tree"></div>
       <p class="small only-keys">Space dash · Tab jump · F jump to target · Q last body · RMB aim, shield, kick or salvo · C grenade, stomp or patch-up · 2 build · E and T train or upgrade · Z yes · C other route · X hold · V follow · H send a scout · Middle click send squad · G Quartermaster</p>
     </div>

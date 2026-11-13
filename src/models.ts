@@ -1,6 +1,7 @@
 // Structures, scenery, first-person view-models and the unit atlas. Everything is sculpted in code
 // (see sculpt.ts and skins.ts) so the whole game ships as code. Models are baked (sibling meshes merged per material) so a unit
 // costs a handful of draw calls, and units are cloned from one prototype per kind.
+import { artBin } from './artfiles';
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { G, M, R, rnd, reseed, mk, beam, setLayer, L_FX, L_VM, holoLine, V3, toonMaterial } from './gfx';
@@ -69,11 +70,12 @@ export function atlasify<T extends THREE.Object3D>(root: T): T {
 
 const MAKERS: Record<string, () => THREE.Group> = { ...NEW, ...GLOAM_UNITS };
 const HEIGHT: Record<string, number> = { tender: 1.9, rigger: 1.55, linesman: 1.6, breacher: 1.8, longshot: 1.6, patch: 1.6, gantry: 3.3, cantor: 2.3, lancer: 2.2, warden: 4.4, ...GLOAM_HEIGHT };
-const protos: Record<string, THREE.Group> = {};
+const protos: Record<string, THREE.Group> = {}, hadArt: Record<string, boolean> = {};
 /** A fresh copy of a unit model. Geometry is shared between copies. */
 export const atlasUsed = () => atlas ? atlas.cells.size : 0;
 export function unit(kind: string): Model {
-  const proto = protos[kind] || (protos[kind] = atlasify(bake(MAKERS[kind]())));
+  // A body made from code while its art was still on the way is made again once the art has come (src/artfiles.ts).
+  const proto = protos[kind] && (hadArt[kind] || !artBin(kind)) ? protos[kind] : (hadArt[kind] = !!artBin(kind), protos[kind] = atlasify(bake(MAKERS[kind]())));
   const obj = proto.clone(true); const f = (n: string) => obj.getObjectByName(n);
   return { obj, rig: { body: f('body')!, head: f('head'), arms: f('arms'), armL: f('armL'), armR: f('armR'), legL: f('legL'), legR: f('legR'), flash: f('flash'), halo: f('halo'), pack: f('pack'), height: HEIGHT[kind] } };
 }

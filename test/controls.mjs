@@ -79,19 +79,20 @@ try {
   r = await p.evaluate(() => { const g = __ore.game, C = g.cmd, bh = g.addBuilding('bunkhouse', 0, 16, 16, true); for (const x of [-34, -42, -50]) g.addBuilding('depot', 0, x, 24, true); g.ore = 2000; look(16, 16); aim(16, 16, 0); click(0); step(1);
     const ids = C.card.map(b => b.id), off = Object.fromEntries(C.card.map(b => [b.id, b.off])); for (let i = 0; i < 6; i++) key('KeyE'); const q = bh.queue.length, full = C.card.find(b => b.id === 'tr:linesman').off;
     const slots = document.querySelectorAll('#cpan .qs:not(.none)').length, before = g.ore; key('Backspace'); const after = g.ore, q2 = bh.queue.length;
-    return { sel: C.selB === bh, ids, off, q, full, slots, refund: after - before, q2 }; });
+    const price = +(/(\d+) ore/.exec(C.card.find(b => b.id === 'tr:linesman').sub) || [0, 0])[1]; return { sel: C.selB === bh, ids, off, q, full, slots, refund: after - before, q2, price }; });
+  const linePrice = r.price;
   check(r.sel && r.ids.includes('tr:linesman') && r.ids.includes('tr:breacher') && r.ids.includes('rally'), `a Bunkhouse picked: the card shows what it trains and a rally point (${r.ids})`);
-  check(/Machine Shop/.test(r.off['tr:breacher']), `a unit that needs another building is greyed and says which ("${r.off['tr:breacher']}")`);
+  check(/Lab Bay/.test(r.off['tr:breacher']), `a unit that needs an add-on or another building is greyed and says which ("${r.off['tr:breacher']}")`);
   check(r.q === 5 && /Queue full/.test(r.full), `the queue holds five, and the sixth press says the queue is full (${r.q}, "${r.full}")`);
   check(r.slots === 5, `the five queued bodies show in the panel (${r.slots})`);
-  check(r.refund === 60 && r.q2 === 4, `Backspace takes the last one off and pays its ore back (${r.refund} ore)`);
+  check(linePrice > 0 && r.refund === linePrice && r.q2 === 4, `Backspace takes the last one off and pays its ore back (${r.refund} ore)`);
   await shot('card-building');
   r = await p.evaluate(() => { const g = __ore.game, C = g.cmd, bh = C.selB; const q0 = bh.queue.length, before = g.ore, el = document.querySelector('#cpan .qs[data-cb="q:1"]'), rc = el.getBoundingClientRect(), R = document.getElementById('hud').getBoundingClientRect(), s = g.hud.scale;
     C.cx = (rc.left + rc.width / 2 - R.left) / s; C.cy = (rc.top + rc.height / 2 - R.top) / s; click(0); return { refund: g.ore - before, q: q0 - bh.queue.length }; });
-  check(r.refund === 60 && r.q === 1, `a click on a queued body in the panel cancels that one (${r.refund} ore back)`);
+  check(r.refund === linePrice && r.q === 1, `a click on a queued body in the panel cancels that one (${r.refund} ore back)`);
   {
     r = await p.evaluate(() => { const g = __ore.game, C = g.cmd, bh = C.selB; g.ore = 0; step(1); const poor = C.card.find(b => b.id === 'tr:linesman').off; const el = document.querySelector('#ccard .cb[data-cb="tr:linesman"]'); return { poor, grey: el && el.classList.contains('off'), txt: el && el.textContent }; });
-    check(/60 ore/.test(r.poor) && r.grey && /60 ore/.test(r.txt), `with no ore the button is greyed and says what it costs ("${r.poor}")`);
+    check(new RegExp(linePrice + ' ore').test(r.poor) && r.grey && new RegExp(linePrice + ' ore').test(r.txt), `with no ore the button is greyed and says what it costs ("${r.poor}")`);
   }
   r = await p.evaluate(() => { const g = __ore.game, C = g.cmd, bh = C.selB; g.ore = 2000; bh.queue.length = 0; look(30, 4); aim(30, 4, 0); click(2); const set = C.rally.get(bh); const u = g.spawn('linesman', 0, bh.pos.x + 1, bh.pos.z + bh.hz + 1.2); step(2); const o = u.order; step(200); return { set: !!set, mine: o.mine, d: Math.hypot(u.pos.x - 30, u.pos.z - 4), lines: C['lines'].visible }; });
   check(r.set && r.mine, 'a right click with a building picked sets its rally point, and a new body from it is sent there');
@@ -129,5 +130,118 @@ try {
   r = await p.evaluate(() => { const g = __ore.game, C = g.cmd, hf = g.ownB('headframe')[0]; look(hf.pos.x, hf.pos.z); step(2); return [...document.querySelectorAll('#anchors .lab .sat')].map(e => e.textContent); });
   check(r.some(t => /Workers \d+\/\d+/.test(t)), `from above each base says how many workers it has against what its seams want (${r[0]})`);
   await shot('hud-bases');
+
+  // ---- page three: the tech tree screen, touch and controller into the command view and card
+  await p.close(); p = await open();
+  r = await p.evaluate(() => { const g = __ore.game; key('KeyN'); step(20); g.phase = 'play'; __ore.pause();
+    const q = s => [...document.querySelectorAll(s)], names = () => q('#tree .node h4').map(e => e.textContent);
+    const own = { shown: !document.getElementById('pause').hidden, names: names(), tabs: q('#ttabs .ttab').map(e => e.textContent), rows: q('#tree .tier').length, have: q('#tree .node.have h4').map(e => e.textContent), text: document.getElementById('tree').textContent };
+    q('#ttabs [data-f="1"]')[0].click(); const veyl = names(); q('#ttabs [data-f="2"]')[0].click(); const gloam = { names: names(), marks: q('#tree .node.have').length };
+    __ore.resume(); g.phase = 'play'; return { own, veyl, gloam, want: [...new Set(['headframe', ...g.dir ? [] : [], ...window.__ore.MAP ? [] : []])] }; });
+  check(r.own.shown && r.own.tabs[0] === 'Ironhold (you)' && r.own.tabs.length === 3, `the pause screen has a tech tree with a tab for each faction (${r.own.tabs.join(', ')})`);
+  check(r.own.names[0] === 'Headframe' && r.own.rows >= 4 && r.own.names.includes('Signal Mast'), `the player's own tree starts at the main building and runs in rows by what each building needs (${r.own.rows} rows: ${r.own.names.join(', ')})`);
+  check(r.own.have.includes('Headframe') && /Linesman\s*\d+ ore · 1 supply/.test(r.own.text) && /· Needs [A-Z]/.test(r.own.text), 'it marks what is standing, and lists each unit with its price, supply and what it needs');
+  check(r.veyl.includes('Choir Stone') && r.gloam.names.includes('Mother Cap') && r.gloam.marks === 0, `the other factions' trees can be read too, with nothing marked as ours (${r.veyl.length} Veyl, ${r.gloam.names.length} Gloam buildings)`);
+  await p.evaluate(() => { __ore.game.phase = 'play'; __ore.pause(); });
+  await shot('tech-tree');
+  await p.evaluate(() => { __ore.resume(); __ore.game.phase = 'play';
+    { const g = __ore.game; g.supplyCap = () => 60; }   // room to train: the six extra fighters fill the starting beds
+    // The touch layer: switched on as on a phone, with its per-frame work run by the test between steps.
+    const T = __ore.touch, tf = T.frame.bind(T); T.frame = () => {}; window.tframe = () => tf(); __ore.setTouch(true); __ore.setFree(true); window.dispatchEvent(new Event('resize'));
+    const el = document.getElementById('touch'); let id = 1;
+    window.tdown = (x, y) => { const i = id++; el.dispatchEvent(new PointerEvent('pointerdown', { pointerId: i, clientX: x, clientY: y, bubbles: true })); return i; };
+    window.tmove = (i, x, y) => el.dispatchEvent(new PointerEvent('pointermove', { pointerId: i, clientX: x, clientY: y, bubbles: true }));
+    window.tup = (i, x, y) => el.dispatchEvent(new PointerEvent('pointerup', { pointerId: i, clientX: x, clientY: y, bubbles: true }));
+    window.ttap = (x, y) => { const i = tdown(x, y); tup(i, x, y); tframe(); step(1); tframe(); step(1); tframe(); step(1); };
+    window.tbtn = b => { const e = document.querySelector(`#touch [data-b="${b}"]`), r = e.getBoundingClientRect(), i = id++; e.dispatchEvent(new PointerEvent('pointerdown', { pointerId: i, clientX: r.x + r.width / 2, clientY: r.y + r.height / 2, bubbles: true })); el.dispatchEvent(new PointerEvent('pointerup', { pointerId: i, clientX: r.x + 2, clientY: r.y + 2, bubbles: true })); tframe(); step(1); tframe(); };
+    window.page = (hx, hy) => { const R = document.getElementById('hud').getBoundingClientRect(), k = __ore.game.hud.scale; return [R.left + hx * k, R.top + hy * k]; };
+    window.unitAt = u => { const C = __ore.game.cmd, s = [0, 0]; C.screen(u.pos.x, 1, u.pos.z, s); return page(s[0], s[1]); };
+    tframe(); step(2); tframe(); });
+  r = await p.evaluate(() => { const g = __ore.game, C = g.cmd, up = document.querySelector('#touch [data-b="up"]'); const was = C.on, seen = !up.hidden && up.textContent; tbtn('up'); step(25); tframe(); return { was, seen, on: C.on, label: up.textContent }; });
+  check(!r.was && r.seen === 'Above' && r.on && r.label === 'Down', `on a touch screen an "Above" button lifts the player into the command view, and turns into "Down" (${r.seen} → ${r.label})`);
+  r = await p.evaluate(() => { const g = __ore.game, C = g.cmd, u = g.own('linesman')[0]; look(u.pos.x, u.pos.z); C.sel.clear(); step(1); const [x, y] = unitAt(u); ttap(x, y); return C.sel.has(u) && C.sel.size === 1; });
+  check(r, 'a tap on a body picks it');
+  r = await p.evaluate(() => { const g = __ore.game, C = g.cmd, u = [...C.sel][0], f0 = C.focus.clone(); const [x, y] = page(g.hud.W * .5, g.hud.H * .5); const i = tdown(x, y); for (let k = 1; k <= 6; k++) { tmove(i, x - k * 25, y); step(1); } tup(i, x - 150, y); tframe(); step(1); tframe(); step(1); return { moved: Math.hypot(C.focus.x - f0.x, C.focus.z - f0.z), kept: C.sel.has(u) && C.sel.size === 1 }; });
+  check(r.moved > 3 && r.kept, `a one-finger drag slides the ground (${r.moved.toFixed(1)} m) and does not change the pick`);
+  r = await p.evaluate(() => { const g = __ore.game, C = g.cmd, u = [...C.sel][0]; look(u.pos.x, u.pos.z); tbtn('corder'); const lit = document.querySelector('#touch [data-b="corder"]').classList.contains('on'); const [x, y] = page(g.hud.W * .7, g.hud.H * .45); ttap(x, y); return { lit, mine: !!u.order.mine, ty: u.order.type }; });
+  check(r.lit && r.mine && r.ty === 'amove', `with Order lit, a tap on the ground orders the picked bodies there (${r.ty})`);
+  r = await p.evaluate(() => { const g = __ore.game, C = g.cmd; tbtn('corder'); const hf = g.ownB('headframe')[0]; C.sel.clear(); C.selB = hf; look(hf.pos.x, hf.pos.z); step(1); tframe(); const e = document.querySelector('#ccard [data-cb^="tr:"]'), r = e.getBoundingClientRect(), n = hf.queue.length; ttap(r.x + r.width / 2, r.y + r.height / 2); return { n0: n, n1: hf.queue.length, id: e.dataset.cb }; });
+  check(r.n1 === r.n0 + 1, `a tap on a card button presses it (${r.id}: queue ${r.n0} → ${r.n1})`);
+  await p.evaluate(() => { tframe(); step(1); });   // a capture after hand-stepped frames is sometimes black: one more frame
+  await shot('touch-command');
+  r = await p.evaluate(() => { const g = __ore.game, C = g.cmd; C.zt = .5; C.z = .5; step(1); const z0 = C.zt, [x, y] = page(g.hud.W * .5, g.hud.H * .5); const a = tdown(x - 40, y), b2 = tdown(x + 40, y); for (let k = 1; k <= 2; k++) { tmove(a, x - 40 - k * 30, y); tmove(b2, x + 40 + k * 30, y); step(1); } tup(a, x - 100, y); tup(b2, x + 100, y); tframe(); step(1); return { z0, z1: C.zt, on: C.on }; });
+  check(r.z1 < r.z0 && r.on, `two fingers spread apart zoom in (${r.z0.toFixed(2)} → ${r.z1.toFixed(2)})`);
+  await p.evaluate(() => { __ore.setTouch(false); __ore.setFree(true); window.dispatchEvent(new Event('resize')); tframe(); step(1); });
+
+  // ---- a controller: a fake pad, driven through the same code the page polls
+  await p.evaluate(() => { window.pad = { connected: true, buttons: Array.from({ length: 17 }, () => ({ pressed: false, value: 0 })), axes: [0, 0, 0, 0] };
+    window.pbtn = (i, on) => { pad.buttons[i] = { pressed: on, value: on ? 1 : 0 }; };
+    window.pdrive = () => { __ore.padDrive(pad); step(1); };
+    window.ptap = i => { pbtn(i, true); pdrive(); pbtn(i, false); pdrive(); };
+    const g = __ore.game; if (g.cmd.on) { key('KeyN'); step(25); } g.phase = 'play'; });
+  r = await p.evaluate(() => { pbtn(8, true); pdrive(); return __ore.game.cmd.on; });
+  r = await p.evaluate(was => { for (let i = 0; i < 14; i++) __ore.padDrive(pad); step(25); const on = __ore.game.cmd.on; pbtn(8, false); pdrive(); step(2); return { was, on, still: __ore.game.cmd.on }; }, r);
+  check(!r.was && r.on && r.still, 'holding View on a controller lifts the player into the command view (a short press still calls the squad)');
+  r = await p.evaluate(() => { const g = __ore.game, C = g.cmd, z0 = C.zt; ptap(12); return { z0, z1: C.zt }; });
+  check(r.z1 < r.z0, `D-pad up zooms in from above (${r.z0.toFixed(2)} → ${r.z1.toFixed(2)})`);
+  r = await p.evaluate(() => { const g = __ore.game, C = g.cmd, hf = g.ownB('headframe')[0]; C.sel.clear(); C.selB = hf; step(1); C.padFocus = -1; ptap(15); const f = C.padFocus, lit = document.querySelector('#ccard .cb.pf')?.dataset.cb; const n = hf.queue.length; ptap(0); return { f, lit, n0: n, n1: hf.queue.length }; });
+  check(r.f === 0 && r.lit === 'tr:rigger' && r.n1 === r.n0 + 1, `D-pad right steps onto the card (outlined: ${r.lit}) and A presses it (queue ${r.n0} → ${r.n1})`);
+  r = await p.evaluate(() => { const g = __ore.game, C = g.cmd; C.selB = null; step(1); ptap(3); const army = C.sel.size; ptap(8); step(25); return { army, on: C.on }; });
+  check(r.army >= 5 && !r.on, `Y picks the whole army (${r.army}) and a tap of View drops back into the body`);
+
+  // ---- page four: abilities, building commands and status on the card and HUD (test-only content where the factions have none yet)
+  await p.close(); p = await open();
+  await p.evaluate(() => { const R = __ore.reg, g = __ore.game;
+    R.defineAbilities('longshot', [{ key: 'flare', name: 'Test Flare', hotkey: 'E', energy: 25, cd: 10, cast: 0, range: 30, target: 'point', blurb: 'test only', effect: (g, u, t) => { window.flared = (window.flared || []).concat([[u.id, t.x, t.z]]); } }]);
+    R.defineAbilities('linesman', [{ key: 'brace', name: 'Test Brace', hotkey: 'C', energy: 0, cd: 8, cast: 0, range: 0, target: 'self', effect: (g, u) => { window.braced = (window.braced || []).concat([u.id]); } }]);
+    R.defineBuildings({ headframe: { actions: (g, b) => [{ key: 'horn', name: 'Test Horn', hotkey: 'N', cost: [30, 0], blurb: 'test only', ok: () => window.hornBlock || '', run: () => { window.horned = (window.horned || 0) + 1; } }] } });
+    for (let i = 0; i < 2; i++) { const u = g.spawn('longshot', 0, 4 + i * 2, 18); u.maxEnergy = 100; u.energy = 30 - i * 20; }
+    step(2); });
+  r = await p.evaluate(() => { const g = __ore.game, C = g.cmd, ls = g.own('linesman').filter(u => !u.pilot).slice(0, 4); pickAll(ls); const b = C.card.find(x => x.id === 'ab:linesman:brace'); key(b.key); return { key: b.key, n: (window.braced || []).length, cds: ls.map(u => +(u.abCd?.brace || 0).toFixed(1)) }; });
+  check(r.n === 4 && r.cds.every(c => c > 7), `a self ability on the card goes off on every picked body of that kind (${r.key}: ${r.n} braced)`);
+  r = await p.evaluate(() => { const g = __ore.game, C = g.cmd; step(1); const b = C.card.find(x => x.id === 'ab:linesman:brace'); return b.off; });
+  check(/^Ready in \d+ s$/.test(r), `while it recharges the button is greyed with the wait ("${r}")`);
+  r = await p.evaluate(() => { const g = __ore.game, C = g.cmd, ls = g.own('longshot').slice(-2); pickAll(ls); const b = C.card.find(x => x.id === 'ab:longshot:flare'); key(b.key); const lit = C.aim && C.aim.k === 'ab';
+    const far = ls[0], tx = far.pos.x + 6, tz = far.pos.z - 6; look(tx, tz); aim(tx, tz, 0); click(0); return { lit, sub: b.sub, f: window.flared || [], who: [ls[0].id, ls[1].id], e: ls.map(u => Math.round(u.energy)) }; });
+  check(r.lit && r.f.length === 1 && r.f[0][0] === r.who[0], `an aimed ability waits for a click, then only one caster goes: the one with the energy (${r.sub}; energy now ${r.e.join(', ')})`);
+  r = await p.evaluate(() => { const g = __ore.game, C = g.cmd, ls = g.own('longshot').slice(-2); pickAll(ls); const b = C.card.find(x => x.id === 'ab:longshot:flare'); return b.off; });
+  check(/^Needs 25 energy/.test(r), `with no picked body able to pay, the button says how much energy it needs ("${r}")`);
+  r = await p.evaluate(() => { const g = __ore.game, C = g.cmd, hf = g.ownB('headframe')[0]; C.sel.clear(); C.selB = hf; C.menu = ''; C.aim = null; step(1); const b = C.card.find(x => x.id === 'ba:horn'); const o0 = g.purse[0]; key(b.key); const ok = { n: window.horned || 0, paid: o0 - g.purse[0] }; window.hornBlock = 'Not now.'; step(1); const b2 = C.card.find(x => x.id === 'ba:horn'); key(b2.key); window.hornBlock = ''; return { label: b.label, ...ok, off: b2.off, n2: window.horned || 0 }; });
+  check(r.n === 1 && r.paid === 30 && r.off === 'Not now' && r.n2 === 1, `a building's own commands are on its card, paid for, and greyed with their reason ("${r.label}", then "${r.off}")`);
+  r = await p.evaluate(() => { const g = __ore.game, C = g.cmd, u = g.own('linesman')[0]; C.selB = null; pickAll([u]); u.status = [{ k: 'slow', t: 5 }, { k: 'shielded', t: 5 }]; look(u.pos.x, u.pos.z); step(2); const t = [...document.querySelectorAll('#anchors .st')].filter(e => !e.hidden).map(e => e.textContent); u.status = []; return t; });
+  check(r.includes('Slowed +1'), `a body under a status shows it over its head in plain words (${r.join(', ')})`);
+  await p.evaluate(() => { const u = __ore.game.own('linesman')[0]; u.status = [{ k: 'slow', t: 5 }]; step(2); });
+  await shot('card-abilities');
+  r = await p.evaluate(() => { const g = __ore.game, C = g.cmd, u = g.own('longshot').slice(-1)[0]; pickAll([u]); key('KeyF'); step(30); u.energy = 5; step(3); if (g.me !== u) return { shown: false, text: 'not driving it' }; const e = document.getElementById('abil'); return { shown: !e.hidden, text: e.textContent }; });
+  check(r.shown && /Test Flare/.test(r.text) && /Needs 25 energy/.test(r.text), `in first person the driven body's abilities sit over its name with key, cost and what stops them ("${r.text}")`);
+  await shot('fp-abilities');
+
+  // ---- page five: a team game from the skirmish menu, and allies drawn as allies
+  await p.close();
+  p = await b.newPage({ viewport: { width: 1280, height: 720 } }); p.setDefaultTimeout(300000);
+  p.on('pageerror', e => { console.log('[pageerror]', e.message.slice(0, 400)); fail.push('page error'); });
+  await p.goto(page); await p.waitForFunction('window.__ore && __ore.game');
+  r = await p.evaluate(() => { __ore.setFree(true); const q = s => [...document.querySelectorAll(s)];
+    const before = document.getElementById('teams').hidden; __ore.pickMap(6); const row = document.getElementById('teams'), names = q('#teams button').map(b => b.firstChild.textContent);
+    q('#teams button')[1].click(); document.querySelectorAll('#diff button')[0].click(); __ore.start(); __ore.hold(true);
+    const g = __ore.game, me = g.myTeam, teams = [...new Set(g.units.map(u => u.team))];
+    return { before, shown: !row.hidden, names, teams, me, on: row.querySelector('.on')?.firstChild.textContent }; });
+  check(r.before && r.shown && r.names.join(',') === '1v1,2v2,Free for all', `on a four-start map the menu offers the kinds of game from the team layouts (${r.names.join(', ')})`);
+  check(r.on === '2v2' && r.teams.length === 4, `picking 2v2 starts a match with four sides (${r.teams.join(', ')})`);
+  r = await p.evaluate(() => { const g = __ore.game; g.introT = 0; g.truce = true; g.dir.raidIn = 9999;
+    const real = g.update.bind(g); let stepping = false; g.update = dt => { if (stepping) real(dt); };
+    window.step = n => { stepping = true; for (let i = 0; i < n; i++) { if (g.phase === 'card') g.phase = 'play'; g.noRender = i < n - 1; g.update(1 / 30); } g.noRender = false; stepping = false; };
+    step(5); const F = __ore.reg.isFriend, friends = [...new Set(g.units.filter(u => u.team !== g.myTeam && F(u.team, g.myTeam)).map(u => u.team))];
+    return { friends }; });
+  check(r.friends.length === 1, `in 2v2 the player has one allied side (${r.friends.join(', ')})`);
+  r = await p.evaluate(() => { const g = __ore.game, me = g.me, mine = g.myTeam;
+    const ally = g.units.find(u => u.alive && u.team !== mine && __ore.reg.isFriend(u.team, mine));
+    if (!ally) return { ally: false };
+    g.pressed.add('KeyN'); step(30); const C = g.cmd; C.focus.set(ally.pos.x, 0, ally.pos.z); ally.hp = ally.maxHp * .5; step(3);
+    const bars = [...document.querySelectorAll('#anchors .hb.f')].filter(e => !e.hidden).length, sp = [0, 0]; C.screen(ally.pos.x, 1, ally.pos.z, sp); C.cx = sp[0]; C.cy = sp[1]; step(1);
+    const asFoe = C.unitAt(false) === ally, shown = ally.obj.visible; return { ally: true, bars, team: ally.team, asFoe, shown, on: C.on }; });
+  check(r.ally && r.on && r.bars >= 1 && r.shown && !r.asFoe, `from above an ally is always shown, its health bar has its own colour, and a click on it is not an attack (team ${r.team}, ${r.bars} ally bars)`);
+  await p.evaluate(() => step(1));
+  await shot('team-game');
 } finally { await b.close(); }
 console.log(fail.length ? `\n${fail.length} FAILED` : '\nall passed'); process.exit(fail.length ? 1 : 0);

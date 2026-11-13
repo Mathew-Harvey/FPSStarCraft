@@ -7,10 +7,20 @@ export class Net {
   ws: WebSocket | null = null; id = 0; unit = 0; lobby: Lobby | null = null; open = false;
   /** Snapshots and other in-match messages wait here until the game loop is ready for them. */
   inbox: any[] = []; out: any[][] = []; sendT = 0; lastSnap = 0;
+  /** Set when this connection watches instead of playing: whose body the view follows (see follow in src/netgame.ts). */
+  watch: { follow: number; team: number } | null = null;
+  /** The name the server kept the last match under, as a replay ('' when it was too short to keep). */
+  replay = '';
+  /** How fast the match runs, from the lobby rules (1 is normal). The page's clock runs this much faster too. */
+  speed = 1;
+  /** The rating change from the last ranked match, if it was one: before and after (see server/ranked.ts). */
+  rank: { before: number; after: number; delta: number; provisional: boolean } | null = null;
   onLobby: (l: Lobby) => void = () => { /* set by the menu */ };
   onBegin: (m: { out?: number; plan?: string; map: number; diff: number; unit: number; names: Record<number, string>; ph?: number[][]; team?: number; teams?: Record<number, number>; eco?: number; /** A team game or free-for-all (see TeamPlan in src/core/sides.ts). */ mt?: TeamPlan | null }) => void = () => { /* set by the menu */ };
   onError: (msg: string) => void = () => { /* set by the menu */ };
   onClose: () => void = () => { /* set by the menu */ };
+  /** Any other message from the server (the ranked queue's, see src/ranked.ts). */
+  onOther: (m: any) => void = () => { /* set by the ranked panel */ };
 
   connect(url: string) {
     return new Promise<void>((res, rej) => {
@@ -22,13 +32,18 @@ export class Net {
       ws.onclose = () => { const was = this.open; this.open = false; if (was) this.onClose(); };
       ws.onmessage = e => {
         let m: any; try { m = JSON.parse(String(e.data)); } catch (x) { return; }
-        if (m.t === 's' || m.t === 'yo' || m.t === 'over') { if (m.t === 's') this.lastSnap = performance.now(); this.inbox.push(m); if (this.inbox.length > 600) this.squash(); }
+        if (m.t === 's' || m.t === 'yo' || m.t === 'over') this.take(m);
         else if (m.t === 'lobby') { this.lobby = m; this.id = m.you; this.onLobby(m); }
-        else if (m.t === 'begin') { this.unit = m.unit; this.inbox = []; this.out = []; this.onBegin(m); }
+        else if (m.t === 'begin') this.begin(m);
         else if (m.t === 'err') this.onError(m.msg);
+        else this.onOther(m);
       };
     });
   }
+  /** A match starts (or is joined). A watcher starts by following the first player on the list. */
+  begin(m: any) { this.replay = ''; this.rank = null; this.speed = m.speed > 0 ? +m.speed : 1; this.unit = m.unit; this.inbox = []; this.out = []; this.watch = m.watch ? { follow: +(Object.keys(m.names || {})[0] || 0), team: 0 } : null; this.onBegin(m); }
+  /** A message from wherever the match runs: the server, or a replay playing in this page. */
+  take(m: any) { if (m.t === 'over') { this.replay = m.replay || ''; this.rank = m.rank || null; } if (m.t === 's' || m.t === 'yo' || m.t === 'over') { if (m.t === 's') this.lastSnap = performance.now(); this.inbox.push(m); if (this.inbox.length > 600) this.squash(); } else if (m.t === 'begin') this.begin(m); }
   /** Nobody is reading the mail (a hidden tab, say). Fold the oldest world picture into the next one, keeping its events, so the pile stays small. */
   squash() { const i = this.inbox.findIndex(x => x.t === 's'), j = this.inbox.findIndex((x, k) => k > i && x.t === 's'); if (i < 0 || j < 0) return; this.inbox[j].e = this.inbox[i].e.concat(this.inbox[j].e); this.inbox.splice(i, 1); }
   send(o: any) { if (this.ws && this.ws.readyState === 1) this.ws.send(JSON.stringify(o)); }

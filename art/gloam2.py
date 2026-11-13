@@ -17,7 +17,7 @@ sys.path.insert(0, __file__.rsplit('/', 1)[0])
 from kit import sdf as S, build as B, gloam as G
 from kit.sdf import V, rot
 
-KINDS = ('keeper', 'shellback', 'lobber', 'needler', 'digmound', 'smother', 'seeder', 'husk', 'pup', 'gnatwing', 'bloater', 'sower', 'hooksail', 'drifter')
+KINDS = ('keeper', 'shellback', 'lobber', 'needler', 'digmound', 'smother', 'seeder', 'husk', 'pup', 'gnatwing', 'bloater', 'sower', 'hooksail', 'drifter', 'lookoutsac', 'stingerwalk', 'puffwalk')
 KIND = next((a for a in sys.argv[1:] if a in KINDS), 'keeper')
 PI = np.pi
 
@@ -558,8 +558,10 @@ def build_drifter():
     bulb = S.union(bulb, S.ellipsoid(C + V(0, -1.15, 0), (.9, .6, .9)), k=.4)
     bulb = S.bump(bulb, lambda p: .06 * np.clip(np.cos(np.arctan2(p[..., 0], p[..., 2]) * 6) * 3 - 2.2, 0, 1) + .04 * (S.noise(p, 2, 141.1) - .5))
     fig.add('bulb', 'halo', 'gH', G.hide(bulb, 141.4, .04, 3, .01), 3000, voxel=.01, uv=('cyl', C))
-    ribs = [S.chain(S.bez(C + V(np.cos(a) * .3, 1.62, np.sin(a) * .3), C + V(np.cos(a) * 1.9, .4, np.sin(a) * 1.8), C + V(np.cos(a) * .9, -1.5, np.sin(a) * .9), 8), .08) for a in np.linspace(0, 2 * PI, 7)[:-1]]
-    fig.add('ribs', 'halo', 'gB', S.union(*ribs), 1400, voxel=.008)
+    ribs = [S.chain(S.bez(C + V(np.cos(a) * .3, 1.62, np.sin(a) * .3), C + V(np.cos(a) * 1.95, .4, np.sin(a) * 1.85), C + V(np.cos(a) * .9, -1.5, np.sin(a) * .9), 8), .13) for a in np.linspace(0, 2 * PI, 7)[:-1]]
+    fig.add('ribs', 'halo', 'gB', S.union(*ribs), 1400, voxel=.008)                                                   # bold bone hoops, so it reads as a Spore Sac at a glance
+    belly = S.both(S.shell(S.ellipsoid(C, (1.74, 1.69, 1.64)), .05), S.below(C[1] - .55))
+    fig.add('belly', 'halo', 'gV', S.bump(belly, lambda p: .03 * np.sin(p[..., 1] * 18)), 900, voxel=.008, uv=('cyl', C))   # the pale underside, wrinkled where it tore from the ground
     vents, glows = [], []
     for a in np.linspace(0, 2 * PI, 6)[:-1] + .3:
         q = C + V(np.cos(a) * .7, 1.45, np.sin(a) * .7)
@@ -576,8 +578,77 @@ def build_drifter():
     return fig, (0, 0, .6, 6.2)
 
 
+def build_lookoutsac():
+    """A Drifter ripened into a watcher: the same floating bulb, but a long eye stalk has grown up out of its crown with a cluster of
+    eyes at the top, a ring of smaller eyes round its middle looks every way, and a lime lantern hangs under it on a root."""
+    fig, _ = build_drifter()
+    fig.name = 'lookoutsac'
+    fig.hi = (2.8, 6.2, 2.8)
+    fig.parts = [p for p in fig.parts if p.name not in ('vents', 'ventglow')]
+    C = V(0, 1.2, 0)
+    fig.group('head', (0, 2.9, 0), 'body')
+    st = S.chain(S.bez(C + V(0, 1.4, 0), C + V(.3, 2.8, .1), C + V(0, 4.0, .3), 10), list(np.linspace(.32, .16, 11)))
+    fig.add('stalk', 'head', 'gH', G.hide(st, 151.1, .02, 6, .006), 1000, voxel=.007, uv=('cyl',))
+    fig.add('stalkrings', 'head', 'gB', S.union(*[S.torus(C + V(.05 + k * .04, 2.0 + k * .6, .05 + k * .05), .26 - k * .03, .05) for k in range(4)]), 500, voxel=.006)
+    E = C + V(0, 4.2, .35)
+    knob = S.ellipsoid(E, (.6, .5, .55))
+    eyes = [E + V(np.cos(a) * .48, .1 + .2 * np.sin(a * 2), np.sin(a) * .45 + .1) for a in np.linspace(0, 2 * PI, 6)[:-1] + .4]
+    knob = S.cut(knob, *[S.sphere(e, .2) for e in eyes], k=.03)
+    fig.add('knob', 'head', 'gD', knob, 900, voxel=.006, uv=('top',))
+    fig.add('eyes', 'head', 'gEye', S.union(*[S.sphere(e - (e - E) * .1, .19) for e in eyes], S.sphere(E + V(0, .1, .52), .26)), 600, voxel=.005)
+    ring = [C + V(np.cos(a) * 1.62, .05, np.sin(a) * 1.55) for a in np.linspace(0, 2 * PI, 9)[:-1] + .2]
+    fig.add('lids', 'halo', 'gD', S.union(*[S.ellipsoid(e, (.24, .2, .24)) for e in ring]), 700, voxel=.006, uv=('top',))
+    fig.add('ringeyes', 'halo', 'gEye', S.union(*[S.sphere(e + (e - C) * .06, .15) for e in ring]), 500, voxel=.005)
+    lan = C + V(0, -2.6, 0)
+    fig.add('lantern', 'arms', 'gS', S.union(S.ellipsoid(lan, (.32, .42, .32)), S.chain([C + V(0, -1.6, 0), lan + V(0, .4, 0)], [.05, .04])), 300, voxel=.006, glow=.6)
+    fig.lo = (-2.8, -3.2, -2.8)
+    return fig, (0, 0, 1.4, 9.0)
+
+
+def walker(make, name, lift, legs, r, paint=1024, brush=1.6, drop_parts=('bed', 'roots')):
+    """A growth that has pulled up its roots and walks: the growth built as usual, minus its bed of moss and its roots, lifted
+    by `lift` and stood on bug legs (`legs` as G.add_legs takes them, hips at height `lift`)."""
+    from kit import site
+    import growths, growths2
+    real = site.building
+    fig = B.Figure(name, lo=(-3, -.2, -3), hi=(3, 10, 3), paint=paint, brush=brush)
+    site.building = lambda *a, **k: fig
+    growths.site.building = growths2.site.building = site.building
+    try:
+        make(fig) if make.__code__.co_argcount else make()
+    finally:
+        site.building = growths.site.building = growths2.site.building = real
+    fig.name = name
+    fig.parts = [p for p in fig.parts if p.name not in drop_parts]
+    d = V(0, lift, 0)
+    for p in fig.parts:
+        p.fn = (lambda f: (lambda q: f(q - d)))(p.fn)
+        if p.lo is not None: p.lo = tuple(np.asarray(p.lo) + d)
+        if p.hi is not None: p.hi = tuple(np.asarray(p.hi) + d)
+    for g in fig.groups.values():
+        g['pivot'] = [g['pivot'][0], g['pivot'][1] + lift, g['pivot'][2]]
+    G.add_legs(fig, legs, r, lift, thorn=.25)
+    return fig
+
+
+def build_stingerwalk():
+    """A Stinger Stalk uprooted: it stands on six hooked legs where its roots were, the stalk swaying above."""
+    import growths
+    fig = walker(growths.stinger, 'stingerwalk', 1.3, [(.5, 1.3, .4, .45), (0, 1.45, 0, .5), (-.5, 1.3, -.4, .45)], .12)
+    fig.hi = (3, 10.4, 3)
+    return fig, (0, 0, 4.8, 11)
+
+
+def build_puffwalk():
+    """A Puffball uprooted: the stalk and ball on six thin legs."""
+    import growths2
+    fig = B.Figure('puffwalk', lo=(-3, -.2, -3), hi=(3, 7.4, 3), paint=1024, brush=1.6)
+    growths2.puffball_parts(fig, legs=True)
+    return fig, (0, 0, 3.4, 8)
+
+
 if __name__ == '__main__':
-    fig, look_at = {'keeper': build_keeper, 'shellback': build_shellback, 'lobber': build_lobber, 'needler': build_needler, 'digmound': build_digmound, 'smother': build_smother, 'seeder': build_seeder, 'husk': build_husk, 'pup': build_pup, 'gnatwing': build_gnatwing, 'bloater': build_bloater, 'sower': build_sower, 'hooksail': build_hooksail, 'drifter': build_drifter}[KIND]()
+    fig, look_at = {'keeper': build_keeper, 'shellback': build_shellback, 'lobber': build_lobber, 'needler': build_needler, 'digmound': build_digmound, 'smother': build_smother, 'seeder': build_seeder, 'husk': build_husk, 'pup': build_pup, 'gnatwing': build_gnatwing, 'bloater': build_bloater, 'sower': build_sower, 'hooksail': build_hooksail, 'drifter': build_drifter, 'lookoutsac': build_lookoutsac, 'stingerwalk': build_stingerwalk, 'puffwalk': build_puffwalk}[KIND]()
     args = [a for a in sys.argv[1:] if a != KIND]
     png = args[0] if args and args[0].endswith('.png') else None
     only = [a for a in args if not a.endswith('.png')]

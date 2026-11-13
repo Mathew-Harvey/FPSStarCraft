@@ -18,7 +18,7 @@ import { unitRule, bldRule, factionRule, DEFAULTS, HIT_FILTERS, type Hit } from 
 import './factions';
 import { plainBody } from './core/plain';
 import { Stance } from './stance';
-import { levelMul, armourHit, canHit, LEVELS, catOf } from './core/combat';
+import { levelMul, armourHit, canHit, LEVELS, catOf, inCat } from './core/combat';
 import { tickStatus, statusPace, canAct, soak, hasStatus } from './core/status';
 import { initEnergy, tickAbilities, useAbility, type Target } from './core/ability';
 import { initAir, tickAir, airCollide, sameLayer, flyKeys } from './core/air';
@@ -674,7 +674,7 @@ export class Game {
     if (!canPay(this, t, costOf(key))) { if (manual) { sfx.deny(); this.feed(v, `${u.name} is ${u.cost} ore${u.flux ? ` and ${u.flux} Flux` : ''}. ${fac(t) === 2 ? 'Chew some more.' : fac(t) ? 'Hum some more.' : 'Keep digging.'}`, 'al', t); } return false; }
     pay(this, t, costOf(key)); this.upOf(t)[key] = true; sfx.built();
     // An armour level (percent mode) thickens every body the side already has, by that level's share.
-    const plate = u.line === 'arm' && u.lvl && LEVELS.mode === 'percent' ? u.pct ?? LEVELS.pct[u.lvl - 1] : 0; if (key === 'gbloom') this.carpet.deepen(t); if (plate) for (const x of this.own(undefined, t)) { if (u.cat && catOf(x.kind) !== u.cat) continue; x.maxHp *= plate; x.hp *= plate; if (fac(t)) { x.maxShield *= plate; x.shield *= plate; } } factionRule(t).bought?.(this, t, key);
+    const plate = u.line === 'arm' && u.lvl && LEVELS.mode === 'percent' ? u.pct ?? LEVELS.pct[u.lvl - 1] : 0; if (key === 'gbloom') this.carpet.deepen(t); if (plate) for (const x of this.own(undefined, t)) { if (!inCat(u.cat, catOf(x.kind))) continue; x.maxHp *= plate; x.hp *= plate; if (fac(t)) { x.maxShield *= plate; x.shield *= plate; } } factionRule(t).bought?.(this, t, key);
     this.feed(v, u.say, '', t); return true;
   }
   canPlace(k: BKind, x: number, z: number, rot: boolean, team = 0) {
@@ -684,8 +684,10 @@ export class Game {
     const [mx, mz] = MAP.mid!, fromMid = Math.hypot(x - mx, z - mz); if (fromMid + Math.max(hx, hz) > MAP.rad! * .99) return false;
     // And nothing goes up on the enemy's doorstep. A new base always needed 45 m of clear ground from the enemy; the buildings round it
     // did not, so a Headframe 45 m out could put a Watchpost, Thorn Spire or Stinger Stalk right beside the enemy's ore line.
-    for (const b of this.buildings) if (b.alive && b.team !== team && Math.hypot(b.pos.x - x, b.pos.z - z) < 45) return false;
+    const far = bldRule(k).far, gap = far ? 12 : 45;
+    for (const b of this.buildings) if (b.alive && b.team !== team && Math.hypot(b.pos.x - x, b.pos.z - z) < gap) return false;
     if (k === hq) { if (fromMid > MAP.rad! * .95) return false; }
+    else if (far) { /* placeOK decides */ }
     else if ((team || Math.hypot(x, z) > 80) && !this.buildings.some(b => b.alive && b.team === team && b.built && this.isHQ(b) && Math.hypot(b.pos.x - x, b.pos.z - z) < 42)) return false;
     for (const b of this.buildings) if (b.alive && Math.abs(x - b.pos.x) < hx + b.hx + 1.6 && Math.abs(z - b.pos.z) < hz + b.hz + 1.6) return false;
     for (const o of this.ores) if (o.amount > 0 && Math.abs(x - o.pos.x) < hx + 2.4 && Math.abs(z - o.pos.z) < hz + 2.4) return false;
@@ -701,7 +703,7 @@ export class Game {
   placeWhy = '';
   place(k: BKind, x: number, z: number, rot: boolean, team = 0, by: Unit | null = this.me) { if (this.net) { this.net.cmd('pl', k, x, z, rot ? 1 : 0); sfx.place(); this.puff(TMP.set(x, .3, z), 5, 1.2, M.dust, .5, 2); return null; }
     // A Gloam building is a Grazer that put down roots. No Grazer to spare, no building.
-    let root: Unit | null = null; if (fac(team) === 2) { root = rootGrazer(this, x, z, by && by.team === team ? by : null, team); if (!root) return null; }
+    let root: Unit | null = null; if (fac(team) === 2 && !bldRule(k).free) { root = rootGrazer(this, x, z, by && by.team === team ? by : null, team); if (!root) return null; }
     pay(this, team, costOf(k)); const b = this.addBuilding(k, team, x, z, false, rot); { const vt = bldRule(k).tap ? ventAt(this, x, z) : null; if (vt) vt.tap = b; } if (root) consume(this, root); sfx.place(); this.puff(TMP.set(x, .3, z), 5, 1.2, fac(team) ? M.violet : M.dust, .5, 2); return b; }
 
   weldAcc = 0;

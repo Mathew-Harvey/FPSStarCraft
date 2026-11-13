@@ -36,13 +36,15 @@ export const reachOf = (k: string): Reach => def(k).hits || 'ground';
 /** Is the body up in the air (a flier, or a lifted building)? */
 export const isAir = (t: Unit | Building) => !!(t as Unit).air;
 
+/** Does a research level marked `ucat` count for a body of category `cat`? No mark counts for all; 'mech|ship' names two. */
+export const inCat = (ucat: string | undefined, cat: string | undefined) => !ucat || (!!cat && ucat.split('|').includes(cat));
 /** The research chain for a line, in level order, for a faction. Read from UpDef.line and UpDef.lvl. A level with a `cat` (infantry,
- *  machines, ships) only counts for bodies of that category; one without counts for every body. */
+ *  machines, ships, or several joined with '|', like 'mech|ship') only counts for bodies of those categories; one without counts for every body. */
 export function chain(f: number, line: Line, cat?: string): UpKey[] {
-  return UPGRADES.filter(u => (u.team || 0) === f && u.line === line && (!u.cat || u.cat === cat)).sort((a, b) => (a.lvl || 0) - (b.lvl || 0)).map(u => u.key);
+  return UPGRADES.filter(u => (u.team || 0) === f && u.line === line && inCat(u.cat, cat)).sort((a, b) => (a.lvl || 0) - (b.lvl || 0)).map(u => u.key);
 }
 const CHAINS = new Map<string, UpKey[]>();
-const chainOf = (f: number, line: Line, cat?: string) => { const key = f + line + (cat || ''); let c = CHAINS.get(key); if (!c) CHAINS.set(key, c = chain(f, line, cat)); return c; };
+const chainOf = (f: number, line: Line, cat?: string) => { const key = f + line + (cat || '') + UPGRADES.length + UPGRADES[UPGRADES.length - 1]?.key; let c = CHAINS.get(key); if (!c) CHAINS.set(key, c = chain(f, line, cat)); return c; };
 /** How many levels of a line a side has bought, 0 to 3 (for a body of category `cat`, if given). */
 export function level(g: Game, team: number, line: Line, cat?: string) {
   const U = g.upOf(team); let n = 0; for (const k of chainOf(fac(team), line, cat)) if (U[k]) n++; return n;

@@ -229,6 +229,10 @@ const run = (g: Game, secs: number, each?: () => boolean | void) => { for (let i
   const bl = g.spawn('xplain' as Kind, H, 100, 60), tgt = g.spawn('xplain' as Kind, O, 108, 60); check(g.acquire(bl, 20, 0) === tgt, 'a body sees a foe 8 m off'); addStatus(bl, 'blind', 8); check(g.acquire(bl, 20, 0) === null, 'blinded, it only finds targets within 4 m');
   add('xtrooper', { cat: 'inf' }); (UPGRADES as any).push({ key: 'xinf1', name: 'Scratch Infantry Plate', cost: 1, blurb: '', at: FACTION[H].barracks, say: '', team: fac(H), line: 'arm', lvl: 1, cat: 'inf' });
   g.upOf(H)['xinf1' as any] = true; check(near(g.armorMul(H, 'inf'), 1.25) && near(g.armorMul(H), 1) && near(g.armorMul(H, 'mach'), 1), 'a level with a category counts only for bodies of that category'); (UPGRADES as any).pop();
+  (UPGRADES as any).push({ key: 'xmech1', name: 'Scratch Machine and Ship Plate', cost: 1, blurb: '', at: FACTION[H].barracks, say: '', team: fac(H), line: 'arm', lvl: 1, cat: 'xmech|xship' });
+  g.upOf(H)['xmech1' as any] = true; check(near(g.armorMul(H, 'xmech'), 1.25) && near(g.armorMul(H, 'xship'), 1.25) && near(g.armorMul(H, 'inf'), 1) && near(g.armorMul(H), 1), 'one level can name several categories'); (UPGRADES as any).pop();
+  { const k = FACTION[H].supply, sx = 0, sz = -150, was = g.canPlace(k, sx, sz, false, H); defineBuildings({ [k]: { far: true } }); const now = g.canPlace(k, sx, sz, false, H); defineBuildings({ [k]: { far: undefined } });
+    check(!was && now, `a far building goes up away from home (${was} then ${now})`); }
   const id = depot.id; check(g.rebuild(depot, FACTION[H].barracks) && depot.id === id && depot.kind === FACTION[H].barracks, 'a building can change kind in place');
 }
 

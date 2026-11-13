@@ -1,6 +1,6 @@
 // Captures figures from the Ironhold bench page (tools/ironhold-bench.mjs) with the game's own renderer.
 // node tools/ironhold-shots.cjs bench.html shots.json outdir
-// shots.json: [{ name, w, h, figs: [{ kind, x, z, yaw, pose? }], cam: { at: [x,y,z], look: [x,y,z], fov } | { top: [x,z], span } }]
+// shots.json: [{ name, w, h, figs: [{ kind | bld, args?, x, z, yaw, pose? }], cam: { at: [x,y,z], look: [x,y,z], fov } | { top: [x,z], span } }]
 // Positions are relative to a clear patch of ground the script finds; yaw 0 faces +z.
 const { chromium } = require('playwright');
 const fs = require('fs');
@@ -29,12 +29,12 @@ const fs = require('fs');
       const [ox, oz] = window.__spot, Y = (x, z) => (g.groundY ? g.groundY(x, z) : 0);
       for (const u of g.units) if (u.alive && Math.hypot(u.pos.x - ox, u.pos.z - oz) < 60) u.obj.visible = false;
       for (const f of s.figs) {
-        const L = window.__look, fg = L.KINDS.includes(f.kind) ? L.model(f.kind) : window.__fig(f.kind); if (!fg) { console.error('no figure ' + f.kind); continue; }
+        const L = window.__look, an = [], fg = f.bld ? { root: (window.__yard2[f.bld] || window.__md[f.bld])(...(f.args || [an])), groups: {} } : L.KINDS.includes(f.kind) ? L.model(f.kind) : window.__fig(f.kind); for (const a of an) a(f.t ?? 3); if (!fg) { console.error('no figure ' + f.kind); continue; }
         const r = fg.root; r.position.set(ox + f.x, 0, oz + f.z); r.rotation.y = f.yaw || 0; if (f.scale) r.scale.setScalar(f.scale);
         if (f.state) L.animate(f.kind, fg, Object.assign({ t: 3, id: 1, speed: 0, dist: 0, kick: 0, pitch: 0, aim: 0, work: false, load: false, anchor: 0, idle: 0 }, f.state));
         r.position.y += Y(ox + f.x, oz + f.z) + (f.y || 0);   // after animate, which sets the body's own bob
         if (f.clay) { const cm = window.__ore.mats.oreDead; r.traverse(m => { if (m.isMesh) m.material = cm; }); }
-        if (f.fp) { const F = L.FIRST[f.kind]; for (const k of F.hide) { if (fg.groups[k]) fg.groups[k].visible = false; else r.traverse(m => { if (m.isMesh && m.name === k) m.visible = false; }); } window.__fp = { root: r, F, vm: F.vm ? L.viewModel(f.kind, f.vm || 'gun') : null }; }
+        if (f.fp) { const F = L.FIRST[f.kind]; L.hideFirst(fg, f.kind); window.__fp = { root: r, F, vm: F.vm ? L.viewModel(f.kind, f.vm || 'gun') : null }; }
         if (f.groups) for (const k in f.groups) { const q = fg.groups[k]; if (q) { const v = f.groups[k]; if (v.r) q.rotation.set(...v.r); if (v.p) q.position.set(...v.p); if (v.hide) q.visible = false; } }
         g.scene.add(r); window.__placed.push(r); window.__figs.push(fg);
       }

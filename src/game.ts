@@ -58,6 +58,8 @@ import { WARM, HEAD, FLOOD, FIRE, TEAL, ROSE, SICK, ORE, MUZZLE } from './core/l
 const bubbleMat = new THREE.MeshBasicMaterial({ color: 0x6dfff0, transparent: true, opacity: .4, depthWrite: false, blending: THREE.AdditiveBlending });
 const warnMat = new THREE.MeshBasicMaterial({ color: 0xff4f9a, transparent: true, opacity: .9, depthWrite: false, side: THREE.DoubleSide });
 let nextId = 1;
+/** The next body or building id, read and set per match by the match runner (src/match.ts), so two matches on one server and a replay give out the same ids. */
+export const ids = { get next() { return nextId; }, set next(v: number) { nextId = v; } };
 interface Proj { obj: THREE.Object3D; pos: THREE.Vector3; vel: THREE.Vector3; team: number; dmg: number; nade: boolean; life: number; from: Unit | null; ghost: number }
 /** The model for a kind of body: its art if it has some, else a plain stand-in (see core/plain.ts). */
 const figureOf = (kind: Kind) => { try { return MD.unit(kind); } catch { return plainBody(kind); } };

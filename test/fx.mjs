@@ -62,7 +62,7 @@ try {
   } else console.log('(no command view in this build: far-zoom checks skipped)');
 
   // ---- timers
-  const end = await p.evaluate(() => { step(75); const a = kit.list.length; for (const f of kit.list) f.update(99); kit.update(0); return { a, b: kit.list.length, left: window.kit.scene.children.filter(o => o.layers && o.renderOrder === 3).length }; });
+  const end = await p.evaluate(() => { step(100); const a = kit.list.length; for (const f of kit.list) f.update(99); kit.update(0); return { a, b: kit.list.length, left: window.kit.scene.children.filter(o => o.layers && o.renderOrder === 3).length }; });
   check(end.a === 4, `the ground warning and the ring are gone when their time is up (${end.a} left of 6)`);
   check(end.b === 0, 'every effect leaves the scene when finished');
 

@@ -12,7 +12,7 @@ import { canHit } from '../../core/combat';
 import { seenBy } from '../../core/sight';
 import { V_TUNE, V_NEEDS } from './numbers';
 import { placeWhy, rateOf, silent, eachVeyl, hatchVeyl, fieldsOn } from './fields';
-import { driveNew, driveMute, driveLyre, hitK, seek, veylTick } from './units';
+import { driveNew, driveMute, driveLyre, hitK, seek, veylTick, gunAI } from './units';
 import type { Hit } from '../../core/registry';
 import './stand-in';
 
@@ -90,24 +90,13 @@ export function aiCantor(g: Game, u: Unit, dt: number) {
   g.vIdle(u, dt, u.order.type === 'raid' ? 3 : 1.5, u.order.type !== 'guard' || g.dir.alarmT > 0 ? 1 : .6);
 }
 export function aiLancer(g: Game, u: Unit, dt: number) {
-  if (g.leash(u, dt)) return;
-  if (u.wind <= 0 && g.aiFallBack(u, dt)) return;
-  if (u.wind > 0) {
-    u.wind -= dt; const t = u.target; if (t && t.alive) g.aimAt(u, t, 1.5);
-    if (u.wind <= 0) { u.cd = 2 + R(0, .4); if (t && t.alive) { const from = V3(u.pos.x + Math.sin(u.yaw) * 2, 1.5, u.pos.z + Math.cos(u.yaw) * 2), ty = isUnit(t) ? UNIT[t.kind].bodyY : Math.min(t.h * .5, 3), v = V3(t.pos.x - from.x, ty - from.y, t.pos.z - from.z).normalize().multiplyScalar(30); const dmg = V_TUNE.lancer.dmg * hitK(g, u) * (g.eco && g.upOf(u.team).vbreath ? 1.15 : 1); if (isUnit(t) && t.air) { g.tracer(from, V3(t.pos.x, (t.alt || 0) + ty, t.pos.z), beamMat, .08); g.damage(t, dmg, u); } else g.shoot(from, v, u.team, dmg, false, u); sfx.zap(g.vol(u.pos)); u.swing = 1; } }
-    return;
-  }
-  if (u.think <= 0) { u.think = .35; const raid = u.order.type === 'raid' || u.order.type === 'amove'; u.target = seek(g, u, V_TUNE.lancer.range + (g.eco && g.upOf(u.team).vbreath ? V_TUNE.lancer.breath : 0), raid && !(u.order.path && u.order.path.length) ? 24 : 0); }
-  const t = u.target;
-  if (t && t.alive) {
-    const isB = !isUnit(t), d = isB ? g.distToBox(t as Building, u.pos.x, u.pos.z) : t.pos.distanceTo(u.pos); g.aimAt(u, t, 1.5);
-    if (d > (g.eco && g.upOf(u.team).vbreath ? 25 + V_TUNE.lancer.breath : 25)) g.moveTo(u, t.pos.x, t.pos.z, dt);
-    else if (!isB && d < 9) { const ax = u.pos.x - t.pos.x, az = u.pos.z - t.pos.z, l = Math.hypot(ax, az) || 1; g.moveTo(u, u.pos.x + ax / l * 4, u.pos.z + az / l * 4, dt, .2, .9); u.yaw = Math.atan2(-ax, -az); if (u.cd <= 0) u.wind = .55; }
-    else if (u.cd <= 0) u.wind = .7;
-    else if (!isB) takeCover(g, u, t as Unit, dt);
-    return;
-  }
-  u.cover = null; u.pitch *= .9; g.vIdle(u, dt, u.order.type === 'raid' ? 6 : 1.5, u.order.type !== 'guard' || g.dir.alarmT > 0 ? 1 : .6);
+  // The shared gunner brain (src/factions/veyl/units.ts): close to range, fire on the cooldown, step back from anything inside 9 m. The old
+  // brain wound up, fired a slow bolt and then ran for cover, so a Lancer got off a third of its shots and most of those missed.
+  const breath = g.eco && g.upOf(u.team).vbreath;
+  gunAI(g, u, dt, { range: 25 + (breath ? V_TUNE.lancer.breath : 0), cd: V_TUNE.lancer.cd, keep: 9, fire: t => {
+    const ty = isUnit(t) ? ((t as Unit).alt || 0) + UNIT[t.kind].bodyY : Math.min((t as Building).h * .5, 3), from = V3(u.pos.x + Math.sin(u.yaw) * 1.2, 1.5, u.pos.z + Math.cos(u.yaw) * 1.2);
+    g.tracer(from, V3(t.pos.x, ty, t.pos.z), beamMat, .08); g.damage(t, V_TUNE.lancer.dmg * hitK(g, u) * (breath ? 1.15 : 1), u); sfx.zap(g.vol(u.pos));
+  } });
 }
 /** Between shots a Lancer ducks behind the nearest solid scenery, then leans out to fire. */
 export function takeCover(g: Game, u: Unit, t: Unit, dt: number) {

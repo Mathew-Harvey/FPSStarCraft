@@ -13,6 +13,8 @@ setMap(spec.map ?? 0); const [H, O] = setSides(spec.home ?? 0, spec.out ?? 1);
 const g = new Game(noPipe(), noHud, DIFFS[spec.diff ?? 1], spec.map ?? 0, null, null, true);
 g.noRender = true; g.evq = []; g.me = null; g.phase = 'play'; for (const u of g.units) u.pilot = 0; g.human = g.human.map(() => false);
 const V = [H, O].filter(t => fac(t) === 1);
+// spec.plan forces the Conductor's plan (ground, tech or air) on every Veyl side; otherwise it picks one from the seed.
+if (spec.plan) for (const t of V) (g.dir.side(t) as any).vplan = spec.plan;
 const seen = new Set<any>(), made: Record<string, number> = {}, spend: Record<string, number> = {}, blds: Record<string, number> = {}, abs: Record<string, number> = {};
 let errors = 0;
 const dt = 1 / 30; let tick = 0;
@@ -29,4 +31,5 @@ while (g.phase !== 'over' && g.time < mins * 60) {
 }
 const ups = V.flatMap(t => UPGRADES.filter(u => (u.team || 0) === 1 && (g.upOf(t) as any)[u.key]).map(u => u.key));
 const res = g.phase === 'over' ? (g.won ? 'home' : 'out') : 'draw';
-console.log(JSON.stringify({ home: spec.home ?? 0, out: spec.out ?? 1, map: spec.map ?? 0, seed: spec.seed ?? 1, res, t: Math.round(g.time), errors, made, spend, blds, ups, abs, flux: V.map(t => Math.round(g.flux(t))), ore: V.map(t => Math.round(g.cash(t))) }));
+const plans = V.map(t => (g.dir.side(t) as any).vplan);
+console.log(JSON.stringify({ plans, home: spec.home ?? 0, out: spec.out ?? 1, map: spec.map ?? 0, seed: spec.seed ?? 1, res, t: Math.round(g.time), errors, made, spend, blds, ups, abs, flux: V.map(t => Math.round(g.flux(t))), ore: V.map(t => Math.round(g.cash(t))) }));

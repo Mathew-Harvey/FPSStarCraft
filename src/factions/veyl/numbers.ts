@@ -90,7 +90,7 @@ export const V_TUNE = {
   cantor: { cut: 20, cd: .95, rushRange: 10, rushHit: 10, rushCd: 9 },
   mute: { cut: 30, cd: 1.15, stepRange: 9, stepCd: 20 },
   /** Lancer: its bolt (was 20), seconds between bolts, reach, and Long Breath's extra reach. Skip: how far and how often. */
-  lancer: { dmg: 22, cd: 2.2, range: 34, breath: 6, skip: 8, skipCd: 10 },
+  lancer: { dmg: 18, cd: 2.2, range: 34, breath: 6, skip: 8, skipCd: 10 },
   /** Tuner: its bolt; Glass Wall's pane (length, seconds); Ward Hum (radius, seconds, taken off each hit); False Voice (copies, seconds). */
   tuner: { dmg: 6, cd: 1.1, range: 20, wallLen: 7, wallT: 11, humR: 5, humT: 11, humCut: 2, voiceN: 2, voiceT: 30 },
   /** Choirmaster: Shatter Note (total damage, seconds, radius, warning), Drain (energy burned, range), Join (seconds to fuse). */

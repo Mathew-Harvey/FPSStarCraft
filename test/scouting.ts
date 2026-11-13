@@ -26,7 +26,7 @@ const gap = (a: number, b: number) => Math.abs(Math.atan2(Math.sin(a - b), Math.
   check(!turns.has(-1) && !turns.has(0) && turns.size === TURNS, `a Vast match is turned one of ${TURNS} ways, never left as drawn (${turns.size} seen in 400 rolls)`);
   check(rollMap(mapCode(0, VAST), 7) === 730 && rollMap(1530) !== undefined && turnOf(rollMap(1530, 3)) === 3, 'a turn can be pinned, and rolling again replaces the old turn');
   check(!validMap(2500 + 30) && !validMap(134) && !validMap(-1) && validMap(2432) && validMap(30), 'map numbers past the last turn, and turned story maps, are refused');
-  check(SIZES[VAST].name === 'Vast' && SIZES.length === 4 && MAPS.length === 6, 'Vast is the fourth size, and no map was added or dropped');
+  check(SIZES[VAST].name === 'Vast' && SIZES.length === 4 && MAPS.length === 8 && MAPS[6].ring === 4 && MAPS[7].ring === 8, 'Vast is the fourth size, and the eight maps are the six before plus the two team maps');
 }
 
 // 2. Every hidden layout, all 72 of them: fields round both bases, roads that do not point at the enemy, and room behind each base.

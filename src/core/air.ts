@@ -11,7 +11,9 @@ export const AIR = { cruise: 7, low: 2.5, high: 16, climb: 6, lifted: 5,
   shadow: null as null | ((g: Game, t: Unit | Building, alt: number) => void) };
 
 /** Makes a new body a flier if its kind flies. Called by spawn. */
-export function initAir(u: Unit) { if (UNIT[u.kind].air) { u.air = true; u.alt = AIR.cruise; } }
+export function initAir(u: Unit) { if (UNIT[u.kind].air) { u.air = true; u.alt = cruiseOf(u); } }
+/** The height a bot flier of this kind holds (UnitDef.cruise, or AIR.cruise). */
+export const cruiseOf = (u: Unit) => UNIT[u.kind]?.cruise ?? AIR.cruise;
 /** A body's height above the ground (0 for a walker). */
 export const altOf = (t: Unit | Building) => t.alt || 0;
 
@@ -26,7 +28,7 @@ export const sameLayer = (a: Unit, b: Unit) => !a.air === !b.air;
 export function tickAir(g: Game, dt: number) {
   for (const u of g.units) {
     if (!u.alive || !u.air) continue;
-    if (u !== g.me && !u.pilot) u.alt = (u.alt ?? AIR.cruise) + (AIR.cruise - (u.alt ?? AIR.cruise)) * Math.min(1, dt * 2);
+    if (u !== g.me && !u.pilot) { const c = cruiseOf(u); u.alt = (u.alt ?? c) + (c - (u.alt ?? c)) * Math.min(1, dt * 2); }
     AIR.shadow?.(g, u, u.alt || 0);
   }
   for (const b of g.buildings) {

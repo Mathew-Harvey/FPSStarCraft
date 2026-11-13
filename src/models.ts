@@ -7,7 +7,7 @@ import { G, M, R, rnd, reseed, mk, beam, setLayer, L_FX, L_VM, holoLine, V3, too
 import type { Prop } from './data';
 import { MAP, OUTPOST, ROAD, NORTH_PATH, SIDE, roadPt, veylPt } from './data';
 import { NEW, grp, put, can, nv } from './units';
-import { GLOAM_UNITS, GLOAM_HEIGHT, GLOAM_BUILDINGS, vmGloam } from './gloam-art';
+import { GLOAM_UNITS, GLOAM_HEIGHT, GLOAM_BUILDINGS, vmGloam } from './factions/gloam/look/art';
 /** A Gloam body's first-person mandibles, tusks or snout. */
 export const vmG = (k: string) => vmGloam(k, bake, L_VM);
 export const gloamB = (k: string, anim: ((t: number) => void)[]) => bake(GLOAM_BUILDINGS[k](anim));   // baked here so a sculpt's shared geometry is copied before the atlas rewrites it

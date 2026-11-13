@@ -32,7 +32,8 @@ if (process.argv[2] === 'sum') { console.log(sum(readFileSync(process.argv[3], '
 const [seeds = '10', pairs = '01,10,02,20,12,21,00,11,22', maps = '0,1,2', extra = '{}'] = process.argv.slice(2);
 mkdirSync('dist', { recursive: true });
 const sfx = { name: 'sfx', setup(b) { b.onResolve({ filter: /^sfx:bank$/ }, () => ({ path: 'x', namespace: 'sfx' })); b.onLoad({ filter: /.*/, namespace: 'sfx' }, () => ({ contents: 'export default {}', loader: 'js' })); } };
-await build({ entryPoints: ['tools/review.ts'], bundle: true, platform: 'node', format: 'esm', target: 'node20', outfile: 'dist/review.mjs', plugins: [sfx], logLevel: 'warning', banner: { js: "import { createRequire as __cr } from 'node:module'; const require = __cr(import.meta.url);" } });
+const mesh = { name: 'mesh', setup(b) { b.onResolve({ filter: /^(mesh:bank|art:files)$/ }, a => ({ path: a.path, namespace: 'mesh' })); b.onLoad({ filter: /.*/, namespace: 'mesh' }, a => ({ contents: a.path === 'art:files' ? 'export default []' : 'export default {}', loader: 'js' })); } };
+await build({ entryPoints: ['tools/review.ts'], bundle: true, platform: 'node', format: 'esm', target: 'node20', outfile: 'dist/review.mjs', plugins: [sfx, mesh], logLevel: 'warning', banner: { js: "import { createRequire as __cr } from 'node:module'; const require = __cr(import.meta.url);" } });
 const jobs = []; for (const p of pairs.split(',')) for (const m of maps.split(',')) for (let s = 1; s <= +seeds; s++) jobs.push({ ...JSON.parse(extra), home: +p[0], out: +p[1], map: +m, seed: 1000 + s * 7919 + +m * 31 + +p[0] * 3 + +p[1] });
 const file = 'dist/table.jsonl', rows = []; writeFileSync(file, ''); let i = 0, live = 0;
 await new Promise(done => { const next = () => { if (i >= jobs.length && !live) return done(); while (live < 4 && i < jobs.length) { const j = jobs[i++]; live++; const c = spawn('node', ['dist/review.mjs', JSON.stringify(j)]); let buf = ''; c.stdout.on('data', d => buf += d);

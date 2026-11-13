@@ -3,7 +3,7 @@ import * as THREE from 'three';
 import { Pipeline, ViewPipe, V3, makeSky, TX, M } from './gfx';
 import { LAMP_ON } from './light';
 import * as MD from './models';
-import { GLOAM_BUILDINGS, bloomPatch } from './gloam-art';
+import { GLOAM_BUILDINGS, bloomPatch } from './factions/gloam/look/art';
 import { Game } from './game';
 import { Hud } from './hud';
 import { initAudio, setVolume, setMusic, audioSeat, hush, soundsReady, sfx } from './audio';

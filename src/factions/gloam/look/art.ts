@@ -1,12 +1,12 @@
 // The Gloam: a fungal swarm that grows out of ore rot. Moss hide, ivory chitin, coral gills,
 // teal mushroom caps and lime spore sacs. Skins, the cast and their structures live here.
-import { figure } from './meshes';
+import { figure } from '../../../meshes';
 import * as THREE from 'three';
-import { INK, R, rnd, M, TX, EXTRA, paint, tone, T, mk, G, setLayer, L_FX } from './gfx';
-import type { Ctx } from './gfx';
-import { pen, hatch, brush, frame, sky, nicks, cellular, sstep } from './skins';
-import { lathe, hard, spl, rbox, blob, tube, plate, ring, shard, warp, crescent, capsule } from './sculpt';
-import { grp, put } from './units';
+import { INK, R, rnd, M, TX, EXTRA, paint, tone, T, mk, G, setLayer, L_FX } from '../../../gfx';
+import type { Ctx } from '../../../gfx';
+import { pen, hatch, brush, frame, sky, nicks, cellular, sstep } from '../../../skins';
+import { lathe, hard, spl, rbox, blob, tube, plate, ring, shard, warp, crescent, capsule } from '../../../sculpt';
+import { grp, put } from '../../../units';
 
 type P3 = [number, number, number];
 type Mat = THREE.Material;

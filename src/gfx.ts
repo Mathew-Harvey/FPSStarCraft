@@ -277,7 +277,7 @@ void main(){
 #endif
 #ifdef WEAR
   // A building's own picture of wear lies over its tiled skin: mid grey leaves the skin alone. Whatever glows shows through it.
-  base*=mix(texture2D(uWear,vUv2).rgb*2.,vec3(1.),min(1.,uEmis+vEm));
+  { vec3 wr=texture2D(uWear,vUv2).rgb*2.-1.; base*=max(vec3(.3),1.+wr*2.6*(1.-min(1.,uEmis+vEm))); }   // the wear is painted gently and laid on firmly
 #endif
 #ifdef CLIFF
   // A mesa is one huge slow curve, so a fine wobble on its shadow edge turns into a field of speckle. Break it in big brush shapes instead.

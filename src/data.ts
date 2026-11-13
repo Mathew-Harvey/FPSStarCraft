@@ -37,10 +37,16 @@ export const VOICE_SIDE: Record<string, number> = { 'Held Fifth': 1,  Conductor:
 /** Who holds each end of the map this match, as teams: `home` the yard at the origin, `out` the outpost at the far end of the road.
  *  Any faction can hold either end. A mirror match puts the same faction at both ends, the outpost side as team faction + 3. Set before a Game is made. */
 export const SIDE = { home: 0, out: 1 };
-/** Sets who holds each end from the two factions, and returns the two teams. */
-export const setSides = (homeFac: number, outFac: number) => { SIDE.home = homeFac; SIDE.out = outFac === homeFac ? outFac + MIRROR : outFac; layoutSites(); return [SIDE.home, SIDE.out]; };
+/** Sets who holds each end from the two factions, and returns the two teams. It also ends any team game setup (see setTeamGame). */
+export const setSides = (homeFac: number, outFac: number) => { clearMatch(); SIDE.home = homeFac; SIDE.out = outFac === homeFac ? outFac + MIRROR : outFac; layoutSites(); return [SIDE.home, SIDE.out]; };
 /** A match code for the lobby and the menus: home faction times 3 plus outpost faction. The old codes 1 and 2 (Ironhold against the Veyl or the Gloam) still mean the same. */
 export const sidesCode = () => fac(SIDE.home) * 3 + fac(SIDE.out);
+/** Sets up a team game or free-for-all from a plan (see planTeams), or with null goes back to a plain one-on-one. Returns the plan's
+ *  teams, or null when the plan does not hold (and then it is a one-on-one). A plan with only two sides is a one-on-one. Set before a Game is made. */
+export function setTeamGame(p: TeamPlan | null) {
+  const t = p ? planTeams(p) : null; if (!t) { clearMatch(); return null; }
+  setSides(fac(t.home), fac(t.out)); if (t.teams.length > 2) setMatch(t.teams, t.at, p!.n, t.groups); else clearMatch(); return t;
+}
 export const setSidesCode = (code: number) => { const c = Number.isInteger(code) && code >= 0 && code < 9 ? code : 1; return setSides(Math.floor(c / 3), c % 3); };
 /** The side a side fights. A one-on-one has two; with more sides it is the enemy this side is going after now (MATCH.foe, set by the Director). */
 export const foeOf = (team: number) => multi() ? MATCH.foe[team] ?? enemiesOf(team)[0] ?? team : team === SIDE.home ? SIDE.out : SIDE.home;
@@ -121,7 +127,7 @@ export const DIFFS: Difficulty[] = [
 export { GATE, MAP, MAPS, NORTH_PATH, OUTPOST, RALLY, RALLY_N, ROAD, SIZES, TURNS, VAST, VHOME, VRALLY, VRALLY_N, baseOf, compass, mapCode, roadPt, rollMap, setMap, sizeOf, turnOf, validMap, veylPt } from './maps';
 export type { MapDef } from './maps';
 import { VHOME, MAP as MAP_, layoutSites } from './maps';
-import { MATCH, multi, startOf, enemiesOf } from './core/sides';
+import { MATCH, multi, startOf, enemiesOf, planTeams, setMatch, clearMatch, type TeamPlan } from './core/sides';
 /** Story state the engine reads while a campaign job is running. Set before a Game is made, cleared for everything else. */
 export const STORY = {
   /** The Ironhold team that is Charter Security on this job (they wear company grey), or -1. */

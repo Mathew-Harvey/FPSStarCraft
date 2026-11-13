@@ -298,7 +298,9 @@ export class Game {
   fair = false; sites: number[][] = [];
   /** The map, the sides and the layout are shared by every Game in the process. A server that runs several matches sets the map and sides before it
    *  touches one, and this puts back the layout that match was built with. */
-  pin() { LAYOUT.fair = this.fair; MAP.sites = this.sites; }
+  /** The match's enemy picks (MATCH.foe), kept with the game so a server running several matches puts each one's back before it steps. */
+  foePick: number[] = MATCH.foe;
+  pin() { LAYOUT.fair = this.fair; MAP.sites = this.sites; if (multi()) MATCH.foe = this.foePick; }
   /** How far out a Choir Stone takes a Tender's ore (see CHOIR_REACH: a dial for balance tables, 0 in play). */
   bankReach(hq: Building) { return hq.kind === 'choir' ? CHOIR_REACH.m : 0; }
   otSaid = false;
@@ -489,9 +491,9 @@ export class Game {
   knockOut(t: number) {
     this.outOf.push(t); const left = MATCH.teams.filter(o => !this.outOf.includes(o));
     this.feed(FACTION[this.myTeam].voice, isFriend(t, this.myTeam) ? (t === this.myTeam ? 'Our last home building is down. We are out of the fight.' : `${this.sideName(t)} lost their last home building. They are out.`) : `${this.sideName(t)} lost their last home building. They are out.`, isFriend(t, this.myTeam) ? 'al' : '');
-    // Over when everyone left is on one side, or when every side the player is on is out.
-    const over = left.every(o => isFriend(o, left[0])), lost = !left.some(o => isFriend(o, this.myTeam));
-    if (over || lost) { this.winners = over ? left : []; this.endT = 2.4; this.endWon = !lost; this.pipe.flash = 1; }
+    // Over when everyone left is on one side, or when every side with a player on it is out (nobody is left to play it out).
+    const humans = MATCH.teams.filter(h => this.human[h]), over = left.every(o => isFriend(o, left[0])), gone = humans.length > 0 && !left.some(o => humans.some(h => isFriend(o, h)));
+    if (over || gone) { this.winners = over ? left : []; this.endT = 2.4; this.endWon = left.some(o => isFriend(o, this.myTeam)) && over; this.pipe.flash = 1; }
   }
   /** Takes a prop off the map for good (a rock or crystal standing on a base's walk to its ore). */
   clearProp(q: Prop) { q.alive = false; const i = this.spires.indexOf(q); if (i >= 0) this.spires.splice(i, 1); for (const r of q.ranges) { const a = r.attr.array as Float32Array; for (let k = r.start * 3, e = (r.start + r.count) * 3; k < e; k += 3) { a[k] = q.x; a[k + 1] = -80; a[k + 2] = q.z; } r.attr.needsUpdate = true; } if (q.obj) this.scene.remove(q.obj); }

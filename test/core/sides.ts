@@ -5,15 +5,15 @@
 import { noHud, noPipe } from '../../server/shim';
 import { Game } from '../../src/game';
 import { initHeadless } from '../../src/gfx';
-import { DIFFS, FACTION, setMap, setSides, homeXZ, isFighter, fac, foeOf } from '../../src/data';
-import { setMatch, clearMatch, isEnemy, MATCH } from '../../src/core/sides';
+import { DIFFS, FACTION, SIDE, setMap, setSides, setTeamGame, homeXZ, foeOf } from '../../src/data';
+import { clearMatch, isEnemy, MATCH, planTeams, multi, type TeamPlan } from '../../src/core/sides';
 initHeadless();
 const mins = +(process.argv[2] || 30);
 const fail: string[] = []; const check = (ok: boolean, what: string) => { console.log((ok ? 'PASS ' : 'FAIL ') + what); if (!ok) fail.push(what); };
 
-function play(name: string, homeF: number, outF: number, teams: number[], at: number[], groups: number[][], seed: number) {
+function play(name: string, plan: TeamPlan, seed: number) {
   let sd = seed; Math.random = () => { sd = (sd * 16807) % 2147483647; return (sd - 1) / 2147483646; };
-  setMap(0); setSides(homeF, outF); setMatch(teams, at, 4, groups);
+  setMap(0); const T = setTeamGame(plan)!, teams = T.teams;
   const g = new Game(noPipe(), noHud, DIFFS[1], 0, null, null, true); g.noRender = true; g.evq = []; g.me = null; g.phase = 'play';
   for (const u of g.units) u.pilot = 0; g.human = g.human.map(() => false);
   check(g.dir.sides.length === teams.length, `${name}: a brain for every side (${g.dir.sides.length})`);
@@ -44,10 +44,19 @@ function play(name: string, homeF: number, outF: number, teams: number[], at: nu
   return g;
 }
 
+// The plan: start numbers per alliance and the faction at each start. A one-on-one plan is the old match, teams and all.
+{ const t = planTeams({ n: 4, groups: [[0], [2]], facs: [1, -1, 1, -1] })!; check(t.home === 1 && t.out === 4 && t.teams.length === 2, 'a one-on-one plan gives the teams setSides gives');
+  setTeamGame({ n: 4, groups: [[0], [2]], facs: [1, -1, 1, -1] }); check(!multi() && SIDE.home === 1 && SIDE.out === 4, 'and runs as a plain one-on-one');
+  check(!planTeams({ n: 4, groups: [[0, 2], [1, 3]], facs: [0, 0, 0, 0] }), 'the yard and the far base cannot be on one side');
+  check(!planTeams({ n: 4, groups: [[0, 1], [2, 1]], facs: [0, 0, 0, 0] }), 'a start cannot be on two sides');
+  const p = planTeams({ n: 8, groups: [[0, 1, 2, 3], [4, 5, 6, 7]], facs: [0, 0, 1, 2, 0, 1, 1, 2] })!;
+  check(p.home === 0 && p.out === 3 && p.teams.join() === '0,3,6,1,2,4,7,5' && p.groups[0].join() === '0,6,1,2', `four against four numbers every copy of a faction (${p.teams.join()})`);
+  setSides(0, 1); check(!multi(), 'setting the two ends again ends a team game'); }
+
 // Two against two: Ironhold (start 0) and the Veyl (start 1) against the Gloam (start 2, the far base) and a second Ironhold crew (start 3).
-play('2v2', 0, 2, [0, 2, 1, 3], [0, 2, 1, 3], [[0, 1], [2, 3]], 7);
+play('2v2', { n: 4, groups: [[0, 1], [2, 3]], facs: [0, 1, 2, 0] }, 7);
 // Free-for-all: Ironhold, Veyl, Gloam and a second Veyl choir, everyone on their own.
-play('FFA', 0, 2, [0, 2, 1, 4], [0, 2, 1, 3], [], 9);
+play('FFA', { n: 4, groups: [[0], [1], [2], [3]], facs: [0, 1, 2, 1] }, 9);
 
 console.log(fail.length ? `\n${fail.length} FAILED` : '\nALL PASS');
 process.exit(fail.length ? 1 : 0);

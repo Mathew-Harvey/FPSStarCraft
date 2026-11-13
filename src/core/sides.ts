@@ -41,3 +41,19 @@ export const friendsOf = (team: number) => MATCH.teams.length ? MATCH.teams.filt
 export function startSpots(map: { starts?: number[][] }, home: [number, number], far: [number, number]): number[][] {
   return map.starts && map.starts.length >= 2 ? map.starts.map(s => [s[0], s[1]]) : [home, far];
 }
+
+/** A team game as the menus and the lobby describe it: how many starts the map has, which starts play together (start numbers per
+ *  alliance; one start per alliance is a free-for-all) and the faction at each start (-1 for a start nobody holds). */
+export interface TeamPlan { n: number; groups: number[][]; facs: number[] }
+/** What a plan means as teams: the team at the yard (start 0) and at the far base (start n/2), every team in start order with its start,
+ *  and the alliances as teams. A faction that holds several starts gets a new team number for each (faction + 3 per copy), counted from
+ *  the yard, then the far base, then round the rest, so a one-on-one gets the same two teams setSides gives it. Null if the plan does not hold. */
+export function planTeams(p: TeamPlan): { home: number; out: number; teams: number[]; at: number[]; groups: number[][] } | null {
+  const n = p.n | 0, half = n / 2; if (!(n >= 2 && n <= MAX_SIDES && n % 2 === 0) || !Array.isArray(p.groups) || !Array.isArray(p.facs) || p.facs.length !== n || p.groups.length < 2) return null;
+  const held = p.groups.flat(); if (held.some(i => !Number.isInteger(i) || i < 0 || i >= n) || new Set(held).size !== held.length || !held.includes(0) || !held.includes(half)) return null;
+  if (held.some(i => !(p.facs[i] >= 0 && p.facs[i] <= 2)) || p.groups.some(g => !g.length)) return null;
+  const allyOfStart = (i: number) => p.groups.findIndex(g => g.includes(i)); if (allyOfStart(0) === allyOfStart(half)) return null;
+  const order = [0, half, ...held.filter(i => i !== 0 && i !== half).sort((a, b) => a - b)], copies = [0, 0, 0], team: number[] = [];
+  for (const i of order) { const f = p.facs[i]; team[i] = f + 3 * copies[f]++; }
+  return { home: team[0], out: team[half], teams: order.map(i => team[i]), at: order, groups: p.groups.map(g => g.map(i => team[i])) };
+}

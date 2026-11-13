@@ -83,8 +83,8 @@ try {
   // ---- 3. online: Vex leads the Gloam against Ada's crew
   srv = spawn('node', ['dist/server.mjs'], { env: { ...process.env, PORT: String(PORT) }, stdio: ['ignore', 'pipe', 'pipe'] }); let log = ''; srv.stdout.on('data', d => { log += d; }); srv.stderr.on('data', d => { log += d; });
   await sleep(1200);
-  // A page drawing its menu makes the next page load about five times slower (70 s against 15 s here), enough to time out on a busy runner, so the first one holds still.
-  const A = await open(URL, 'Ada'); await A.evaluate(() => { __ore.game.noRender = true; }); const V = await open(URL, 'Vex'); await A.evaluate(() => { __ore.game.noRender = false; });
+  // Two pages drawing at once starve each other under software rendering: a menu alone made the next page load five times slower, and a kick-off could stall long enough to drop the connection. Both hold still until a check needs a picture.
+  const A = await open(URL, 'Ada'); await A.evaluate(() => { __ore.hold(true); }); const V = await open(URL, 'Vex'); await V.evaluate(() => { __ore.hold(true); });
   for (const q of [A, V]) await q.evaluate(() => { __ore.setFree(true); __ore.unlock(); });
   await A.click('#mCreate'); await A.waitForFunction(() => document.getElementById('mCodeShow').textContent.length === 5);
   const code = await A.evaluate(() => document.getElementById('mCodeShow').textContent);
@@ -93,7 +93,7 @@ try {
   check(await until(V, () => /Gloam/.test(document.getElementById('mSide').textContent), null, 10000), 'the lobby offers the Gloam side once the host picks them');
   await V.click('#mSide'); check(await until(A, () => /The Gloam/.test(document.getElementById('mPlayers').textContent), null, 10000), 'Ada sees Vex on the Gloam side');
   await V.click('#mReady'); await A.waitForFunction(() => !document.getElementById('mStart').disabled); await A.click('#mStart');
-  for (const q of [A, V]) { await q.waitForFunction(() => __ore.game.net && __ore.game.me && __ore.game.units.length > 6); await q.evaluate(() => { __ore.game.noRender = true; }); }
+  for (const q of [A, V]) { await q.waitForFunction(() => __ore.game.net && __ore.game.me && __ore.game.units.length > 6); await q.evaluate(() => { __ore.game.noRender = true; __ore.hold(false); }); }
   const st = q => q.evaluate(() => { const g = __ore.game; return { team: g.me && g.me.team, kind: g.me && g.me.kind, my: g.myTeam, eco: g.eco, caps: g.buildings.filter(b => b.alive && b.kind === 'mothercap').length, bloom: g.carpet.patches.length, purse: g.purse[2] }; });
   const a = await st(A), v = await st(V);
   console.log(JSON.stringify({ a, v }));

@@ -2,8 +2,9 @@
 // hand-inked skins, then merged so a whole limb is one draw call.
 import * as THREE from 'three';
 import { G, M, R, mk, setLayer, L_FX } from './gfx';
-import { lathe, hard, spl, capsule, rbox, blob, tube, plate, rrect, ring, shard, warp, crescent } from './sculpt';
+import { lathe, hard, spl, capsule, rbox, blob, nub, tube, plate, rrect, ring, shard, warp, crescent } from './sculpt';
 import './skins';
+import { figure } from './meshes';
 
 type P3 = [number, number, number];
 type Mat = THREE.Material;
@@ -22,35 +23,71 @@ export function muzzle(parent: THREE.Object3D, p: P3, s: number) {
   f.visible = false; setLayer(f, L_FX); return f;
 }
 
-/** Hip-to-sole leg. The group pivots at the hip. */
+const q3 = (n: number) => Math.round(n * 1000) / 1000;
+/** A crease in cloth: a thin welt part of the way round a limb, so the ink pass draws it as a pen line. `a` is the angle of its middle (0 is the front), `w` its half width, `drop` how far its ends sag. */
+function fold(parent: THREE.Object3D, mat: Mat, c: P3, r: number, a: number, w: number, drop = 0, t = .013) {
+  const pts: P3[] = []; for (let i = 0; i <= 4; i++) { const k = i / 4 - .5, an = a + k * 2 * w; pts.push([q3(c[0] + Math.sin(an) * r), q3(c[1] + drop * (k * k * 4 - .5)), q3(c[2] + Math.cos(an) * r)]); }
+  put(tube(pts, [t * .3, t, t * 1.1, t, t * .3], -4, 1, false, 4), mat, parent);
+}
+const AX = new THREE.Vector3(), AY = new THREE.Vector3(), AZ = new THREE.Vector3(), FM = new THREE.Matrix4(), LM = new THREE.Matrix4(), EU = new THREE.Euler(), QQ = new THREE.Quaternion(), ONE = new THREE.Vector3(1, 1, 1), PV = new THREE.Vector3();
+/** Places a part inside a frame that looks down `dir` from `at`, without adding a group (a group would cost a draw call per material). */
+function inFrame(at: P3, dir: P3, up: P3 = [0, 1, 0]) {
+  AZ.set(dir[0], dir[1], dir[2]).normalize(); AX.set(up[0], up[1], up[2]).cross(AZ); if (AX.lengthSq() < 1e-4) AX.set(1, 0, 0).cross(AZ); AX.normalize(); AY.crossVectors(AZ, AX);
+  const base = new THREE.Matrix4().makeBasis(AX, AY, AZ).setPosition(at[0], at[1], at[2]);
+  return (geo: THREE.BufferGeometry, mat: Mat, parent: THREE.Object3D, p: P3 | 0 = 0, r: P3 | 0 = 0) => {
+    const m = new THREE.Mesh(geo, mat); LM.compose(p ? PV.set(p[0], p[1], p[2]) : PV.set(0, 0, 0), r ? QQ.setFromEuler(EU.set(r[0], r[1], r[2])) : QQ.identity(), ONE); FM.multiplyMatrices(base, LM); FM.decompose(m.position, m.quaternion, m.scale); parent.add(m); return m;
+  };
+}
+/**
+ * A gloved hand closed round a grip: the back of the hand, four fingers each with its own knuckle, and a thumb laid across them.
+ * It looks down `dir` from the wrist and its fingers curl toward `curl`; `inner` (1 or -1) is the side the thumb is on.
+ */
+export function hand(parent: THREE.Object3D, at: P3, dir: P3, k: number, glove: Mat, inner = 1, curl: P3 = [0, -1, 0]) {
+  const P = inFrame(at, dir, [-curl[0], -curl[1], -curl[2]]), g = nv(glove), s = (n: number) => q3(n * k);
+  P(nub(s(.168), s(.118), s(.17), v => { if (v.z < 0) { v.x *= .82; v.y *= .86; } }, 'hand', 9, 6), g, parent, [0, s(.012), s(.055)]);
+  for (let i = 0; i < 4; i++) { const fx = s(-.057 + i * .038), l = i === 0 || i === 3 ? .88 : 1;
+    P(tube([[fx, s(.04), s(.105)], [fx, s(.035), s(.105 + .07 * l)], [fx, s(-.03), s(.12 + .075 * l)], [fx, s(-.07), s(.1 + .03 * l)]], [s(.027), s(.0245), s(.022), s(.0185)], -5, 1, false, 5), g, parent); }
+  P(tube([[s(inner * .072), s(.0), s(.03)], [s(inner * .092), s(-.03), s(.1)], [s(inner * .05), s(-.068), s(.15)]], [s(.029), s(.027), s(.02)], -5, 1, false, 4), g, parent);
+  P(tube([[s(-.085), s(.03), s(.01)], [0, s(.07), s(.012)], [s(.085), s(.03), s(.01)]], s(.012), -4, .6, false, 4), M.nD, parent);
+}
+
+/** Hip-to-sole leg. The group pivots at the hip. Trousers bag at the knee and blouse over the boot; the feet stand a little wider than the hips and turn out. */
 function leg(parent: THREE.Object3D, name: string, sx: number, pants: Mat, knee: Mat, guard: Mat | null, boot: Mat) {
-  const g = grp(name, parent, [sx * .15, .9, 0]), x = sx * .015;
-  put(tube([[0, .04, 0], [x, -.2, .03], [x, -.42, .02]], [.142, .135, .1]), pants, g);
-  put(tube([[x, -.4, .02], [x, -.55, -.015], [x, -.74, 0]], [.096, .112, .08]), pants, g);
+  const g = grp(name, parent, [sx * .155, .9, 0]), x = sx * .02, f = sx * .04, ty = sx * .16;
+  put(tube([[0, .05, 0], [q3(x * .5), -.13, .034], [x, -.3, .03], [x, -.43, .02]], [.146, .158, .15, .118, .102]), pants, g);
+  put(tube([[x, -.4, .02], [q3(x + (f - x) * .5), -.52, -.012], [f, -.63, -.008], [f, -.69, 0]], [.098, .116, .126, .14, .112]), pants, g);
+  fold(g, pants, [x, -.305, .03], .138, sx * 1.0, .85, .03); fold(g, pants, [x, -.35, .028], .124, -sx * .6, .75, -.024); fold(g, pants, [q3(x * .5), -.1, .03], .152, sx * .5, .7, .034, .012);
+  fold(g, pants, [f, -.585, -.01], .128, sx * .4, 1.0, .03); fold(g, pants, [f, -.625, -.008], .139, -sx * 1.2, .9, .022); fold(g, pants, [q3(x + (f - x) * .5), -.5, -.01], .112, PI, .9, .03);
   put(blob(.2, .2, .16, v => { v.z += v.y * v.y * .2; }, 'knee'), nv(knee), g, [x, -.42, .075]); put(blob(.07, .07, .05), M.nS, g, [x, -.42, .15]);
-  if (guard) put(lathe([...hard([[.1, -.75], [.114, -.745]]), ...spl([[.116, -.73], [.136, -.6], [.124, -.52], [.094, -.48]], 8)], 12, PI * 1.1), guard, g, [x, 0, .004]);
-  put(rbox(.085, .15, .13, .028), M.lea, g, [sx * .15, -.2, 0], [0, 0, sx * -.07]); put(rbox(.095, .055, .14, .02), M.lea, g, [sx * .155, -.14, 0], [0, 0, sx * -.07]);
-  put(tube([[x, -.66, 0], [x, -.8, .005]], [.1, .118]), boot, g); put(ring(.106, .022), M.rib, g, [x, -.67, 0], [H, 0, 0]);
-  put(blob(.23, .18, .4, v => { if (v.y < -.14) v.y = -.14; if (v.z < 0) v.z *= .8; }, 'boot'), nv(boot), g, [x, -.805, .07]);
-  put(blob(.225, .15, .19, v => { if (v.y < -.2) v.y = -.2; }, 'toe'), M.nD, g, [x, -.8, .2]);
-  put(rbox(.25, .07, .44, .028), M.sole, g, [x, -.865, .065]);
+  put(tube([[q3(x - .1), -.45, -.03], [x, -.47, -.11], [q3(x + .1), -.45, -.03]], .018, -4, .5, false, 4), M.leaB, g);
+  if (guard) put(lathe([...hard([[.1, -.75], [.114, -.745]]), ...spl([[.116, -.73], [.136, -.6], [.124, -.52], [.094, -.48]], 8)], 12, PI * 1.1), guard, g, [f, 0, .004]);
+  put(rbox(.085, .15, .13, .028), M.lea, g, [sx * .155, -.2, 0], [0, 0, sx * -.07]); put(rbox(.095, .055, .14, .02), M.lea, g, [sx * .16, -.14, 0], [0, 0, sx * -.07]);
+  put(tube([[f, -.66, 0], [f, -.8, .005]], [.104, .124]), boot, g); put(ring(.112, .024), M.rib, g, [f, -.672, 0], [H, 0, 0]);
+  put(blob(.24, .19, .42, v => { if (v.y < -.14) v.y = -.14; if (v.z < 0) v.z *= .8; }, 'boot'), nv(boot), g, [f, -.805, .07], [0, ty, 0]);
+  put(blob(.235, .16, .2, v => { if (v.y < -.2) v.y = -.2; }, 'toe'), M.nD, g, [q3(f + Math.sin(ty) * .13), -.8, .2], [0, ty, 0]);
+  put(rbox(.26, .07, .46, .028), M.sole, g, [q3(f + Math.sin(ty) * .065), -.865, .065], [0, ty, 0]);
+  for (const z of [.0, .09]) put(tube([[q3(f - .1), -.74, z], [f, -.7, q3(z + .11)], [q3(f + .1), -.74, z]], .012, -3, .6, false, 3), M.nD, g);
   return g;
 }
-/** Shoulder to glove: sleeve, elbow cap, bracer and a fist. */
-function arm(parent: THREE.Object3D, a: P3, b: P3, c: P3, r: number, sleeve: Mat, guard: Mat | null, glove: Mat, fore: Mat = sleeve) {
-  put(tube([a, lerp(a, b, .5), b], [r * 1.25, r * 1.12, r * .96]), sleeve, parent);
-  put(tube([b, lerp(b, c, .5), c], [r, r * 1.06, r * .8]), fore, parent);
+/** Shoulder to glove: a sleeve that bunches at the elbow, an elbow cap, a bracer, a cuff and a hand with fingers. */
+function arm(parent: THREE.Object3D, a: P3, b: P3, c: P3, r: number, sleeve: Mat, guard: Mat | null, glove: Mat, fore: Mat = sleeve, curl: P3 = [0, -1, 0]) {
+  put(tube([a, lerp(a, b, .5), b], [r * 1.3, r * 1.26, r * 1.08, r * 1.0]), sleeve, parent);
+  put(tube([b, lerp(b, c, .5), c], [r * .98, r * 1.1, r * .92, r * .78]), fore, parent);
   put(blob(r * 2.5, r * 2.5, r * 2.5), nv(guard || sleeve), parent, b);
+  { const u = lerp(a, b, .72), v = lerp(a, b, .86), sgn = a[0] + b[0] < 0 ? -1 : 1; fold(parent, sleeve, [q3(u[0]), q3(u[1]), q3(u[2])], r * 1.12, sgn * 1.2, .9, .03, .011); fold(parent, sleeve, [q3(v[0]), q3(v[1]), q3(v[2])], r * 1.06, -sgn * .4, .9, -.022, .011); }
   if (guard) { put(tube([lerp(b, c, .28), lerp(b, c, .72)], [r * 1.34, r * 1.14]), guard, parent); put(tube([lerp(b, c, .74), lerp(b, c, .78)], r * 1.2), M.rib, parent); }
-  put(tube([lerp(b, c, .82), lerp(b, c, 1.0)], [r * 1.08, r * 1.2]), glove, parent);
-  put(blob(r * 2.7, r * 2.4, r * 2.8), nv(glove), parent, lerp(b, c, 1.08));
+  put(tube([lerp(b, c, .8), lerp(b, c, .97)], [r * 1.22, r * 1.06]), glove, parent);
+  const d: P3 = [c[0] - b[0], c[1] - b[1], c[2] - b[2]]; hand(parent, lerp(b, c, .98), d, r / .074, glove, a[0] + b[0] < 0 ? 1 : -1, curl);
 }
 /** A domed shoulder guard with a rolled lip. */
 const pauldron = (r: number) => lathe([...hard([[r * .86, -r * .24], [r * 1.07, -r * .2], [r * 1.07, -r * .06]]), ...spl([[r * 1.02, -r * .04], [r * .96, r * .22], [r * .68, r * .5], [0, r * .66]], 9)], 18);
 
 /** Ironhold infantry. The heavy version is the Breacher: bulkier, with a riot shield and a scattergun. */
 function trooper(heavy: boolean, role = ''): THREE.Group {
-  const obj = new THREE.Group(), body = grp('body', obj), long = role === 'long', patch = role === 'patch';
+  const long = role === 'long', patch = role === 'patch';
+  // Sculpted in Blender (art/trooper.py); the plain figure below is what the match server builds, with the same joints.
+  const fig = figure(heavy ? 'breacher' : long ? 'longshot' : patch ? 'patch' : 'linesman'); if (fig) { const mz = fig.points.muzzle; if (mz) muzzle(mz.group, mz.at, heavy ? 1.5 : long ? 1.2 : 1); return fig.root; }
+  const obj = new THREE.Group(), body = grp('body', obj);
   const pl = heavy ? M.pO : patch ? M.pW : long ? M.pD : M.pY, bl = heavy ? M.bO : patch ? M.bW : long ? M.bD : M.bY;
   const hel = heavy ? M.helmO : patch ? M.helmR : long ? M.helmD : M.helm, pants = long ? M.fabG : M.fab, sleeve = pants;
   leg(obj, 'legL', -1, pants, bl, M.bD, M.leaB); leg(obj, 'legR', 1, pants, bl, M.bD, M.leaB);
@@ -67,6 +104,15 @@ function trooper(heavy: boolean, role = ''): THREE.Group {
   put(plate(rrect(.3, .085, .028), .055, .018, 1.0), bl === M.bY ? M.pS : pl, body, [0, 1.165, .175], [.12, 0, 0]);
   for (const sx of [-1, 1]) put(tube([[sx * .18, 1.2, .205], [sx * .2, 1.4, .18], [sx * .195, 1.5, .02], [sx * .18, 1.45, -.2]], .036, 8, .45), M.leaB, body);
   put(ring(.115, .036), M.rib, body, [0, 1.52, 0], [H, 0, 0]);
+  // A dust wrap bunched round the neck with its tail thrown over one shoulder, and a rag tied on the off arm: nobody out here is in clean kit.
+  put(lathe(spl([[.12, 1.455], [.21, 1.475], [.232, 1.525], [.2, 1.572], [.13, 1.585]], 9), 16, TAU, .92), M.fabT, body, [0, 0, .012]);
+  fold(body, M.fabT, [0, 1.52, .012], .226, .5, .9, .03, .014); fold(body, M.fabT, [0, 1.545, .012], .214, -.9, .8, -.026, .013); fold(body, M.fabT, [0, 1.5, .012], .224, 2.6, .9, .03, .014);
+  put(tube([[-.13, 1.5, .17], [-.19, 1.4, .215], [-.17, 1.27, .235], [-.2, 1.2, .225]], [.05, .058, .05, .022], 7, .42), M.fabT, body);
+  put(tube([[-.14, 1.5, -.15], [-.2, 1.4, -.2], [-.16, 1.3, -.215]], [.045, .05, .02], 7, .42), M.fabT, body);
+  if (heavy) { // a shell belt slung across the breastplate
+    put(tube([[.25, 1.47, .1], [.1, 1.36, .27], [-.12, 1.22, .275], [-.25, 1.12, .13]], .034, 8, .5), M.leaB, body);
+    for (let i = 0; i < 5; i++) { const t = .16 + i * .16, q = lerp([.25, 1.47, .1], [-.25, 1.12, .13], t), bz = .285 - Math.abs(t - .5) * .12; put(can(.026, .09), i % 2 ? M.red : M.pY, body, [q3(q[0]), q3(q[1] + .012), q3(bz + .03)], [0, 0, .5]); }
+  }
   // Pack: frame, tanks, bedroll, a hose round to the chest.
   put(rbox(.42, .46, .22, .055), M.pD, body, [0, 1.28, -.3]);
   put(capsule(.078, .42), patch ? M.tankT : M.tank, body, [.12, 1.31, -.43]); put(capsule(.062, .34), M.bS, body, [-.115, 1.28, -.425]);
@@ -75,7 +121,7 @@ function trooper(heavy: boolean, role = ''): THREE.Group {
   put(tube([[.18, 1.4, -.27], [.32, 1.42, -.1], [.295, 1.26, .08], [.18, 1.2, .17]], .028, 8), M.rib, body);
   if (heavy) { put(rbox(.56, .27, .18, .055), M.pD, body, [0, 1.5, -.36]); for (const sx of [-1, 1]) put(can(.062, .24), M.tank, body, [sx * .18, 1.7, -.36]); }
   // Head.
-  const head = grp('head', body, [0, 1.53, 0]);
+  const head = grp('head', body, [0, 1.53, 0]); head.scale.setScalar(.86);   // a smaller head on the same shoulders: less toy, more trooper
   put(can(.085, .12), M.rib, head, [0, .02, 0]);
   put(lathe([...hard([[.17, .04], [.216, .05]]), ...spl([[.224, .08], [.242, .22], [.226, .36], [.15, .455], [0, .485]], 14)], 22, TAU, 1.08), hel, head);
   put(ring(.222, .024, 1), M.rib, head, [0, .07, 0], [H, 0, 0], [1, 1.08, 1]);
@@ -112,6 +158,7 @@ function trooper(heavy: boolean, role = ''): THREE.Group {
     arm(arms, [.33, 0, -.05], [.4, -.26, .08], [.14, -.25, .3], .074, sleeve, M.bS, M.leaB);
     arm(arms, [-.33, 0, -.05], [-.36, -.27, .2], [-.04, -.2, .52], .074, sleeve, M.bS, M.leaB);
     for (const sx of [-1, 1]) put(pauldron(.18), heavy ? M.cO : patch ? M.cW : long ? M.cD : M.cY, arms, [sx * .355, .07, -.04], [0, 0, -sx * .42]);
+    put(tube([[-.345, -.13, .0], [-.345, -.15, .0]], [.1, .104], 8), M.fabR, arms); put(tube([[-.42, -.14, -.04], [-.47, -.24, -.08], [-.45, -.33, -.1]], [.03, .034, .012], 6, .4), M.fabR, arms); put(tube([[-.43, -.14, -.01], [-.5, -.2, -.02], [-.52, -.28, -.05]], [.028, .03, .012], 6, .4), M.fabR, arms);
     const gun = grp('gun', arms, [.07, -.2, .4]);
     if (long) {
       put(rbox(.1, .16, .66, .035), M.gunm, gun, [0, 0, .05]); put(can(.034, 1.0), M.gunB, gun, [0, .03, .88], [H, 0, 0]); put(can(.058, .2), M.bS, gun, [0, .03, 1.4], [H, 0, 0]);
@@ -132,7 +179,15 @@ function trooper(heavy: boolean, role = ''): THREE.Group {
 }
 
 /** The worker: hard hat, goggles, a moustache you could sweep a floor with, and a rock drill. */
+/** The ore pack a worker carries home. */
+function orePack(body: THREE.Object3D, z: number) {
+  const pack = grp('pack', body); pack.visible = false;
+  put(rbox(.44, .44, .24, .05), M.pD, pack, [0, 1.24, z]); put(rbox(.48, .09, .28, .03), M.haz, pack, [0, 1.44, z]);
+  for (let i = 0; i < 4; i++) put(shard(.09, .46, 5), M.ore, pack, [-.15 + i * .1, 1.48, z + (i % 2) * .06], [R(-.3, .3), R(0, 3), R(-.3, .3)]);
+}
 function rigger(): THREE.Group {
+  // Sculpted in Blender (art/rigger.py). The match server carries no meshes and builds the plain figure below, which has the same joints.
+  const fig = figure('rigger'); if (fig) { orePack(fig.groups.body, -.3); return fig.root; }
   const obj = new THREE.Group(), body = grp('body', obj);
   leg(obj, 'legL', -1, M.fabT, M.leaB, null, M.leaB); leg(obj, 'legR', 1, M.fabT, M.leaB, null, M.leaB);
   put(blob(.44, .34, .34), M.fabT, body, [0, .93, 0]);
@@ -141,13 +196,21 @@ function rigger(): THREE.Group {
   put(rbox(.12, .16, .085, .028), M.lea, body, [-.165, .96, .14], [0, -.5, 0]); put(rbox(.045, .25, .035, .012), M.pS, body, [.175, .94, .165], [0, .5, .15]); put(rbox(.095, .055, .045, .015), M.pS, body, [.175, 1.075, .165], [0, .5, .15]);
   put(lathe(spl([[.19, .97], [.215, 1.03], [.25, 1.12], [.275, 1.27], [.25, 1.4], [.165, 1.47], [.09, 1.5]], 12), 20, TAU, .8), M.vestB, body);
   put(ring(.105, .036), M.fabT, body, [0, 1.49, 0], [H, 0, 0]);
-  const head = grp('head', body, [0, 1.5, 0]);
+  // A paunch under the vest, a chest pocket with a pencil and a notebook, and a red neckerchief knotted at the front.
+  put(blob(.4, .34, .3), M.vestB, body, [0, 1.14, .115]);
+  put(rbox(.13, .12, .03, .014), M.vestB, body, [-.12, 1.32, .232], [-.12, -.3, 0]); put(can(.011, .13), M.pY, body, [-.15, 1.4, .236], [-.1, 0, .08]); put(rbox(.07, .09, .012, .005), M.pW, body, [-.1, 1.385, .245], [-.12, -.3, 0]);
+  put(lathe(spl([[.1, 1.455], [.17, 1.468], [.182, 1.505], [.15, 1.538], [.1, 1.545]], 8), 14, TAU, .95), M.fabR, body, [0, 0, .01]);
+  fold(body, M.fabR, [0, 1.5, .01], .178, .7, .8, .026, .012); fold(body, M.fabR, [0, 1.515, .01], .174, -1.0, .8, -.02, .012);
+  put(blob(.085, .07, .07), M.fabR, body, [.03, 1.455, .185]); put(tube([[.03, 1.45, .19], [.0, 1.37, .23], [-.02, 1.31, .245]], [.035, .045, .012], 6, .4), M.fabR, body); put(tube([[.04, 1.45, .19], [.08, 1.39, .225], [.1, 1.34, .235]], [.03, .04, .012], 6, .4), M.fabR, body);
+  const head = grp('head', body, [0, 1.5, 0]); head.scale.setScalar(.88);
   put(can(.075, .1), M.skinF, head, [0, .02, 0]);
   put(blob(.38, .43, .4, v => { if (v.y < 0) { v.x *= 1 - v.y * .5; v.z += -v.y * .1; } }, 'jaw'), M.skinF, head, [0, .23, 0]);
   put(blob(.115, .13, .15), M.skinF, head, [0, .18, .205]);
   put(blob(.36, .13, .14, v => { v.y -= v.x * v.x * 1.6; }, 'tash'), M.stache, head, [0, .11, .2]);
+  put(blob(.2, .12, .15), M.skinF, head, [0, .045, .13]); put(blob(.12, .035, .06), M.skinF, head, [0, .083, .2]);
+  for (const sx of [-1, 1]) put(blob(.15, .045, .06, v => { v.y += v.x * sx * .5; }, 'brow' + sx), M.stache, head, [sx * .095, .352, .2], [-.2, 0, sx * -.12]);
   for (const sx of [-1, 1]) {
-    put(blob(.055, .1, .09), M.skinF, head, [sx * .195, .21, 0]);
+    put(blob(.07, .13, .1, v => { v.z -= Math.abs(v.y) * .3; }, 'ear'), M.skinF, head, [sx * .2, .215, -.005], [0, sx * .5, sx * -.12]); put(blob(.03, .07, .05), M.stache, head, [sx * .197, .29, .06]);
     put(can(.078, .07), M.gunB, head, [sx * .09, .275, .17], [H, 0, -sx * .2]); put(blob(.125, .125, .045), M.lens, head, [sx * .098, .275, .208], [0, sx * .2, 0]);
   }
   put(ring(.197, .023), M.leaB, head, [0, .275, -.01], [H, 0, 0]);
@@ -157,6 +220,8 @@ function rigger(): THREE.Group {
   put(can(.052, .07), M.gunB, head, [0, .45, .225], [H + .45, 0, 0]); put(blob(.086, .086, .028), M.visG, head, [0, .466, .256], [.45, 0, 0]);
   const armL = grp('armL', body, [-.31, 1.34, 0]); arm(armL, [0, 0, 0], [-.06, -.25, .04], [-.03, -.45, .18], .074, M.fabT, null, M.glove, M.skinF);
   const armR = grp('armR', body, [.31, 1.34, 0]); arm(armR, [0, 0, 0], [.05, -.24, .09], [.03, -.3, .32], .074, M.fabT, null, M.glove, M.skinF);
+  put(ring(.088, .03, 1, 14), M.fabT, armL, [-.06, -.27, .05], [H - .3, 0, 0]); put(ring(.088, .03, 1, 14), M.fabT, armR, [.05, -.25, .11], [.25, 0, 0]);
+  put(ring(.066, .016, 1, 12), M.leaB, armL, [-.035, -.4, .14], [H - .55, 0, 0]); put(can(.03, .02), M.pS, armL, [-.1, -.4, .14], [0, 0, H]);
   // Rock drill.
   put(rbox(.17, .2, .36, .045), M.chest, armR, [.03, -.3, .52]); put(lathe(hard([[.1, -.03], [.11, 0], [.1, .03]]), 14), M.hazB, armR, [.03, -.3, .72], [H, 0, 0]);
   put(lathe([[0, -.02], [.09, -.02], [.09, 0], [.076, .09], [.045, .25], [.011, .39], [0, .4]], 14), M.drill, armR, [.03, -.3, .74], [H, 0, 0]);
@@ -169,6 +234,7 @@ function rigger(): THREE.Group {
 
 /** Ironhold walker: a two-legged loader rig with a cannon bolted to each side. */
 function gantry(): THREE.Group {
+  { const fig = figure('gantry'); if (fig) { const mz = fig.points.muzzle; if (mz) muzzle(mz.group, mz.at, 2.4); return fig.root; } }   // sculpted in Blender (art/gantry.py)
   const obj = new THREE.Group(), body = grp('body', obj);
   for (const sx of [-1, 1]) {
     const l = grp(sx < 0 ? 'legL' : 'legR', obj, [sx * .78, 1.55, 0]);
@@ -225,6 +291,7 @@ function claw(parent: THREE.Object3D, p: P3, s: number, dir: P3, mat: Mat) {
 }
 /** Veyl melee zealot: floats, swings a tuning-fork glaive. */
 function cantor(): THREE.Group {
+  { const fig = figure('cantor'); if (fig) return fig.root; }   // sculpted in Blender (art/veyl.py); below is what the match server builds
   const obj = new THREE.Group(), body = grp('body', obj);
   put(tail(.27, 1.14, .38, 'ct'), M.vD, body);
   for (const [y, r, z] of [[.5, .19, -.12], [.74, .25, -.05], [.96, .285, -.01]]) put(ring(r, .024), M.vG, body, [0, y, z], [H + .12, 0, 0]);
@@ -254,7 +321,9 @@ function cantor(): THREE.Group {
 }
 
 /** Veyl ranged unit: slim, one eye, carries a long crystal lance that throws slow bolts. */
+const lanceFlash = (arms: THREE.Object3D, p: P3) => { const f = grp('flash', arms, p); mk(G.sph, M.cyan, [0, 0, 0], [.5, .5, .5], 0, f); mk(G.oct, M.cyan, [0, 0, 0], [.9, .2, .2], 0, f); mk(G.oct, M.cyan, [0, 0, 0], [.2, .9, .2], 0, f); f.visible = false; setLayer(f, L_FX); };
 function lancer(): THREE.Group {
+  { const fig = figure('lancer'); if (fig) { const mz = fig.points.muzzle; if (mz) lanceFlash(mz.group, mz.at); return fig.root; } }
   const obj = new THREE.Group(), body = grp('body', obj);
   put(tail(.22, 1.0, .5, 'lt'), M.vD, body);
   for (const [y, r, z] of [[.42, .14, -.17], [.66, .2, -.06]]) put(ring(r, .02), M.vG, body, [0, y, z], [H + .2, 0, 0]);
@@ -276,12 +345,19 @@ function lancer(): THREE.Group {
   put(shard(.1, .84, 6, .12), M.vC, arms, [-.01, -.155, 1.48], [H - .04, 0, .17]); put(ring(.11, .02), M.mag, arms, [.02, -.16, 1.42]);
   for (const a of [0, 2.1, 4.2]) put(shard(.04, .3, 4, .2), M.vC, arms, [.02 + Math.cos(a) * .12, -.16 + Math.sin(a) * .12, 1.36], [H, 0, 0]);
   put(shard(.05, .3, 4, .8), M.vC, arms, [.36, -.24, -.6], [-H, 0, 0]);
-  const f = grp('flash', arms, [-.1, -.13, 2.2]); mk(G.sph, M.cyan, [0, 0, 0], [.5, .5, .5], 0, f); mk(G.oct, M.cyan, [0, 0, 0], [.9, .2, .2], 0, f); mk(G.oct, M.cyan, [0, 0, 0], [.2, .9, .2], 0, f); f.visible = false; setLayer(f, L_FX);
+  lanceFlash(arms, [-.1, -.13, 2.2]);
   return obj;
 }
 
 /** Veyl worker: small and round, hums ore loose with a tuning fork and carries it home in a glass sling. */
+/** The sling: a glass pod on the back that glows full of ore on the way home. */
+function slingPod(body: THREE.Object3D) {
+  const pack = grp('pack', body); pack.visible = false;
+  put(blob(.36, .32, .26), M.vD, pack, [0, 1.12, -.27]); put(ring(.15, .025), M.vG, pack, [0, 1.12, -.36], [0, 0, 0]);
+  for (let i = 0; i < 4; i++) put(shard(.07, .34, 5), M.ore, pack, [-.1 + i * .07, 1.3, -.27 + (i % 2) * .05], [R(-.3, .3), R(0, 3), R(-.3, .3)]);
+}
 function tender(): THREE.Group {
+  { const fig = figure('tender'); if (fig) { slingPod(fig.groups.body); return fig.root; } }
   const obj = new THREE.Group(), body = grp('body', obj);
   put(tail(.2, .84, .3, 'tt'), M.vD, body);
   for (const [y, r, z] of [[.36, .12, -.1], [.56, .16, -.04]]) put(ring(r, .02), M.vG, body, [0, y, z], [H + .14, 0, 0]);
@@ -295,10 +371,7 @@ function tender(): THREE.Group {
   for (const sx of [-1, 1]) { put(tube([[sx * .08, .34, -.02], [sx * .17, .5, -.08], [sx * .15, .66, -.16]], [.03, .024, .006], 6), M.vD, head); put(shard(.035, .16, 4, .4), M.teal, head, [sx * .15, .7, -.17]); }
   for (const x of [-.04, .04]) put(tube([[x, .06, .12], [x * 1.3, -.04, .15], [x * 1.4, -.13, .13]], [.012, .009, .003], 5), M.vG, head);
   const halo = grp('halo', body, [0, 1.95, -.26]); put(ring(.34, .04, .5, 26), M.teal, halo); for (const sx of [-1, 1]) put(shard(.04, .16, 4, .5), M.mag, halo, [sx * .34, 0, 0]);
-  // The sling: a glass pod on the back that glows full of ore on the way home.
-  const pack = grp('pack', body); pack.visible = false;
-  put(blob(.36, .32, .26), M.vD, pack, [0, 1.12, -.27]); put(ring(.15, .025), M.vG, pack, [0, 1.12, -.36], [0, 0, 0]);
-  for (let i = 0; i < 4; i++) put(shard(.07, .34, 5), M.ore, pack, [-.1 + i * .07, 1.3, -.27 + (i % 2) * .05], [R(-.3, .3), R(0, 3), R(-.3, .3)]);
+  slingPod(body);
   const armL = grp('armL', body, [-.27, 1.26, 0]);
   put(tube([[0, 0, 0], [-.1, -.2, .06], [-.08, -.4, .22]], [.05, .038, .03], 8), M.vD, armL); claw(armL, [-.08, -.43, .25], .07, [0, -.3, .9], M.vL);
   const armR = grp('armR', body, [.27, 1.26, 0]);
@@ -311,6 +384,7 @@ function tender(): THREE.Group {
 
 /** Veyl heavy: a floating shell giant with crystal fists. */
 function warden(): THREE.Group {
+  { const fig = figure('warden'); if (fig) return fig.root; }
   const obj = new THREE.Group(), body = grp('body', obj);
   put(tail(.95, 2.0, .7, 'wt'), M.vD, body);
   for (const [y, r, z] of [[.7, .5, -.3], [1.2, .78, -.12], [1.7, .95, -.02]]) put(ring(r, .06), M.vG, body, [0, y, z], [H + .14, 0, 0]);

@@ -1,6 +1,7 @@
 // Boot, input, the frame loop, and the menu screens.
 import * as THREE from 'three';
-import { Pipeline, ViewPipe, V3, makeSky } from './gfx';
+import { Pipeline, ViewPipe, V3, makeSky, TX, M } from './gfx';
+import { LAMP_ON } from './light';
 import * as MD from './models';
 import { GLOAM_BUILDINGS, bloomPatch } from './gloam-art';
 import { Game } from './game';
@@ -35,7 +36,8 @@ let touchOn = false, touchPref: TouchPref = 'auto';
 function resize() {
   const w = window.innerWidth, h = window.innerHeight;
   // Phones have tiny, dense screens and slow graphics chips: draw at no more than one pixel per CSS pixel there.
-  const sc = Math.min(Math.min(window.devicePixelRatio || 1, touchOn ? 1 : 1.5), 1080 / h) * (gfxI === 1 ? .6 : gfxI === 2 ? .8 : gfxI === 3 ? 1 : quality);
+  // High draws every pixel of a sharp screen, up to 1440 lines. Auto stops at 1080 lines so it has room to hold its frame rate.
+  const top = gfxI === 3 && !touchOn, sc = Math.min(Math.min(window.devicePixelRatio || 1, touchOn ? 1 : top ? 2 : 1.5), (top ? 1440 : 1080) / h) * (gfxI === 1 ? .6 : gfxI === 2 ? .8 : gfxI === 3 ? 1 : quality);
   if (split && game2) {
     const vw = splitSide ? w / 2 : w, vh = splitSide ? h : h / 2; pipe.resize(vw * sc, vh * sc, w * sc, h * sc);
     const W = pipe.w, H = pipe.h; view1.rect = splitSide ? [0, 0, W, H] : [0, pipe.ch - H, W, H]; view2.rect = splitSide ? [pipe.cw - W, 0, W, H] : [0, 0, W, H];
@@ -347,7 +349,11 @@ volEl.addEventListener('input', () => { vol = +volEl.value; setVolume(vol); save
 const musEl = $('mus') as HTMLInputElement; musEl.checked = mus; musEl.addEventListener('change', () => { mus = musEl.checked; setMusic(mus); save(); syncOpts(); });
 // ---- options tab
 const sens2 = $('sens2') as HTMLInputElement, vol2 = $('vol2') as HTMLInputElement, mus2 = $('mus2') as HTMLInputElement, cbEl = $('cb') as HTMLInputElement, gfxB = Array.from($('gfx').querySelectorAll('button')) as HTMLButtonElement[];
-function applyOpts() { document.body.classList.toggle('cb', cbOn); hud.cb = hud2.cb = cbOn; pipe.shadowEvery = gfxI === 1 ? 3 : 1; hud.relabel(touchOn ? k => TOUCHKEYS[k] ?? k : Object.keys(binds).length ? k => keyText(keyOf(k === 'Tab' || k === 'Space' ? k : 'Key' + k)) : null); resize(); }
+// Edge smoothing is the first thing to go when Auto has had to drop the resolution.
+const aoFor = () => gfxI === 1 || (gfxI === 0 && quality < .75) ? 0 : 1;
+const glowFor = () => gfxI === 1 || (gfxI === 0 && quality < .6) ? 0 : 1;
+const aaFor = () => gfxI === 1 || (gfxI === 0 && quality < 1) ? 0 : 4;
+function applyOpts() { document.body.classList.toggle('cb', cbOn); hud.cb = hud2.cb = cbOn; pipe.shadowEvery = gfxI === 1 ? 3 : 1; pipe.aa = aaFor(); pipe.ao = aoFor(); pipe.glow = pipe.shafts = glowFor(); LAMP_ON.value = (gfxI as number) !== 1; pipe.w = 0; hud.relabel(touchOn ? k => TOUCHKEYS[k] ?? k : Object.keys(binds).length ? k => keyText(keyOf(k === 'Tab' || k === 'Space' ? k : 'Key' + k)) : null); resize(); }
 /** On a touch screen the HUD names the on-screen buttons instead of keys. */
 const TOUCHKEYS: Record<string, string> = { RMB: 'Aim', MMB: 'Send', TAB: 'Jump', Tab: 'Jump', Space: 'Dash', C: 'Ability', Q: 'Back', V: 'Squad', G: 'QM', R: 'Reload' };
 function syncOpts() { sens2.value = sensEl.value = String(sens); vol2.value = volEl.value = String(vol); mus2.checked = musEl.checked = mus; cbEl.checked = cbOn; gfxB.forEach((b, i) => b.classList.toggle('on', i === gfxI)); }
@@ -373,8 +379,10 @@ $('full').addEventListener('click', () => { try { const p: any = document.fullsc
 
 // ---------------------------------------------------------------- loop
 let last = performance.now(), freeShown = false;
+/** Tests that only care about the rules hold the picture still: no game on this page draws until they let go. */
+let still = false;
 function frame(now: number) {
-  const dt = (now - last) / 1000; last = now;
+  const dt = (now - last) / 1000; last = now; if (still) { game.noRender = true; if (game2) game2.noRender = true; }
   // Without mouse capture, holding the cursor near a screen edge turns the view.
   pad.frame(); if (touchOn) document.body.classList.toggle('playing', live());
   if (freeMouse && !touchOn && moved && live() && !game.tab) { const ex = curX < .1 ? (curX - .1) / .1 : curX > .9 ? (curX - .9) / .1 : 0; game.mdx += ex * 900 * dt; }
@@ -395,15 +403,16 @@ function frame(now: number) {
   if (game.phase === 'over' && !ended && split && classic && splitVs && game2 && !game.story) { $('endTitle').textContent = game.won ? 'Ironhold holds the valley' : GL ? 'The Gloam take the valley' : 'The Veyl take the valley'; $('endTitle').className = 'logo sm'; $('endLine').textContent = game.won ? (GL ? 'Player one squashed every Mother Cap. Player two, the Bloom is drying out.' : 'Player one broke every Choir Stone. Player two, the singing has stopped.') : 'Player two broke the Headframe. Player one, the Charter will be billing your next of kin.'; }
   if (game.phase === 'over' && !ended) { ended = true; const m = mode !== 'skirm' ? game.story : null; if (m && game.won) { const i = MISSIONS.indexOf(m); if (i < STORY_JOBS) { if (i >= camp) STORY.oreTotal += m.out ? game.stats.minedV : game.stats.mined; camp = Math.max(camp, i + 1); } else sideDone |= 1 << (i - STORY_JOBS); if (camp >= MP_AFTER) mpOpen = true; save(); } $('again').textContent = m ? (game.won ? (MISSIONS.indexOf(m) < STORY_JOBS - 1 ? 'Next job' : MISSIONS.indexOf(m) === STORY_JOBS - 1 ? 'Watch the ending' : 'Run it again') : 'Try that again') : split ? 'Another shift' : game.net ? 'Back to the lobby' : 'Another shift'; }
   // Drop the render resolution if the machine can't keep up, and bring it back if it can.
-  if (dt > .034) { slow++; fast = 0; } else if (dt < .02) { fast++; slow = Math.max(0, slow - 1); }
+  // A machine that is far behind should not have to suffer fifty frames before the picture gets lighter, so very slow frames count for more.
+  if (dt > .034) { slow += dt > .15 ? 10 : dt > .07 ? 3 : 1; fast = 0; } else if (dt < .02) { fast++; slow = Math.max(0, slow - 1); }
   if (gfxI === 0)
-  if (slow > 50 && quality > .5) { quality = Math.max(.5, quality * .85); slow = 0; resize(); }
+  if (slow > 50 && quality > .5) { quality = Math.max(.5, quality * .85); slow = 0; pipe.aa = aaFor(); pipe.ao = aoFor(); pipe.glow = pipe.shafts = glowFor(); LAMP_ON.value = (gfxI as number) !== 1; resize(); }
   // Resolution is the only thing the Auto setting gave up, but a phone that is still slow at half resolution is short of geometry, not pixels:
   // the shadow pass draws the whole scene a third time. At the floor, Auto redraws shadows every third frame, the same as Low.
   if (gfxI === 0) { const every = quality <= .5 ? 3 : 1; if (pipe.shadowEvery !== every && (every === 3 ? slow > 50 : fast > 900)) { pipe.shadowEvery = every; slow = fast = 0; } }
   if (gfxI === 0)
-  if (fast > 900 && quality < 1) { quality = Math.min(1, quality / .85); fast = 0; resize(); }
+  if (fast > 900 && quality < 1) { quality = Math.min(1, quality / .85); fast = 0; pipe.aa = aaFor(); pipe.ao = aoFor(); pipe.glow = pipe.shafts = glowFor(); LAMP_ON.value = (gfxI as number) !== 1; resize(); }
   requestAnimationFrame(frame);
 }
-(window as any).__ore = { models: MD, gloamB: GLOAM_BUILDINGS, gloamBloom: bloomPatch, sounds: { ready: soundsReady, sfx }, quit, atlasUsed: MD.atlasUsed, game, start, pipe, hud, hud2, startSplit, startVeyl, split: () => split, game2: () => game2, setFree: (v: boolean) => { freeMouse = v; }, pickMap, pickSize, pickSide: (s: number, f = 0) => { mode = "skirm"; sideI = s; foeI = s ? s - 1 : f; showSide(); fresh(); }, unlock: () => { camp = STORY_JOBS; mpOpen = true; mode = 'multi'; showMode(); }, net: () => net, pickJob: (i: number) => { mode = 'camp'; camp = Math.max(camp, Math.min(i, STORY_JOBS)); jobI = i; showMode(); fresh(); }, playCuts, cuts: CUTS, cutP, startStory: (i: number) => { mode = 'camp'; jobI = i; camp = Math.max(camp, Math.min(i, STORY_JOBS)); start(); } };
+(window as any).__ore = { models: MD, tx: TX, mats: M, gloamB: GLOAM_BUILDINGS, gloamBloom: bloomPatch, sounds: { ready: soundsReady, sfx }, quit, atlasUsed: MD.atlasUsed, game, start, pipe, hud, hud2, startSplit, startVeyl, split: () => split, game2: () => game2, setFree: (v: boolean) => { freeMouse = v; }, hold: (v: boolean) => { still = v; }, pickMap, pickSize, pickSide: (s: number, f = 0) => { mode = "skirm"; sideI = s; foeI = s ? s - 1 : f; showSide(); fresh(); }, unlock: () => { camp = STORY_JOBS; mpOpen = true; mode = 'multi'; showMode(); }, net: () => net, pickJob: (i: number) => { mode = 'camp'; camp = Math.max(camp, Math.min(i, STORY_JOBS)); jobI = i; showMode(); fresh(); }, playCuts, cuts: CUTS, cutP, startStory: (i: number) => { mode = 'camp'; jobI = i; camp = Math.max(camp, Math.min(i, STORY_JOBS)); start(); } };
 requestAnimationFrame(frame);

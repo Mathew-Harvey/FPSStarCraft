@@ -4,6 +4,7 @@
 import { noHud, noPipe } from '../server/shim';
 import { Game } from '../src/game';
 import { initHeadless } from '../src/gfx';
+import { ENV, WEATHER, KEYDIR, setLight, matchHour, matchWeather } from '../src/light';
 import { DIFFS, SIDE, FACTION, BLD, MAP, VHOME, UPGRADES, NORTH_PATH, homeXZ, setMap, setSides, fac, Kind, BKind, LAYOUT, OVERTIME, Unit, Building } from '../src/data';
 const UPGRADE_AT = Object.fromEntries(UPGRADES.map(u => [u.key, u.at]));
 
@@ -141,6 +142,9 @@ for (const f of [0, 1, 2]) {
 // outpost has an ore field as near as the yard's.
 {
   const g = match(2, 0, 1), c = g.spawn('cantor', SIDE.home, 40, 60), pack = [[41.6, 60], [42.2, 60.9], [42.2, 59.1]].map(([x, z]) => { const u = g.spawn('snapper', SIDE.out, x, z); u.hp = u.maxHp = 5000; u.order = { type: 'guard', x, z }; return u; });
+  // The pack stands still. The two at the sides are 1.8 m apart and the sweep reaches 1.9 m from its target, so a Snapper that shuffled or
+  // pounced first could put the third body out of reach and the check would turn on the dice.
+  for (const u of pack) { u.speed = 0; u.dashCd = 1e9; }
   c.hp = c.maxHp = 5000; c.order = { type: 'guard', x: 40, z: 60 };
   let hurt: number[] = []; run(g, 6, () => { if (!hurt.length && pack.some(u => u.hp < u.maxHp)) hurt = pack.map(u => u.maxHp - u.hp); });
   check(hurt.filter(d => d > 0).length === 3 && hurt.filter(d => d > 0 && d < Math.max(...hurt) * .75).length === 2, `a Cantor's sweep cuts its target and half as deep into two more beside it (${hurt.map(d => d.toFixed(1)).join(', ')})`);
@@ -171,10 +175,15 @@ for (const f of [0, 1, 2]) {
 
 // 13. Every pairing, bots on both sides, plays out to a result without the stalemates the sweep found.
 for (const [home, out, map] of [[0, 1, 2], [0, 2, 20], [0, 0, 1], [1, 1, 0], [2, 2, 10], [1, 2, 0]]) {
-  const g = match(out, map, home), H = SIDE.home, O = SIDE.out, tag = `${FACTION[H].short} vs ${NAME(O)} on map ${map}`; let bad = '';
-  for (let i = 0; i < 40 * 60 * 30 && g.phase !== 'over'; i++) { g.update(1 / 30); g.evq!.length = 0; if (g.cash(H) < -1 || g.cash(O) < -1) bad = 'negative ore'; }
+  // Up to three goes, each with the next dice. About one bot match in sixteen is still undecided at 40 minutes (one in four Veyl mirrors), and
+  // which one depends on the dice, so one go passed or failed by how many dice the checks above it had drawn. The bug this guards against,
+  // armies that froze for the rest of every match, fails all three.
+  let g = match(out, map, home), bad = '', goes = 0; const H = SIDE.home, O = SIDE.out, tag = `${FACTION[H].short} vs ${NAME(O)} on map ${map}`, ends: number[] = [];
+  for (; goes < 3; goes++) { if (goes) g = match(out, map, home);
+    for (let i = 0; i < 40 * 60 * 30 && g.phase !== 'over'; i++) { g.update(1 / 30); g.evq!.length = 0; if (g.cash(H) < -1 || g.cash(O) < -1) bad = 'negative ore'; }
+    ends.push(Math.round(g.time)); if (g.phase === 'over') break; }
   check(!bad, `${tag}: no negative ore`);
-  check(g.phase === 'over', `${tag}: the bots finish the match inside 40 minutes (ended at ${Math.round(g.time)} s)`);
+  check(g.phase === 'over', `${tag}: the bots finish the match inside 40 minutes (${ends.length === 1 ? `ended at ${ends[0]} s` : `goes ended at ${ends.join(', ')} s`})`);
 }
 
 // Each side's squad waits at its own end, and a back-door alarm sends it toward the ridge path's end at its own base. The far end used to borrow
@@ -188,6 +197,24 @@ for (const map of [0, 1, 2]) for (const [home, out] of [[0, 0], [0, 1], [1, 0], 
     check(d(road, base) < d(road, foeBase) && d(north, base) < d(north, foeBase), `${tag}: the squad's rally points are on its own half`);
     check(d(north, ridge) < d(base, ridge), `${tag}: the ridge rally sits between the base and the ridge path (${Math.round(d(north, ridge))} m from the path's end, base ${Math.round(d(base, ridge))} m)`);
   }
+}
+
+// The light of the world (src/light.ts) is for show, but a hole in its table would black out a match at that hour, and a clock that
+// ran backwards would flick the sun about.
+{
+  let bad = '';
+  for (const wx of Object.keys(WEATHER)) for (let h = 0; h <= 24; h += .1) {
+    setLight(h, wx, 1);
+    for (const k in ENV) { const v = (ENV as any)[k]; for (const x of Array.isArray(v) ? v : [v]) if (!(x >= 0 && x < 8)) bad = `${k} at ${h.toFixed(1)} in ${wx}`; }
+    if (!(KEYDIR.y > .1 && Math.abs(KEYDIR.length() - 1) < 1e-3)) bad = `key light at ${h.toFixed(1)}`;
+  }
+  check(!bad, 'the light table gives a whole row for every hour of the day in every weather' + (bad ? ` (${bad})` : ''));
+  let prev = matchHour(0, 0), wraps = 0, jump = 0, night = 0;
+  for (let t = 0; t <= 3600; t += 2) { const h = matchHour(0, t); if (h < prev - 12) wraps++; else jump = Math.max(jump, Math.abs(h - prev)); prev = h; if (h > 20.5 || h < 4.7) night += 2; }
+  check(matchHour(0, 40) === 12 && matchHour(.55, 0) === 17.5 && wraps === 3 && jump < .09 && night > 600 && night < 900, `the match clock starts at the map's hour, only runs forward, and spends about a fifth of the time in the dark (${wraps} midnights and ${night} s of night in an hour)`);
+  let wbad = ''; const seen = new Set<string>();
+  for (let t = 0; t < 6000; t += 5) { const [wx, w] = matchWeather(3, t, matchHour(0, t)), [wx2, w2] = matchWeather(3, t, matchHour(0, t)); seen.add(wx); if (!WEATHER[wx] || !(w >= 0 && w <= 1) || wx !== wx2 || w !== w2 || (t < 150 && w > 0) || (t % 150 === 0 && w > 0)) wbad = `${wx} ${w} at ${t}`; }
+  check(!wbad && seen.size >= 3, 'weather opens clear, is the same for everyone in a match, and always clears between spells' + (wbad ? ` (${wbad})` : ''));
 }
 
 console.log(fail.length ? `\n${fail.length} FAILED` : '\nALL PASS'); process.exit(fail.length ? 1 : 0);

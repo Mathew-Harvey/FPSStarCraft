@@ -551,7 +551,8 @@ export class Game {
       if (!this.net && !this.otSaid && this.overtime() > 0) { this.otSaid = true; this.feed('Signal', `Overtime. From here every building takes ${Math.round(OVERTIME.perMin * 100)}% more damage for each minute that passes, and every tower does that much less.`, 'al'); }
       if (this.staticT > 0) { this.staticT -= dtReal; if (this.staticT <= 0) this.respawn(); }
       else if (this.me?.alive && !this.tab) this.updatePlayer(dt, P);
-      if (SIDE.out === 2) gloamFx(this, dt);
+      // Each faction's own per-frame systems (the Gloam's Bloom and Buds), for every faction in the match at either end.
+      for (const f of new Set([fac(SIDE.home), fac(SIDE.out)])) factionRule(f).fx?.(this, dt);
       if (this.net) { netTick(this, dt); this.intel.update(dt); this.poseUnits(dt); this.updateProjs(dt); this.updateChunks(dt); this.updateWrecks(dt); this.updateFx(dt); } else {
       if (this.mission && this.endT <= 0) { this.mission.tick?.(this, this.ms, dt); if (this.ms.lose) { this.endT = 2.4; this.endWon = false; this.pipe.flash = 1; } else if (this.mission.objectives.every(o => o.done(this))) { this.endT = 2.4; this.endWon = true; this.pipe.flash = 1; } }
       this.updateUnits(dt); this.updateBuildings(dt); this.updateProjs(dt); this.updateChunks(dt); this.updateWrecks(dt); this.dir.update(dt); this.intel.update(dt);

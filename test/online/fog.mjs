@@ -8,10 +8,12 @@ const SIGHT = 48 + 10, LOOK = 110 + 6;
 try {
   const { A, V, bA, bV } = await versus(S.url);
   check(bA.team === 0 && bV.team === 1, 'Ada plays the yard side and Vex the far side');
-  await sleep(3000);
-  const early = A.snaps(), earlyV = V.snaps();
+  // Ada stands still at the start, looking west, away from the Veyl end. (Looking east she could see Veyl bodies across open ground, which is fine.)
+  await sleep(300); const m0 = A.last('s').u.find(r => r[0] === bA.unit); for (let i = 0; i < 20; i++) { A.send({ t: 'in', me: [m0[3], m0[4], -1.57, 0, 0], c: [] }); await sleep(50); }
+  const n0 = A.got.length; await sleep(2500);
+  const early = A.got.slice(n0).filter(m => m.t === 's'), earlyV = V.snaps();
   check(early.length > 20, `Ada is getting snapshots (${early.length})`);
-  check(early.every(s => !s.u.some(r => r[2] === 1) && !s.b.some(r => r[2] === 1)), 'at the start Ada is sent no Veyl body and no Veyl building');
+  check(early.every(s => !s.u.some(r => r[2] === 1) && !s.b.some(r => r[2] === 1 && !r[13])), 'at the start, looking away, Ada is sent no Veyl body and no Veyl building in sight');
   check(earlyV.every(s => !s.u.some(r => r[2] === 0) && !s.b.some(r => r[2] === 0)), 'and Vex is sent nothing of Ironhold');
   check(early.every(s => s.vo === undefined && !s.v) && earlyV.every(s => s.ore === undefined && !s.d), 'neither side is sent the other side\'s purse or plan');
   // Vex's own buildings say where the far base is. Ada walks over there with her body, looking at it.

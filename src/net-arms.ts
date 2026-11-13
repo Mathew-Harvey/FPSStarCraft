@@ -38,6 +38,11 @@ export const ARMS: Record<string, Move[]> = {
   blister: [],   // the Blister's burst is done on the server ('gb'), so it never reports a hit
   mulcher: [M('tusk sweep', 4.4, 34, 6, 1.4, false, 27.2), M('charge', 4, 45, 10, 6)],
 };
+/** A kind with no row here, whose unit definition gives its driven attack (reach, hit, rate: see UnitDef): one aimed attack from those. */
+function fromDef(kind: string): Move[] | null {
+  const d = UNIT[kind as keyof typeof UNIT] as any; if (!d || !(d.reach > 0) || !(d.hit > 0) || !(d.rate > 0)) return null;
+  const m = [M('attack', d.reach, d.hit, 1, 1 / d.rate, d.reach > 6)]; ARMS[kind] = m; return m;
+}
 /** For a kind with no row yet (a new unit): the old flat allowance, so it still plays online. Logged once per kind. */
 const LOOSE = [M('any', 175, 450, 2, 1)];
 const warned = new Set<string>();
@@ -65,7 +70,7 @@ function mulOf(g: Game, team: number) { return Math.max(1, g.gunMul(team), g.foe
 export function checkClaim(g: Game, by: Unit, t: Unit | Building, amt: number): number {
   if (!(amt > 0) || !isFinite(amt)) return drop('amount');
   const isB = !('kind' in t && t.kind in UNIT), reach = isB ? g.distToBox(t as Building, by.pos.x, by.pos.z) : Math.max(0, Math.hypot(t.pos.x - by.pos.x, t.pos.z - by.pos.z) - UNIT[(t as Unit).kind].rad);
-  let moves = ARMS[by.kind]; if (!moves) { moves = LOOSE; if (!warned.has(by.kind)) { warned.add(by.kind); console.warn(`no wire attacks listed for ${by.kind}: using the loose allowance (src/net-arms.ts)`); } }
+  let moves = ARMS[by.kind] || fromDef(by.kind); if (!moves) { moves = LOOSE; if (!warned.has(by.kind)) { warned.add(by.kind); console.warn(`no wire attacks listed for ${by.kind}: using the loose allowance (src/net-arms.ts)`); } }
   const mul = mulOf(g, by.team); let why = moves.length ? 'range' : 'no attack';
   let all = BUCKET.get(by); if (!all) BUCKET.set(by, all = new Map()); if (all.size > 400) all.clear();
   let sight: boolean | null = null;

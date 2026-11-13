@@ -2,17 +2,17 @@
 // pivot each (so the same code that swings a leg still swings it), and under each group one mesh per skin, with a crease value on
 // every vertex that the toon shader inks in. The match server has none of these and falls back to the code-built figures.
 import * as THREE from 'three';
-import BANK from 'mesh:bank';
 import { inflateSync } from 'fflate';
+import { artBin, artTex } from './artfiles';
 import { M, toonMaterial } from './gfx';
 
-export const hasFigure = (kind: string) => !!(BANK as Record<string, string>)[kind];
+export const hasFigure = (kind: string) => !!artBin(kind);
 // A figure with its own painted picture wears that one picture on every part, so each joint is a single mesh. The glow and shine each
 // part's skin would have had ride on its vertices (aEm), the same way the unit atlas carries them.
 const PAINTED: Record<string, THREE.ShaderMaterial> = {};
 function painted(kind: string) {
   let m = PAINTED[kind]; if (m) return m;
-  const img = new Image(), tex = new THREE.Texture(img); tex.anisotropy = 4; img.onload = () => { tex.needsUpdate = true; }; img.src = 'data:image/webp;base64,' + (BANK as Record<string, string>)[kind + '.tex'];
+  const img = new Image(), tex = new THREE.Texture(img); tex.anisotropy = 4; img.onload = () => { tex.needsUpdate = true; }; img.src = artTex(kind + '.tex') || '';
   m = PAINTED[kind] = toonMaterial(tex); m.uniforms.uShine.value = 0; return m;
 }
 // A building keeps the game's tiled skins and lays its own picture of wear over them (art/kit/bake.py `coat`): rust runs, bleached roofs,
@@ -20,7 +20,7 @@ function painted(kind: string) {
 const WORN = new Map<string, THREE.ShaderMaterial>(), WEAR: Record<string, THREE.Texture> = {};
 function worn(kind: string, src: THREE.ShaderMaterial) {
   const key = kind + '/' + src.uuid; let m = WORN.get(key); if (m) return m;
-  let tex = WEAR[kind]; if (!tex) { const img = new Image(); tex = WEAR[kind] = new THREE.Texture(img); img.onload = () => { tex.needsUpdate = true; }; img.src = 'data:image/webp;base64,' + (BANK as Record<string, string>)[kind + '.wear.tex']; }
+  let tex = WEAR[kind]; if (!tex) { const img = new Image(); tex = WEAR[kind] = new THREE.Texture(img); img.onload = () => { tex.needsUpdate = true; }; img.src = artTex(kind + '.wear.tex') || ''; }
   m = src.clone(); m.uniforms = { ...src.uniforms, uWear: { value: tex } }; m.defines = { ...src.defines, WEAR: 1 }; WORN.set(key, m); return m;
 }
 // A building is made afresh every time one is placed, so the unpacked geometry is kept. Whoever takes a figure merges it (bake) before changing it, which copies it.
@@ -43,10 +43,9 @@ function unpack(c: { head: any; geos: THREE.BufferGeometry[] }, u8: Uint8Array, 
 }
 /** Builds a sculpted figure, or returns null when this build carries none for `kind`. Groups come back by name. */
 export function figure(kind: string): { root: THREE.Group; groups: Record<string, THREE.Group>; points: Record<string, { group: THREE.Group; at: [number, number, number] }> } | null {
-  const src = (BANK as Record<string, string>)[kind]; if (!src) return null;
   let c = CACHE[kind];
   if (!c) {
-    const bin = atob(src), z8 = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) z8[i] = bin.charCodeAt(i);
+    const z8 = artBin(kind); if (!z8) return null;
     const u8 = inflateSync(z8).slice();                                   // the bank is deflated (build.mjs); the views below need the data to start at byte 0 of its own buffer
     const hl = new DataView(u8.buffer).getUint32(0, true); c = CACHE[kind] = { head: JSON.parse(new TextDecoder().decode(u8.subarray(4, 4 + hl))), geos: [] }; unpack(c, u8, 4 + hl);
   }
@@ -54,7 +53,7 @@ export function figure(kind: string): { root: THREE.Group; groups: Record<string
   const root = new THREE.Group(), groups: Record<string, THREE.Group> = {}, piv: Record<string, number[]> = {}, S: number = head.scale || 1;   // S sizes the whole figure
   for (const g of head.groups) { const o = new THREE.Group(); o.name = g.name; groups[g.name] = o; piv[g.name] = g.pivot; }
   for (const g of head.groups) { const o = groups[g.name], q = g.parent ? piv[g.parent] : [0, 0, 0]; o.position.set((g.pivot[0] - q[0]) * S, (g.pivot[1] - q[1]) * S, (g.pivot[2] - q[2]) * S); if (g.scale && g.scale !== 1) o.scale.setScalar(g.scale); (g.parent ? groups[g.parent] : root).add(o); }
-  head.meshes.forEach((m: any, i: number) => { const skin = (M[m.mat] || M.nS) as THREE.ShaderMaterial, mesh = new THREE.Mesh(c!.geos[i], head.tex ? painted(kind) : head.wear && m.uv2 !== undefined && (BANK as Record<string, string>)[kind + '.wear.tex'] ? worn(kind, skin) : skin); mesh.name = m.part; (groups[m.group] || root).add(mesh); });
+  head.meshes.forEach((m: any, i: number) => { const skin = (M[m.mat] || M.nS) as THREE.ShaderMaterial, mesh = new THREE.Mesh(c!.geos[i], head.tex ? painted(kind) : head.wear && m.uv2 !== undefined && artTex(kind + '.wear.tex') ? worn(kind, skin) : skin); mesh.name = m.part; (groups[m.group] || root).add(mesh); });
   const points: Record<string, { group: THREE.Group; at: [number, number, number] }> = {};   // named spots the game hangs things on (a muzzle flash, say), in their group's own space
   for (const k in head.points || {}) { const q = head.points[k]; points[k] = { group: groups[q.group] || root, at: [q.at[0] * S, q.at[1] * S, q.at[2] * S] }; }
   return { root, groups, points };

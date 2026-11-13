@@ -36,7 +36,7 @@ def bell(c, r0, r1, h, t, flare=.25):
 def build_tuner():
     """Support caster. Reads at a glance by the tall fork standing off its head, the bell-mouthed skirt, and the framed pane of
     glass it carries in one hand (the Glass Wall it sets down). Two thin rings turn round its head like a gyroscope."""
-    fig = B.Figure('tuner', lo=(-1.3, -.1, -1.2), hi=(1.3, 3.4, 1.4), detail=1.0, paint=1024, brush=1.25)
+    fig = B.Figure('tuner', scale=1.12, lo=(-1.3, -.1, -1.2), hi=(1.3, 3.4, 1.4), detail=1.0, paint=1024, brush=1.25)
     for g, p, par in (('body', (0, 0, 0), None), ('head', (0, 1.84, .02), 'body'), ('halo', (0, 2.1, -.05), 'body'),
                       ('armL', (-.31, 1.66, 0), 'body'), ('armR', (.31, 1.66, 0), 'body')):
         fig.group(g, p, par)
@@ -193,7 +193,7 @@ def master_parts(o=V(0, 0, 0), R=None, tag='', scale=1.0, tail=True, solo=True):
     add = lambda name, grp, mat, fn, tris, **kw: out.append((name + tag, grp, mat, mv(fn), tris, kw))
     hd, al, ar, hl = 'head' + tag, 'armL' + tag, 'armR' + tag, 'halo' + tag
     # a long robe of shell plates almost to the ground
-    pl = Vk.petals(1.3, .3, .2, .5, 11, .2, .016, skip=(), back=.15, wave=.1, zs=.86, belly=.5)
+    pl = Vk.petals(1.3, .5, .2, .74, 11, .24, .017, skip=(0,), back=.22, wave=.16, zs=.86, belly=.42)        # a robe that flares out like a bell, open at the front over the tail
     add('robe', 'body', 'vIp', Vk.pits(S.union(*pl[0::2]), 1.5), 1000, voxel=.0035, uv=('cyl', V(0, .8, 0)), sharp=35)
     add('robeunder', 'body', 'vDp', Vk.pits(S.union(*[S.moved(q, (0, .04, 0)) for q in pl[1::2]]), 2.2), 900, voxel=.0035, uv=('cyl', V(0, .8, 0)), sharp=35)
     add('robeband', 'body', 'vG', Vk.ring((0, 1.31, 0), .22, .025, squash=1.2), 260, voxel=.003, uv=('cyl', V(0, 1.3, 0)))
@@ -208,16 +208,16 @@ def master_parts(o=V(0, 0, 0), R=None, tag='', scale=1.0, tail=True, solo=True):
     add('cords', 'body', 'vG', cords(1.55, .22, .22, .1, .017, 2, .08), 260, voxel=.003, uv=('front',))
     # organ pipes up the back, graded tall to short from the middle out, open at the top
     pipes, lips = [], []
-    for i, x in enumerate((-.26, -.16, -.06, .06, .16, .26)):
-        h = 2.75 - abs(x) * 2.2 + (.06 if i % 2 else 0)
-        r = .045 - abs(x) * .04
-        a, b = V(x, 1.6, -.22 - abs(x) * .2), V(x * 1.2, h, -.3 - abs(x) * .3)
+    for i, x in enumerate((-.3, -.18, -.06, .06, .18, .3)):                                                        # fanned out, tallest in the middle, standing well above the head
+        h = 3.3 - abs(x) * 2.6 + (.08 if i % 2 else 0)
+        r = .06 - abs(x) * .05
+        a, b = V(x, 1.6, -.22 - abs(x) * .2), V(x * 2.1, h, -.34 - abs(x) * .3)
         pipes.append(S.cut(S.rcone(a, b, r, r * 1.05), S.rcone(b - (b - a) * .04, b + (b - a) * .05, r * .7, r * .7)))
         lips.append(S.torus(b - (b - a) * .25, r * 1.08, r * .25, S.basis((0, 0, 1), b - a)))
         lips.append(S.box(b - (b - a) * .25 + V(0, -.04, r * .9), (r * .5, .02, .01), .004))                     # the cut mouth in each pipe
     add('pipes', 'body', 'vG', S.union(*pipes), 900, voxel=.003, uv=('cyl', V(0, 2.1, -.3)), sharp=50, cull=False, planar=4)
     add('pipelips', 'body', 'vD', S.union(*lips), 400, voxel=.0025, uv=('side',))
-    add('pipeyoke', 'body', 'vIp', S.box((0, 1.7, -.24), (.32, .06, .06), .03), 240, voxel=.003, uv=('side',))
+    add('pipeyoke', 'body', 'vIp', S.box((0, 1.7, -.26), (.36, .07, .07), .03), 240, voxel=.003, uv=('side',))
     sh = S.mirror(S.union(S.ellipsoid((.32, 1.92, -.02), (.13, .11, .13)), Vk.ring((.32, 1.87, 0), .12, .016, (0, 0, -.5)), k=.01))
     add('shoulders', 'body', 'vIp', Vk.pits(sh, 3.6), 520, voxel=.003, uv=('top',))
     H0 = V(0, 2.08, .02)
@@ -258,7 +258,7 @@ def master_parts(o=V(0, 0, 0), R=None, tag='', scale=1.0, tail=True, solo=True):
 def build_choirmaster():
     """Area caster. Read from far off by the organ pipes standing up its back and the tall robe; up close by the open mouth and
     the lit orb in its open chest. One hand holds a thin crystal baton high (Shatter Note comes down where it points)."""
-    fig = B.Figure('choirmaster', lo=(-1.5, -.1, -1.4), hi=(1.5, 3.4, 1.4), detail=1.0, paint=1024, brush=1.35)
+    fig = B.Figure('choirmaster', scale=1.12, lo=(-1.6, -.1, -1.5), hi=(1.6, 3.8, 1.4), detail=1.0, paint=1024, brush=1.35)
     for g, p, par in (('body', (0, 0, 0), None), ('head', (0, 2.08, .02), 'body'), ('halo', (0, 2.62, -.42), 'body'),
                       ('armL', (-.36, 1.94, 0), 'body'), ('armR', (.36, 1.94, 0), 'body')):
         fig.group(g, p, par)
@@ -335,7 +335,7 @@ if __name__ == '__main__':
         fig.parts = [p for p in fig.parts if any(p.name.startswith(o) or p.group == o for o in only)]
     here = __file__.rsplit('/', 1)[0]
     import os
-    side = os.environ.get('OUT', here + '/../assets/mesh-side')
+    side = os.environ.get('OUT', here + '/../assets/mesh')
     os.makedirs(side, exist_ok=True)
     fig.build(side + '/%s.bin' % KIND if not only else '/tmp/%s-part.bin' % KIND, here + '/out/%s.blend' % KIND if not only else None)
     if png:

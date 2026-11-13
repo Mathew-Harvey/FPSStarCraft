@@ -6,7 +6,7 @@
 //   near    20 m off, the normal play distance
 //   mid     80 m off
 //   cmd     the command view (the game's own tilted overhead view, the same size the game uses)
-//   map     straight down from far above, the whole-map scale
+//   map     straight down and close: what the top faces carry (the full map draws a small picture of this)
 //   line    side by side with a Cantor and a Warden
 //   poses   every pose the look file has for it, in a row
 // Env: HOUR (default 15), PX width (default 1280).
@@ -66,6 +66,18 @@ const W = +(process.env.PX || 1280), H = Math.round(W * 9 / 16);
   const poseAll = (name, t, k) => p.evaluate(([name, t, k]) => { window.__undo = window.__undo || []; for (const s of window.__stood) if (s.look) { const fn = window.__veyl.POSES[s.kind]?.[name]; if (fn) window.__undo.push(window.__veyl.pose(s.look.rig, fn, t, k)); } }, [name, t, k]);
   const unpose = () => p.evaluate(() => { for (const f of (window.__undo || []).reverse()) f(); window.__undo = []; });
 
+  if (kinds[0] === 'fx') {
+    // every sketched ability effect in a row, each caught part way through, seen near and from the command view
+    await p.evaluate(() => {
+      const V = window.__veyl, g = window.__ore.game, [X, Z] = window.__spot, P = g.cam.position.constructor; window.__fx = [];
+      const at = (i) => new P(X + (i % 5 - 2) * 7.5, 0, Z - Math.floor(i / 5) * 9);
+      const mk = [['glassWall', () => V.glassWall(), 3], ['wardHum', () => V.wardHum(), 1.2], ['falseVoice', () => { const b = V.veylBody('tuner'); const f = V.falseVoice(b); f.obj.add(b); return f; }, 1], ['stepThrough', () => V.stepThrough(4), .2], ['shatterNote', () => V.shatterNote(), 2.1], ['drain', () => V.drain(new P(-2.5, 1.2, 0), new P(2.5, 2.2, 0)), .4], ['join', () => V.join(new P(-2.5, 0, 0), new P(2.5, 0, 0)), 1.2], ['ringShell', () => V.ringShell(), 1], ['toll', () => V.toll(new P(1, 0, 0), 3), 3.2], ['settle', () => V.settle(3), 1]];
+      mk.forEach(([n, f, t], i) => { const e = f(); e.obj.position.copy(at(i)); g.scene.add(e.obj); e.tick(t); window.__fx.push(e.obj); });
+    });
+    await shoot('fx-near', { at: [0, 6, 24], look: [0, 1.5, 0], fov: 60 });
+    await shoot('fx-cmd', { ortho: 14, at: [0, 150, 120], look: [0, 0, 0], span: 150 });
+    await b.close(); return;
+  }
   for (const kind of kinds) {
     const t0 = Date.now();
     const h = await p.evaluate(k => { const l = window.__veyl.veylLook(k); if (!l) return 0; const b = new (l.root.position.constructor)(); let top = 0; l.root.updateMatrixWorld(true); l.root.traverse(o => { if (o.isMesh) { o.geometry.computeBoundingBox(); const bb = o.geometry.boundingBox.clone().applyMatrix4(o.matrixWorld); top = Math.max(top, bb.max.y); } }); return top; }, kind);
@@ -73,13 +85,13 @@ const W = +(process.env.PX || 1280), H = Math.round(W * 9 / 16);
     await stand(kind, 0, 0);
     await poseAll('rest1', 0, 0);
     const m = h / 2.6;           // sizes the close shots to the figure
-    await shoot(`${kind}-paint`, { at: [3.2 * m, h * .62, 4.6 * m], look: [0, h * .5, 0], fov: 38 });
+    await shoot(`${kind}-paint`, { at: [2.4 * m, h * .6, 3.6 * m], look: [0, h * .52, 0], fov: 34 });
     if (process.env.QUICK) { await clear(); continue; }
     await shoot(`${kind}-fp`, { at: [-.6, 1.7, 4], look: [0, h * .5, 0], fov: 68 });
     await shoot(`${kind}-near`, { at: [6, 4, 19], look: [0, h * .4, 0], fov: 68 });
     await shoot(`${kind}-mid`, { at: [20, 14, 78], look: [0, h * .4, 0], fov: 68 });
     await shoot(`${kind}-cmd`, { ortho: 30, at: [0, 150, 120], look: [0, 0, 0], span: 150 });
-    await shoot(`${kind}-map`, { ortho: 90, at: [0, 300, .01], look: [0, 0, 0], span: 300, upz: true });
+    await shoot(`${kind}-map`, { ortho: Math.max(2.4, h * .75), at: [0, 60, .01], look: [0, 0, 0], span: 20, upz: true });   // straight down, close: what the top faces carry (the full map draws a picture of this)
     await clear();
     // side by side: Cantor, the new figure, Warden
     await stand('cantor', -2.6, 0); await stand(kind, 0, 0); await stand('warden', 4.2, -.5);
@@ -90,10 +102,10 @@ const W = +(process.env.PX || 1280), H = Math.round(W * 9 / 16);
     const gap = Math.max(2.2, h * .8);
     for (let i = 0; i < names.length; i++) {
       await stand(kind, (i - (names.length - 1) / 2) * gap, 0);
-      await p.evaluate(([i, n]) => { const s = window.__stood[i]; const fn = window.__veyl.POSES[s.kind][n]; const one = /^(attack|glasswall|falsevoice|stepthrough|shatter|drain|join)$/.test(n); window.__veyl.pose(s.look.rig, fn, one ? .52 : 2.3, 1); }, [i, names[i]]);
+      await p.evaluate(([i, n]) => { const s = window.__stood[i]; const fn = window.__veyl.POSES[s.kind][n]; const one = /^(attack|glasswall|falsevoice|stepthrough|shatter|drain|join|toll)$/.test(n); window.__veyl.pose(s.look.rig, fn, one ? .52 : 2.3, 1); }, [i, names[i]]);
     }
     const span = names.length * gap;
-    await shoot(`${kind}-poses`, { at: [0, h * .6, span * .62 + 4], look: [0, h * .45, 0], fov: 50 });
+    await shoot(`${kind}-poses`, { at: [0, h * .6, span * .5 + 2], look: [0, h * .45, 0], fov: 56 });
     fs.writeFileSync(path.join(out, `${kind}-poses.txt`), names.join(' '));
     await clear();
     console.log(kind, 'shot in', ((Date.now() - t0) / 1000).toFixed(0) + 's');

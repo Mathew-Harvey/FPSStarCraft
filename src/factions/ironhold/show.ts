@@ -14,7 +14,7 @@ import { plainBody } from '../../core/plain';
 import { heldMaterial, setLayer } from '../../gfx';
 import type { Model } from '../../models';
 import * as E from '../../look-ironhold';
-import { FxKit, cloud, ring } from '../../fx/kit';
+import { FxKit, cloud, ring, orb } from '../../fx/kit';
 import { skids, depotSunk } from './look/yard2';
 import { TUNE, mem, boosted } from './kit';
 
@@ -27,9 +27,11 @@ const V = (x = 0, y = 0, z = 0) => new THREE.Vector3(x, y, z);
 const ART: Partial<Record<Kind, E.Kind>> = {
   sapper: 'sapper', hauldrone: 'hauldrone', dustbike: 'dustbike', piledriver: 'piledriver', piledriverset: 'piledriver',
   hopper: 'hopper', flakkite: 'flakkite', flakwalker: 'flakkite', gadfly: 'gadfly', surveyor: 'surveyor', claimbarge: 'claimbarge',
+  staketurret: 'staketurret',
 };
-/** Seconds a called Haul Drone takes to come down. */
-const DROP = 1.6;
+/** How far and how long a new body falls in: a called Haul Drone from 30 m, a Stake Gun post as the stake that carries it lands. */
+const DROPS: Partial<Record<Kind, { h: number; t: number }>> = { hauldrone: { h: 30, t: 1.6 }, staketurret: { h: 7, t: .35 } };
+const DROP = DROPS.hauldrone!.t, STAKE_FLIGHT = DROPS.staketurret!.t;
 const figOf = (u: Unit): Fig | null => (u.obj.userData.fig as Fig) || null;
 
 function figureFor(kind: Kind): Model {
@@ -64,7 +66,7 @@ for (const kind of Object.keys(ART) as Kind[]) looks[kind] = {
   pose(g: Game, u: Unit) {
     const f = figOf(u); if (!f) return false; E.animate(ART[u.kind]!, f, stateOf(g, u));
     // a Haul Drone comes down from 30 m over its first 1.6 s (the mark and the dust are E's callDown, started in showTick)
-    const d = mem(u).dropAt; if (d !== undefined) { const k = Math.min(1, (g.time - d) / DROP); f.root.position.y += 30 * (1 - k * k * (3 - 2 * k)); if (k >= 1) mem(u).dropAt = undefined; }
+    const d = mem(u).dropAt; if (d !== undefined) { const dr = DROPS[u.kind]!, k = Math.min(1, (g.time - d) / dr.t); f.root.position.y += dr.h * (1 - k * k * (3 - 2 * k)); if (k >= 1) mem(u).dropAt = undefined; }
     return true;
   },
 };
@@ -123,7 +125,11 @@ const DONE: Record<string, (k: FxKit, g: Game, u: Unit, t: Target, tgt: Unit | B
   cloak(k, _g, u) { if (mem(u).smoke) { const p = at(u)(); k.add(cloud({ x: p.x, z: p.z, y: Math.max(0, p.y - 2), r: 6, time: 4, color: '#9a9488', puffs: 16 })); } },
   ghillie(k, _g, u) { if (mem(u).ghillie) k.add(cloud({ x: u.pos.x, z: u.pos.z, r: 1.2, time: 1.2, color: '#8a8a60', puffs: 5 })); },
   tranq(k, _g, u, t) { E.tranq(k, V(u.pos.x, 1.5, u.pos.z), ground(t), TUNE.tranq.r); },
-  stake(k, _g, u, t) { E.stakeGun(k, V(u.pos.x, (u.alt || 0) + 1, u.pos.z), ground(t), TUNE.stake.t); },
+  // the post itself is the staketurret unit (its sculpted figure falls in, see DROPS); here only the shot that carries it and the dust it lands in
+  stake(k, _g, u, t) { const from = V(u.pos.x, (u.alt || 0) + 1, u.pos.z), to = ground(t); let s = 0;
+    k.add({ obj: new THREE.Group(), update(dt) { s += dt; return s < STAKE_FLIGHT; } });
+    k.add(orb({ at: () => from.clone().lerp(to, Math.min(1, s / STAKE_FLIGHT)), r: .1, color: '#ff6a1a', time: STAKE_FLIGHT, minPx: 3 }));
+    later(k, STAKE_FLIGHT, () => { k.add(ring({ x: to.x, z: to.z, y: to.y, r: 1.2, time: .4, color: '#d9a46a' })); k.add(cloud({ x: to.x, z: to.z, y: to.y, r: .8, time: .8, color: '#d9a46a', puffs: 4 })); }); },
   jam(k, _g, _u, _t, o) { if (o && 'kind' in o) E.jam(k, () => V(o.pos.x, (o as Unit).alt || 0, o.pos.z), TUNE.jam.t); },
   flare(k, _g, _u, t) { E.flare(k, ground(t), TUNE.flare.r, TUNE.flare.t); },
 };
@@ -150,9 +156,10 @@ export function showTick(g: Game, dt: number) {
   let mines = MINES.get(g); if (!mines) MINES.set(g, mines = new Map());
   for (const u of g.units) {
     if (fac(u.team) !== 0) continue;
-    if (u.kind === 'hauldrone' && u.alive && !mem(u).dropSeen) {
+    if (DROPS[u.kind] && u.alive && !mem(u).dropSeen) {
       const m = mem(u); m.dropSeen = true;
-      if (g.time - (m.born ?? g.time) < .5) { m.dropAt = g.time; E.callDown(k, { root: new THREE.Group(), groups: {}, points: {} }, V(u.pos.x, 0, u.pos.z), DROP); }   // E's mark and dust; the pose above does the fall
+      if (g.time - (m.born ?? g.time) < .5) m.dropAt = g.time;
+      if (m.dropAt === g.time && u.kind === 'hauldrone') { E.callDown(k, { root: new THREE.Group(), groups: {}, points: {} }, V(u.pos.x, 0, u.pos.z), DROP); }   // E's mark and dust; the pose above does the fall
     }
     if (u.kind === 'shaftmine') {
       if (u.alive && !mines.has(u)) { const fx = E.shaftMine(k, V(u.pos.x, 0, u.pos.z), 1e5); fx.obj.visible = ours(g, u.team); mines.set(u, fx.obj); }

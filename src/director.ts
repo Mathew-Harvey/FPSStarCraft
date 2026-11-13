@@ -352,9 +352,9 @@ export class Director implements Side {
     const g = this.g, o = g.obj, left = g.stones().length;
     if (g.netObjs) return g.netObjs;
     if (g.mission) return g.mission.objectives.map(x => ({ text: x.text(g), done: !!x.done(g) }));
-    const foe = foeOf(g.myTeam), fq = FACTION[foe].hq, n = g.ownB(fq, false, foe).length, hqName = BLD[fq].name, verb = ['Break', 'Silence', 'Squash'][fac(foe)];
+    const foe = foeOf(g.myTeam), fq = FACTION[foe].hq, n = multi() ? enemiesOf(g.myTeam).filter(t => !g.outOf.includes(t)).reduce((k, t) => k + g.hqs(t, false).length, 0) : g.ownB(fq, false, foe).length, hqName = BLD[fq].name, verb = ['Break', 'Silence', 'Squash'][fac(foe)];
     const nk = MAP.hid ? g.intel.known(g.myTeam).filter(b => b.kind === fq).length : n;
-    const breakAll = MAP.hid && !g.intel.knows(g.myTeam) ? { text: `Find the ${FACTION[foe].short} base (H sends a scout)`, done: false } : { text: nk > 1 ? `${verb} every ${hqName} (${nk} ${MAP.hid ? 'seen' : 'standing'})` : `${verb} the ${hqName}`, done: !n };
+    const breakAll = multi() ? { text: n > 1 ? `Break every enemy home building (${n} standing)` : 'Break the last enemy home building', done: !n } : MAP.hid && !g.intel.knows(g.myTeam) ? { text: `Find the ${FACTION[foe].short} base (H sends a scout)`, done: false } : { text: nk > 1 ? `${verb} every ${hqName} (${nk} ${MAP.hid ? 'seen' : 'standing'})` : `${verb} the ${hqName}`, done: !n };
     if (fac(g.myTeam) === 2) return [
       { text: 'Chew 30 ore with a Grazer', done: o.drilled >= 30 },
       { text: 'Jump into another body (Tab or F)', done: o.jumped },

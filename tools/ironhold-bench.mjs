@@ -21,7 +21,7 @@ const sfxBank = { name: 'sfx-bank', setup(b) {
 } };
 const entry = { name: 'bench-entry', setup(b) {
   b.onResolve({ filter: /^bench:entry$/ }, () => ({ path: 'bench', namespace: 'bench' }));
-  b.onLoad({ filter: /.*/, namespace: 'bench' }, () => ({ resolveDir: process.cwd(), loader: 'ts', contents: "import './src/boot.ts'; import * as THREE from 'three'; import { figure } from './src/meshes'; import * as LOOK from './src/look-ironhold'; (window as any).__fig = figure; (window as any).__three = THREE; (window as any).__look = LOOK;" }));
+  b.onLoad({ filter: /.*/, namespace: 'bench' }, () => ({ resolveDir: process.cwd(), loader: 'ts', contents: "import './src/boot.ts'; import * as THREE from 'three'; import { figure } from './src/meshes'; import * as LOOK from './src/look-ironhold'; import * as Y2 from './src/factions/ironhold/look/yard2'; import * as MD from './src/models'; (window as any).__fig = figure; (window as any).__three = THREE; (window as any).__look = LOOK; (window as any).__yard2 = Y2; (window as any).__md = MD;" }));
 } };
 const out = await build({ entryPoints: ['bench:entry'], bundle: true, minify: true, format: 'iife', target: 'es2020', write: false, legalComments: 'none', plugins: [entry, sfxBank, meshBank] });
 const js = out.outputFiles[0].text.replace(/<\/script/g, '<\\/script');

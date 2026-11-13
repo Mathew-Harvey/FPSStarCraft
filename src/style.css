@@ -125,7 +125,7 @@ body{background:var(--bg);color:var(--paper);font-family:var(--cond);font-size:1
 /* world-anchored bits */
 .hb{left:0;top:0;width:64px;height:11px;margin:-6px 0 0 -32px;background:var(--ink);border:2px solid var(--ink);transform-origin:50% 50%;will-change:transform}
 .hb i{display:block;height:100%;background:var(--grn)}
-.hb.e i{background:var(--mag)} .hb.s i{background:var(--teal)} .hb.p i{background:var(--cyan)}
+.hb.e i{background:var(--mag)} .hb.f i{background:#5ab4ff} .hb.s i{background:var(--teal)} .hb.p i{background:var(--cyan)}
 .hb.big{width:120px;margin-left:-60px;height:13px}
 .lab{left:0;top:0;white-space:nowrap;will-change:transform}
 .lab>div{transform:translate(-50%,-100%)}

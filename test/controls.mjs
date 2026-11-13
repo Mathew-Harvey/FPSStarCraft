@@ -215,5 +215,33 @@ try {
   r = await p.evaluate(() => { const g = __ore.game, C = g.cmd, u = g.own('longshot').slice(-1)[0]; pickAll([u]); key('KeyF'); step(30); u.energy = 5; step(3); if (g.me !== u) return { shown: false, text: 'not driving it' }; const e = document.getElementById('abil'); return { shown: !e.hidden, text: e.textContent }; });
   check(r.shown && /Test Flare/.test(r.text) && /Needs 25 energy/.test(r.text), `in first person the driven body's abilities sit over its name with key, cost and what stops them ("${r.text}")`);
   await shot('fp-abilities');
+
+  // ---- page five: a team game from the skirmish menu, and allies drawn as allies
+  await p.close();
+  p = await b.newPage({ viewport: { width: 1280, height: 720 } }); p.setDefaultTimeout(300000);
+  p.on('pageerror', e => { console.log('[pageerror]', e.message.slice(0, 400)); fail.push('page error'); });
+  await p.goto(page); await p.waitForFunction('window.__ore && __ore.game');
+  r = await p.evaluate(() => { __ore.setFree(true); const q = s => [...document.querySelectorAll(s)];
+    const before = document.getElementById('teams').hidden; __ore.pickMap(6); const row = document.getElementById('teams'), names = q('#teams button').map(b => b.firstChild.textContent);
+    q('#teams button')[1].click(); document.querySelectorAll('#diff button')[0].click(); __ore.start(); __ore.hold(true);
+    const g = __ore.game, me = g.myTeam, teams = [...new Set(g.units.map(u => u.team))];
+    return { before, shown: !row.hidden, names, teams, me, on: row.querySelector('.on')?.firstChild.textContent }; });
+  check(r.before && r.shown && r.names.join(',') === '1v1,2v2,Free for all', `on a four-start map the menu offers the kinds of game from the team layouts (${r.names.join(', ')})`);
+  check(r.on === '2v2' && r.teams.length === 4, `picking 2v2 starts a match with four sides (${r.teams.join(', ')})`);
+  r = await p.evaluate(() => { const g = __ore.game; g.introT = 0; g.truce = true; g.dir.raidIn = 9999;
+    const real = g.update.bind(g); let stepping = false; g.update = dt => { if (stepping) real(dt); };
+    window.step = n => { stepping = true; for (let i = 0; i < n; i++) { if (g.phase === 'card') g.phase = 'play'; g.noRender = i < n - 1; g.update(1 / 30); } g.noRender = false; stepping = false; };
+    step(5); const F = __ore.reg.isFriend, friends = [...new Set(g.units.filter(u => u.team !== g.myTeam && F(u.team, g.myTeam)).map(u => u.team))];
+    return { friends }; });
+  check(r.friends.length === 1, `in 2v2 the player has one allied side (${r.friends.join(', ')})`);
+  r = await p.evaluate(() => { const g = __ore.game, me = g.me, mine = g.myTeam;
+    const ally = g.units.find(u => u.alive && u.team !== mine && __ore.reg.isFriend(u.team, mine));
+    if (!ally) return { ally: false };
+    g.pressed.add('KeyN'); step(30); const C = g.cmd; C.focus.set(ally.pos.x, 0, ally.pos.z); ally.hp = ally.maxHp * .5; step(3);
+    const bars = [...document.querySelectorAll('#anchors .hb.f')].filter(e => !e.hidden).length, sp = [0, 0]; C.screen(ally.pos.x, 1, ally.pos.z, sp); C.cx = sp[0]; C.cy = sp[1]; step(1);
+    const asFoe = C.unitAt(false) === ally, shown = ally.obj.visible; return { ally: true, bars, team: ally.team, asFoe, shown, on: C.on }; });
+  check(r.ally && r.on && r.bars >= 1 && r.shown && !r.asFoe, `from above an ally is always shown, its health bar has its own colour, and a click on it is not an attack (team ${r.team}, ${r.bars} ally bars)`);
+  await p.evaluate(() => step(1));
+  await shot('team-game');
 } finally { await b.close(); }
 console.log(fail.length ? `\n${fail.length} FAILED` : '\nall passed'); process.exit(fail.length ? 1 : 0);

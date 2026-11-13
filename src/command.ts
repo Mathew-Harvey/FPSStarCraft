@@ -11,6 +11,7 @@ import { cardFor, Btn, Aim, KEYS, casters, abilityWords, hasBoard, hasAutocast }
 import * as AB from './core/ability';
 import { abilityOf, whyNot } from './core/ability';
 import { roomOf } from './core/cargo';
+import { isEnemy } from './core/sides';
 import { bldRule } from './core/registry';
 import { costOf, canPay } from './core/econ';
 import { V3, L_FX } from './gfx';
@@ -100,7 +101,7 @@ export class Command {
     if (!this.on) this.focus.lerp(A.set(me.pos.x, 0, me.pos.z), Math.min(1, dt * 12));
     for (const u of this.sel) if (!u.alive || u.team !== g.myTeam) this.sel.delete(u);
     if (this.selB && !this.selB.alive) this.selB = null;
-    for (const b of g.buildings) if (b.team !== g.myTeam && !this.known.has(b) && g.fog.sees(b.pos.x, b.pos.z)) this.known.add(b);
+    for (const b of g.buildings) if (isEnemy(b.team, g.myTeam) && !this.known.has(b) && g.fog.sees(b.pos.x, b.pos.z)) this.known.add(b);
     this.watchNew(); this.runQueues(dt); this.landPending(dt);
     if (!this.sel.size && !this.selB) { this.aim = null; this.menu = ''; }
     const w = g.wheel, free = me.alive && g.staticT <= 0 && !g.tab && g.introT <= 0 && !this.locked;
@@ -190,12 +191,12 @@ export class Command {
   private unitAt(own: boolean): Unit | null {
     const g = this.g, s = [0, 0], pxm = g.hud.H / (2 * this.h); let best: Unit | null = null, bd = 1e9;
     for (const u of g.units) {
-      if (own ? !this.mine(u) : (!u.alive || u.team === g.myTeam || !g.fog.sees(u.pos.x, u.pos.z))) continue; const st = UNIT[u.kind];
+      if (own ? !this.mine(u) : (!u.alive || !isEnemy(u.team, g.myTeam) || !g.fog.sees(u.pos.x, u.pos.z))) continue; const st = UNIT[u.kind];
       if (!this.screen(u.pos.x, st.bodyY, u.pos.z, s)) continue; const d = Math.hypot(s[0] - this.cx, s[1] - this.cy), r = Math.max(20, st.rad * pxm * 1.5 + 6); if (d < r && d < bd) { bd = d; best = u; }
     }
     return best;
   }
-  private buildingAt(p: THREE.Vector3, own: boolean): Building | null { const g = this.g; for (const b of g.buildings) if (b.alive && (b.team === g.myTeam) === own && (own || this.known.has(b)) && Math.abs(p.x - b.pos.x) < b.hx + 1.2 && Math.abs(p.z - b.pos.z) < b.hz + 1.2) return b; return null; }
+  private buildingAt(p: THREE.Vector3, own: boolean): Building | null { const g = this.g; for (const b of g.buildings) if (b.alive && (own ? b.team === g.myTeam : isEnemy(b.team, g.myTeam)) && (own || this.known.has(b)) && Math.abs(p.x - b.pos.x) < b.hx + 1.2 && Math.abs(p.z - b.pos.z) < b.hz + 1.2) return b; return null; }
   private pickAt(add: boolean, all = false) {
     const g = this.g, u = this.unitAt(true); this.aim = null; this.menu = '';
     if (u) {
@@ -372,7 +373,7 @@ export class Command {
       for (const [b, r] of this.rally) {
         if (!b.alive || b.team !== g.myTeam) { this.rally.delete(b); continue; }
         if (Math.abs(u.pos.x - b.pos.x) > b.hx + 4 || Math.abs(u.pos.z - b.pos.z) > b.hz + 4) continue;
-        const [x, z] = this.rallyAt(r), foe = !!r.id && (g.units.some(o => o.alive && o.id === r.id && o.team !== g.myTeam) || g.buildings.some(o => o.alive && o.id === r.id && o.team !== g.myTeam));
+        const [x, z] = this.rallyAt(r), foe = !!r.id && (g.units.some(o => o.alive && o.id === r.id && isEnemy(o.team, g.myTeam)) || g.buildings.some(o => o.alive && o.id === r.id && isEnemy(o.team, g.myTeam)));
         const step: Step = r.ore !== undefined && isWorker(u.kind) ? { k: 'o', x, z, id: r.ore, n: 1, t: 0 } : foe && !isWorker(u.kind) ? { k: 'a', x, z, id: r.id!, n: 1, t: 0 } : { k: 'm', x, z, id: 0, n: 1, t: 0 };
         this.cur.set(u, step); this.sendIds([u.id], step.k, x, z, step.id); break;
       }
@@ -475,8 +476,8 @@ export class Command {
     const g = this.g;
     if (!on) { if (this.hid) { this.hid = false; for (const b of g.buildings) { b.obj.visible = true; if (b.holo) b.holo.visible = true; } if (this.fogMesh) this.fogMesh.visible = false; } return; }
     const fresh = !this.hid; this.hid = true; const fog = g.fog;
-    for (const u of g.units) if (u.team !== g.myTeam) u.obj.visible = fog.sees(u.pos.x, u.pos.z);
-    for (const b of g.buildings) if (b.team !== g.myTeam) { const v = this.known.has(b); b.obj.visible = v; if (b.holo) b.holo.visible = v; }
+    for (const u of g.units) if (isEnemy(u.team, g.myTeam)) u.obj.visible = fog.sees(u.pos.x, u.pos.z);
+    for (const b of g.buildings) if (isEnemy(b.team, g.myTeam)) { const v = this.known.has(b); b.obj.visible = v; if (b.holo) b.holo.visible = v; }
     const n = fog.n;
     if (!this.fogMesh || !this.fogTex || this.fogTex.image.width !== n) {
       if (this.fogMesh) g.scene.remove(this.fogMesh);

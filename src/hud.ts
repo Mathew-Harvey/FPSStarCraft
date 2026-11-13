@@ -5,6 +5,7 @@ import type { Game } from './game';
 import { UNIT, BLD, FACTION, SIDE, fac, foeOf, atHome, homeXZ, Kind, Unit, Building, MAP, MAPS, OUTPOST, VHOME, ROAD, NORTH_PATH, roadPt, isWorker } from './data';
 import { keyName, abilityWords } from './card';
 import { abilitiesOf, whyNot } from './core/ability';
+import { isFriend } from './core/sides';
 const capW = (t: string) => t.charAt(0).toUpperCase() + t.slice(1);
 
 const V = new THREE.Vector3();
@@ -166,7 +167,7 @@ export class Hud {
       const hurtU = u.hp < u.maxHp || u.shield < u.maxShield; if (u.team === g.myTeam && !hurtU && !tab && !sel) continue; if (u.team !== g.myTeam && !hurtU && d > 40) continue;
       const y = UNIT[u.kind].headY + .75;
       if (u.maxShield && u.shield > 0) bar(u.pos, y + .22, u.shield / u.maxShield, 'hb s');
-      bar(u.pos, y, u.hp / u.maxHp, u.team !== g.myTeam ? 'hb e' : 'hb');
+      bar(u.pos, y, u.hp / u.maxHp, u.team === g.myTeam ? 'hb' : isFriend(u.team, g.myTeam) ? 'hb f' : 'hb e');
       // Energy, for bodies that cast: under the health bar, own side only.
       { const me2 = u as any; if (me2.maxEnergy > 0 && u.team === g.myTeam) bar(u.pos, y - .2, me2.energy / me2.maxEnergy, 'hb n'); }
     }
@@ -174,7 +175,7 @@ export class Hud {
     for (const b of g.buildings as Building[]) {
       if (!b.alive || !b.obj.visible) continue; const d = cv ? 1 : b.pos.distanceTo(me.pos);
       if (!b.built) { bar(b.pos, BLD[b.kind].h + 1.2, b.progress, 'hb big p'); if (d < 60) lab(b.pos, BLD[b.kind].h + 1.6, `<div class="mark" style="color:var(--cyan)">${BLD[b.kind].name} ${Math.floor(b.progress * 100)}%</div>`); }
-      else if (b.hp < b.maxHp && (d < 90 || tab)) bar(b.pos, b.h + 1.2, b.hp / b.maxHp, b.team !== g.myTeam ? 'hb big e' : 'hb big');
+      else if (b.hp < b.maxHp && (d < 90 || tab)) bar(b.pos, b.h + 1.2, b.hp / b.maxHp, b.team === g.myTeam ? 'hb big' : isFriend(b.team, g.myTeam) ? 'hb big f' : 'hb big e');
       if (cv && b.team === side && b.built) {
         // From above, each of the player's buildings says what it is making, and each base how its seams are worked.
         const q = b.queue, hq = b.kind === FACTION[side].hq, sat = hq ? this.saturation(g, b) : null;
@@ -286,10 +287,12 @@ export class Hud {
       hx.globalCompositeOperation = 'source-in'; hx.fillStyle = this.hatchPat || '#211614'; hx.fillRect(0, 0, S, 180); c.drawImage(hc, 0, 0, S, 180); }
     for (const o of g.ores) { if (o.amount <= 0 || !fog.seen(o.pos.x, o.pos.z)) continue; c.fillStyle = '#b8f58c'; c.fillRect(X(o.pos.x) - 2.5, Z(o.pos.z) - 2.5, 5, 5); }
     c.lineWidth = 1.5; c.strokeStyle = '#0e0d14';
+    // Allies' buildings (a team game): in blue, always known.
+    for (const b of g.buildings) { if (!b.alive || b.team === g.myTeam || !isFriend(b.team, g.myTeam)) continue; const w = Math.max(5, b.hx * 2 * k), h = Math.max(5, b.hz * 2 * k); c.fillStyle = FRIEND; c.fillRect(X(b.pos.x) - w / 2, Z(b.pos.z) - h / 2, w, h); c.strokeRect(X(b.pos.x) - w / 2, Z(b.pos.z) - h / 2, w, h); }
     for (const b of g.buildings) { if (!b.alive || b.team !== g.myTeam) continue; const w = Math.max(5, b.hx * 2 * k), h = Math.max(5, b.hz * 2 * k); c.fillStyle = b.built ? '#ffc21a' : '#7ef0ff'; c.fillRect(X(b.pos.x) - w / 2, Z(b.pos.z) - h / 2, w, h); c.strokeRect(X(b.pos.x) - w / 2, Z(b.pos.z) - h / 2, w, h); }
     // Their buildings are drawn as your side last saw them: a new one shows when somebody looks at it, and a fallen one stays until somebody looks again.
     for (const r of I.seen[mi].values()) { const B = BLD[r.kind], w = Math.max(5, B.hx * 2 * k), h = Math.max(5, B.hz * 2 * k); c.fillStyle = r.kind === 'reedgate' ? '#c58bff' : '#35e0c8'; c.fillRect(X(r.x) - w / 2, Z(r.z) - h / 2, w, h); c.strokeRect(X(r.x) - w / 2, Z(r.z) - h / 2, w, h); }
-    for (const u of g.units) { if (!u.alive || (u === g.me && !g.cmd.on) || (u.team !== g.myTeam && !fog.sees(u.pos.x, u.pos.z))) continue; const foeU = u.team !== g.myTeam; c.fillStyle = foeU ? (u.kind === 'tender' ? '#c58bff' : this.cb ? '#ff9d1a' : '#ff4f9a') : isWorker(u.kind) ? (this.cb ? '#4da3ff' : '#8be04e') : '#f4ead2'; c.beginPath(); c.arc(X(u.pos.x), Z(u.pos.z), u.kind === 'warden' ? 5 : foeU ? 2.6 : 2.2, 0, 7); c.fill(); }
+    for (const u of g.units) { if (!u.alive || (u === g.me && !g.cmd.on) || (u.team !== g.myTeam && !isFriend(u.team, g.myTeam) && !fog.sees(u.pos.x, u.pos.z))) continue; const foeU = u.team !== g.myTeam, ally = foeU && isFriend(u.team, g.myTeam); c.fillStyle = ally ? FRIEND : foeU ? (u.kind === 'tender' ? '#c58bff' : this.cb ? '#ff9d1a' : '#ff4f9a') : isWorker(u.kind) ? (this.cb ? '#4da3ff' : '#8be04e') : '#f4ead2'; c.beginPath(); c.arc(X(u.pos.x), Z(u.pos.z), u.kind === 'warden' ? 5 : foeU ? 2.6 : 2.2, 0, 7); c.fill(); }
     for (const p of g.pings) { c.strokeStyle = '#ffc21a'; c.lineWidth = 2.5; c.beginPath(); c.arc(X(p.x), Z(p.z), 4 + (8 - p.t) % 1 * 7, 0, 7); c.stroke(); }
     for (const u of g.units) if (u.alive && u.pilot && u !== g.me && u.team === g.myTeam) { c.fillStyle = '#ffc21a'; c.strokeStyle = '#0e0d14'; c.lineWidth = 1.5; c.beginPath(); c.arc(X(u.pos.x), Z(u.pos.z), 3.6, 0, 7); c.fill(); c.stroke(); }
     const D = g.dir; if (g.myTeam === SIDE.home && !g.eco && (D.raidIn < 15 || D.raidLive) && g.stones().length && Math.floor(performance.now() / 300) % 2) { c.fillStyle = '#ff4b3a'; c.strokeStyle = '#0e0d14'; c.lineWidth = 2; c.beginPath(); { const n = NORTH_PATH.length, p = D.raidDir === 'north' ? [(NORTH_PATH[n - 1][0] + NORTH_PATH[n - 2][0]) / 2, (NORTH_PATH[n - 1][1] + NORTH_PATH[n - 2][1]) / 2] : roadPt(62), a = Math.atan2(-p[1], -p[0]); c.moveTo(X(p[0]) + Math.cos(a) * 9, Z(p[1]) + Math.sin(a) * 9); c.lineTo(X(p[0]) + Math.cos(a + 2.4) * 8, Z(p[1]) + Math.sin(a + 2.4) * 8); c.lineTo(X(p[0]) + Math.cos(a - 2.4) * 8, Z(p[1]) + Math.sin(a - 2.4) * 8); } c.closePath(); c.fill(); c.stroke(); }
@@ -320,3 +323,6 @@ export function statusWords(u: Unit): [string, string] | null {
   const first = ST_WORDS[on[0]] || [on[0], ''], more = on.length > 1 ? ' +' + (on.length - 1) : '';
   return [first[0] + more, first[1]];
 }
+
+/** Allies in a team game, on the map and their health bars. */
+const FRIEND = '#5ab4ff';

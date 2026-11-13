@@ -107,7 +107,7 @@ export class Game {
   /** The bodies players are driving on the ground this tick. Crew near one of them fight better (see LEAD in command.ts). */
   leads: Unit[] = [];
   obj = { drilled: 0, jumped: false, answered: false, built: false, called: false };
-  stats = { kills: 0, lost: 0, mined: 0, minedV: 0, built: 0, lostTo: {} as Record<string, number>, lostToV: {} as Record<string, number> };
+  stats = { kills: 0, lost: 0, mined: 0, minedV: 0, /** Ore banked by each side, by team (the watcher's income graph in a team game). */ bySide: [] as number[], built: 0, lostTo: {} as Record<string, number>, lostToV: {} as Record<string, number> };
   // effects
   vm: Record<string, THREE.Group> = {};
   tracers: { m: THREE.Mesh; t: number }[] = []; puffs: { m: THREE.Mesh; t: number; life: number; v: THREE.Vector3; s: number }[] = [];
@@ -637,7 +637,7 @@ export class Game {
   /** Puts a driven Rigger's pack on the books. Online the server does this and the replica only empties its own pack. */
   bank(u: Unit) {
     const n = u.carrying; u.carrying = 0; if (u.rig.pack) u.rig.pack.visible = false; if (n <= 0) return;
-    if (!this.net) { this.purse[u.team] += n * this.oreK(u.team); if (!atHome(u.team)) this.stats.minedV += n; else this.stats.mined += n; if (u.pilot && this.score[u.pilot]) this.score[u.pilot][1] += n; }
+    if (!this.net) { this.purse[u.team] += n * this.oreK(u.team); if (!atHome(u.team)) this.stats.minedV += n; else this.stats.mined += n; this.stats.bySide[u.team] = (this.stats.bySide[u.team] || 0) + n; if (u.pilot && this.score[u.pilot]) this.score[u.pilot][1] += n; }
     if (u === this.me) { sfx.bank(); this.hud.damage(V3(u.pos.x, 2.2, u.pos.z), `+${n} banked`, 'ore'); }
   }
   /** What this side has found of the map. */
@@ -1034,7 +1034,7 @@ export class Game {
     if (u.state === 'idle' || (u.node && u.node.amount <= 0 && u.state !== 'toHQ')) { let best: OreNode | null = null, bd = 1e9; if (u.pref && u.pref.amount > 0) { best = u.pref; bd = -1; } else u.pref = null; for (const n of this.ores) { if (bd < 0) break; if (n.amount <= 0 || seamFull(this, n, side, u) || this.buildings.some(b => b.alive && b.team !== side && Math.hypot(b.pos.x - n.pos.x, b.pos.z - n.pos.z) < 30)) continue; const d = n.pos.distanceTo(u.pos) + (this.units.filter(o => o.node === n).length) * 6 + (hq ? (() => { const h = this.nearHQ(n.pos.x, n.pos.z, side)!; return Math.hypot(n.pos.x - h.pos.x, n.pos.z - h.pos.z) * .6; })() : 0); if (d < bd) { bd = d; best = n; } } u.node = best; u.state = best ? 'toOre' : 'wait'; }
     if (u.state === 'toOre' && u.node) { if (this.moveTo(u, u.node.pos.x, u.node.pos.z, dt, 2.5)) { u.state = 'mining'; u.timer = 3; } }
     else if (u.state === 'mining' && u.node) { u.yaw = Math.atan2(u.node.pos.x - u.pos.x, u.node.pos.z - u.pos.z); u.timer -= dt * (quick ? 1.3 : 1) * seamRate(this, u) * (unitRule(u.kind).dig ?? 1); if (u.think <= 0) { u.think = .5; if (this.vol(u.pos) > .3) this.debris(TMP.set(u.pos.x + Math.sin(u.yaw) * 1.1, 1, u.pos.z + Math.cos(u.yaw) * 1.1), 1, .1, M.ore, 3); } if (u.timer <= 0) { const n = Math.min((fac(side) === 0 && up.buckets) || (fac(side) === 2 && up.ggut) ? 10 : 7, u.node.amount); u.node.amount -= n; u.carrying = Math.round(n * (u.node.rich || 1)) /* terrain (J): bright seams */; this.oreCheck(u.node); if (u.rig.pack) u.rig.pack.visible = true; u.state = 'toHQ'; } }
-    else if (u.state === 'toHQ') { if (!hq) { u.state = 'wait'; return; } if (this.distToBox(hq, u.pos.x, u.pos.z) < 1.7 + this.bankReach(hq)) { this.purse[side] += u.carrying * this.oreK(side); if (!atHome(side)) this.stats.minedV += u.carrying; else this.stats.mined += u.carrying; u.carrying = 0; if (u.rig.pack) u.rig.pack.visible = false; u.state = 'idle'; } else { /* Walk to the near face of the home building, so neither end of the map has a longer walk round it than the other. */ const x = Math.max(hq.pos.x - hq.hx - .8, Math.min(hq.pos.x + hq.hx + .8, u.pos.x)), z = Math.max(hq.pos.z - hq.hz - .8, Math.min(hq.pos.z + hq.hz + .8, u.pos.z)); this.moveTo(u, x, z, dt, .3); } }
+    else if (u.state === 'toHQ') { if (!hq) { u.state = 'wait'; return; } if (this.distToBox(hq, u.pos.x, u.pos.z) < 1.7 + this.bankReach(hq)) { this.purse[side] += u.carrying * this.oreK(side); if (!atHome(side)) this.stats.minedV += u.carrying; else this.stats.mined += u.carrying; this.stats.bySide[side] = (this.stats.bySide[side] || 0) + u.carrying; u.carrying = 0; if (u.rig.pack) u.rig.pack.visible = false; u.state = 'idle'; } else { /* Walk to the near face of the home building, so neither end of the map has a longer walk round it than the other. */ const x = Math.max(hq.pos.x - hq.hx - .8, Math.min(hq.pos.x + hq.hx + .8, u.pos.x)), z = Math.max(hq.pos.z - hq.hz - .8, Math.min(hq.pos.z + hq.hz + .8, u.pos.z)); this.moveTo(u, x, z, dt, .3); } }
   }
   acquire(u: Unit, range: number, bRange: number) {
     if (this.truce) return null; if (u.status && hasStatus(u, 'blind')) { range = Math.min(range, 4); bRange = Math.min(bRange, 4); }
@@ -1140,8 +1140,8 @@ export class Game {
       }
     }
     // The zoom: the camera is carried from the body's eyes up to the view from above, and what the crew cannot see is hidden on the way.
-    const C = this.cmd, up = !!me && (C.z > 0 || C.zt > 0), above = up && C.z >= ZOOM.lift * .5; let span = 110;
-    if (up) { span = C.view(cam); SHARED.uFogD.value *= C.fogK; if (C.z > .015 && me!.alive) this.bodyLayer(me!, false); } else cam.near = .06;
+    const C = this.cmd, up = (!!me || C.caster) && (C.z > 0 || C.zt > 0), above = up && C.z >= ZOOM.lift * .5; let span = 110;
+    if (up) { span = C.view(cam); SHARED.uFogD.value *= C.fogK; if (C.z > .015 && me && me.alive) this.bodyLayer(me, false); } else cam.near = .06;
     C.veil(above, dt);
     cam.updateProjectionMatrix(); cam.updateMatrixWorld(); this.lamps(above ? C.focus : cam.position);
     LOD.myTeam = this.myTeam; pipe.draw(this.scene, cam, above ? C.focus : me ? me.pos : V3(), span);

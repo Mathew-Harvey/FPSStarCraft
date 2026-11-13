@@ -7,6 +7,7 @@ import { UNIT, BLD, BUILDABLE, UPGRADES, TRAINS, UNIT_NEEDS, FACTION, VOICE_SIDE
 import { useAbility, abilityOf, whyNot, type Target } from './core/ability';
 import { abilityWords } from './card';
 import { seenBy } from './core/sight';
+import { multi, MATCH } from './core/sides';
 import { SideView, LINGER } from './net-fog';
 import { checkClaim, dropped } from './net-arms';
 import type { Side } from './director';
@@ -63,6 +64,8 @@ export class Wire {
       V.sentU = sentU; V.sentB = sentB;
     }
     const st = g.stats, sts = [Math.floor(st.mined), st.built, st.kills, st.lost, Math.floor(st.minedV)]; if (V && !V.friend(H)) sts[0] = 0; if (V && !V.friend(Ot)) sts[4] = 0;
+    // A team game: the ore each side has banked, for the sides this one may know about (every side, for a watcher).
+    if (multi()) (sts as any[]).push(MATCH.teams.filter(t => !V || V.friend(t)).map(t => [t, Math.floor(st.bySide[t] || 0)]));
     const out: any = {
       t: 's', time: r1(g.time), u, b, e: ev,
       o: g.ores.map(n => !V || V.sees(n.pos.x, n.pos.z) ? Math.round(n.amount) : null),
@@ -225,7 +228,7 @@ export function applySnap(g: Game, s: any) {
   g.ores.forEach((n, i) => { const a = s.o[i]; if (typeof a === 'number' && a !== n.amount) { n.amount = a; g.oreCheck(n); } });   // null: out of this side's sight, so the last count it saw stands
   if (s.sc) { g.score = {}; for (const r of s.sc) g.score[r[0]] = [r[1], r[2], r[3]]; }
   if (s.mo) g.netObjs = s.mo; if (s.mc >= 0) g.ms.clock = s.mc;
-  g.stats.mined = s.st[0]; g.stats.built = s.st[1]; g.stats.kills = s.st[2]; g.stats.lost = s.st[3]; g.stats.minedV = s.st[4] || 0;
+  g.stats.mined = s.st[0]; g.stats.built = s.st[1]; g.stats.kills = s.st[2]; g.stats.lost = s.st[3]; g.stats.minedV = s.st[4] || 0; if (Array.isArray(s.st[5])) for (const [t, v] of s.st[5]) g.stats.bySide[t] = v;
   const seen = new Set<number>();
   for (const r of s.u) {
     let u = g.uById.get(r[0]); if (u && !u.alive) continue;

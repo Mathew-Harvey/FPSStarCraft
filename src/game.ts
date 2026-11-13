@@ -15,6 +15,7 @@ import type { Net } from './net';
 import { HitFx, Surface } from './hitfx';
 import { unitRule, bldRule, factionRule, DEFAULTS, type Hit } from './core/registry';
 import './factions';
+import { plainBody } from './core/plain';
 import { Stance } from './stance';
 import { applySnap, netTick } from './netgame';
 import { G_TUNE, GBKind } from './factions/gloam/numbers';
@@ -45,6 +46,8 @@ const bubbleMat = new THREE.MeshBasicMaterial({ color: 0x6dfff0, transparent: tr
 const warnMat = new THREE.MeshBasicMaterial({ color: 0xff4f9a, transparent: true, opacity: .9, depthWrite: false, side: THREE.DoubleSide });
 let nextId = 1;
 interface Proj { obj: THREE.Object3D; pos: THREE.Vector3; vel: THREE.Vector3; team: number; dmg: number; nade: boolean; life: number; from: Unit | null; ghost: number }
+/** The model for a kind of body: its art if it has some, else a plain stand-in (see core/plain.ts). */
+const figureOf = (kind: Kind) => { try { return MD.unit(kind); } catch { return plainBody(kind); } };
 export const r1 = (v: number) => Math.round(v * 10) / 10;
 
 export class Game {
@@ -174,7 +177,7 @@ export class Game {
   uById = new Map<number, Unit>(); bById = new Map<number, Building>();
   evq: any[] | null = null; coop = 1; applying = false; names: Record<number, string> = {}; feedTo = 0; score: Record<number, number[]> = {}; myTeam = SIDE.home; teams: Record<number, number> = {}; vWind = 0; vX = 0; vZ = 0; pings: { x: number; z: number; t: number; pid: number }[] = [];
   spawn(kind: Kind, team: number, x: number, z: number, id = 0): Unit {
-    const md = MD.unit(kind); tintMirror(md.obj, team); const st = UNIT[kind], hp = st.hp * (fac(team) === 0 || this.eco ? this.armorMul(team) : 1), sh = st.shield * (fac(team) && this.eco ? this.armorMul(team) : 1);
+    const md = unitRule(kind).figure?.() ?? figureOf(kind); tintMirror(md.obj, team); const st = UNIT[kind], hp = st.hp * (fac(team) === 0 || this.eco ? this.armorMul(team) : 1), sh = st.shield * (fac(team) && this.eco ? this.armorMul(team) : 1);
     const rs = st.rad * 3.6, ring = mk(G.ringG, ringMat, [0, .08, 0], [rs, rs, 1], [-Math.PI / 2, 0, 0], md.obj); ring.layers.set(L_FX); ring.visible = false;
     const u: Unit = { id: id || nextId++, kind, team, pilot: 0, nx: x, nz: z, pos: V3(x, 0, z), yaw: R(0, 6), hp, maxHp: hp, shield: sh, maxShield: sh, obj: md.obj, rig: md.rig, ring, alive: true, speed: st.speed, moving: false, phase: R(0, 6), cd: R(0, 1), think: R(0, .3), target: null, order: { type: 'guard', x, z }, lastHit: -99, state: 'idle', timer: 0, carrying: 0, node: null, site: null, dashCd: R(2, 5), dashT: 0, swing: 0, slot: 0, flashT: 0, pop: 0, wind: 0, windX: 0, windZ: 0, kx: 0, kz: 0, pitch: 0, brace: false };
     md.obj.position.copy(u.pos); md.obj.rotation.y = u.yaw; this.scene.add(md.obj); this.units.push(u);

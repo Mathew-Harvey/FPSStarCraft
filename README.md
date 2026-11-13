@@ -77,10 +77,13 @@ TypeScript and three.js, bundled by esbuild into one HTML file. No art assets: m
 - `src/skins.ts`: the hand-inked skins. Brushed colour, tapered pen strokes, edge wear, hatching, seams, rivets and stencils, in cuts for boxes, turned forms and domes.
 - `src/units.ts`: the cast, for both sides.
 - `src/models.ts`: structures, the world, first-person view-models and the unit atlas. Models are merged per material when built, and units are cloned from a cached prototype. The world is dressed with a few hundred small props per map (scrub, stones, scrap, bones, spoil heaps, abandoned camps). They are placed with their own dice after everything else, so they never move a mesa or a seam, none of them blocks a path, and laying a building over one flattens it.
-- `src/data.ts`: stat tables, shared types and map constants.
-- `src/game.ts`: the simulation and the player. Entities, combat, effects, the first-person bodies and jumping between them.
+- `src/data.ts`: shared types, and the tables the shared code reads (`UNIT`, `BLD`, `TRAINS`, `UPGRADES`, `FACTION`), joined from each faction's own numbers. It passes on the map tables from `src/maps.ts`.
+- `src/maps.ts`: the maps, sizes and map codes, `setMap` (the road, rallies and far base for a code), the painted roads, and where the ore fields go.
+- `src/factions/<faction>/` (ironhold, veyl, gloam): everything one faction is. `numbers.ts` holds its units, buildings, research and what trains where. `rules.ts` says what its bodies and buildings do: first-person controls, the brain the bots drive each body with, hits, deaths, towers. `brain.ts` is its bot side (the Quartermaster, the Conductor, the Overgrowth) and every line it says in the feed. `look/` says which model, pose, lamp and view model goes with each kind. Adding a kind means adding it here; nothing in the shared files names it.
+- `src/core/registry.ts`: how the shared code asks about a kind. `unitRule(kind)`, `bldRule(kind)` and `factionRule(team)` return that kind's hooks (`ai`, `drive`, `hurt`, `dying`, `tick`, `model`, `pose`, `view` and so on) and flags (`heavy`, `steady`, `threat`, `stride`). A kind with no hooks still works: it gets a plain stand-in model (`src/core/plain.ts`), the plain gun soldier's brain and controls, and dies like anything else. `npm run test:core` checks every faction is wired in and that a kind with nothing defined walks, fights and dies on every side.
+- `src/game.ts`: the simulation and the player. Entities, combat, effects, the first-person bodies and jumping between them. It asks the registry whenever something depends on the kind of body or building.
 - `src/hitfx.ts`: getting shot, dying, and what a bullet does where it lands. Flinches are springs laid over a body's normal pose; deaths are chosen by what killed it (a shot, a headshot, a blast) and by how the body is built; bullets leave sparks, chips, dirt and marks that match what they hit. All of it is for show: it never touches health or the match's seeded random numbers, and the match server skips it. It works through a model's named parts (body, head, arms, legs, halo), so a new model that keeps the names gets it all.
-- `src/director.ts`: the strategy layer. The Quartermaster, the Veyl raid planner, squad playbooks, callouts and chatter.
+- `src/director.ts`: the strategy layer every side shares: squad playbooks, rallies, pushes, orders from the player, callouts and chatter. Each faction's own bot brain is in its `brain.ts`.
 - `src/hud.ts`, `src/style.css`, `src/page.html`: the HUD and menus.
 - `src/audio.ts`: sound effects (sampled, with the old synthesised set as a fallback), voices and the step-sequenced music.
 
@@ -256,7 +259,7 @@ The Ironhold tree has five tiers. Each building needs the one above it standing,
 | 3 | Foundry | Machine Shop | Gantry | Tungsten Core (after Hollow Points), Reactive Plating (after Plating), Servo Legs |
 | 4 | Signal Mast | Foundry and Assay Office | | Charter Specials (after Tungsten Core), Vault Plate (after Reactive Plating), Field Welders, Deep Buckets (after Diamond Bits) |
 
-The tables live in `src/data.ts` (`BLD`, `TRAINS`, `UNIT_NEEDS`, `UPGRADES`). The pause screen draws the whole tree with what is standing and bought. The Quartermaster follows the same tree when it runs the yard.
+The tables live in each faction's `src/factions/<faction>/numbers.ts` and are joined in `src/data.ts` (`BLD`, `TRAINS`, `UNIT_NEEDS`, `UPGRADES`). The pause screen draws the whole tree with what is standing and bought. The Quartermaster follows the same tree when it runs the yard.
 
 ## Balance tools
 

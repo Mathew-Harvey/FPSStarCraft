@@ -5,6 +5,7 @@ import type * as THREE from 'three';
 import type { Game } from '../game';
 import type { Director, Side } from '../director';
 import type { Unit, Building, OreNode, Prop, Kind } from '../data';
+import type { Model } from '../models';
 
 /** A ray hit, as Game.ray returns it. */
 export type Hit = { unit?: Unit; b?: Building; ore?: OreNode; prop?: Prop; dist: number; head?: boolean };
@@ -73,6 +74,8 @@ export interface UnitRules {
   gun?: Weapon;
   /** Tuning when the gun fires single aimed bullets. */
   shot?: Shot;
+  /** Builds this body's model. Without it the body uses its art in models.ts, or a plain stand-in when it has none. */
+  figure?(): Model;
   /** How it stands about and falls over. */
   stance?: StanceLook;
   /** The lamp this body carries at night. */

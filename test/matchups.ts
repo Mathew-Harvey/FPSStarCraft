@@ -2,6 +2,7 @@
 // factions plays (any faction at either end, mirrors included). Runs in Node with no browser, on the same simulation the match server runs.
 // Run with: npm run test:rules
 import { noHud, noPipe } from '../server/shim';
+import { usePlan, planCode, starterPlan } from '../src/mapcode';
 import { Game } from '../src/game';
 import { initHeadless } from '../src/gfx';
 import { ENV, WEATHER, KEYDIR, setLight, matchHour, matchWeather } from '../src/light';
@@ -152,13 +153,15 @@ for (const f of [0, 1, 2]) {
   }
   // The same ore for both ends. In any match two economies fight (not a story job), every seam at one end has a twin at the other, the same
   // walk from that end's home building and holding the same ore. The far end used to have two more fields in reach than the yard.
-  for (const m of [0, 1, 2, 10, 11, 12, 20, 21, 22]) for (const [h, o] of [[0, 1], [0, 0], [2, 1]]) {
-    const g = match(o, m, h), walks = (x: number, z: number) => g.ores.map(n => [Math.round(Math.hypot(n.pos.x - x, n.pos.z - z)), n.amount]).sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+  // The team maps (6 Crossing, 7 Wheel) and a map from the map maker (-1: a new made map on Switchback) are checked the same way.
+  for (const m of [0, 1, 2, 10, 11, 12, 20, 21, 22, 6, 16, 26, 7, 17, 27, -1]) for (const [h, o] of [[0, 1], [0, 0], [2, 1]]) {
+    usePlan(m < 0 ? planCode(starterPlan(1, 0)) : null); const g = match(o, m < 0 ? 1 : m, h), walks = (x: number, z: number) => g.ores.map(n => [Math.round(Math.hypot(n.pos.x - x, n.pos.z - z)), n.amount]).sort((a, b) => a[0] - b[0] || a[1] - b[1]);
     // "Pull" adds up every seam's ore, worth less the further it is from the end: one number for how much ore an end has in reach.
     const pull = (w: number[][]) => w.reduce((a, [d, n]) => a + n / (1 + d / 50), 0);
     const yard = walks(0, 0), far = walks(VHOME.x, VHOME.z), worst = Math.max(...yard.map((w, i) => Math.abs(w[0] - far[i][0]))), off = Math.abs(pull(yard) - pull(far)) / pull(yard);
     const twins = (MAP.sites || []).filter(s => s[2]).length, odd = (MAP.sites || []).length - twins * 2;
-    check(g.fair && worst <= 8 && off < .02 && odd <= 1, `map ${m}, ${['Ironhold', 'Veyl', 'Gloam'][h]} v ${['Ironhold', 'Veyl', 'Gloam'][o]}: both ends have the same ore at the same walks (${yard.length} seams, the worst one ${worst} m different, ore in reach ${(off * 100).toFixed(1)}% apart, ${twins} twinned fields and ${odd} in the middle)`);
+    usePlan(null);
+    check(g.fair && worst <= 8 && off < .02 && odd <= 1, `map ${m < 0 ? 'made on 1' : m}, ${['Ironhold', 'Veyl', 'Gloam'][h]} v ${['Ironhold', 'Veyl', 'Gloam'][o]}: both ends have the same ore at the same walks (${yard.length} seams, the worst one ${worst} m different, ore in reach ${(off * 100).toFixed(1)}% apart, ${twins} twinned fields and ${odd} in the middle)`);
   }
   // Overtime is a dial that is off. Switched on, a building takes more from each hit for each minute past the start, a tower does that much less
   // to a body, and a body's hit on a body is what it always was.

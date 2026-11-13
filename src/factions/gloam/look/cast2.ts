@@ -55,11 +55,18 @@ const hooksail = () => sculpt('hooksail', .7) || stub(1.0, 2);
 /** A Spore Sac afloat: a ribbed bulb with roots hanging. */
 const drifter = () => sculpt('drifter') || stub(2.0, 0);
 
-export const GLOAM_UNITS2: Record<string, () => THREE.Group> = { keeper, shellback, lobber, needler, smother, seeder, husk, pup, gnatwing, bloater, sower, hooksail, drifter };
+/** A Drifter ripened into a watcher: an eye stalk out of its crown, a ring of eyes, a lantern hanging under. */
+const lookoutsac = () => sculpt('lookoutsac') || stub(2.0, 0);
+/** A Stinger Stalk uprooted, walking on six hooked legs. */
+const stingerwalk = () => sculpt('stingerwalk') || stub(1.8, 3);
+/** A Puffball uprooted, walking on six thin legs. */
+const puffwalk = () => sculpt('puffwalk') || stub(1.6, 3);
+
+export const GLOAM_UNITS2: Record<string, () => THREE.Group> = { keeper, shellback, lobber, needler, smother, seeder, husk, pup, gnatwing, bloater, sower, hooksail, drifter, lookoutsac, stingerwalk, puffwalk };
 /** Height of the top of each body in metres, for health bars, picking and the camera. A flier's is above its own feet, not the ground. */
-export const GLOAM_HEIGHT2: Record<string, number> = { keeper: 2.6, shellback: 1.15, lobber: 3.0, needler: 2.0, smother: 3.0, seeder: 2.2, husk: .9, pup: .7, gnatwing: 1.2, bloater: 2.5, sower: 3.6, hooksail: 1.4, drifter: 3.3 };
+export const GLOAM_HEIGHT2: Record<string, number> = { keeper: 2.6, shellback: 1.15, lobber: 3.0, needler: 2.0, smother: 3.0, seeder: 2.2, husk: .9, pup: .7, gnatwing: 1.2, bloater: 2.5, sower: 3.6, hooksail: 1.4, drifter: 3.3, lookoutsac: 5.4, stingerwalk: 9.6, puffwalk: 6.4 };
 /** How high each flier is drawn above the ground (metres), before its bob. Rules that pick or shoot fliers should use the same numbers. */
-export const GLOAM_FLY: Record<string, number> = { gnatwing: 4.2, bloater: 5.0, sower: 5.6, hooksail: 4.8, drifter: 6.0 };
+export const GLOAM_FLY: Record<string, number> = { gnatwing: 4.2, bloater: 5.0, sower: 5.6, hooksail: 4.8, drifter: 6.0, lookoutsac: 6.0 };
 /** How far below the ground a body sits when dug in (metres), and how wide its mound is. What shows above ground is what is left. */
 export const DIG: Record<string, { sink: number; mound: number }> = {
   grazer: { sink: 1.1, mound: .9 }, snapper: { sink: 1.0, mound: .8 }, quillback: { sink: 2.1, mound: 1.1 }, blister: { sink: .55, mound: .7 }, mulcher: { sink: 2.6, mound: 2.6 },
@@ -144,13 +151,17 @@ export function actPose(L: Overlay, obj: THREE.Object3D, kind: string, act: stri
       L.add(part(obj, 'wingL')?.rotation, 'z', -.5 * up + Math.sin(t * 24) * .3 * up); L.add(part(obj, 'wingR')?.rotation, 'z', .5 * up - Math.sin(t * 24) * .3 * up); L.add(body?.rotation, 'x', -.2 * up); break;
     case 'hooksail:drink':    // hangs nose down over its own growth, tail curled under
       L.add(body?.rotation, 'x', .55 * up); L.add(head?.rotation, 'x', .3 * up); L.add(arms?.rotation, 'x', -.6 * up); break;
+    case 'stingerwalk:whip': { // the tail cocks back, then lashes down and forward
+      const tip = part(obj, 'tip'), w = p < .5 ? -smooth(p / .5) * .5 : -.5 + smooth((p - .5) / .5) * 1.3; L.add(tip?.rotation, 'x', w); L.add(body?.rotation, 'x', .08 * up); break; }
+    case 'puffwalk:puff':     // the ball squeezes and puffs
+      L.add(head?.scale, 'y', -.12 * up); L.add(head?.scale, 'x', .08 * up); L.add(head?.scale, 'z', .08 * up); break;
     case 'shellback:curl':    // tucks the head in under the brow and pulls the legs close (heals faster)
       L.add(head?.position, 'z', -.18 * up); L.add(head?.rotation, 'x', .4 * up); for (const l of legs) L.add(l.rotation, 'z', (l.name[3] === 'L' ? -1 : 1) * .7 * up); L.add(obj.position, 'y', -.2 * up); break;
   }
 }
 /** The ability names actPose knows for each kind, for the HUD and for tests. */
 export const ACTS: Record<string, string[]> = { keeper: ['mend', 'seed', 'pod', 'spit'], shellback: ['spit', 'curl'], lobber: ['lob', 'bite'], needler: ['fire'], smother: ['choke', 'rot'], seeder: ['fling'],
-  husk: ['bite'], pup: ['bite'], gnatwing: ['bite'], bloater: ['acid'], sower: ['drop'], hooksail: ['reel', 'cloud', 'drink'], drifter: [] };
+  husk: ['bite'], pup: ['bite'], gnatwing: ['bite'], bloater: ['acid'], sower: ['drop'], hooksail: ['reel', 'cloud', 'drink'], drifter: [], lookoutsac: [], stingerwalk: ['whip'], puffwalk: ['puff'] };
 
 /** Fliers: wings beat, bladders breathe, hanging parts sway, and the whole body bobs slowly; with `lift` it is also raised to GLOAM_FLY (the bench does this; in the game the engine already
  *  lifts a flier by u.alt, set from the same numbers in its rules). `moving` speeds the beat. */
@@ -178,7 +189,8 @@ const BLD_SIZE: Record<string, [number, number]> = { eldercap: [5.6, 11.5], anci
   rotden: [3.8, 5.4], wingspire: [2.2, 10], tallspire: [2.6, 14], deeproot: [3.8, 4.8], tunnelroot: [1.6, 1.2], sporepod: [.8, 2] };
 function growth(kind: string, anim: Anim): THREE.Group {
   const fig = figure(kind);
-  if (!fig) { const g = new THREE.Group(), [r, h] = BLD_SIZE[kind]; put(blob(r * 2, h * 1.2, r * 2, v => { if (v.y < 0) v.y = 0; }), M.gH, g, [0, 0, 0]); return g; }
+  if (!fig) { const g = new THREE.Group(), [r, h] = BLD_SIZE[kind]; put(blob(r * 2, h * 1.2, r * 2, v => { if (v.y < 0) v.y = 0; }), M.gH, g, [0, 0, 0]); ripens(g, anim); return g; }
+  ripens(fig.root, anim);
   for (const [n, how, f, a] of BLD_MOVE[kind] || []) {
     const o = fig.groups[n]; if (!o) continue; o.userData.dyn = true;
     if (how === 's') anim.push(t => { o.rotation.y = Math.sin(t * f) * a; o.rotation.z = Math.sin(t * f * .7 + 1) * a * .5; });
@@ -187,7 +199,40 @@ function growth(kind: string, anim: Anim): THREE.Group {
   }
   return fig.root;
 }
+/** A growth ripens while the rules hold its model's `userData.ripen` between 0 and 1 (see ripen()). */
+export function ripens(root: THREE.Object3D, anim: Anim) { anim.push(t => { const k = root.userData.ripen; if (k !== undefined || root.userData.ripenSeen) { root.userData.ripenSeen = true; ripen(root, k || 0, t); } }); return root; }
 export const GLOAM_BUILDINGS2: Record<string, (anim: Anim) => THREE.Group> = Object.fromEntries(Object.keys(BLD_SIZE).map(k => [k, (a: Anim) => growth(k, a)]));
+
+// ---------------------------------------------------------------- ripening
+/** The cocoon a body or growth grows over itself while it ripens into the next form: hide vines spiralling up from the ground and
+ *  meeting over the top, beaded with glowing sap, and a skin that closes between them as it nears the end. Sized to the thing's
+ *  bounds when first asked for. */
+function cocoon(obj: THREE.Object3D): THREE.Group {
+  obj.updateMatrixWorld(true); const box = new THREE.Box3(), inv = new THREE.Matrix4().copy(obj.matrixWorld).invert();
+  obj.traverse(c => { if ((c as THREE.Mesh).isMesh && !c.userData.ripen) { const m = c as THREE.Mesh; m.geometry.computeBoundingBox(); box.union(m.geometry.boundingBox!.clone().applyMatrix4(m.matrixWorld).applyMatrix4(inv)); } });
+  if (box.isEmpty()) box.set(new THREE.Vector3(-1, 0, -1), new THREE.Vector3(1, 2, 1));
+  const top = Math.max(.5, box.max.y), r = Math.min(Math.max(box.max.x - box.min.x, box.max.z - box.min.z) * .45, top * .95), h = Math.max(top * 1.06, r * 1.4);
+  const cx = (box.min.x + box.max.x) / 2, cz = (box.min.z + box.max.z) / 2, g = new THREE.Group(), vines = new THREE.Group(), skin = new THREE.Group(), n = 7;
+  g.name = 'cocoon'; g.userData.ripen = true; vines.name = 'vines'; skin.name = 'skin'; g.add(vines, skin); g.position.set(cx, 0, cz);
+  for (let i = 0; i < n; i++) {
+    const a0 = i / n * Math.PI * 2, pts: P3[] = [];
+    for (let k = 0; k <= 8; k++) { const f = k / 8, a = a0 + f * 1.2, rr = r * (.95 + .3 * Math.sin(f * Math.PI)) * (1 - f ** 3); pts.push([Math.cos(a) * rr, f * h, Math.sin(a) * rr]); }
+    put(tube(pts, [r * .08, r * .075, r * .07, r * .06, r * .055, r * .05, r * .04, r * .03, r * .02], 8), M.gD, vines);
+    for (let k = 2; k < 8; k += 2) put(blob(r * .1, r * .1, r * .1), M.gS, vines, pts[k]);
+  }
+  put(blob(r * 2.3, h * 1.04, r * 2.3, v => { v.y += .5; const s = 1 - Math.max(0, v.y - .55) * 1.1; v.x *= s; v.z *= s; }, 'cocoon'), M.gH, skin, [0, 0, 0]);
+  g.traverse(c => { c.userData.ripen = true; }); return g;
+}
+/** Shows ripening at k (0 to 1): the vines climb, the skin closes over in the last third and the whole thing throbs faster as it nears
+ *  the end. At 0 nothing shows. The rules swap in the ripened model when it is done (Shellback to Lobber, Quillback to Needler, Bloater
+ *  to Sower, Wing Spire to Tall Spire, Cap to Elder to Ancient). */
+export function ripen(obj: THREE.Object3D, k: number, t: number) {
+  let c = obj.getObjectByName('cocoon') as THREE.Group | undefined;
+  if (k <= 0) { if (c) c.visible = false; return; }
+  if (!c) { c = cocoon(obj); obj.add(c); }
+  c.visible = true; const vines = c.children[0], skin = c.children[1], beat = 1 + Math.max(0, Math.sin(t * (2 + k * 6))) ** 4 * .05 * k;
+  const vk = Math.min(1, k * 1.6); vines.scale.set(beat * (.85 + .15 * vk), Math.max(.02, vk), beat * (.85 + .15 * vk)); skin.visible = k > .6; const sk = Math.min(1, (k - .6) / .4); skin.scale.set(beat * (.75 + .25 * sk), Math.max(.01, .3 + .7 * sk) * beat, beat * (.75 + .25 * sk));
+}
 
 // ---------------------------------------------------------------- the hook the game calls each frame
 /** Marks which of a body's channels the game sets outright (2) or eases (1) each frame, for Overlay.pre (see game.ts poseUnits). */
@@ -200,7 +245,8 @@ function tag(obj: THREE.Object3D) {
 }
 /** The pose hook for every second-brood kind (registered in look/index.ts). Reads from the body:
  *  - `u.dig` (0 to 1) if the rules set it, else eases toward 1 while the body has the 'dug' status (src/core/status.ts);
- *  - `u.act` (an ACTS name) and `u.actP` (0 to 1) for an ability under way. */
+ *  - `u.act` (an ACTS name) and `u.actP` (0 to 1) for an ability under way;
+ *  - `u.ripen` (0 to 1) while it ripens into its next form. */
 export function lookPose(g: { time: number }, u: any, dt: number, ease: number) {
   const obj: THREE.Object3D = u.obj; if (!obj) return; tag(obj);
   const L: Overlay = obj.userData.look || (obj.userData.look = new Overlay()); L.pre(ease);
@@ -215,9 +261,10 @@ export function lookPose(g: { time: number }, u: any, dt: number, ease: number) 
     if (k > 0) digPose(L, obj, kind, k, t);
   }
   if (u.act && ACTS[kind]?.includes(u.act)) actPose(L, obj, kind, u.act, u.actP ?? .5, t);
+  if (u.ripen !== undefined || obj.userData.ripenSeen) { obj.userData.ripenSeen = true; ripen(obj, u.ripen || 0, t); }
 }
 /** Every kind lookPose handles. */
 export const LOOK_KINDS = Object.keys(GLOAM_UNITS2);
 
 // For the capture bench and the art review pages: the look functions on the page, so a staged shot can dig a body in or pose an ability.
-if (typeof window !== 'undefined') (window as any).__gloamLook = { Overlay, digPose, digMound, mound, actPose, flyPose, lookPose, ACTS, DIG, GLOAM_FLY };
+if (typeof window !== 'undefined') (window as any).__gloamLook = { Overlay, digPose, digMound, mound, actPose, flyPose, lookPose, ACTS, DIG, GLOAM_FLY, ripen };

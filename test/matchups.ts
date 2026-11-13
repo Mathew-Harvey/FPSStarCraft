@@ -5,7 +5,7 @@ import { noHud, noPipe } from '../server/shim';
 import { Game } from '../src/game';
 import { initHeadless } from '../src/gfx';
 import { ENV, WEATHER, KEYDIR, setLight, matchHour, matchWeather } from '../src/light';
-import { DIFFS, SIDE, FACTION, BLD, MAP, VHOME, UPGRADES, NORTH_PATH, homeXZ, setMap, setSides, fac, Kind, BKind } from '../src/data';
+import { DIFFS, SIDE, FACTION, BLD, MAP, VHOME, UPGRADES, NORTH_PATH, homeXZ, setMap, setSides, fac, Kind, BKind, LAYOUT, OVERTIME, Unit, Building } from '../src/data';
 const UPGRADE_AT = Object.fromEntries(UPGRADES.map(u => [u.key, u.at]));
 
 initHeadless();
@@ -142,22 +142,48 @@ for (const f of [0, 1, 2]) {
 // outpost has an ore field as near as the yard's.
 {
   const g = match(2, 0, 1), c = g.spawn('cantor', SIDE.home, 40, 60), pack = [[41.6, 60], [42.2, 60.9], [42.2, 59.1]].map(([x, z]) => { const u = g.spawn('snapper', SIDE.out, x, z); u.hp = u.maxHp = 5000; u.order = { type: 'guard', x, z }; return u; });
+  // The pack stands still. The two at the sides are 1.8 m apart and the sweep reaches 1.9 m from its target, so a Snapper that shuffled or
+  // pounced first could put the third body out of reach and the check would turn on the dice.
+  for (const u of pack) { u.speed = 0; u.dashCd = 1e9; }
   c.hp = c.maxHp = 5000; c.order = { type: 'guard', x: 40, z: 60 };
   let hurt: number[] = []; run(g, 6, () => { if (!hurt.length && pack.some(u => u.hp < u.maxHp)) hurt = pack.map(u => u.maxHp - u.hp); });
   check(hurt.filter(d => d > 0).length === 3 && hurt.filter(d => d > 0 && d < Math.max(...hurt) * .75).length === 2, `a Cantor's sweep cuts its target and half as deep into two more beside it (${hurt.map(d => d.toFixed(1)).join(', ')})`);
   for (const m of [0, 1, 2, 10, 20]) {
     const near = (x: number, z: number) => Math.min(...MAP.sites!.map(s => Math.hypot(s[0] - x, s[1] - z)));
-    setMap(m); setSides(0, 0); const even = [near(0, 0), near(VHOME.x, VHOME.z), MAP.sites!.length]; setSides(0, 1); const classic = [near(0, 0), near(VHOME.x, VHOME.z), MAP.sites!.length];
+    LAYOUT.fair = false; setMap(m); setSides(0, 0); const even = [near(0, 0), near(VHOME.x, VHOME.z), MAP.sites!.length]; setSides(0, 1); const classic = [near(0, 0), near(VHOME.x, VHOME.z), MAP.sites!.length];
     check(Math.abs(even[0] - even[1]) < 3 && even[2] === classic[2] && classic[1] >= classic[0], `map ${m}: in a mirror the outpost's nearest ore field is as near as the yard's (${Math.round(even[0])} m and ${Math.round(even[1])} m; classic ${Math.round(classic[0])} and ${Math.round(classic[1])})`);
   }
+  // The same ore for both ends. In any match two economies fight (not a story job), every seam at one end has a twin at the other, the same
+  // walk from that end's home building and holding the same ore. The far end used to have two more fields in reach than the yard.
+  for (const m of [0, 1, 2, 10, 11, 12, 20, 21, 22]) for (const [h, o] of [[0, 1], [0, 0], [2, 1]]) {
+    const g = match(o, m, h), walks = (x: number, z: number) => g.ores.map(n => [Math.round(Math.hypot(n.pos.x - x, n.pos.z - z)), n.amount]).sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+    // "Pull" adds up every seam's ore, worth less the further it is from the end: one number for how much ore an end has in reach.
+    const pull = (w: number[][]) => w.reduce((a, [d, n]) => a + n / (1 + d / 50), 0);
+    const yard = walks(0, 0), far = walks(VHOME.x, VHOME.z), worst = Math.max(...yard.map((w, i) => Math.abs(w[0] - far[i][0]))), off = Math.abs(pull(yard) - pull(far)) / pull(yard);
+    const twins = (MAP.sites || []).filter(s => s[2]).length, odd = (MAP.sites || []).length - twins * 2;
+    check(g.fair && worst <= 8 && off < .02 && odd <= 1, `map ${m}, ${['Ironhold', 'Veyl', 'Gloam'][h]} v ${['Ironhold', 'Veyl', 'Gloam'][o]}: both ends have the same ore at the same walks (${yard.length} seams, the worst one ${worst} m different, ore in reach ${(off * 100).toFixed(1)}% apart, ${twins} twinned fields and ${odd} in the middle)`);
+  }
+  // Overtime is a dial that is off. Switched on, a building takes more from each hit for each minute past the start, a tower does that much less
+  // to a body, and a body's hit on a body is what it always was.
+  { const g = match(1, 0, 0), hq = g.ownB('choir', true, SIDE.out)[0], body = g.units.find(u => u.alive && u.team === SIDE.out)!, foe = g.units.find(u => u.alive && u.team === SIDE.home)!;
+    const hit = (t: Unit | Building, from: Unit | Building | null) => { const was = t.hp + ((t as Unit).shield || 0); g.damage(t, 4, from); return was - t.hp - ((t as Unit).shield || 0); };
+    g.time = 30 * 60; const off = [g.overtime(), hit(hq, null)];
+    OVERTIME.start = 18 * 60; OVERTIME.perMin = .1; g.time = 23 * 60; const b1 = hit(hq, null), u1 = hit(body, foe), t1 = hit(body, hq);
+    check(off[0] === 0 && Math.abs(b1 / off[1] - 1.5) < .02 && Math.abs(t1 / u1 - 1 / 1.5) < .02, `overtime: off, a building takes the same at minute 30 as ever; switched on for minute 18, five minutes in a hit on a building does ${(b1 / off[1]).toFixed(2)} times as much and a tower's hit on a body ${(t1 / u1).toFixed(2)} times`);
+    setSides(0, 1); LAYOUT.fair = false; const classic = new Game(noPipe(), noHud, DIFFS[1], 0); classic.time = 23 * 60; check(classic.overtime() === 0, 'overtime: the classic match against the raid outpost never has any'); OVERTIME.start = 0; }
 }
 
 // 13. Every pairing, bots on both sides, plays out to a result without the stalemates the sweep found.
 for (const [home, out, map] of [[0, 1, 2], [0, 2, 20], [0, 0, 1], [1, 1, 0], [2, 2, 10], [1, 2, 0]]) {
-  const g = match(out, map, home), H = SIDE.home, O = SIDE.out, tag = `${FACTION[H].short} vs ${NAME(O)} on map ${map}`; let bad = '';
-  for (let i = 0; i < 40 * 60 * 30 && g.phase !== 'over'; i++) { g.update(1 / 30); g.evq!.length = 0; if (g.cash(H) < -1 || g.cash(O) < -1) bad = 'negative ore'; }
+  // Up to three goes, each with the next dice. About one bot match in sixteen is still undecided at 40 minutes (one in four Veyl mirrors), and
+  // which one depends on the dice, so one go passed or failed by how many dice the checks above it had drawn. The bug this guards against,
+  // armies that froze for the rest of every match, fails all three.
+  let g = match(out, map, home), bad = '', goes = 0; const H = SIDE.home, O = SIDE.out, tag = `${FACTION[H].short} vs ${NAME(O)} on map ${map}`, ends: number[] = [];
+  for (; goes < 3; goes++) { if (goes) g = match(out, map, home);
+    for (let i = 0; i < 40 * 60 * 30 && g.phase !== 'over'; i++) { g.update(1 / 30); g.evq!.length = 0; if (g.cash(H) < -1 || g.cash(O) < -1) bad = 'negative ore'; }
+    ends.push(Math.round(g.time)); if (g.phase === 'over') break; }
   check(!bad, `${tag}: no negative ore`);
-  check(g.phase === 'over', `${tag}: the bots finish the match inside 40 minutes (ended at ${Math.round(g.time)} s)`);
+  check(g.phase === 'over', `${tag}: the bots finish the match inside 40 minutes (${ends.length === 1 ? `ended at ${ends[0]} s` : `goes ended at ${ends.join(', ')} s`})`);
 }
 
 // Each side's squad waits at its own end, and a back-door alarm sends it toward the ridge path's end at its own base. The far end used to borrow

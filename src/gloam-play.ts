@@ -76,7 +76,7 @@ function aiSnapper(g: Game, u: Unit, dt: number) {
       if (!isB && d > 4 && d < 10 && u.dashCd <= 0) { u.dashT = .35; u.dashCd = G_TUNE.pounce.cd; g.puff(TMP.copy(u.pos).setY(.4), 3, .6, M.gS, .4); sfx.dash(g.vol(u.pos) * .7); }
       let wx = 0, wz = 0; if (!isB && d > 6 && u.dashT <= 0) { const k = Math.sin(g.time * 4.3 + u.id * 2.1) * Math.min(3.5, d * .3), nx = -(t.pos.z - u.pos.z) / d, nz = (t.pos.x - u.pos.x) / d; wx = nx * k; wz = nz * k; }
       g.moveTo(u, t.pos.x + wx, t.pos.z + wz, dt, .4, u.dashT > 0 ? 2.6 : 1);
-    } else { u.yaw = Math.atan2(t.pos.x - u.pos.x, t.pos.z - u.pos.z); if (u.cd <= 0) { u.cd = G_TUNE.biteCd.snapper; u.swing = 1; sfx.slash(g.vol(u.pos) * .6); g.damage(t, (isB ? 6 : G_TUNE.bite.snapper) * gMul(g, u.team), u); } }
+    } else { u.yaw = Math.atan2(t.pos.x - u.pos.x, t.pos.z - u.pos.z); if (u.cd <= 0) { u.cd = G_TUNE.biteCd.snapper; u.swing = 1; sfx.slash(g.vol(u.pos) * .6); g.damage(t, (isB ? G_TUNE.bite.gnaw : G_TUNE.bite.snapper) * gMul(g, u.team), u); } }
     return;
   }
   g.vIdle(u, dt, raiding(u) ? 3 : 1.5, u.order.type !== 'guard' ? 1 : .6);

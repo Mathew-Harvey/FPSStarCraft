@@ -234,8 +234,8 @@ function startVeyl() {
 /** A story job played from the outpost end: the job's script runs on a hidden local host, and this screen is its one seat. */
 function startStory(mi: Mission) {
   endSplit(); splitMode = 'veyl'; splitVs = false; want(); initAudio(); setVolume(vol); setMusic(mus); hush(); hud.reset();
-  const m = split = new LocalMatch(mi.map, mi.diff, 1, 'veyl', mi), old = game;
-  game = new Game(pipe, hud, DIFFS[mi.diff], mi.map, null, m.seats[0], true); game.story = mi; game.sens = sens; game.names = m.names; game.teams = m.teams; game.myTeam = SIDE.out; game.phase = 'play'; game.introT = 1.8; old.dispose(); ended = false; (window as any).__ore.game = game;
+  STORY.on = true; const m = split = new LocalMatch(mi.map, mi.diff, 1, 'veyl', mi), old = game;
+  game = new Game(pipe, hud, DIFFS[mi.diff], mi.map, null, m.seats[0], true); STORY.on = false; game.story = mi; game.sens = sens; game.names = m.names; game.teams = m.teams; game.myTeam = SIDE.out; game.phase = 'play'; game.introT = 1.8; old.dispose(); ended = false; (window as any).__ore.game = game;
   $('menu').hidden = true; $('pause').hidden = true; $('end').hidden = true; hud.show(true); resize(); lock();
 }
 // ---- cut scenes
@@ -249,7 +249,7 @@ function playCuts(ids: string[], then: () => void) {
 function nextCut() {
   const id = cutQ.shift(); if (!id) { const t = cutThen; cutThen = null; t?.(); return; }
   const c = CUTS[id]; endSplit(); hush(); hud.reset(); setSides(...c.sides); STORY.charter = c.charter === 'home' ? SIDE.home : c.charter === 'out' ? SIDE.out : -1;
-  game.dispose(); game = new Game(pipe, hud, DIFFS[1], c.map, null); game.duskFix = c.dusk; game.sens = sens; ended = false; (window as any).__ore.game = game;
+  game.dispose(); STORY.on = true; game = new Game(pipe, hud, DIFFS[1], c.map, null); STORY.on = false; game.duskFix = c.dusk; game.sens = sens; ended = false; (window as any).__ore.game = game;
   $('menu').hidden = true; $('pause').hidden = true; $('end').hidden = true; hud.show(false); if (document.pointerLockElement) document.exitPointerLock();
   cutP.start(c, game, nextCut);
 }

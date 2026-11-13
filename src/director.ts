@@ -7,7 +7,7 @@ import type { Game } from './game';
 import { Kind, BKind, UNIT, BLD, UPGRADES, Unit, Building, Callout, OUTPOST, GATE, RALLY, RALLY_N, VRALLY, VRALLY_N, VHOME, NORTH_PATH, MAP, MAPS, ROAD, FACTION, SIDE, veylPt, roadPt, isSoldier, isWorker, foeOf, fac, atHome, endPt, swapEnd, homeXZ, compass } from './data';
 import { Doctrine, DOCTRINES } from './doctrine';
 import { factionRule } from './core/registry';
-import { MATCH, multi, enemiesOf } from './core/sides';
+import { MATCH, multi, enemiesOf, isEnemy } from './core/sides';
 /** One line for whichever side holds the outpost: the Veyl's, or the Gloam's. */
 const VG = (team: number, veyl: string, gloam: string) => fac(team) === 2 ? gloam : veyl;
 /** Who calls out what they see, for each faction. */
@@ -142,7 +142,7 @@ export class Director implements Side {
     const walk = (u: Unit, px: number, pz: number) => { if (u.site) { u.site.builder = null; u.site = null; } u.node = null; u.pref = null; u.windX = px; u.windZ = pz; u.state = 'walk'; };
     const go = (list: Unit[], tgt: Unit | Building | null) => { const sp = spots(list.length, 2.4); list.forEach((u, i) => { u.order = { type: 'amove', x: sp[i][0], z: sp[i][1], mine: true, prey: tgt || undefined }; u.target = tgt; u.leashed = false; }); };
     if (k === 'r') { for (const u of fighters) this.enlist(u); for (const u of workers) { u.pref = null; u.node = null; if (u.site) { u.site.builder = null; u.site = null; } u.state = u.carrying > 0 ? 'toHQ' : 'idle'; } return us.length; }
-    if (k === 'a') { const t = g.units.find(o => o.alive && o.id === tid && o.team !== team) || g.buildings.find(o => o.alive && o.id === tid && o.team !== team) || null; if (!t) return 0; x = t.pos.x; z = t.pos.z; go(fighters, t); return fighters.length; }
+    if (k === 'a') { const t = g.units.find(o => o.alive && o.id === tid && isEnemy(o.team, team)) || g.buildings.find(o => o.alive && o.id === tid && isEnemy(o.team, team)) || null; if (!t) return 0; x = t.pos.x; z = t.pos.z; go(fighters, t); return fighters.length; }
     if (k === 'o') { const n = g.ores[tid]; if (!n || n.amount <= 0) return 0; x = n.pos.x; z = n.pos.z; for (const u of workers) { if (u.site) { u.site.builder = null; u.site = null; } u.pref = n; u.node = n; u.state = u.carrying > 0 ? 'toHQ' : 'toOre'; } if (fighters.length) { z += 5; go(fighters, null); } return us.length; }
     if (k === 'b') {
       const b = g.buildings.find(o => o.alive && o.id === tid && o.team === team); if (!b) return 0; x = b.pos.x; z = b.pos.z + b.hz + 4;

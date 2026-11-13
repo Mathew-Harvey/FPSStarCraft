@@ -52,6 +52,11 @@ export function setTeamGame(p: TeamPlan | null) {
 export const setSidesCode = (code: number) => { const c = Number.isInteger(code) && code >= 0 && code < 9 ? code : 1; return setSides(Math.floor(c / 3), c % 3); };
 /** The side a side fights. A one-on-one has two; with more sides it is the enemy this side is going after now (MATCH.foe, set by the Director). */
 export const foeOf = (team: number) => multi() ? MATCH.foe[team] ?? enemiesOf(team)[0] ?? team : team === SIDE.home ? SIDE.out : SIDE.home;
+/** Is team `t` someone `me` may hurt? One on one it is exactly the other side, as it always was; in a team game it is every enemy, not only
+ *  the one the Director is going after. Use it (and isOwn) in every first-person hit, so a shot never lands on a friend. */
+export const isFoe = (t: number, me: number) => multi() ? isEnemy(t, me) : t === foeOf(me);
+/** Is team `t` on `me`'s side: itself one on one, itself or an ally in a team game. A shot passes through these. */
+export const isOwn = (t: number, me: number) => multi() ? !isEnemy(t, me) : t === me;
 /** True for the side that holds the yard. */
 export const atHome = (team: number) => team === SIDE.home;
 /** Turns a point in one end's frame into the same spot at the other end: a half turn about the middle of the two bases.
@@ -135,7 +140,7 @@ export const DIFFS: Difficulty[] = [
 export { GATE, MAP, MAPS, NORTH_PATH, OUTPOST, RALLY, RALLY_N, ROAD, SIZES, TURNS, VAST, VHOME, VRALLY, VRALLY_N, baseOf, compass, mapCode, roadPt, rollMap, setMap, sizeOf, turnOf, validMap, veylPt } from './maps';
 export type { MapDef } from './maps';
 import { VHOME, MAP as MAP_, layoutSites } from './maps';
-import { MATCH, multi, startOf, enemiesOf, planTeams, setMatch, clearMatch, type TeamPlan } from './core/sides';
+import { MATCH, multi, startOf, enemiesOf, planTeams, setMatch, clearMatch, isEnemy, type TeamPlan } from './core/sides';
 /** Story state the engine reads while a campaign job is running. Set before a Game is made, cleared for everything else. */
 export const STORY = {
   /** The Ironhold team that is Charter Security on this job (they wear company grey), or -1. */

@@ -6,7 +6,7 @@ import { sfx } from '../../audio';
 import { sees } from '../../terrain';
 import type { Game } from '../../game';
 import { TMP } from '../../game';
-import { UNIT, Unit, Building, isUnit, foeOf, fac } from '../../data';
+import { UNIT, Unit, Building, isUnit, foeOf, fac, isFoe, isOwn } from '../../data';
 import { catOf } from '../../core/combat';
 import { isEnemy } from '../../core/sides';
 import { I_TUNE as TUNE } from './numbers';
@@ -36,7 +36,7 @@ export function updateGun(g: Game, dt: number, P: Set<string>, eye: THREE.Vector
   if (me.kind === 'linesman' && P.has('KeyC')) { if (g.nadeCd <= 0) { g.nadeCd = g.upOf(me.team).frag ? 5 : 9; const v = V3().copy(dir).multiplyScalar(19); v.y += 4.5; g.shoot(V3().copy(eye).addScaledVector(dir, .7), v, me.team, 75, true, me); sfx.throw(); } else sfx.deny(); }
   if (heavy && g.brace && P.has('Mouse0') && g.bashCd <= 0) {
     g.bashCd = .9; g.bashT = .25; sfx.clang(); g.shake = Math.max(g.shake, .4); let any = false;
-    for (const u of g.units) { if (!u.alive || u.team !== foeOf(me.team)) continue; const dx = u.pos.x - me.pos.x, dz = u.pos.z - me.pos.z, d = Math.hypot(dx, dz); if (d > 3.4 + UNIT[u.kind].rad || (dx * dir.x + dz * dir.z) / (d || 1) < .5) continue; g.damage(u, 24, me); const k = u.kind === 'warden' ? 2 : 12; u.kx += dx / (d || 1) * k; u.kz += dz / (d || 1) * k; any = true; }
+    for (const u of g.units) { if (!u.alive || !isFoe(u.team, me.team)) continue; const dx = u.pos.x - me.pos.x, dz = u.pos.z - me.pos.z, d = Math.hypot(dx, dz); if (d > 3.4 + UNIT[u.kind].rad || (dx * dir.x + dz * dir.z) / (d || 1) < .5) continue; g.damage(u, 24, me); const k = u.kind === 'warden' ? 2 : 12; u.kx += dx / (d || 1) * k; u.kz += dz / (d || 1) * k; any = true; }
     if (any) { g.hud.hitmark(false); sfx.hit(); g.hud.damage(V3().copy(eye).addScaledVector(dir, 2), 'WHAM!', 'ko'); }
   }
   if (g.reloadT > 0) { g.reloadT -= dt; if (g.reloadT <= 0) g.ammo = gun.mag; return; }
@@ -49,9 +49,9 @@ export function updateGun(g: Game, dt: number, P: Set<string>, eye: THREE.Vector
       g.quiet = true;
       for (let i = 0; i < 9; i++) {
         const d = V3().copy(dir); d.x += R(-.075, .075); d.y += R(-.05, .05); d.z += R(-.075, .075); d.normalize();
-        let hit = g.ray(eye, d, 34, -1, me); if (hit && ((hit.unit && hit.unit.team === me.team) || (hit.b && hit.b.team === me.team && hit.dist < 3))) hit = g.ray(eye, d, 34, foeOf(me.team), me);
+        let hit = g.ray(eye, d, 34, -1, me); if (hit && ((hit.unit && isOwn(hit.unit.team, me.team)) || (hit.b && isOwn(hit.b.team, me.team) && hit.dist < 3))) hit = g.ray(eye, d, 34, foeOf(me.team), me);
         const dist = hit ? hit.dist : 34, end = V3().copy(eye).addScaledVector(d, dist); if (i % 2 === 0) g.tracer(muzzle, end);
-        const fall = dist < 10 ? 1 : Math.max(.3, 1 - (dist - 10) / 24), tgt = hit && (hit.unit && hit.unit.team === foeOf(me.team) ? hit.unit : hit.b && hit.b.team === foeOf(me.team) ? hit.b : null);
+        const fall = dist < 10 ? 1 : Math.max(.3, 1 - (dist - 10) / 24), tgt = hit && (hit.unit && isFoe(hit.unit.team, me.team) ? hit.unit : hit.b && isFoe(hit.b.team, me.team) ? hit.b : null);
         if (tgt) { const dm = (hit!.head ? 9 : 6) * fall * mul * (1 + pay * .8) + tagBonus(tgt, 'plated', 6 / 9) * mul; total += dm; hits++; last = tgt; crit = crit || !!hit!.head; g.fx.aim(end, d); g.damage(tgt, dm, me); hobble(g, me, tgt); if (!isUnit(tgt) && i % 3 === 0) g.fx.surface(end, d, g.surfOf(tgt), .8); } else g.impact(eye, d, hit, end, 6 * fall * mul);
       }
       g.quiet = false;
@@ -61,18 +61,18 @@ export function updateGun(g: Game, dt: number, P: Set<string>, eye: THREE.Vector
       const sp = S.sp * (1 - g.ads * S.adsK) * (me.moving ? 1.6 : 1) * (1 + g.bloom * (long ? 0 : 1.2)), d = V3().copy(dir); g.bloom = Math.min(1, g.bloom + (long ? 1 : me.kind === 'patch' ? .2 : .1)); d.x += R(-sp, sp); d.y += R(-sp, sp); d.z += R(-sp, sp); d.normalize();
       let hit = g.ray(eye, d, 150, -1, me);
       // A Patch's rivets mend whoever they hit on their own side.
-      if (me.kind === 'patch' && hit?.unit && hit.unit.team === me.team && hit.dist < 60) {
+      if (me.kind === 'patch' && hit?.unit && isOwn(hit.unit.team, me.team) && hit.dist < 60) {
         const o = hit.unit, end = V3().copy(eye).addScaledVector(d, hit.dist); g.tracer(muzzle, end, ringMat, .08);
         if (o.hp < o.maxHp) { if (g.net) g.net.cmd('hl', o.id); else o.hp = Math.min(o.maxHp, o.hp + 10); o.pop = .6; g.puff(end, 3, .35, M.teal, 1.6, .4); g.hud.damage(V3(o.pos.x, UNIT[o.kind].headY + .4, o.pos.z), '+10', 'shield'); g.hud.hitmark(false); sfx.ore(); }
         return;
       }
-      if (hit && ((hit.unit && hit.unit.team === me.team) || (hit.b && hit.b.team === me.team && hit.dist < 3))) hit = g.ray(eye, d, 150, foeOf(me.team), me);
+      if (hit && ((hit.unit && isOwn(hit.unit.team, me.team)) || (hit.b && isOwn(hit.b.team, me.team) && hit.dist < 3))) hit = g.ray(eye, d, 150, foeOf(me.team), me);
       const dist = hit ? hit.dist : 150, end = V3().copy(eye).addScaledVector(d, dist);
       // The Long Rifle goes through: up to two more bodies behind the first, each for a little less.
-      if (long && hit?.unit && hit.unit.team === foeOf(me.team)) { let from = hit.unit, at = dist, n = 1, fall = .7; for (let i = 0; i < 2; i++) { const h2 = g.ray(V3().copy(eye).addScaledVector(d, at + .4), d, 60, foeOf(me.team), from); if (!h2?.unit || h2.unit.team !== foeOf(me.team)) break; g.damage(h2.unit, S.body * mul * fall, me); at += .4 + h2.dist; from = h2.unit; fall *= .7; n++; } if (n > 1) { end.copy(eye).addScaledVector(d, at); g.hud.streak(n > 2 ? 'TRIPLE THREAD!' : 'THREADED!'); sfx.crit(); } }
+      if (long && hit?.unit && isFoe(hit.unit.team, me.team)) { let from = hit.unit, at = dist, n = 1, fall = .7; for (let i = 0; i < 2; i++) { const h2 = g.ray(V3().copy(eye).addScaledVector(d, at + .4), d, 60, foeOf(me.team), from); if (!h2?.unit || !isFoe(h2.unit.team, me.team)) break; g.damage(h2.unit, S.body * mul * fall, me); at += .4 + h2.dist; from = h2.unit; fall *= .7; n++; } if (n > 1) { end.copy(eye).addScaledVector(d, at); g.hud.streak(n > 2 ? 'TRIPLE THREAD!' : 'THREADED!'); sfx.crit(); } }
       g.tracer(muzzle, end, tracerMat, long ? .14 : .07);
-      if (hit?.unit && hit.unit.team === foeOf(me.team)) { g.fx.aim(end, d); g.damage(hit.unit, (hit.head ? S.head : S.body) * mul, me, !!hit.head); hit.head ? sfx.crit() : sfx.hit(); g.hud.hitmark(!!hit.head); }
-      else if (hit?.b && hit.b.team === foeOf(me.team)) { g.damage(hit.b, S.bld * mul, me); g.hud.hitmark(false); g.fx.surface(end, d, g.surfOf(hit.b)); }
+      if (hit?.unit && isFoe(hit.unit.team, me.team)) { g.fx.aim(end, d); g.damage(hit.unit, (hit.head ? S.head : S.body) * mul, me, !!hit.head); hit.head ? sfx.crit() : sfx.hit(); g.hud.hitmark(!!hit.head); }
+      else if (hit?.b && isFoe(hit.b.team, me.team)) { g.damage(hit.b, S.bld * mul, me); g.hud.hitmark(false); g.fx.surface(end, d, g.surfOf(hit.b)); }
       else g.impact(eye, d, hit, end, S.bld * mul);
       const f = g.bits.find(x => x.t <= 0); if (f) { f.m.material = M.spark; f.m.position.copy(muzzle).addScaledVector(dir, -.5); f.v.set(-Math.cos(g.yaw) * 2.5 + R(-.5, .5), 2.5, Math.sin(g.yaw) * 2.5 + R(-.5, .5)); f.m.scale.set(.03, .03, .07); f.spin = 20; f.t = .8; f.m.visible = true; }
     }
@@ -93,10 +93,10 @@ export function updateCannon(g: Game, dt: number, P: Set<string>, eye: THREE.Vec
     const mul = mulOf(g, me), muzzle = V3(); flash.getWorldPosition(muzzle);
     g.recoil = 1; g.pitch = Math.min(1.45, g.pitch + .012); g.kick += .01; g.shake = Math.min(1, g.shake + .22); g.bloom = Math.min(1, g.bloom + .3); sfx.cannon();
     const sp = .012, d = V3().copy(dir); d.x += R(-sp, sp); d.y += R(-sp, sp); d.z += R(-sp, sp); d.normalize();
-    let hit = g.ray(eye, d, 140, -1, me); if (hit && ((hit.unit && hit.unit.team === me.team) || (hit.b && hit.b.team === me.team && hit.dist < 4))) hit = g.ray(eye, d, 140, foeOf(me.team), me);
+    let hit = g.ray(eye, d, 140, -1, me); if (hit && ((hit.unit && isOwn(hit.unit.team, me.team)) || (hit.b && isOwn(hit.b.team, me.team) && hit.dist < 4))) hit = g.ray(eye, d, 140, foeOf(me.team), me);
     let dist = hit ? hit.dist : 140; if (!hit && d.y < 0) dist = Math.min(dist, -eye.y / d.y);
     const end = V3().copy(eye).addScaledVector(d, dist); g.tracer(muzzle, end, tracerMat, .16);
-    const tgt = hit && (hit.unit && hit.unit.team === foeOf(me.team) ? hit.unit : hit.b && hit.b.team === foeOf(me.team) ? hit.b : null);
+    const tgt = hit && (hit.unit && isFoe(hit.unit.team, me.team) ? hit.unit : hit.b && isFoe(hit.b.team, me.team) ? hit.b : null);
     if (tgt) { g.fx.aim(end, d); g.damage(tgt, (hit!.head ? 34 : 22) * mul, me, !!hit!.head); g.hud.hitmark(!!hit!.head); hit!.head ? sfx.crit() : sfx.hit(); }
     if (hit?.prop) g.damageProp(hit.prop, 22 * mul, me, end);
     if (dist < 139) g.burst(end, 14 * mul, 3.2, me, tgt);
@@ -133,7 +133,7 @@ export function aiSoldier(g: Game, u: Unit, dt: number) {
       else if (heavy) { u.cd = 1.05 + R(0, .2); let dm = 0; for (let i = 0; i < 5; i++) { const hit = isB || Math.random() < .7; if (hit) dm += isB ? 4 : 6; if (i % 2 === 0) g.tracer(a, V3(t.pos.x + R(-1, 1), ty + R(-.6, .6), t.pos.z + R(-1, 1))); } sfx.blast(g.vol(u.pos) * .5); g.damage(t, (dm + tagBonus(t, 'plated', 6)) * mul, u); hobble(g, u, t); }
       else if (long) { u.cd = 1.7 + R(0, .3); const hit = isB || Math.random() < (d < 12 ? .4 : .85), b = V3(t.pos.x, ty + .3, t.pos.z); if (!hit) b.add(TMP.set(R(-1.5, 1.5), R(0, 1.5), R(-1.5, 1.5))); g.tracer(a, b, tracerMat, .13); sfx.blast(g.vol(u.pos) * .5); if (hit) g.damage(t, (isB ? 18 : 52) * mul * (glass ? 1.15 : 1), u); }
       else if (doc) { u.cd = .55 + R(0, .1); const hit = isB || Math.random() < .6, b = V3(t.pos.x, ty, t.pos.z); g.tracer(a, b); sfx.shot(g.vol(u.pos) * .35); if (hit) g.damage(t, 5 * mul, u); }
-      else if (!isB && d > 9 && d < 24 && g.time > u.dashCd && g.units.filter(o => o.alive && o.team !== u.team && Math.abs(o.pos.x - t.pos.x) < 4.5 && Math.abs(o.pos.z - t.pos.z) < 4.5).length >= 3) {
+      else if (!isB && d > 9 && d < 24 && g.time > u.dashCd && g.units.filter(o => o.alive && isEnemy(o.team, u.team) && Math.abs(o.pos.x - t.pos.x) < 4.5 && Math.abs(o.pos.z - t.pos.z) < 4.5).length >= 3) {
         // three or more bunched up: a Linesman lobs a grenade into the middle of them
         u.dashCd = g.time + (up.frag ? 9 : 15); u.cd = .7; const hs = Math.max(8, Math.min(19, d * 1.05)), v = V3((t.pos.x - u.pos.x) / d * hs, 4.5, (t.pos.z - u.pos.z) / d * hs); g.shoot(V3(u.pos.x, 1.5, u.pos.z).addScaledVector(v, .04), v, u.team, 60, true, u); if (g.vol(u.pos) > .3) sfx.throw();
       }

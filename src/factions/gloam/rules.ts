@@ -4,7 +4,7 @@ import * as THREE from 'three';
 import { V3, R, M } from '../../gfx';
 import { sfx } from '../../audio';
 import type { Game } from '../../game';
-import { UNIT, BLD, Unit, Building, isUnit, isWorker } from '../../data';
+import { UNIT, BLD, Unit, Building, isUnit, isWorker, isOwn } from '../../data';
 import { isEnemy } from '../../core/sides';
 import { G_TUNE, GBKind } from './numbers';
 import { defineUnits, defineBuildings, defineFaction } from '../../core/registry';
@@ -60,7 +60,7 @@ export function aiGloam(g: Game, u: Unit, dt: number) {
   return aiSnapper(g, u, dt);
 }
 function dodge(g: Game, u: Unit, dt: number) {
-  for (const p of g.projs) { if (!p.nade || p.team === u.team) continue; const dx = u.pos.x - p.pos.x, dz = u.pos.z - p.pos.z, d = Math.hypot(dx, dz); if (d > 7.5) continue;
+  for (const p of g.projs) { if (!p.nade || !isEnemy(p.team, u.team)) continue; const dx = u.pos.x - p.pos.x, dz = u.pos.z - p.pos.z, d = Math.hypot(dx, dz); if (d > 7.5) continue;
     const l = d || 1; g.moveTo(u, u.pos.x + dx / l * 6, u.pos.z + dz / l * 6, dt, .2, 2.2); return true; }
   return false;
 }
@@ -179,7 +179,7 @@ export function playerGloam(g: Game, dt: number, P: Set<string>, eye: THREE.Vect
     const spit = (spread: number, dmg: number) => {
       const d = V3(dir.x + R(-spread, spread), dir.y + R(-spread, spread) * .5, dir.z + R(-spread, spread)).normalize(), hit = g.ray(eye, d, 70, -1, me), dist = hit ? hit.dist : 70, end = V3().copy(eye).addScaledVector(d, dist), mz = V3();
       if (flash) { flash.visible = true; flash.getWorldPosition(mz); } else mz.copy(eye); g.tracer(mz, end, quillMat, .05);
-      const tgt = hit && (hit.unit && hit.unit.team !== me.team ? hit.unit : hit.b && hit.b.team !== me.team ? hit.b : null);
+      const tgt = hit && (hit.unit && !isOwn(hit.unit.team, me.team) ? hit.unit : hit.b && !isOwn(hit.b.team, me.team) ? hit.b : null);
       if (tgt) { g.damage(tgt, hit!.head ? dmg * 1.8 : dmg, me, !!hit!.head); g.hud.hitmark(!!hit!.head); sfx.hit(); g.puff(end, 2, .4, M.gS, .5); } else g.impact(eye, d, hit, end, 8);
     };
     // Right click: a fan of quills. Five at once, wide.

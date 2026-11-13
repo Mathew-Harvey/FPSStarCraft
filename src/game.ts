@@ -11,7 +11,7 @@ import * as T from './terrain';
 import { seamsFor } from './teammaps';
 import { LOD } from './meshes';
 import { Intel } from './scout';
-import { Kind, BKind, UNIT, BLD, BUILDABLE, UPGRADES, TRAINS, UNIT_NEEDS, UpKey, Unit, Building, Prop, OreNode, Difficulty, DIFFS, OUTPOST, GATE, MAP, MAPS, ROAD, VHOME, FACTION, SIDE, setMap, veylPt, isUnit, isSoldier, isWorker, isFighter, foeOf, fac, MIRROR, atHome, endPt, swapEnd , STORY, turnOf, LAYOUT, OVERTIME, CHOIR_REACH, CLEAVE, turnPt, startXZ } from './data';
+import { isFoe, isOwn, Kind, BKind, UNIT, BLD, BUILDABLE, UPGRADES, TRAINS, UNIT_NEEDS, UpKey, Unit, Building, Prop, OreNode, Difficulty, DIFFS, OUTPOST, GATE, MAP, MAPS, ROAD, VHOME, FACTION, SIDE, setMap, veylPt, isUnit, isSoldier, isWorker, isFighter, foeOf, fac, MIRROR, atHome, endPt, swapEnd , STORY, turnOf, LAYOUT, OVERTIME, CHOIR_REACH, CLEAVE, turnPt, startXZ } from './data';
 import { Director } from './director';
 import { ENV, hourOf, matchHour, matchWeather, lampsBegin, lamp, flashLamp, lampsCommit, flicker, LAMP_ON } from './light';
 import type { Mission } from './campaign';
@@ -791,8 +791,8 @@ export class Game {
     else if (this.tool === 1 && P.has('Mouse2') && this.bashCd <= 0) {
       // Right click: the drill kicks like a jackhammer (a Tender throws one sharp note). Short reach, big shove, and it cracks scenery.
       this.bashCd = 1.1; this.bashT = .25; this.recoil = 1; this.jaw = 1; this.shake = Math.max(this.shake, .4); veyl ? sfx.zap(1) : gl ? sfx.slash(1) : sfx.clang(); sfx.dash(.6); let any = false;
-      for (const u of this.units) { if (!u.alive || u.team !== foe) continue; const dx = u.pos.x - me.pos.x, dz = u.pos.z - me.pos.z, d = Math.hypot(dx, dz); if (d > 3.2 + UNIT[u.kind].rad || (dx * dir.x + dz * dir.z) / (d || 1) < .45) continue; this.damage(u, 22, me); any = true; }
-      if (look?.prop && look.dist < 3.6) { this.damageProp(look.prop, 60, me, V3().copy(eye).addScaledVector(dir, look.dist)); any = true; } else if (look?.b && look.b.team === foe && look.dist < 3.6) { this.damage(look.b, 40, me); any = true; }
+      for (const u of this.units) { if (!u.alive || !isFoe(u.team, side)) continue; const dx = u.pos.x - me.pos.x, dz = u.pos.z - me.pos.z, d = Math.hypot(dx, dz); if (d > 3.2 + UNIT[u.kind].rad || (dx * dir.x + dz * dir.z) / (d || 1) < .45) continue; this.damage(u, 22, me); any = true; }
+      if (look?.prop && look.dist < 3.6) { this.damageProp(look.prop, 60, me, V3().copy(eye).addScaledVector(dir, look.dist)); any = true; } else if (look?.b && isFoe(look.b.team, side) && look.dist < 3.6) { this.damage(look.b, 40, me); any = true; }
       if (any) { this.hud.hitmark(false); sfx.hit(); this.hud.damage(V3().copy(eye).addScaledVector(dir, 2), gl ? 'CHOMP!' : veyl ? 'TWANG!' : 'CLONK!', 'ko'); }
     }
     let biting = false; const drilling = this.tool === 1 && this.lmb;
@@ -812,7 +812,7 @@ export class Game {
         else if (look.b && look.b.team === side && !look.b.built) { biting = true; look.b.progress += dt / BLD[look.b.kind].time * 1.6; this.weldAcc += dt; if (this.mineT <= 0) { if (this.net) { this.net.cmd('wd', look.b.id, r1(this.weldAcc * 100) / 100); } this.weldAcc = 0; this.mineT = .16; this.debris(at, 2, .06, veyl ? M.crys : M.spark, 4); } }
         else if (look.b && look.b.team === side && look.b.built && look.b.hp < look.b.maxHp) { biting = true; look.b.hp = Math.min(look.b.maxHp, look.b.hp + 40 * dt); this.weldAcc += dt; if (this.mineT <= 0) { if (this.net) { this.net.cmd('fx', look.b.id, r1(this.weldAcc * 100) / 100); } this.weldAcc = 0; this.mineT = .16; this.debris(at, 2, .06, veyl ? M.crys : M.spark, 4); } }
         else if (look.prop) { biting = true; if (this.mineT <= 0) { this.mineT = .2; this.damageProp(look.prop, 11, me, at); sfx.hit(); } }
-        else if ((look.unit && look.unit.team === foe && look.dist < 3) || (look.b && look.b.team === foe && look.dist < 3)) { biting = true; if (this.mineT <= 0) { this.mineT = .25; this.damage((look.unit || look.b)!, 10, me); sfx.hit(); this.debris(at, 2, .08, M.spark, 4); } }
+        else if ((look.unit && isFoe(look.unit.team, side) && look.dist < 3) || (look.b && isFoe(look.b.team, side) && look.dist < 3)) { biting = true; if (this.mineT <= 0) { this.mineT = .25; this.damage((look.unit || look.b)!, 10, me); sfx.hit(); this.debris(at, 2, .08, M.spark, 4); } }
       }
       if (gl) { if (biting) this.jaw = .5 + .5 * Math.sin(this.time * 26); }
       else if (veyl) { const f = this.vm.veyl.userData.flash; f.visible = biting || Math.random() < .3; f.scale.setScalar(biting ? .55 + Math.random() * .25 : .3); } else this.vm.drill.userData.bit.rotation.z += dt * (biting ? 34 : 24); if (biting) this.shake = Math.max(this.shake, .06);
@@ -947,7 +947,7 @@ export class Game {
       if (p.nade) { p.obj.rotation.x += dt * 9; p.obj.rotation.z += dt * 5; } else { p.obj.lookAt(TMP.copy(p.pos).add(p.vel)); p.obj.rotateZ(this.time * 12); }
       let hit = p.life <= 0 || p.pos.y <= .12, tgt: Unit | Building | null = null;
       if (!hit) for (const u of this.units) { if (!u.alive || !isEnemy(u.team, p.team)) continue; const st = UNIT[u.kind]; if (Math.abs(u.pos.x - p.pos.x) > 3) continue; if (Math.hypot(u.pos.x - p.pos.x, u.pos.z - p.pos.z) < st.rad + .3 && p.pos.y < st.headY + .5) { hit = true; tgt = u; break; } }
-      if (!hit) for (const b of this.buildings) { if (!b.alive || (b.team === p.team && !p.nade)) continue; if (Math.abs(p.pos.x - b.pos.x) < b.hx && Math.abs(p.pos.z - b.pos.z) < b.hz && p.pos.y < b.h) { hit = true; if (isEnemy(b.team, p.team)) tgt = b; break; } }
+      if (!hit) for (const b of this.buildings) { if (!b.alive || (isOwn(b.team, p.team) && !p.nade)) continue; if (Math.abs(p.pos.x - b.pos.x) < b.hx && Math.abs(p.pos.z - b.pos.z) < b.hz && p.pos.y < b.h) { hit = true; if (isEnemy(b.team, p.team)) tgt = b; break; } }
       if (!hit) for (const s of this.spires) if (Math.abs(p.pos.x - s.x) < s.r && Math.abs(p.pos.z - s.z) < s.r && p.pos.y < s.h) { hit = true; if (!p.nade) this.damageProp(s, p.dmg, p.from); break; }
       if (!hit) continue;
       if (p.ghost === 1) { /* the server's own shot: it sends the result */ if (!p.nade) this.puff(p.pos, 3, .5, M.cyan, .8); }

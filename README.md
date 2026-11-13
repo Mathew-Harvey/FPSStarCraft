@@ -159,9 +159,24 @@ Veyl Lancers use the scenery. Between shots a Lancer ducks behind the nearest ro
 
 Pick one on the menu. **Needle's Eye** is the original road east. **Switchback** is a tight canyon at sunset with a long flank. **Glass Flats** is open salt pan with almost no cover.
 
-Each map comes in three sizes, picked on the Skirmish tab or by the lobby host: **Small** (three ore fields out on the map), **Medium** (four) and **Large** (seven, with the outpost about 170 m away). A map number carries its size in the tens: 0 to 2 are Medium, 10 to 12 Small, 20 to 22 Large.
+Each map comes in four sizes, picked on the Skirmish tab or by the lobby host: **Small** (three ore fields out on the map), **Medium** (four), **Large** (seven, with the outpost about 170 m away) and **Vast** (twelve, with the other base hidden, see below). A map number carries its size in the tens: 0 to 2 are Medium, 10 to 12 Small, 20 to 22 Large.
 
 - **The map starts undiscovered.** The minimap is black until one of your bodies or buildings has seen the ground, dims what nobody is looking at now, and only shows enemy bodies in sight. Ore fields and the Veyl outpost appear once somebody has walked there.
+### Vast maps: find them first
+
+**Vast** is the fourth size, and it plays differently. Nobody tells you where the other base is. You have to send scouts.
+
+- **Where they are.** The other base is 250 to 300 m away, in one of 24 directions picked afresh for every match. Both ends start with one home building and six workers, whoever plays them.
+- **Roads.** Five roads leave your base. One ends at their front door. The other four end at ore fields. They all look the same, and the rock arch that marks the road on the smaller maps is gone.
+- **Ore.** Twelve fields lie in rings round both bases, the same for each end, so where the ore is says nothing about where they are. The world has 200 m of ground behind each base, and its middle is off to one side, so the skyline does not point at them either.
+- **What the game stops telling you.** Until one of your bodies has seen one of their buildings, the map is framed round your own base, the goal reads "Find the Veyl", your squad waits beside your base and not on the road to theirs, your lookout cannot say which way an attack is coming from, and your squad will not pitch a push. You start every match facing the same way.
+- **Scouting.** Press **H** to send a scout: the fastest free fighter, or a worker if there is nobody else. It walks a road nobody has looked down, then comes home. Press it again and another goes down a different road. When one sees them, your lookout calls the bearing and the distance, and the map slides over to hold both bases. The scout walks once round what it found and comes back. It does not stop to fight, and it turns for home if it is badly hurt. You can also jump into the scout and look for yourself.
+- **What they are building.** The map only shows the enemy buildings your side has looked at. A new one appears when somebody sees it, and one that falls out of sight stays drawn until somebody looks again. Each time a scout sees something new you get one line: what it saw, and what that says about their plan. The pause screen keeps the list, with how long ago it was last seen. On a Vast map the goal counts the home buildings you have seen, not the ones they have.
+- **Build plans.** A side run by the game picks one of four plans for the match: a standard opening, an early rush (a second barracks at a minute and a half, no towers, a small squad that marches early), dig in and tech up (towers first, tech sooner, a big squad late), or a second base early (a new home building before anything else, more workers, a late first push). The scout's read comes from the buildings it saw, never from the enemy's own notes, so it can be wrong if it only saw half the base.
+- **They have to find you too.** A side run by the game sends its own scouts, up to three at a time, and plans no push until one has seen you. Your lookout tells you when you have been seen. If nine minutes pass and it still has not found you, word reaches it anyway, so a match cannot stall.
+
+The scout order, the scout report and the pause screen list work on every map size. On the three smaller sizes nothing else changes: the map numbers, the layouts and the bot matches are as they were. A map number carries the turn in the hundreds (530 is Needle's Eye, Vast, turn 5). `npm run test:scout` checks all 72 Vast layouts, scouting and the build plans.
+
 - **New bases.** A Headframe can be built (400 ore) on any open ground short of the Veyl. Riggers bank at the nearest one, each extra one adds eight beds and lets you build around it, and the shift is only lost when the last Headframe falls. The Quartermaster stakes one on the nearest free field once the home seams thin out or the shift runs long, then puts a Watchpost beside it. The raids go for whatever is softest, which is usually the new base.
 
 ![Switchback](docs/screenshots/switchback.jpg)

@@ -4,7 +4,8 @@ import * as THREE from 'three';
 import { V3, R, M } from './gfx';
 import { sfx } from './audio';
 import type { Game } from './game';
-import { Kind, BKind, UNIT, BLD, UPGRADES, Unit, Building, Callout, OUTPOST, GATE, RALLY, RALLY_N, VRALLY, VRALLY_N, VHOME, NORTH_PATH, MAP, MAPS, ROAD, FACTION, SIDE, veylPt, roadPt, isSoldier, foeOf, fac, atHome, endPt, swapEnd, homeXZ } from './data';
+import { Kind, BKind, UNIT, BLD, UPGRADES, Unit, Building, Callout, OUTPOST, GATE, RALLY, RALLY_N, VRALLY, VRALLY_N, VHOME, NORTH_PATH, MAP, MAPS, ROAD, FACTION, SIDE, veylPt, roadPt, isSoldier, foeOf, fac, atHome, endPt, swapEnd, homeXZ, compass } from './data';
+import { Doctrine, DOCTRINES } from './doctrine';
 import { overgrowth, GHINTS, GBOOKS, GCHATTER, GKILL, GDOWN, IKILL_G, ICHATTER_G } from './gloam-ai';
 /** One line for whichever side holds the outpost: the Veyl's, or the Gloam's. */
 const VG = (team: number, veyl: string, gloam: string) => fac(team) === 2 ? gloam : veyl;
@@ -16,7 +17,8 @@ const POST_SLOTS_0 = [[31, 20], [9, -31], [33, 5], [-8, 26]];
 /** Watchpost spots covering the road the raids walk down and the flank. Worked out from the map, so they face the Veyl on every map. */
 /** A push that is down to this share of the bodies it set off with goes home. */
 const RETREAT = .4;
-function postSlots(): number[][] {
+function postSlots(knows = true): number[][] {
+  if (!knows) return [[20, 18], [-18, -20], [22, -16], [-20, 16]];   // a ring round the base: with nobody found yet, no side is the front
   if ((MAP.like ?? MAP.base) === 0 && MAP.size === 0) return POST_SLOTS_0;
   const e = MAP.flank[MAP.flank.length - 1], el = Math.hypot(e[0], e[1]) || 1, r = (p: [number, number]) => [Math.round(p[0]), Math.round(p[1])];
   return [r(roadPt(31, 6)), [Math.round(e[0] / el * 30), Math.round(e[1] / el * 30)], r(roadPt(33, -9)), r(roadPt(-8, 12))];
@@ -71,7 +73,11 @@ export interface Side {
   raidLive: boolean; retarget: number; /** Counts down to the next check that the march is still together. */ cohT?: number;
   /** The push on its way in is coming round by the flank. */
   inNorth?: boolean;
+  /** The build plan this side follows (see doctrine.ts). Unset means the standard one. */
+  doc?: Doctrine; docSet?: boolean;
 }
+/** The build plan a side follows. */
+export const docOf = (s: Side) => s.doc || DOCTRINES[0];
 
 /** One group of raiders: where it gathers, where it is going, and whether it has been let off the leash. */
 interface Wave { units: Unit[]; sx: number; sz: number; t: number; go: boolean; n0: number; north: boolean; tx: number; tz: number; hunt?: boolean }
@@ -103,7 +109,7 @@ export class Director implements Side {
   /** Where a side's squad waits: on its own end of the road, or toward the ridge when a flank is coming. The points belong to the end of the map, not
    *  the faction. The far end used to borrow the yard's points turned through the middle of the map, but the ridge path is not symmetric, so the
    *  turned ridge point landed on the wrong side of the far base: its army stood 40 m away while a back-door push ate its workers. */
-  rallyAt(i: number, north = false, s: Side = this) { const r = atHome(s.team) ? (north ? RALLY_N : RALLY) : north ? VRALLY_N : VRALLY; return { x: r.x + ((i % 4) - 1.5) * 2.4, z: r.z + Math.floor(i / 4) * 2.4 }; }
+  rallyAt(i: number, north = false, s: Side = this) { const [hx, hz] = homeXZ(s.team), blind = !this.g.intel.knows(s.team), r = blind ? { x: hx + 17, z: hz + 15 } /* nowhere that points at anything */ : atHome(s.team) ? (north ? RALLY_N : RALLY) : north ? VRALLY_N : VRALLY; return { x: r.x + ((i % 4) - 1.5) * 2.4, z: r.z + Math.floor(i / 4) * 2.4 }; }
   following(s: Side = this) { return this.g.army(s.team).some(u => u.order.type === 'follow'); }
   books(s: Side) { const f = fac(s.team); return f === 2 ? GBOOKS : f ? VBOOKS : BOOKS; }
   pathFor(book: number, i: number, s: Side = this): number[][] | undefined { return book === 1 || (book === 2 && i % 2) ? (!atHome(s.team) ? [...NORTH_PATH] : [...NORTH_PATH].reverse()).map(p => [p[0], p[1]]) : undefined; }
@@ -111,7 +117,7 @@ export class Director implements Side {
     const g = this.g;
     if (g.eco) {
       // Every side that runs an economy: the enemy building nearest the way in, the nearest of their bases when it is all in, and a Ward Pylon first if one shields it.
-      const foe = foeOf(s.team), all = g.ownB(undefined, false, foe), hqs = g.ownB(FACTION[foe].hq, false, foe), want = g.mission?.target?.(g) || null; if (want) return want; if (!all.length) return null;
+      const foe = foeOf(s.team), all = g.intel.known(s.team), hqs = all.filter(b => b.kind === FACTION[foe].hq), want = g.mission?.target?.(g) || null; if (want) return want; if (!all.length) return null;
       const from = book === 1 ? (atHome(s.team) ? NORTH_PATH[0] : NORTH_PATH[NORTH_PATH.length - 1]) : atHome(s.team) ? [RALLY.x, RALLY.z] : [VRALLY.x, VRALLY.z];
       const near = (l: Building[]) => l.reduce((a, b) => Math.hypot(a.pos.x - from[0], a.pos.z - from[1]) < Math.hypot(b.pos.x - from[0], b.pos.z - from[1]) ? a : b);
       const t = book === 2 && hqs.length ? near(hqs) : near(all);
@@ -136,7 +142,7 @@ export class Director implements Side {
     if (this.following(s)) u.order = { type: 'follow', x: 0, z: 0, lead: army.find(x => x.order.type === 'follow')?.order.lead };
     else { const p = this.rallyAt(u.slot, s.raidLive && (s === this && !this.g.eco ? this.raidDir === 'north' : !!s.inNorth), s); u.order = { type: 'guard', x: p.x, z: p.z }; }
   }
-  regroup(north = false, s: Side = this) { this.g.army(s.team).filter(u => u !== this.g.me && !u.pilot && u.order.type !== 'follow').forEach((u, i) => { u.slot = i; const p = this.rallyAt(i, north, s); u.order = { type: 'guard', x: p.x, z: p.z }; }); }
+  regroup(north = false, s: Side = this) { this.g.army(s.team).filter(u => u !== this.g.me && !u.pilot && u.order.type !== 'follow' && u.order.type !== 'scout').forEach((u, i) => { u.slot = i; const p = this.rallyAt(i, north, s); u.order = { type: 'guard', x: p.x, z: p.z }; }); }
   squadTask(s: Side = this) { return s.plan?.phase === 'go' ? this.books(s)[s.plan.book].name + ' under way' : this.following(s) ? 'Following you' : s.raidLive ? (fac(s.team) ? 'Holding off the push' : 'Holding off the raid') : fac(s.team) === 2 ? 'Lurking in the Bloom' : fac(s.team) ? 'Guarding the Stones' : 'Holding the yard'; }
   say(who: string, msg: string, cls = '', team = -1) { this.g.feed(who, msg, cls, team); }
   bark(u: Unit, kind: 'kill' | 'down') { if (this.g.net || this.g.time < this.barkT) return; this.barkT = this.g.time + 7; const f = fac(u.team), l = f === 2 ? (kind === 'kill' ? GKILL : GDOWN) : f ? (kind === 'kill' ? VKILL : VDOWN) : kind === 'kill' ? (fac(foeOf(u.team)) === 2 ? IKILL_G : KILL) : DOWN; this.say(UNIT[u.kind].name, l[Math.floor(Math.random() * l.length)], kind === 'down' ? 'al' : ''); }
@@ -210,6 +216,7 @@ export class Director implements Side {
     const g = this.g, net = g.net, p = this.side(g.myTeam).plan;
     if (P.has('KeyG')) { if (net) net.cmd('or', 'G'); else this.order('G'); sfx.blip(); }
     if (P.has('KeyV')) { if (net) net.cmd('or', 'V'); else this.order('V'); }
+    if (P.has('KeyH')) { if (net) { net.cmd('or', 'S'); sfx.blip(); } else this.order('S'); }
     if (P.has('Mouse1')) { const q = V3(); if (g.groundPoint(q, 160) || (lookDist > 0 && q.copy(eye).addScaledVector(dir, lookDist).setY(0))) { g.hud.ping(q); if (net) net.cmd('or', 'M', Math.round(q.x), Math.round(q.z)); else this.order('M', q.x, q.z); } }
     if (p && p.phase === 'ask') {
       const k = P.has('KeyX') ? 'X' : P.has('KeyZ') ? 'Z' : P.has('KeyC') && p.book < 2 ? 'C' : '';
@@ -223,6 +230,12 @@ export class Director implements Side {
     if (k === 'G') { s.auto = !s.auto; this.say(v ? FACTION[s.team].voice : 'Quartermaster', v ? (s.auto ? VG(s.team, 'I will tend the Chorus again.', 'The Overgrowth tends itself again.') : VG(s.team, 'The Chorus is yours to tend. I will listen.', 'The swarm is yours to grow. I will watch.')) : s.auto ? 'Back on the clock. I\'ll handle the building.' : 'Fine. You build it. I\'ll watch.', ''); }
     else if (k === 'V') {
       if (squad.length) { const rel = this.following(s); squad.forEach((u, i) => { u.slot = i; const q = this.rallyAt(i, false, s); u.order = rel ? { type: 'guard', x: q.x, z: q.z } : { type: 'follow', x: 0, z: 0, lead: lead || undefined }; }); this.say(who, v ? (rel ? VG(s.team, 'Back to the Stones, then.', 'Back to the Bloom, then.') : VG(s.team, 'We follow your voice.', 'We run at your heels.')) : rel ? 'Back to the rally point. Finally, a sit-down.' : 'On you, boss. Try not to get us killed.', ''); s.plan = null; s.callout = null; s.nextPlan = g.time + (rel ? 25 : 60); sfx.callout(); } else sfx.deny();
+    }
+    else if (k === 'S') {
+      const u = g.intel.send(s.team, lead), lk = LOOKOUT[fac(s.team)];
+      if (!u) { this.say(lk, v ? 'Nobody is free to go and look.' : 'Nobody free to send. Train somebody first.', 'al', s.team); if (!g.net) sfx.deny(); }
+      else { const n = g.units.filter(x => x.alive && x.team === s.team && x.order.type === 'scout').length, where = MAP.hid && !g.intel.known(s.team).length ? compass(u.order.x - homeXZ(s.team)[0], u.order.z - homeXZ(s.team)[1]) : '';
+        this.say(UNIT[u.kind].name, g.intel.known(s.team).length ? (v ? 'I will go and look at them again.' : 'Going for another look at them. Back soon.') : MAP.hid ? (v ? `I will walk the ${where} road and see where it ends.` : n > 1 ? `I will take the ${where} road, then.` : `Taking a walk down the ${where} road. If I am not back, it was that one.`) : (v ? 'I will go and look at them.' : 'Going for a look at them. Back soon.'), '', s.team); if (!g.net) sfx.callout(); }
     }
     else if (k === 'M') {
       if (squad.length) { for (const u of squad) u.order = { type: 'amove', x: x + R(-2.5, 2.5), z: z + R(-2.5, 2.5) }; if (s.plan?.phase !== 'go') { s.plan = null; s.callout = null; s.nextPlan = g.time + 60; } this.say(who, v ? VG(s.team, 'We go where you point. Singing.', 'Where you point, we swarm.') : 'Moving. Shooting anything purple on the way.', ''); sfx.callout(); } else sfx.deny();
@@ -270,6 +283,8 @@ export class Director implements Side {
       if (s === this.vs && !g.eco) { this.enemy(dt); continue; }
       const f = fac(s.team), home = s === this, foe = foeOf(s.team);
       if (!g.human[s.team]) s.auto = true; if (s.callout) s.callout.t -= dt;
+      // On a hidden map a side nobody plays picks its build plan for the match. A scout can read it off what gets built.
+      if (MAP.hid && !s.docSet && now > 1) { s.docSet = true; if (!g.human[s.team] && !g.mission) { s.doc = DOCTRINES[g.docFix ?? Math.floor(Math.random() * DOCTRINES.length)]; s.nextPlan += s.doc.first; } }
       const hints = f === 2 ? GHINTS : f ? VHINTS : HINTS;
       if (!g.mission || !home) while (s.hintI < hints.length && now >= hints[s.hintI][0]) { const h = hints[s.hintI++]; this.say(h[1], this.hint(s, s.hintI - 1, h[2]), 'in', s.team); }
       if (f === 2) overgrowth(this, dt, s); else if (f) this.conductor(dt, s); else this.quartermaster(dt, s);
@@ -282,6 +297,10 @@ export class Director implements Side {
   hint(s: Side, i: number, text: string) {
     const f = fac(s.team), foe = foeOf(s.team), ff = fac(foe), hq = BLD[FACTION[foe].hq].name;
     if (f === 0 && ff === 1 && !this.g.eco) return text;
+    if (MAP.hid && i === 2) { const them = ff === f ? (f === 2 ? 'Another swarm' : f ? 'Another Chorus' : 'Another Ironhold crew') : ff === 2 ? 'The Gloam' : ff ? 'The Veyl' : 'The Ironhold', is = ff === f ? 'is' : 'are';
+      return f === 2 ? `${them} ${is} rooting out there and we do not know where. Five roads leave the Cap. One ends at their door. Press H to send legs down one.`
+        : f ? `${them} ${is} out there, and we do not know where. Five roads leave the Stone. One ends at their door. Press H and a voice will walk one.`
+        : `${them} ${is} out there somewhere and nobody gave me a map. Five roads leave the yard. One ends at their front door. Press H to send a scout down one.`; }
     if (i === 2) return ff === 0 ? (f ? text : `Another Ironhold crew is at the end of the ${MAP.road}. Same kit as us, worse manners. Break every ${hq}.`)
       : ff === 1 ? (f === 1 ? `Another Chorus sings at the end of the road. Their song is not ours. Break every ${hq}.` : `The Veyl are at the end of the road, singing over their ${hq}s. Break every one.`)
       : f === 0 ? `Something is growing at the end of the ${MAP.road}. Mother Caps, and a green carpet spreading out of them. Squash every Cap.` : f === 1 ? `Something is growing at the end of the road. Mother Caps, on a green carpet. Silence every one.` : 'Another swarm is rooting at the end of the road. Their Bloom smells wrong. Eat every Mother Cap.';
@@ -296,29 +315,29 @@ export class Director implements Side {
     const free = g.supplyCap(T) - g.supplyUsed(T), army = g.army(T).length, spires = own('thornspire').length, ward = own('wardpylon'), wardUp = up('wardpylon').length > 0, gate = own('reedgate'), gateUp = up('reedgate')[0];
     const stones = own('choir'), home = up('choir')[0] || stones[0]; if (!home) return;
     const wantWell = pits.length > 0 && free <= 3 && !sites.some(b => b.kind === 'hushwell') && own('hushwell').length < 6;
-    const wantSpires = army >= 3 || g.human[foeOf(T)] ? 1 + (g.time > 420 ? 1 : 0) + (g.time > 840 ? 1 : 0) : 0;
+    const DOC = docOf(V), wantSpires = Math.max(0, (army >= 3 || g.human[foeOf(T)] ? 1 + (g.time > 420 ? 1 : 0) + (g.time > 840 ? 1 : 0) : 0) + DOC.towers);
     const put = (k: BKind, slots: number[][], line: string) => { if (cash() < BLD[k].cost || (g.paper(T) && !g.paper(T)!.allow.includes(k) && k !== 'choir')) return false; for (const [lx, lz] of slots) { const [x, z] = VP(lx, lz), at = this.freeSpot(k, Math.round(x), Math.round(z), T); if (at) { g.place(k, at[0], at[1], false, T); this.say('Conductor', line, '', T); return true; } } return false; };
     const spare = (keys: string[]) => { for (const k of keys) { const u = UPGRADES.find(x => x.key === k)!; if (!U[u.key] && g.ownB(u.at, true, T).length && (!u.needs || U[u.needs]) && cash() >= u.cost + 120) return g.buyUpgrade(u.key, T); } return false; };
     const homeLeft = g.ores.filter(n => Math.hypot(n.pos.x - HX, n.pos.z - HZ) < 40).reduce((a, n) => [a[0] + n.amount, a[1] + n.max], [0, 0]);
-    const wantStones = Math.min((MAP.sites || []).length + 1, 1 + (g.time > 480 || homeLeft[0] < homeLeft[1] * .5 ? 1 : 0) + (g.time > 960 ? 1 : 0) + (g.time > 1440 ? 1 : 0));
+    const wantStones = Math.min((MAP.sites || []).length + 1, 1 + (g.time > DOC.expT || homeLeft[0] < homeLeft[1] * .5 ? 1 : 0) + (g.time > 960 ? 1 : 0) + (g.time > 1440 ? 1 : 0));
     const exp = this.vExpansion(stones, T);
     let saving = true, hold = 95;
     if (!pits.length) put('broodpit', [[-2, -10], [-2, 12], [-8, 1]], 'A Brood Pit first. The voices need somewhere to wake.');
     else if (wantWell) put('hushwell', [[6, -14], [6, 16], [0, -18], [0, 20], [-6, -16], [-6, 18]], 'The song is crowded. Growing a Hush Well.');
     else if (building) saving = false;
     // The second Stone comes before the extra towers and songs: a Chorus that waited for all of them first expanded minutes after the Ironhold, or never.
-    else if (pitsUp.length && army >= 4 && g.time > 360 && exp.site && stones.length < wantStones) { hold = BLD.choir.cost; const [sx, sz] = exp.site, dx = HX - sx, dz = HZ - sz, l = Math.hypot(dx, dz) || 1, at = [4, 5, 6, 7, 9].map(r => [Math.round(sx + dx / l * r), Math.round(sz + dz / l * r)]).find(p => g.canPlace('choir', p[0], p[1], false, T));
+    else if (pitsUp.length && army >= Math.max(1, 4 + DOC.expArmy) && g.time > Math.min(360, DOC.expT) && exp.site && stones.length < wantStones) { hold = BLD.choir.cost; const [sx, sz] = exp.site, dx = HX - sx, dz = HZ - sz, l = Math.hypot(dx, dz) || 1, at = [4, 5, 6, 7, 9].map(r => [Math.round(sx + dx / l * r), Math.round(sz + dz / l * r)]).find(p => g.canPlace('choir', p[0], p[1], false, T));
       // As close to the seams as it will stand. A Stone is a pillar, not a shed with a long front wall: nine metres out, every Tender at a new
       // Stone walked further than a Rigger does to a Headframe's near face, and the Chorus mined a third less from the same number of hands.
       if (cash() >= BLD.choir.cost && at) { const [x, z] = at; g.place('choir', x, z, false, T); this.say('Conductor', 'Seeding a new Choir Stone on the far seam. Some Tenders will drift over.', '', T); } }
     else if (pitsUp.length && spires < Math.min(1, wantSpires)) put('thornspire', [[-12, -8], [-12, 10], [-16, 1]], 'A Thorn Spire by the road, to listen for boots.');
-    else if (pitsUp.length && !ward.length && army >= 4) put('wardpylon', [[-4, 2], [-5, -4], [-5, 7]], 'A Ward Pylon. It keeps the Stones whole, and it knows the first songs.');
+    else if (pitsUp.length && !ward.length && army >= 4 + DOC.tech) put('wardpylon', [[-4, 2], [-5, -4], [-5, 7]], 'A Ward Pylon. It keeps the Stones whole, and it knows the first songs.');
     else if (pitsUp.length && spires < wantSpires) put('thornspire', [[-12, -8], [-12, 10], [-16, 1], [-8, -16], [-8, 18]], 'Another Thorn Spire. The road should sting.');
     else if (wardUp && !U.vedge && army >= 5) g.buyUpgrade('vedge', T);
     else if (exp.bare) { const [bx, bz] = exp.bare; for (const [ox, oz] of [[6, 6], [-6, 6], [6, -6], [-6, -6]]) if (cash() >= BLD.thornspire.cost && g.canPlace('thornspire', bx + ox, bz + oz, false, T)) { g.place('thornspire', bx + ox, bz + oz, false, T); this.say('Conductor', 'A Thorn Spire to keep the new Stone company.', '', T); break; } }
-    else if (wardUp && U.vedge && !gate.length && army >= 7) { hold = 200; put('reedgate', [[2, -17], [2, 19], [-10, -14], [-10, 16]], 'The Reed Gate grows. Something deep is listening.'); }
+    else if (wardUp && U.vedge && !gate.length && army >= 7 + DOC.tech) { hold = 200; put('reedgate', [[2, -17], [2, 19], [-10, -14], [-10, 16]], 'The Reed Gate grows. Something deep is listening.'); }
     else if (gateUp && army >= 6 && free >= 6 && g.own('warden', T).length + gateUp.queue.length < (g.time > 660 ? 2 : 1)) { hold = UNIT.warden.cost; if (cash() >= hold) g.train(gateUp, 'warden'); }
-    else if (pits.length === 1 && pitsUp.length === 1 && g.time > 230) put('broodpit', [[-2, 12], [-2, -10], [-8, 1], [-10, -14]], 'A second Brood Pit. Twice the voices.');
+    else if (pits.length === 1 && pitsUp.length === 1 && g.time > DOC.prodT) put('broodpit', [[-2, 12], [-2, -10], [-8, 1], [-10, -14]], 'A second Brood Pit. Twice the voices.');
     else if (wardUp && !U.vglass && army >= 6) g.buyUpgrade('vglass', T);
     else if (gateUp && !U.vedge2 && army >= 9) { hold = 150; g.buyUpgrade('vedge2', T); }
     else if (gateUp && !U.vglass2 && army >= 10) { hold = 150; g.buyUpgrade('vglass2', T); }
@@ -326,9 +345,9 @@ export class Director implements Side {
     else saving = false;
     // Tenders: eight for the home Stone and six more for each new one, woken at whichever Stone is shortest of hands.
     const tend = g.own('tender', T), hqs = up('choir');
-    if (tend.length < 8 + 6 * (hqs.length - 1) && free > 0 && cash() >= 50 && (pits.length || tend.length < 6)) {
+    if (tend.length < 8 + DOC.crew + 6 * (hqs.length - 1) && free > 0 && cash() >= 50 && (pits.length || tend.length < 6)) {
       const crew = (h: Building) => tend.filter(u => g.nearHQ((u.node || u).pos.x, (u.node || u).pos.z, T) === h).length + h.queue.length;
-      const h = hqs.filter(b => !b.queue.length && crew(b) < (b === home ? 8 : 6)).sort((a, b) => crew(a) - crew(b))[0]; if (h) g.train(h, 'tender');
+      const h = hqs.filter(b => !b.queue.length && crew(b) < (b === home ? 8 + DOC.crew : 6)).sort((a, b) => crew(a) - crew(b))[0]; if (h) g.train(h, 'tender');
     }
     const cans = g.own('cantor', T).length, lans = g.own('lancer', T).length;
     for (const b of pitsUp) if (b.queue.length < 2) {
@@ -351,29 +370,31 @@ export class Director implements Side {
     const wantDepot = bunk.length > 0 && free <= 3 && !sites.some(b => b.kind === 'depot') && g.ownB('depot', false, T).length < 6;
     // The planned spot can be taken: the player may have built there, or a fallen tower left rubble. Then the nearest free ground will do.
     const put = (k: BKind, x: number, z: number, line: string, world = false) => { if (cash() < BLD[k].cost || (g.paper(T) && !g.paper(T)!.allow.includes(k))) return false; if (!world) [x, z] = P(x, z); const at = this.freeSpot(k, x, z, T); if (!at) return false; g.place(k, at[0], at[1], false, T); this.say('Quartermaster', line, '', T); return true; };
-    const wantPosts = army >= 3 || (g.eco && g.human[foeOf(T)]) ? 1 + (this.raidN >= 2 ? 1 : 0) + (this.raidN >= 4 ? 1 : 0) : 0;
+    const DOC = docOf(S), wantPosts = Math.max(0, (army >= 3 || (g.eco && g.human[foeOf(T)]) ? 1 + (this.raidN >= 2 ? 1 : 0) + (this.raidN >= 4 ? 1 : 0) : 0) + DOC.towers);
     // One goal at a time, in priority order. While a goal is unpaid, training holds back a reserve so the goal gets bought.
     let saving = true, hold = 95;
     const hfs = g.ownB('headframe', false, T), exp = this.expansion(hfs, T);
     const homeLeft = g.ores.filter(n => Math.hypot(n.pos.x - HX, n.pos.z - HZ) < 40).reduce((a, n) => [a[0] + n.amount, a[1] + n.max], [0, 0]);
-    const wantHF = Math.min((MAP.sites || []).length + 1, 1 + (g.time > 480 || homeLeft[0] < homeLeft[1] * .5 ? 1 : 0) + (g.time > 960 ? 1 : 0) + (g.time > 1440 ? 1 : 0)); const fdy = g.ownB('foundry', false, T), fdyB = fdy.find(b => b.built), lab = g.ownB('assay', false, T), labUp = lab.some(b => b.built), mast = g.ownB('mast', false, T), mastUp = mast.some(b => b.built);
+    const wantHF = Math.min((MAP.sites || []).length + 1, 1 + (g.time > DOC.expT || homeLeft[0] < homeLeft[1] * .5 ? 1 : 0) + (g.time > 960 ? 1 : 0) + (g.time > 1440 ? 1 : 0)); const fdy = g.ownB('foundry', false, T), fdyB = fdy.find(b => b.built), lab = g.ownB('assay', false, T), labUp = lab.some(b => b.built), mast = g.ownB('mast', false, T), mastUp = mast.some(b => b.built);
     const spot = (k: BKind, slots: number[][], line: string, world = false) => { const at = (p: number[]): [number, number] => world ? [p[0], p[1]] : P(p[0], p[1]), sl = slots.find(p => g.canPlace(k, ...at(p), false, T)) || slots[0]; return put(k, sl[0], sl[1], line, world); };
     // research the yard can afford without starving the big purchases: bought when there is ore to spare
     const spare = (keys: string[]) => { for (const k of keys) { const u = UPGRADES.find(x => x.key === k)!; if (!U[u.key] && g.ownB(u.at, true, T).length && (!u.needs || U[u.needs]) && cash() >= u.cost + 120) return g.buyUpgrade(u.key, T); } return false; };
     if (!bunk.length) put('bunkhouse', 15, 8, 'Staking out a Bunkhouse. Then we get rich.');
     else if (wantDepot) spot('depot', DEPOT_SLOTS, 'Running out of beds. Stacking another Depot.');
     else if (building) saving = false;
-    else if (bunkUp.length && posts < Math.min(1, wantPosts)) spot('watchpost', postSlots(), `Putting a Watchpost on the ${MAP.road}. For my nerves.`);
-    else if (bunkUp.length && !shop.length && army >= 4) put('machineshop', 0, -15, 'Machine Shop going in out back. Bigger guns, thicker hats.');
-    else if (bunkUp.length && posts < wantPosts) spot('watchpost', postSlots(), 'Another Watchpost. I sleep better with crossfire.');
+    // A side playing for ore stakes its second Headframe before anything else.
+    else if (DOC.key === 'boom' && bunkUp.length && exp.site && hfs.length < Math.min(2, wantHF)) { hold = BLD.headframe.cost; const [sx, sz] = exp.site, dx = sx - HX, dz = sz - HZ, l = Math.hypot(dx, dz) || 1; put('headframe', Math.round(sx - dx / l * 11), Math.round(sz - dz / l * 11), 'Staking a second Headframe early. Ore first, soldiers later.', true); }
+    else if (bunkUp.length && posts < Math.min(1, wantPosts)) spot('watchpost', postSlots(g.intel.knows(T)), g.intel.knows(T) ? `Putting a Watchpost on the ${MAP.road}. For my nerves.` : 'Putting a Watchpost up. I do not know which way to point it, so it points at everything.');
+    else if (bunkUp.length && !shop.length && army >= 4 + DOC.tech) put('machineshop', 0, -15, 'Machine Shop going in out back. Bigger guns, thicker hats.');
+    else if (bunkUp.length && posts < wantPosts) spot('watchpost', postSlots(g.intel.knows(T)), 'Another Watchpost. I sleep better with crossfire.');
     else if (shopUp && !U.dmg && army >= 5) g.buyUpgrade('dmg', T);
     // Expanding: a new Headframe on the nearest free ore field once the home seams thin out or the shift runs long, and a Watchpost to mind it.
-    else if (bunkUp.length && army >= 6 && exp.site && hfs.length < wantHF) { hold = BLD.headframe.cost; const [sx, sz] = exp.site, dx = sx - HX, dz = sz - HZ, l = Math.hypot(dx, dz) || 1; put('headframe', Math.round(sx - dx / l * 11), Math.round(sz - dz / l * 11), 'Staking a new Headframe out on the far seam. Somebody walk the Riggers over.', true); }
+    else if (bunkUp.length && army >= Math.max(1, 6 + DOC.expArmy) && exp.site && hfs.length < wantHF) { hold = BLD.headframe.cost; const [sx, sz] = exp.site, dx = sx - HX, dz = sz - HZ, l = Math.hypot(dx, dz) || 1; put('headframe', Math.round(sx - dx / l * 11), Math.round(sz - dz / l * 11), 'Staking a new Headframe out on the far seam. Somebody walk the Riggers over.', true); }
     else if (exp.bare) { const [bx, bz] = exp.bare, rx = bx - HX, rz = bz - HZ, l = Math.hypot(rx, rz) || 1; spot('watchpost', [[Math.round(bx - rz / l * 9), Math.round(bz + rx / l * 9)], [Math.round(bx + rz / l * 9), Math.round(bz - rx / l * 9)]], 'Watchpost by the new Headframe. Out there it gets lonely.', true); }
-    else if (shopUp && U.dmg && !fdy.length && army >= 7) { hold = 150; spot('foundry', [[-14, -14], [-15, 6], [15, -17], [-4, -28]], 'Foundry going up. Walkers, and the good plating.'); }
+    else if (shopUp && U.dmg && !fdy.length && army >= 7 + DOC.tech) { hold = 150; spot('foundry', [[-14, -14], [-15, 6], [15, -17], [-4, -28]], 'Foundry going up. Walkers, and the good plating.'); }
     else if (fdyB && army >= 6 && free >= 4 && g.own('gantry', T).length + fdyB.queue.length < (g.time > 660 ? 2 : 1)) { hold = UNIT.gantry.cost; if (cash() >= hold) g.train(fdyB, 'gantry'); }
     else if (fdyB && !lab.length && army >= 6 && (!g.paper(T) || g.paper(T)!.allow.includes('assay'))) spot('assay', [[-15, 6], [15, -17], [-16, 18], [14, 22]], 'Assay Office going up. Longshots, and people who read.');
-    else if (bunkUp.length === 1 && bunk.length === 1 && g.time > 230) put('bunkhouse', 4, 23, 'Second Bunkhouse. Twice the complaints.');
+    else if (bunkUp.length === 1 && bunk.length === 1 && g.time > DOC.prodT) put('bunkhouse', 4, 23, 'Second Bunkhouse. Twice the complaints.');
     else if (shopUp && !U.armor && army >= 6) g.buyUpgrade('armor', T);
     else if (fdyB && !U.dmg2 && army >= 9) { hold = 150; g.buyUpgrade('dmg2', T); }
     else if (fdyB && !U.armor2 && army >= 10) { hold = 150; g.buyUpgrade('armor2', T); }
@@ -384,9 +405,9 @@ export class Director implements Side {
     else saving = false;
     // Riggers: eight for the home yard and six more for each new base, trained at whichever Headframe is shortest of hands.
     const rigs = g.own('rigger', T), hqs = g.ownB('headframe', true, T);
-    if (rigs.length < 8 + 6 * (hqs.length - 1) && free > 0 && cash() >= 50 && (bunk.length || rigs.length < 6)) {
+    if (rigs.length < 8 + DOC.crew + 6 * (hqs.length - 1) && free > 0 && cash() >= 50 && (bunk.length || rigs.length < 6)) {
       const crew = (h: Building) => rigs.filter(u => g.nearHQ((u.node || u).pos.x, (u.node || u).pos.z, T) === h).length + h.queue.length;
-      const h = hqs.filter(b => !b.queue.length && crew(b) < (b === hq ? 8 : 6)).sort((a, b) => crew(a) - crew(b))[0]; if (h) g.train(h, 'rigger');
+      const h = hqs.filter(b => !b.queue.length && crew(b) < (b === hq ? 8 + DOC.crew : 6)).sort((a, b) => crew(a) - crew(b))[0]; if (h) g.train(h, 'rigger');
     }
     const heavy = g.own('breacher', T).length, light = g.own('linesman', T).length;
     const docs = g.own('patch', T).length, longs = g.own('longshot', T).length;
@@ -487,14 +508,14 @@ export class Director implements Side {
   squad(dt: number, s: Side = this) {
     const g = this.g, now = g.time, f = fac(s.team), v = f !== 0, all = g.army(s.team), idle = all.filter(u => u.order.type === 'guard' && u !== g.me && !u.pilot), B = this.books(s);
     // What the enemy has standing: every building against a side that builds, the Choir Stones in the classic match.
-    const foe = foeOf(s.team), foeAll = g.ownB(undefined, false, foe), foeHQ = g.ownB(FACTION[foe].hq, false, foe), foes = g.eco ? foeAll : g.stones();
+    const foe = foeOf(s.team), foeAll = g.ownB(undefined, false, foe), foeHQ = g.ownB(FACTION[foe].hq, false, foe), foes = MAP.hid ? g.intel.known(s.team) : g.eco ? foeAll : g.stones();
     if (g.eco && s.raidLive && !g.army(foeOf(s.team)).some(u => u.order.type === 'amove')) s.raidLive = false;
     // Against a Chorus that builds, "the last Stone" means the Veyl base is nearly gone, not that they only ever had one.
     const last = g.eco ? foeHQ.length === 1 && foeAll.length <= (v ? 2 : 3) && (!v || now > 300) : foes.length === 1;
     const enemyPush = this.side(foe).plan?.phase === 'go';
     if (!s.plan && now > s.nextPlan && (foes.length || (s === this && g.mission && this.targetFor(0))) && !s.raidLive && !(s === this && this.warned) && !enemyPush) {
       // Every push that dies on their doorstep makes the next muster bigger, so the side stops feeding the enemy six at a time. A swarm musters bigger: its bodies are cheap.
-      const need = Math.round((g.eco && !g.army(foeOf(s.team)).length ? 7 : (last ? 5 : 6) + 2 * Math.min(s.fails, 3)) * (f === 2 ? 1.7 : 1));   // nobody left to stop us but the towers: a fair-sized push, without the caution
+      const need = Math.max(3, Math.round((g.eco && !g.army(foeOf(s.team)).length ? 7 : (last ? 5 : 6) + 2 * Math.min(s.fails, 3)) * (f === 2 ? 1.7 : 1)) + docOf(s).need);   // nobody left to stop us but the towers: a fair-sized push, without the caution
       if (idle.length >= need) {
         const book = last ? 2 : s.lastFailed || s.pushes % 2 === 1 ? 1 : 0; s.plan = { phase: 'ask', t: 10, target: null, book, label: B[book].label };
         const lastHQ = BLD[FACTION[foe].hq].name, text = f === 2
@@ -547,6 +568,7 @@ export class Director implements Side {
   incoming(s: Side, book: number) {
     const o = this.side(foeOf(s.team)); if (o.plan?.phase === 'go') return; o.raidLive = true; o.plan = null; o.callout = null;
     const north = book === 1; o.inNorth = north; this.regroup(north, o); const af = fac(s.team), of = fac(o.team);
+    if (!this.g.intel.knows(o.team)) { this.say(LOOKOUT[of], of === 2 ? 'Something is coming for the Caps. We cannot smell from where.' : of ? 'Something is coming for the Stones. I cannot hear from where.' : 'Somebody is coming for us and I cannot see from where. Eyes everywhere.', 'al', o.team); if (of === 0) sfx.alarm(); return; }
     if (af === 0 && of === 0) this.say('Lookout', north ? `Boots on the ${MAP.flankName}! The other crew is coming round the back.` : `The other crew is on the ${MAP.road}. Rifles and all, coming this way.`, 'al', o.team);
     else if (of === 0) { if (atHome(o.team)) this.raidDir = north ? 'north' : 'east'; this.say('Lookout', af === 2 ? (north ? `Skittering on the ${MAP.flankName}! The bugs are coming round the back.` : `The swarm is on the ${MAP.road}. Hundreds of legs, coming this way.`) : north ? `Movement on the ${MAP.flankName}! The Chorus is coming round the back.` : `The Chorus is on the ${MAP.road}. A whole choir of them, coming this way.`, 'al', o.team); sfx.alarm(); }
     else { const them = af === 0 ? 'The Ironhold' : af === 1 ? 'The Chorus' : 'The swarm', mine = VG(o.team, 'Stones', 'Caps'); this.say(LOOKOUT[of], north ? `Something on the ${MAP.flankName}. ${them} are circling round.` : `${them} are on the road, coming for the ${mine}.`, 'al', o.team); }
@@ -564,7 +586,8 @@ export class Director implements Side {
     if (g.netObjs) return g.netObjs;
     if (g.mission) return g.mission.objectives.map(x => ({ text: x.text(g), done: !!x.done(g) }));
     const foe = foeOf(g.myTeam), fq = FACTION[foe].hq, n = g.ownB(fq, false, foe).length, hqName = BLD[fq].name, verb = ['Break', 'Silence', 'Squash'][fac(foe)];
-    const breakAll = { text: n > 1 ? `${verb} every ${hqName} (${n} standing)` : `${verb} the ${hqName}`, done: !n };
+    const nk = MAP.hid ? g.intel.known(g.myTeam).filter(b => b.kind === fq).length : n;
+    const breakAll = MAP.hid && !g.intel.knows(g.myTeam) ? { text: `Find the ${FACTION[foe].short} base (H sends a scout)`, done: false } : { text: nk > 1 ? `${verb} every ${hqName} (${nk} ${MAP.hid ? 'seen' : 'standing'})` : `${verb} the ${hqName}`, done: !n };
     if (fac(g.myTeam) === 2) return [
       { text: 'Chew 30 ore with a Grazer', done: o.drilled >= 30 },
       { text: 'Jump into another body (Tab or F)', done: o.jumped },

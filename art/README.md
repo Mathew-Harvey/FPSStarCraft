@@ -31,10 +31,11 @@ Rules:
 
 ## How the page gets them
 
-- `npm run build` writes three pages. `dist/index.html` carries every file inside it as base64 so it opens from disk; the tests and
-  tools open this one. `dist/fragment.html` (the published page) and `dist/play.html` (the same as a whole document) carry none: the
-  build copies the files to `dist/art/` and the page fetches them at start with a progress bar (`src/boot.ts`), keeps them in the
-  browser's Cache Storage, and builds the code-made body for any kind whose file does not come.
+- `npm run build` writes three pages, all the same: `dist/index.html` (served by the match server), `dist/fragment.html` (the
+  published page) and `dist/play.html` (for the browser tests, which serve `dist/` from a local server, see `test/page.mjs`). None
+  carries the art: the build copies the files to `dist/art/`, and the page fetches the art of the factions in each match with a
+  progress bar (`src/artfiles.ts`, `src/artgate.ts`), keeps it in the browser's Cache Storage, and builds the code-made body for any
+  kind whose file does not come. `?art=all` fetches everything at start. A page opened from disk gets no art.
 - In `dist/art/` a model is named `<kind>.wasm`, not `.bin`: the artifact service only serves standard web media types and answers
   `.bin` with 415. The bytes are the deflated model, not WebAssembly.
 - `INLINE=1 npm run build` puts the art inside every page (no `dist/art/`).
@@ -47,3 +48,17 @@ Rules:
 The published page is about 1.5 MB without art (cap 16 MB, target under 8 MB). Each art file can be up to 15 MB. One publish sends at most 255
 files and a version holds up to 511, so the full roster (about 70 kinds, three models and one or two pictures each, about 300 files)
 fits, but goes up in two publishes to the same artifact.
+
+## Size limits
+
+A match fetches its two factions' near models and pictures before it starts, so every figure adds to the wait. Run `node tools/artsize.mjs [kind ...]` after `npm run build`. It exits 1 and says what to trim when a figure is over a limit:
+
+| What | Limit |
+|---|---|
+| A body: near model and picture | 450 KB |
+| A big body (supply 4 or more): near model and picture | 750 KB |
+| A building: model and wear picture | 350 KB |
+| Middle model | 120 KB |
+| Far model | 80 KB |
+
+Every painted body also needs `<kind>.mid.bin` and `<kind>.far.bin`, made from its current near model. Running `python art/kit/lod.py <kind>` makes them. It stamps each with the near model's hash, and makes them again once the near model changes. The checker reports a body whose levels are missing or out of date. Each file's faction comes from the faction code that names the kind, so put a new kind in `src/factions/<faction>/` and it is fetched only for that faction's matches.

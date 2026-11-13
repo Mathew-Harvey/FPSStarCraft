@@ -3,8 +3,9 @@
 import { createRequire } from 'node:module';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { dirname, join } from 'node:path';
+import { testPage } from './page.mjs';
 const require = createRequire(import.meta.url); const { chromium, devices } = require('playwright');
-const page = pathToFileURL(join(dirname(fileURLToPath(import.meta.url)), '..', 'dist', 'index.html')).href, SHOTS = process.env.SHOTS || '';
+const page = await testPage(), SHOTS = process.env.SHOTS || '';
 const fail = []; const check = (ok, what) => { console.log((ok ? 'PASS ' : 'FAIL ') + what); if (!ok) fail.push(what); };
 const b = await chromium.launch({ args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist', '--enable-webgl'] });
 const begin = async p => { await p.goto(page); await p.waitForFunction('window.__ore && __ore.game'); await p.evaluate(() => { __ore.pickSide(0); __ore.start(); }); await p.waitForFunction(() => __ore.game.me, null, { timeout: 60000 }); await p.evaluate(() => { const g = __ore.game; if (g.phase === 'card') { g.phase = 'play'; g.hud.titleCard('', '', ''); } }); };

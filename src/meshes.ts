@@ -3,11 +3,12 @@
 // every vertex that the toon shader inks in. The match server has none of these and falls back to the code-built figures.
 import * as THREE from 'three';
 import { inflateSync } from 'fflate';
-import { artBin, artTex } from './artfiles';
+import { artBin, artTex, artImg, artVersion } from './artfiles';
 import { M, toonMaterial, PRE_DRAW, SHADOW_SWAP, farInkOf, L_FX } from './gfx';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import * as FX from './fx/kit';
 import { airShadows } from './fx/air';
+import './fx/hide';
 /** The effect kit (src/fx/kit.ts), re-exported so it is in the bundle and tests can reach it as __oreFx. */
 export { FX };
 (globalThis as any).__oreFx = { ...FX, airShadows };
@@ -18,7 +19,8 @@ export const hasFigure = (kind: string) => !!artBin(kind);
 const PAINTED: Record<string, THREE.ShaderMaterial> = {};
 function painted(kind: string) {
   let m = PAINTED[kind]; if (m) return m;
-  const img = new Image(), tex = new THREE.Texture(img); tex.anisotropy = 4; img.onload = () => { tex.needsUpdate = true; }; img.src = artTex(kind + '.tex') || '';
+  const ready = artImg(kind + '.tex'), img = ready || new Image(), tex = new THREE.Texture(img); tex.anisotropy = 4;
+  if (ready) tex.needsUpdate = true; else { img.onload = () => { tex.needsUpdate = true; }; img.src = artTex(kind + '.tex') || ''; }
   m = PAINTED[kind] = toonMaterial(tex); m.uniforms.uShine.value = 0; m.userData.fig = kind; return m;   // the tag survives the copies a mirror match tints (game.ts tintMirror)
 }
 // A building keeps the game's tiled skins and lays its own picture of wear over them (art/kit/bake.py `coat`): rust runs, bleached roofs,
@@ -26,7 +28,7 @@ function painted(kind: string) {
 const WORN = new Map<string, THREE.ShaderMaterial>(), WEAR: Record<string, THREE.Texture> = {};
 function worn(kind: string, src: THREE.ShaderMaterial) {
   const key = kind + '/' + src.uuid; let m = WORN.get(key); if (m) return m;
-  let tex = WEAR[kind]; if (!tex) { const img = new Image(); tex = WEAR[kind] = new THREE.Texture(img); img.onload = () => { tex.needsUpdate = true; }; img.src = artTex(kind + '.wear.tex') || ''; }
+  let tex = WEAR[kind]; if (!tex) { const ready = artImg(kind + '.wear.tex'), img = ready || new Image(), t = tex = WEAR[kind] = new THREE.Texture(img); if (ready) t.needsUpdate = true; else { img.onload = () => { t.needsUpdate = true; }; img.src = artTex(kind + '.wear.tex') || ''; } }
   m = src.clone(); m.uniforms = { ...src.uniforms, uWear: { value: tex } }; m.defines = { ...src.defines, WEAR: 1 }; WORN.set(key, m); return m;
 }
 // A building is made afresh every time one is placed, so the unpacked geometry is kept. Whoever takes a figure merges it (bake) before changing it, which copies it.
@@ -77,8 +79,8 @@ const HEIGHT_OF = (head: any) => { let hi = 0; for (const m of head.meshes) hi =
 const LEVELS: Record<string, (({ head: any; geos: THREE.BufferGeometry[] }) | null)[]> = {};
 function levelData(kind: string, lv: number) {
   let L = LEVELS[kind]; if (!L) L = LEVELS[kind] = [null, undefined as any, undefined as any];
-  if (L[lv] === undefined) {
-    const z8 = artBin(kind + (lv === 1 ? '.mid' : '.far')); L[lv] = null;
+  if (!L[lv]) {
+    const z8 = artBin(kind + (lv === 1 ? '.mid' : '.far')); L[lv] = null;   // not cached while missing: it may still be on the way
     if (z8) { const u8 = inflateSync(z8).slice(), hl = new DataView(u8.buffer).getUint32(0, true), c = { head: JSON.parse(new TextDecoder().decode(u8.subarray(4, 4 + hl))), geos: [] as THREE.BufferGeometry[] }; unpack(c, u8, 4 + hl); L[lv] = c; }
   }
   return L[lv];
@@ -97,22 +99,33 @@ function mergedLevel(kind: string, lv: number) {
 /** Marks a freshly built figure as having levels, when its kind has any. Called by figure(). Only painted figures (bodies) switch:
  *  their near meshes are known by their material's tag, while a building's skins are shared with the extras its maker adds. */
 function markLevels(kind: string, root: THREE.Group, head: any) {
-  if (head.tex && (levelData(kind, 1) || levelData(kind, 2))) root.userData.lod = kind;
+  if (head.tex) root.userData.lod = kind;     // its middle and far models may come later (src/artfiles.ts): lodPass fills them in then
 }
-type LodState = { lv: number; meshes: THREE.Mesh[][]; crowd?: boolean };
+type LodState = { lv: number; meshes: THREE.Mesh[][]; crowd?: boolean; real: boolean[]; wear: THREE.Material | null; groups: Record<string, THREE.Object3D>; v: number };
 const STATE = new WeakMap<THREE.Object3D, LodState>();
 function lodState(root: THREE.Object3D, kind: string): LodState {
-  let s = STATE.get(root); if (s) return s;
-  const near: THREE.Mesh[] = [];
-  root.traverse(o => { const m = o as THREE.Mesh; if (m.isMesh && !o.userData.lv && (m.material as THREE.Material).userData?.fig === kind) near.push(m); });
-  const wear = near[0] ? near[0].material as THREE.Material : null;   // the body's own copy (tinted in a mirror match), worn by every level
-  const groups: Record<string, THREE.Object3D> = {}; root.traverse(o => { if (o.name && !groups[o.name] && !(o as THREE.Mesh).isMesh) groups[o.name] = o; });
-  const levels: THREE.Mesh[][] = [near];
-  for (const lv of [1, 2]) {
-    if (!levelData(kind, lv)) { levels.push(levels[lv - 1]); continue; }     // missing level: show the next finer one
-    levels.push(mergedLevel(kind, lv).map(e => { const m = new THREE.Mesh(e.geo, wear || e.mat); m.userData.lv = lv; m.visible = false; m.layers.mask = near[0] ? near[0].layers.mask : 1; (groups[e.group] || root).add(m); return m; }));
+  let s = STATE.get(root);
+  if (!s) {
+    const near: THREE.Mesh[] = [];
+    root.traverse(o => { const m = o as THREE.Mesh; if (m.isMesh && !o.userData.lv && ((m.userData.veilWas || m.material) as THREE.Material).userData?.fig === kind) near.push(m); });
+    const wear = near[0] ? (near[0].userData.veilWas || near[0].material) as THREE.Material : null;   // the body's own copy (tinted in a mirror match), worn by every level
+    const groups: Record<string, THREE.Object3D> = {}; root.traverse(o => { if (o.name && !groups[o.name] && !(o as THREE.Mesh).isMesh) groups[o.name] = o; });
+    s = { lv: 0, meshes: [near, near, near], real: [true, false, false], wear, groups, v: -1 }; STATE.set(root, s);
   }
-  s = { lv: 0, meshes: levels }; STATE.set(root, s); return s;
+  // A level that has not come yet (src/artfiles.ts fetches them after the match starts) is stood in for by the next finer one; each time
+  // new files land, see whether it is here now.
+  if (s.v !== artVersion() && !(s.real[1] && s.real[2])) {
+    s.v = artVersion(); const near = s.meshes[0], st = s; let changed = false;
+    for (const lv of [1, 2]) if (!st.real[lv] && levelData(kind, lv)) {
+      st.meshes[lv] = mergedLevel(kind, lv).map(e => { const m = new THREE.Mesh(e.geo, st.wear || e.mat); m.userData.lv = lv; m.visible = false; m.layers.mask = near[0] ? near[0].layers.mask : 1; (st.groups[e.group] || root).add(m); if (root.userData.veiled && root.userData.veilSeen !== false) FX.veilPart(m); return m; });
+      st.real[lv] = changed = true;
+    }
+    if (changed) {
+      if (!st.real[1]) st.meshes[1] = near; if (!st.real[2]) st.meshes[2] = st.meshes[1];
+      for (const L of st.meshes) for (const m of L) m.visible = false; for (const m of st.meshes[st.lv]) m.visible = true;
+    }
+  }
+  return s;
 }
 /** Screen height, in pixels, a body would have to stand to keep each level: above NEAR_PX the near model, above MID_PX the middle one. */
 export const LOD = { nearPx: 260, midPx: 70, on: true, force: -1, counts: [0, 0, 0],
@@ -122,7 +135,7 @@ export const LOD = { nearPx: 260, midPx: 70, on: true, force: -1, counts: [0, 0,
   shadowLv: 1,
   /** Far bodies of a kind are drawn together in one call (instanced), in their standing pose. */
   crowd: true };
-(globalThis as any).__oreLOD = LOD;
+(globalThis as any).__oreLOD = LOD; (globalThis as any).__oreFigure = (k: string) => figure(k);   // for the zoom benches
 const WP = new THREE.Vector3(), CP = new THREE.Vector3();
 /** Picks a level for every body with levels in the scene's top layer, from how tall it stands on screen. `h` is the picture height in pixels. */
 const SEEN: LodState[] = [];
@@ -132,7 +145,7 @@ const SEEN: LodState[] = [];
 const CROWD_GEO: Record<string, THREE.BufferGeometry | null> = {};
 function crowdGeo(kind: string) {
   if (kind in CROWD_GEO) return CROWD_GEO[kind];
-  const c = levelData(kind, 2); if (!c) return CROWD_GEO[kind] = null;
+  const c = levelData(kind, 2); if (!c) return null;   // not cached: it may still come
   const root = new THREE.Group(), groups: Record<string, THREE.Object3D> = {}, piv: Record<string, number[]> = {}, S: number = c.head.scale || 1;
   for (const g of c.head.groups) { groups[g.name] = new THREE.Group(); piv[g.name] = g.pivot; }
   for (const g of c.head.groups) { const o = groups[g.name], q = g.parent ? piv[g.parent] : [0, 0, 0]; o.position.set((g.pivot[0] - q[0]) * S, (g.pivot[1] - q[1]) * S, (g.pivot[2] - q[2]) * S); if (g.scale && g.scale !== 1) o.scale.setScalar(g.scale); (g.parent ? groups[g.parent] : root).add(o); }
@@ -165,7 +178,7 @@ export function lodPass(scene: THREE.Scene, cam: THREE.Camera, h: number) {
     if (!LOD.on) lv = 0; else if (LOD.force >= 0) lv = LOD.force; else if (lv === 0 && px < up) lv = px < LOD.midPx ? 2 : 1; else if (lv === 1) { if (px > dn) lv = 0; else if (px < up) lv = 2; } else if (lv === 2 && px > dn) lv = px > LOD.nearPx ? 0 : 1;
     if (lv !== s.lv) { const was = s.meshes[s.lv], now = s.meshes[lv]; if (was !== now) { for (const m of was) m.visible = false; for (const m of now) m.visible = true; } s.lv = lv; }
     c[lv]++; SEEN.push(s);
-    if (lv === 2 && LOD.crowd && s.meshes[2] !== s.meshes[1] && s.meshes[2][0]) {
+    if (lv === 2 && LOD.crowd && !o.userData.veiled && s.meshes[2] !== s.meshes[1] && s.meshes[2][0]) {
       const cr = crowdOf(scene, kind, s.meshes[2][0].material as THREE.Material);
       if (cr) { for (const m of s.meshes[2]) m.visible = false; s.crowd = true; o.updateMatrix(); cr.mesh.setMatrixAt(cr.n++, o.matrix); continue; }
     }

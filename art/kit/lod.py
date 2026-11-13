@@ -7,6 +7,7 @@ pivots, every part kept with its skin, UVs carried through so the same painted p
 cutting; UVs, the wear layout and the crease value ride on the corners and are blended where edges collapse.
 FORCE=1 rewrites levels that exist (an art stream's own level is kept otherwise). MID= and FAR= override the triangle targets.
 """
+import hashlib
 import json
 import os
 import struct
@@ -317,11 +318,17 @@ def main(kinds):
         far_t = int(os.environ.get('FAR', 600 if figure else 1000))
         allp = np.concatenate([r['pos'] for r in recs]) * (head.get('scale') or 1)
         tall = float(allp[:, 1].max() - allp[:, 1].min())
+        with open(src, 'rb') as fh:
+            stamp = hashlib.sha1(fh.read()).hexdigest()[:10]      # the near model a level was made from; a level made from an older one is made again
+        head['src'] = stamp
         for tag, target, sharp, floor, drop in (('mid', mid_t, 42, 12, 0), ('far', far_t, 55, 8, .06 * tall)):
             out = os.path.join(MESH, f'{kind}.{tag}.bin')
             if os.path.exists(out) and not force:
-                print(f'{kind}.{tag}: kept (exists)')
-                continue
+                old = read(out)[0].get('src')
+                if old in (None, stamp):                   # None: made before stamps, or by hand by an art stream: kept
+                    print(f'{kind}.{tag}: kept (exists)')
+                    continue
+                print(f'{kind}.{tag}: the near model changed since it was made, making it again')
             if tag == 'far' and figure:
                 n = write(out, *far_remesh(head, recs, target, max(.04, tall * .022)))
             else:

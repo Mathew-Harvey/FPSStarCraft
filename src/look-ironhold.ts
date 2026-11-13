@@ -13,7 +13,7 @@ import { FxKit, tell, beam, orb, cloud, ring as burst, veil, type Fx } from './f
 export { FxKit };
 
 /** The new Ironhold kinds this file draws (batch 1 on foot and wheels, batch 2 in the air). */
-export const KINDS = ['sapper', 'hauldrone', 'dustbike', 'piledriver', 'hopper', 'flakkite', 'gadfly', 'surveyor', 'claimbarge'] as const;
+export const KINDS = ['sapper', 'hauldrone', 'dustbike', 'piledriver', 'hopper', 'flakkite', 'gadfly', 'surveyor', 'claimbarge', 'staketurret'] as const;
 export type Kind = typeof KINDS[number];
 type Groups = Record<string, THREE.Group>;
 export interface Fig { root: THREE.Group; groups: Groups; points: Record<string, { group: THREE.Group; at: [number, number, number] }> }
@@ -145,6 +145,10 @@ export function animate(kind: Kind, f: Fig, s: State) {
     g.body.rotation.x = air * (s.speed * .08) + gnd * Math.abs(Math.sin(ph)) * .03 * Math.min(1, s.speed); g.body.rotation.z = air * -s.aim * .4;
     g.head.rotation.y = gnd * Math.sin(t * .8 + s.id) * .3 * (s.speed < .05 ? 1 : .3);
     g.arms.rotation.x = -s.pitch * .6; g.arms.position.z -= s.kick * .05;
+  } else if (kind === 'staketurret') {
+    // the Stake Gun's post: the rules turn the head to its target (aim, radians off forward); with none it looks slowly about,
+    // and the head kicks back a little on each shot
+    if (g.head) { g.head.rotation.y = s.aim || Math.sin(t * .6 + s.id) * .9; g.head.rotation.x = -s.pitch * .5 - s.kick * .08; g.head.position.z -= s.kick * .03; }
   } else if (kind === 'gadfly') {
     // a gunship: the rotor never stops, the tail fan buzzes, it dips its nose into speed, and the chin gun tracks its target
     if (g.rotor) g.rotor.rotation.y = t * 26; if (g.rotorT) g.rotorT.rotation.x = t * 44;
@@ -174,12 +178,22 @@ export const FIRST: Record<Kind, { eye: [number, number, number]; /** groups or 
   dustbike: { eye: [0, 1.62, .14], hide: ['head'], fov: 76, drop: .8 },           // the rider's eyes: bars, burner and tank ahead
   piledriver: { eye: [-.62, 2.12, -.45], hide: [], fov: 66, drop: .25 },  // head out of the cab hatch, looking past the frame along the barrel
   // fliers are flown from their cockpits; the glass is hidden in first person (it is not see-through), its frames stay as the cockpit
+  staketurret: { eye: [0, 1.3, -.32], hide: ['whip', 'flag'], fov: 70, drop: .25 },   // looking along the barrel from behind the box
   hopper: { eye: [-.25, 1.76, 2.32], hide: ['pilot', 'noseglass', 'noseframes'], vm: true, fov: 74, drop: .35 },     // the pilot's seat behind the glazed nose
-  flakkite: { eye: [0, 2.17, .5], hide: ['pilothead', 'pilotgoggles', 'windshield'], fov: 78, drop: .3 },   // open cockpit: cowl, guns and wings
+  flakkite: { eye: [0, 2.17, .5], hide: ['pilothead', 'pilotgoggles', 'windshield'], vm: true, fov: 78, drop: .3 },   // open cockpit: cowl, guns and wings
   gadfly: { eye: [-.32, 1.72, 1.0], hide: ['canopy'], fov: 76, drop: .5 },      // in the bubble, the chin gun below and the rotor overhead
   surveyor: { eye: [.42, 1.82, .45], hide: ['surveyorman'], fov: 72, drop: .7 },   // stood in the gondola, the searchlight below and ahead
   claimbarge: { eye: [0, 3.65, -3.0], hide: ['bridgeglass'], fov: 66, drop: .45 },   // the bridge: the whole hull, the ore and the gun ahead
 };
+/** Hides what would sit in front of the eye in first person (FIRST[kind].hide: groups or part names) and returns the undo. It shrinks
+ *  them to nothing rather than turning them off, because the zoom-level pass (src/meshes.ts lodPass) turns a body's meshes back on. */
+export function hideFirst(f: Fig, kind: Kind) {
+  const hit: THREE.Object3D[] = [];
+  for (const k of FIRST[kind].hide) { if (f.groups[k]) hit.push(f.groups[k]); else f.root.traverse(o => { if ((o as THREE.Mesh).isMesh && o.name === k) hit.push(o); }); }
+  const was = hit.map(o => o.scale.clone()); for (const o of hit) o.scale.setScalar(1e-4);
+  return () => hit.forEach((o, i) => o.scale.copy(was[i]));
+}
+
 
 /** A first person view model: the body's own sculpted hands, gun or boom, copied out of the figure and hung in front of the camera
  *  (add it to the camera; camera space is x right, y up, -z ahead). Built once per body kind and reused.
@@ -233,6 +247,15 @@ export function viewModel(kind: Kind, mode: 'gun' | 'charge' = 'gun'): THREE.Gro
     put(can(.012, .01), M.red, out, [.32, -.3, -.34], [-.25 + Math.PI / 2, 0, 0]);
     for (const sx of [-1, 1]) put(rbox(.035, .9, .04, .012), M.gunm, out, [sx * .46, .02, -.55], [0, 0, sx * .38]);
     put(rbox(1.0, .035, .04, .012), M.gunm, out, [0, .36, -.6]);
+  } else if (kind === 'flakkite') {
+    // open cockpit: the twin guns brought up into the bottom of the view, either side of a ring sight on a post, so the Kite reads
+    // as a gun you fly, not as a seat (the Gadfly and Hopper have a canopy and a dashboard)
+    const E: [number, number, number] = [0, 1.64, .42];
+    for (const sd of ['L', 'R'] as const) { const g = fromEye(['gun' + sd, 'drum' + sd], E); g.position.set(sd === 'L' ? -.3 : .3, .1, -.35); out.add(g); }   // each gun pushed out to its own side of the cowl
+    put(rbox(.02, .16, .02, .006), M.gunm, out, [0, -.16, -.62]);
+    put(ring(.07, .008, 1, 48), M.haz, out, [0, -.02, -.64]); put(ring(.02, .006, 1, 24), M.haz, out, [0, -.02, -.64]);
+    for (const [w, h] of [[.14, .005], [.005, .14]]) put(rbox(w, h, .004, .001), M.gunm, out, [0, -.02, -.64]);
+    put(rbox(.5, .05, .1, .02), M.pY, out, [0, -.3, -.5], [-.3, 0, 0]);
   } else return null;
   out.userData.kind = kind; out.userData.mode = mode; return out;
 }
@@ -292,8 +315,43 @@ export function blast(fx: FxKit, at: THREE.Vector3, r = 5, fuse = 0) {
   q.after(fuse, () => {
     q.add(orb({ at: at.clone().add(V(0, .8, 0)), r: r * .5, color: '#ffffff', time: .12 })); q.add(orb({ at: at.clone().add(V(0, 1, 0)), r: r * .35, color: FIRE, time: .5, pulse: 4 }));
     q.add(burst({ x: at.x, z: at.z, y: at.y, r: r * 1.2, time: .6, color: FIRE }));
+    q.add(clods(at, r, Math.round(10 + r * 2)));
+    q.add(scorch(at, r * .8, 25));
     q.add(cloud({ x: at.x, z: at.z, y: at.y, r: r * .6, time: 4, color: '#7a5a40', puffs: 9 }));
+    // a column of black smoke that climbs and spreads for a second and a half
+    q.every(.2, 1.4, k => q.add(cloud({ x: at.x + Math.sin(k * 7) * r * .1, z: at.z + Math.cos(k * 5) * r * .1, y: at.y + .8 + k * r * .7, r: r * (.22 + k * .25), color: SOOT, time: 3.4 - k, puffs: 5, seed: Math.round(k * 10) + 3 })));
   });
+}
+/** A spray of thrown dirt and stones: they fly out and up, fall, bounce once, lie a moment and sink away. Seeded from the spot, so
+ *  the same blast always throws the same way (no dice). */
+const CLOD = new THREE.DodecahedronGeometry(1, 0);
+function clods(at: THREE.Vector3, r: number, n: number): Fx {
+  const obj = new THREE.Group(); let s = Math.abs(Math.floor(at.x * 73 + at.z * 151)) % 2147483646 + 1; const rnd = () => (s = s * 16807 % 2147483647) / 2147483647;
+  const bits = Array.from({ length: n }, () => {
+    const a = rnd() * Math.PI * 2, out = (.4 + rnd()) * r * 1.6, up = 5 + rnd() * r * 1.5, size = .08 + rnd() * .14 * Math.min(2, r / 3);
+    const m = new THREE.Mesh(CLOD, rnd() < .35 ? M.rockB : M.conc); m.scale.setScalar(size); m.position.copy(at).add(V(0, .4, 0)); obj.add(m);
+    return { m, v: V(Math.cos(a) * out, up, Math.sin(a) * out), spin: V(rnd() * 9, rnd() * 9, 0), size, rest: false };
+  });
+  let t = 0;
+  return { obj, update(dt) {
+    t += dt;
+    for (const b of bits) {
+      if (!b.rest) { b.v.y -= 22 * dt; b.m.position.addScaledVector(b.v, dt); b.m.rotation.x += b.spin.x * dt; b.m.rotation.y += b.spin.y * dt;
+        if (b.m.position.y < at.y + b.size * .6 && b.v.y < 0) { b.m.position.y = at.y + b.size * .6; if (b.v.y < -4) { b.v.multiplyScalar(.3); b.v.y *= -1; } else b.rest = true; } }
+      if (t > 3) b.m.scale.setScalar(b.size * Math.max(0, 1 - (t - 3) / 1.5));
+    }
+    return t < 4.5; } };
+}
+/** A black scorch mark left on the ground, with a ragged edge; it fades over its last third. */
+function scorch(at: THREE.Vector3, r: number, time: number): Fx {
+  const pts: THREE.Vector2[] = []; let s = Math.abs(Math.floor(at.x * 31 + at.z * 17)) % 2147483646 + 1; const rnd = () => (s = s * 16807 % 2147483647) / 2147483647;
+  for (let i = 0; i < 22; i++) { const a = i / 22 * Math.PI * 2, k = r * (.7 + rnd() * .45); pts.push(new THREE.Vector2(Math.cos(a) * k, Math.sin(a) * k)); }
+  const mat = new THREE.MeshBasicMaterial({ color: '#17110d', transparent: true, opacity: .72, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2 });
+  const inner = new THREE.Mesh(new THREE.CircleGeometry(r * .45, 18), new THREE.MeshBasicMaterial({ color: '#0b0806', transparent: true, opacity: .6, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -3 }));
+  const m = new THREE.Mesh(new THREE.ShapeGeometry(new THREE.Shape(pts)), mat); m.rotation.x = -Math.PI / 2; m.position.copy(at).add(V(0, .05, 0)); inner.position.z = .01; m.add(inner);
+  let t = 0;
+  return { obj: m, update(dt) { t += dt; const k = Math.min(1, Math.max(0, (time - t) / (time / 3))); mat.opacity = .72 * k; (inner.material as THREE.MeshBasicMaterial).opacity = .6 * k; return t < time; },
+    dispose() { m.geometry.dispose(); mat.dispose(); inner.geometry.dispose(); (inner.material as THREE.Material).dispose(); } };
 }
 /** Satchel (Sapper): set against a building, a 1.5 s fuse, then the blast. */
 export const satchel = (fx: FxKit, at: THREE.Vector3) => blast(fx, at, 3.5, 1.5);
@@ -375,9 +433,11 @@ export function stakeGun(fx: FxKit, from: THREE.Vector3, to: THREE.Vector3, time
   q.add({ obj: new THREE.Group(), update(dt) { t += dt; return t < flight; } }); q.add(orb({ at: () => from.clone().lerp(to, Math.min(1, t / flight)), r: .1, color: IRON, time: flight, minPx: 3 }));
   q.after(flight, () => {
     q.add(burst({ x: to.x, z: to.z, y: to.y, r: 1.2, time: .4, color: DUST }));
-    const g = new THREE.Group(); g.position.copy(to); const stake = new THREE.Mesh(new THREE.CylinderGeometry(.05, .015, 1.2, 6), M.wood); stake.position.y = .5; g.add(stake);
-    const tag = new THREE.Mesh(new THREE.PlaneGeometry(.26, .14), new THREE.MeshBasicMaterial({ color: 0xff6a1a, side: THREE.DoubleSide })); tag.position.set(.14, 1.0, 0); g.add(tag);
-    const head = new THREE.Mesh(new THREE.BoxGeometry(.18, .12, .3), M.gunm); head.position.y = 1.15; g.add(head);
+    // the sculpted post when the art is loaded (staketurret), else a plain stake with a tag and a box for a gun
+    const sculpt = model('staketurret'), g = sculpt ? sculpt.root : new THREE.Group(); g.position.copy(to);
+    if (!sculpt) { const stake = new THREE.Mesh(new THREE.CylinderGeometry(.05, .015, 1.2, 6), M.wood); stake.position.y = .5; g.add(stake);
+      const tag = new THREE.Mesh(new THREE.PlaneGeometry(.26, .14), new THREE.MeshBasicMaterial({ color: 0xff6a1a, side: THREE.DoubleSide })); tag.position.set(.14, 1.0, 0); g.add(tag);
+      const head = new THREE.Mesh(new THREE.BoxGeometry(.18, .12, .3), M.gunm); head.position.y = 1.15; g.add(head); }
     prop(q, g, time, .15); q.add(tell({ x: to.x, z: to.z, y: to.y, r: .9, time, color: IRON }));
   });
 }

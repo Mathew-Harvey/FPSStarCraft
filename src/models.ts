@@ -1,6 +1,7 @@
 // Structures, scenery, first-person view-models and the unit atlas. Everything is sculpted in code
 // (see sculpt.ts and skins.ts) so the whole game ships as code. Models are baked (sibling meshes merged per material) so a unit
 // costs a handful of draw calls, and units are cloned from one prototype per kind.
+import { artBin } from './artfiles';
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { G, M, R, rnd, reseed, mk, beam, setLayer, L_FX, L_VM, holoLine, V3, toonMaterial } from './gfx';
@@ -13,6 +14,9 @@ export const vmG = (k: string) => vmGloam(k, bake, L_VM);
 export const gloamB = (k: string, anim: ((t: number) => void)[]) => bake(GLOAM_BUILDINGS[k](anim));   // baked here so a sculpt's shared geometry is copied before the atlas rewrites it
 import { lathe, hard, spl, capsule, rbox, blob, nub, rod, blade, tube, plate, rrect, ring, shard, slab, warp, crag, boulder } from './sculpt';
 import { figure } from './meshes';
+import { buildTerrain } from './terrain-art';
+import { near as nearGround, h as groundH } from './terrain';
+export { brighten } from './terrain-art';
 
 export interface Rig { body: THREE.Object3D; head?: THREE.Object3D; arms?: THREE.Object3D; armL?: THREE.Object3D; armR?: THREE.Object3D; legL?: THREE.Object3D; legR?: THREE.Object3D; flash?: THREE.Object3D; halo?: THREE.Object3D; pack?: THREE.Object3D; height: number }
 export interface Model { obj: THREE.Group; rig: Rig }
@@ -66,11 +70,12 @@ export function atlasify<T extends THREE.Object3D>(root: T): T {
 
 const MAKERS: Record<string, () => THREE.Group> = { ...NEW, ...GLOAM_UNITS };
 const HEIGHT: Record<string, number> = { tender: 1.9, rigger: 1.55, linesman: 1.6, breacher: 1.8, longshot: 1.6, patch: 1.6, gantry: 3.3, cantor: 2.3, lancer: 2.2, warden: 4.4, ...GLOAM_HEIGHT };
-const protos: Record<string, THREE.Group> = {};
+const protos: Record<string, THREE.Group> = {}, hadArt: Record<string, boolean> = {};
 /** A fresh copy of a unit model. Geometry is shared between copies. */
 export const atlasUsed = () => atlas ? atlas.cells.size : 0;
 export function unit(kind: string): Model {
-  const proto = protos[kind] || (protos[kind] = atlasify(bake(MAKERS[kind]())));
+  // A body made from code while its art was still on the way is made again once the art has come (src/artfiles.ts).
+  const proto = protos[kind] && (hadArt[kind] || !artBin(kind)) ? protos[kind] : (hadArt[kind] = !!artBin(kind), protos[kind] = atlasify(bake(MAKERS[kind]())));
   const obj = proto.clone(true); const f = (n: string) => obj.getObjectByName(n);
   return { obj, rig: { body: f('body')!, head: f('head'), arms: f('arms'), armL: f('armL'), armR: f('armR'), legL: f('legL'), legR: f('legR'), flash: f('flash'), halo: f('halo'), pack: f('pack'), height: HEIGHT[kind] } };
 }
@@ -549,6 +554,8 @@ function segDist(x: number, z: number, ax: number, az: number, bx: number, bz: n
 /** Places the player may need to walk or build, kept free of rocks. */
 export function isClear(x: number, z: number, pad = 0) {
   const end = roadPt(ROAD.len + 6);
+  if (nearGround(x, z, Math.max(1.5, 4 + pad))) return true;   // cliffs, ramps, vents, beacons and rock walls keep their own ground
+  for (const [sx, sz] of MAP.starts || []) if (Math.hypot(x - sx, z - sz) < 44 + pad) return true;   // every start of a team map keeps its base clear
   if (Math.hypot(x, z) < 44 + pad || Math.hypot(x - OUTPOST.x - 2 * ROAD.dx, z - OUTPOST.z - 2 * ROAD.dz) < 36 + pad || segDist(x, z, ROAD.x, ROAD.z, end[0], end[1]) < 9 + pad) return true;
   for (const [ex, ez] of MAP.sites || [MAP.exp]) if (Math.hypot(x - ex, z - ez) < 22 + pad || segDist(x, z, ex, ez, 0, 0) < 6 + pad) return true;
   for (const r of (MAP.roads || []).slice(1)) if (segDist(x, z, r[0], r[1], r[2], r[3]) < 7 + pad) return true;
@@ -580,7 +587,7 @@ export function buildWorld(scene: THREE.Scene, props: Prop[], anim: ((t: number)
   const prop = (kind: Prop['kind'], name: string, x: number, z: number, r: number, h: number, hp: number, o: Opt, build?: (g: THREE.Group) => void): Prop => {
     const p: Prop = { id: props.length, kind, name, x, z, r, y0: o.y0 || 0, h, hp, maxHp: hp, alive: true, solid: !!o.solid, stage: 0, stages: o.stages || 0, ranges: [], link: [] }; props.push(p);
     if (build) {
-      const g = new THREE.Group(); if (o.at) { g.position.set(o.at[0], 0, o.at[1]); g.rotation.y = o.at[2]; } build(g); g.updateMatrixWorld(true);
+      const g = new THREE.Group(); if (o.at) { g.position.set(o.at[0], 0, o.at[1]); g.rotation.y = o.at[2]; } build(g); const gy = groundH(x, z); if (gy > 0 && !o.at) { g.position.y += gy; p.y0 += gy; } else if (gy > 0) { g.position.y = gy; p.y0 += gy; } g.updateMatrixWorld(true);
       g.traverse(c => { const m = c as THREE.Mesh; if (!m.isMesh) return; const geo = m.geometry.index ? m.geometry.toNonIndexed() : m.geometry.clone(); geo.applyMatrix4(m.matrixWorld);
         for (const k of Object.keys(geo.attributes)) if (k !== 'position' && k !== 'normal' && k !== 'uv') geo.deleteAttribute(k);
         const mat = m.material as THREE.Material; let b = batches.get(mat); if (!b) batches.set(mat, b = { geos: [], recs: [], n: 0 }); const count = geo.attributes.position.count; b.recs.push({ p, start: b.n, count }); b.n += count; b.geos.push(geo); });
@@ -650,11 +657,12 @@ export function buildWorld(scene: THREE.Scene, props: Prop[], anim: ((t: number)
   for (const [x, z] of [[-20, -15], [22, -5], [10, 25], [-24, 11], [-6, 27], [20, -21]].map(([a, b]) => veylPt(a, b))) prop('veyl', GL ? 'Stalk stand' : 'Reed stand', x, z, 2.4, 9, 140, {}, g => { for (let k = 0; k < 6; k++) { const h = R(5, 11), rx = x + R(-2, 2), rz = z + R(-2, 2), lean = R(-.6, .6); const tz = rz + R(-.5, .5); mk(tube([[rx, 0, rz], [rx + lean * .2, h * .5, (rz + tz) / 2], [rx + lean, h, tz]], [.12, .09, .04], 6), (GL ? M.gB : M.vL), 0, 0, 0, g); mk(shard(.13, .8, 4, .35), (GL ? M.gS : M.teal), [rx + lean, h + .1, tz], 0, 0, g); } });
   if (MAP.set) storySet(MAP.set, prop, w, scene, anim);
   if (!GL) { mk(G.hexT, M.indigoL, [OUTPOST.x, .06, OUTPOST.z], [11, .12, 11], 0, w); mk(G.torusF, M.teal, [OUTPOST.x, .16, OUTPOST.z], [4.6, 4.6, .6], [Math.PI / 2, 0, 0], w); } mk(G.torusF, GL ? M.gD : M.mag, [OUTPOST.x, .16, OUTPOST.z], [2.2, 2.2, .6], [Math.PI / 2, 0, 0], w);
+  buildTerrain(prop, w, anim);
   // Set dressing: the litter of a working frontier. Dry scrub, loose stones, scrap, old bones and spoil heaps, none of it in anybody's way.
   // It has its own dice, so adding to it never moves a mesa or a seam, and like everything else out here it can be shot or flattened.
   { let ds = 90001 + Math.round(MAP.out[0] * 13 + MAP.out[1] * 7); const D = (a = 0, b = 1) => { ds = (ds * 16807) % 2147483647; return a + (b - a) * ds / 2147483647; }, K = HID ? 3.1416 * RAD * RAD / 101500 * .55 : (MAP.k || 1) ** 2;
     const solids = props.filter(q => q.solid), roadEnd = roadPt(ROAD.len + 6);
-    const free = (x: number, z: number, pad: number) => Math.hypot(x, z) > 15 && Math.hypot(x - OUTPOST.x, z - OUTPOST.z) > 13 && segDist(x, z, ROAD.x, ROAD.z, roadEnd[0], roadEnd[1]) > 4.4 + pad && !solids.some(q => Math.hypot(x - q.x, z - q.z) < q.r + 1 + pad);
+    const free = (x: number, z: number, pad: number) => !nearGround(x, z, 2 + pad) && Math.hypot(x, z) > 15 && Math.hypot(x - OUTPOST.x, z - OUTPOST.z) > 13 && segDist(x, z, ROAD.x, ROAD.z, roadEnd[0], roadEnd[1]) > 4.4 + pad && !solids.some(q => Math.hypot(x - q.x, z - q.z) < q.r + 1 + pad);
     const dress = (kind: Prop['kind'], name: string, x: number, z: number, r: number, h: number, hp: number, build: (g: THREE.Group) => void) => { prop(kind, name, x, z, r, h, hp, { at: [x, z, D(0, 6.28)] }, build).dress = true; };
     const spot = (): [number, number] => HID ? disc(.98, D(0, 6.2832), Math.sqrt(D())) : [cx + D(-175, 175) * (MAP.k || 1), cz + D(-145, 145) * (MAP.k || 1)];
     for (let i = 0; i < 260 * K; i++) { const [x, z] = spot(); if (!free(x, z, 0)) continue; const sc = D(.7, 1.6), blades = tufts()[i % 6], mat = i % 4 ? M.straw : M.fabG;

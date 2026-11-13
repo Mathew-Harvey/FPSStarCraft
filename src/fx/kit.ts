@@ -175,16 +175,34 @@ export function ring(o: { x: number; z: number; y?: number; r: number; time: num
 /** Hides a body for the side that cannot see it and shows the side that can a shimmer where it stands: its own shape, nearly
  *  clear, with a moving bright edge. Returns a function that puts the body back. `seen` false hides it outright. */
 export function veil(body: THREE.Object3D, seen = true): () => void {
-  const was = new Map<THREE.Mesh, THREE.Material | THREE.Material[]>(); const mats: THREE.ShaderMaterial[] = [];
-  body.traverse(o => { const m = o as THREE.Mesh; if (!m.isMesh || o.layers.mask & (1 << L_FX)) return; was.set(m, m.material);
-    if (!seen) { m.visible = false; return; }
-    const sh = new THREE.ShaderMaterial({ ...ADD, uniforms: { uT: SHIMMER_T },
-      vertexShader: 'varying vec3 vN; varying vec3 vV; varying vec3 vW; void main(){ vec4 w=modelMatrix*vec4(position,1.); vW=w.xyz; vec4 mv=viewMatrix*w; vV=-mv.xyz; vN=normalize(normalMatrix*normal); gl_Position=projectionMatrix*mv; }',
-      fragmentShader: `uniform float uT; varying vec3 vN; varying vec3 vV; varying vec3 vW; ${NOISE}
-        void main(){ float f=1.-abs(dot(normalize(vN),normalize(vV))); float n=vnoise(vW.xy*3.+vec2(0.,uT*1.5))*vnoise(vW.zy*3.-uT); float a=pow(f,2.5)*.55+n*.08;
-          gl_FragColor=vec4(vec3(.75,.9,1.)*a,1.); }` });
-    mats.push(sh); m.material = sh; });
-  return () => { for (const [m, mat] of was) { m.material = mat; m.visible = true; } for (const s of mats) s.dispose(); };
+  // Several hiders can hold one body at once (a cloak ability, the hidden-body rule in src/core/sight.ts): it shows plain again when the
+  // last lets go. Each part keeps its own paint in userData.veilWas; a detail level made while it is hidden (src/meshes.ts) gets the
+  // shimmer too, and the far crowd leaves a hidden body out.
+  const U = body.userData; U.veilN = (U.veilN || 0) + 1;
+  if (U.veilN === 1) { U.veiled = true; U.veilSeen = seen; body.traverse(o => { const m = o as THREE.Mesh; if (!m.isMesh || o.layers.mask & (1 << L_FX) || m.userData.veilWas) return; veilPart(m, seen); }); }
+  let done = false;
+  return () => {
+    if (done) return; done = true; U.veilN = Math.max(0, U.veilN - 1); if (U.veilN) return;
+    U.veiled = false; body.traverse(o => { const m = o as THREE.Mesh; const w = m.userData?.veilWas; if (!w) return; if (m.material !== w) (m.material as THREE.Material).dispose(); m.material = w; delete m.userData.veilWas; if (m.userData.veilHid) { m.visible = true; delete m.userData.veilHid; } });
+  };
+}
+/** Puts the shimmer on one part of a hidden body (or hides it when the viewer cannot see it at all). */
+export function veilPart(m: THREE.Mesh, seen = true) {
+  m.userData.veilWas = m.material;
+  if (!seen) { if (m.visible) { m.visible = false; m.userData.veilHid = true; } return; }
+  m.material = shimmerMaterial();
+}
+/** The glass a hidden body is drawn in: bright at its edges, faint inside, with a slow ripple. */
+export function shimmerMaterial() {
+  return new THREE.ShaderMaterial({ ...ADD, uniforms: { uT: SHIMMER_T },
+    vertexShader: `varying vec3 vN; varying vec3 vV; varying vec3 vW; void main(){ mat4 mm=modelMatrix;
+      #ifdef USE_INSTANCING
+        mm=modelMatrix*instanceMatrix;
+      #endif
+      vec4 w=mm*vec4(position,1.); vW=w.xyz; vec4 mv=viewMatrix*w; vV=-mv.xyz; vN=normalize(mat3(viewMatrix)*mat3(mm)*normal); gl_Position=projectionMatrix*mv; }`,
+    fragmentShader: `uniform float uT; varying vec3 vN; varying vec3 vV; varying vec3 vW; ${NOISE}
+      void main(){ float f=1.-abs(dot(normalize(vN),normalize(vV))); float n=vnoise(vW.xy*3.+vec2(0.,uT*1.5))*vnoise(vW.zy*3.-uT); float a=pow(f,2.)*.8+n*.12+.06;
+        gl_FragColor=vec4(vec3(.75,.9,1.)*a,1.); }` });
 }
 const SHIMMER_T = { value: 0 };
 /** Moves the shimmer along; call once a frame with the game clock. */
@@ -195,10 +213,13 @@ export const veilTime = (t: number) => { SHIMMER_T.value = t; };
 export function borrow(body: THREE.Object3D, color: THREE.ColorRepresentation, amount = .55): { off(): void; update(t: number): void } {
   const c = col(color), was = new Map<THREE.Mesh, THREE.Material>(), mine: THREE.ShaderMaterial[] = [];
   body.traverse(o => { const m = o as THREE.Mesh; const mat = m.material as THREE.ShaderMaterial; if (!m.isMesh || Array.isArray(m.material) || !mat.uniforms?.uColor) return;
-    const t = mat.clone(); t.uniforms = { ...mat.uniforms, uColor: { value: (mat.uniforms.uColor.value as THREE.Color).clone() } }; t.userData = { ...mat.userData, base: (mat.uniforms.uColor.value as THREE.Color).clone() };
+    const t = mat.clone(); t.uniforms = { ...mat.uniforms, uColor: { value: (mat.uniforms.uColor.value as THREE.Color).clone() } }; t.userData = { ...mat.userData, base: (mat.uniforms.uColor.value as THREE.Color).clone(), emis: mat.uniforms.uEmis?.value ?? 0 }; if (mat.uniforms.uEmis) t.uniforms.uEmis = { value: mat.uniforms.uEmis.value };
     was.set(m, mat); m.material = t; mine.push(t); });
   return {
-    update(t: number) { const k = amount * (.8 + .2 * Math.sin(t * 4)); for (const m of mine) (m.uniforms.uColor.value as THREE.Color).copy(m.userData.base).lerp(c, k); },
+    // The paint is pulled hard toward the colour and lit from within a little, pulsing, so a painted figure (whose own picture carries
+    // most of its colour) reads as taken over at any distance, in shade too.
+    update(t: number) { const p = .5 + .5 * Math.sin(t * 4), k = Math.min(.9, amount * 1.45) * (.85 + .15 * p);
+      for (const m of mine) { (m.uniforms.uColor.value as THREE.Color).copy(m.userData.base).lerp(c, k).multiplyScalar(1.25); if (m.uniforms.uEmis) m.uniforms.uEmis.value = m.userData.emis + .18 + .14 * p; } },
     off() { for (const [m, mat] of was) m.material = mat; for (const m of mine) m.dispose(); } };
 }
 
@@ -223,7 +244,7 @@ export function lift(body: THREE.Object3D, o: { r: number; ground: (x: number, z
       body.getWorldPosition(P); const y0 = o.ground(P.x, P.z), hgt = Math.max(0, P.y - y0);
       g.position.set(P.x, y0 + .08, P.z);
       const k = Math.max(0, 1 - hgt / 60);                                        // the shadow spreads and softens the higher it is
-      shadow.scale.setScalar(Math.max(o.r * (1 + hgt * .02), 3 * perPx)); shM.uniforms.uK.value = .25 + .35 * k + .2 * far;
+      shadow.scale.setScalar(Math.max(o.r * (1 + hgt * .02), 3 * perPx)); shM.uniforms.uK.value = .16 + .22 * k + .08 * far;   // soft: from high up a dark disc reads as a hole in the ground
       line.scale.set(Math.max(.03, 1.2 * perPx), Math.max(.01, hgt - o.r * .3), Math.max(.03, 1.2 * perPx)); line.visible = hgt > o.r * .5; lineM.opacity = .35 + .4 * far;
     },
     off() { alive = false; },

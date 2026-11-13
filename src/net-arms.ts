@@ -37,6 +37,20 @@ export const ARMS: Record<string, Move[]> = {
   quillback: [M('quill', 70, 29, 1, .55, true), M('quill fan', 70, 18, 5, 6, true)],
   blister: [],   // the Blister's burst is done on the server ('gb'), so it never reports a hit
   mulcher: [M('tusk sweep', 4.4, 34, 6, 1.4, false, 27.2), M('charge', 4, 45, 10, 6)],
+  // Ironhold's new kinds (stream B, src/factions/ironhold): the driven gun's reach and hit, fired every Weapon.cd. Abilities (mines,
+  // satchels, cloaks, loading) are cast on the server, so they never report a hit. Bodies with no gun of their own have no row to fit.
+  hauldrone: WORKER,
+  sapper: [M('carbine', 16, 6, 1, .16, true)],
+  dustbike: [M('flame spout', 9, 13, 6, .245, false, 8)],
+  piledriver: [M('pile gun', 18, 15, 1, .88, true, 12)],
+  piledriverset: [M('pile shell', 30, 42, 1, 2.24, false, 50.4), M('pile shell blast', 32.6, 21, 10, 2.24)],
+  flakkite: [M('sky rockets', 13, 18, 1, .78, true)],
+  flakwalker: [M('short gun', 8, 12, 1, .35, true)],
+  gadfly: [M('twin guns', 7.5, 24, 1, .75, true)],
+  claimbarge: [M('gun decks', 10, 8, 1, .25, true)],
+  gantryflak: [M('flak shells', 22, 14, 1, .56, true)],
+  staketurret: [M('stake gun', 7, 8, 1, .4, true)],
+  hopper: [], surveyor: [], shaftmine: [],
 };
 /** A kind with no row here, whose unit definition gives its driven attack (reach, hit, rate: see UnitDef): one aimed attack from those. */
 function fromDef(kind: string): Move[] | null {

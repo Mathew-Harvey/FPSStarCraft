@@ -181,6 +181,7 @@ const KBDKEYS: Record<string, string> = { E: 'H', R: 'N', C: 'M', F: ';', Tab: "
 const look2 = new Set<string>();
 /** True once player two has a controller. Until then the keyboard fallback is live. */
 let padTwo = false, padBlocked = false, p2Seen = false, p2Hint = 0;
+const padViewT = [0, 0], padViewDone = [false, false];
 const padHeld: Set<string>[] = [new Set(), new Set()], padWas: boolean[][] = [[], []], padRun = [false, false], padFire = [[false, false], [false, false]];
 function pads(): Gamepad[] { try { return Array.from(navigator.getGamepads ? navigator.getGamepads() : []).filter(p => !!p && p.connected && p.buttons.length >= 10) as Gamepad[]; } catch (e) { padBlocked = true; return []; } }
 /** Turns one controller into the keys and mouse movement the game already understands. */
@@ -189,14 +190,31 @@ function padDrive(g: Game, p: Gamepad, slot: number, dt: number) {
   const was = padWas[slot], down = (i: number) => !!p.buttons[i] && (p.buttons[i].pressed || p.buttons[i].value > .35), hit = (i: number) => down(i) && !was[i];
   const mine = padHeld[slot], hold = (code: string, on: boolean) => { if (on) { if (!mine.has(code)) { mine.add(code); g.keys.add(code); g.pressed.add(code); } } else if (mine.has(code)) { mine.delete(code); g.keys.delete(code); } };
   const tap = (i: number, code: string) => { if (hit(i)) g.pressed.add(code); };
-  if (game.phase === 'play' || game.phase === 'card') {
+  // Holding View (button 8) for under half a second is the squad's follow order, as before; holding it longer lifts the player into the
+  // command view, and a tap there drops back down.
+  if (down(8) && !was[8]) padViewT[slot] = performance.now();
+  const viewTap = !down(8) && was[8] && performance.now() - padViewT[slot] < 400, viewHeld = down(8) && performance.now() - padViewT[slot] >= 400 && !padViewDone[slot];
+  if (!down(8)) padViewDone[slot] = false;
+  if ((game.phase === 'play' || game.phase === 'card') && g.cmd.on) {
+    // From above: left stick slides the view (W A S D), right stick moves the cursor, RT picks or presses the card under the cursor,
+    // LT gives an order, D-pad up and down zoom, left and right step through the card and A presses it, X idle worker, Y whole army.
+    const lx = ax(0), ly = ax(1), rx = ax(2), ry = ax(3), C = g.cmd;
+    hold('KeyW', ly < -.3); hold('KeyS', ly > .3); hold('KeyA', lx < -.3); hold('KeyD', lx > .3); hold('ShiftLeft', false); hold('Tab', false);
+    g.mdx += rx * (.35 + .65 * Math.abs(rx)) * 1100 * dt; g.mdy += ry * (.35 + .65 * Math.abs(ry)) * 1100 * dt;
+    const f = padFire[slot], rt = down(7), lt = down(6);
+    if (rt !== f[0]) { f[0] = rt; g.lmb = rt; if (rt) g.pressed.add('Mouse0'); } if (lt !== f[1]) { f[1] = lt; g.rmb = lt; if (lt) g.pressed.add('Mouse2'); }
+    if (hit(12)) g.wheel = -1; if (hit(13)) g.wheel = 1; if (hit(14)) C.padStep(-1); if (hit(15)) C.padStep(1);
+    if (hit(0)) C.padPress(); tap(2, 'F1'); tap(3, 'F2'); if (viewTap) g.pressed.add('KeyN');
+    if (hit(9)) pause();
+  } else if (game.phase === 'play' || game.phase === 'card') {
+    if (viewHeld) { padViewDone[slot] = true; g.keys.delete('KeyV'); g.pressed.add('KeyN'); }
     const lx = ax(0), ly = ax(1), rx = ax(2), ry = ax(3);
     hold('KeyW', ly < -.3); hold('KeyS', ly > .3); hold('KeyA', lx < -.3); hold('KeyD', lx > .3);
     if (hit(10)) padRun[slot] = true; if (ly > -.5) padRun[slot] = false; hold('ShiftLeft', padRun[slot]);
     g.mdx += rx * (.35 + .65 * Math.abs(rx)) * 1500 * dt; g.mdy += ry * (.35 + .65 * Math.abs(ry)) * 1000 * dt;
     const f = padFire[slot], rt = down(7), lt = down(6);
     if (rt !== f[0]) { f[0] = rt; g.lmb = rt; if (rt) g.pressed.add('Mouse0'); } if (lt !== f[1]) { f[1] = lt; g.rmb = lt; if (lt) g.pressed.add('Mouse2'); }
-    tap(0, 'Space'); tap(1, 'KeyC'); tap(2, 'KeyR'); tap(3, 'KeyE'); tap(5, 'KeyF'); tap(8, 'KeyV'); tap(11, 'Mouse1'); if (g.net && hit(11)) g.pressed.add('KeyB');
+    tap(0, 'Space'); tap(1, 'KeyC'); tap(2, 'KeyR'); tap(3, 'KeyE'); tap(5, 'KeyF'); if (viewTap) g.pressed.add('KeyV'); tap(11, 'Mouse1'); if (g.net && hit(11)) g.pressed.add('KeyB');
     hold('Tab', down(4));
     // the D-pad does whatever the screen is offering
     const pr = g.prompt || '', train = /<b>[TYU]<\/b>/.test(pr), picking = g.tab || (g.tool === 2 && !!g.me && isWorker(g.me.kind)), call = !!g.dir.side(g.myTeam).callout;
@@ -207,7 +225,9 @@ function padDrive(g: Game, p: Gamepad, slot: number, dt: number) {
   for (let i = 0; i < p.buttons.length; i++) was[i] = down(i);
 }
 function padPoll(dt: number) {
-  if (!game2) return; const ps = pads();
+  // Playing alone, the first controller drives player one (keyboard and mouse keep working too).
+  if (!game2) { const p = pads()[0]; if (p) padDrive(game, p, 0, dt); return; }
+  const ps = pads();
   // One controller belongs to player two. With two, player one may use the first and keep the keyboard as well.
   const two = ps.length > 1 ? ps[1] : ps[0], one = ps.length > 1 ? ps[0] : null;
   if (!!two !== padTwo) { padTwo = !!two; look2.clear(); game2.keys.clear(); game2.lmb = game2.rmb = false; padHeld[1].clear(); p2Labels(); }
@@ -400,7 +420,7 @@ function frame(now: number) {
     if (game.phase !== 'paused') split.frame(dt);
     padPoll(dt);
     audioSeat(.65, 0); game.update(dt); audioSeat(.65, 1); game2.update(dt); audioSeat(1, 0);
-  } else { if (split && game.phase !== 'paused') split.frame(dt); if (cutP.on) cutP.frame(dt); game.update(dt); }
+  } else { if (split && game.phase !== 'paused') split.frame(dt); if (cutP.on) cutP.frame(dt); if (!still) padPoll(dt); game.update(dt); }
   if (fpsOn) { fpsN++; fpsT += dt; fpsWorst = Math.max(fpsWorst, dt); if (fpsT >= .5) { const info = pipe.renderer.info.render; $('fps').textContent = `${Math.round(fpsN / fpsT)} fps · worst ${Math.round(fpsWorst * 1000)} ms · ${pipe.w | 0}×${pipe.h | 0} · ${game.units.length} units`; fpsN = 0; fpsT = 0; fpsWorst = 0; void info; } }
   const GL = SIDE.out === 2, classic = fac(SIDE.home) === 0 && fac(SIDE.out) !== 0, hqN = (t: number) => BLD[FACTION[t].hq].name;
   if (game.story) { /* a story job writes its own end screen */ }
@@ -423,5 +443,5 @@ function frame(now: number) {
   if (fast > 900 && quality < 1) { quality = Math.min(1, quality / .85); fast = 0; pipe.aa = aaFor(); pipe.ao = aoFor(); pipe.glow = pipe.shafts = glowFor(); LAMP_ON.value = (gfxI as number) !== 1; resize(); }
   requestAnimationFrame(frame);
 }
-(window as any).__ore = { MAP: () => MAP, models: MD, tx: TX, mats: M, gloamB: GLOAM_BUILDINGS, gloamBloom: bloomPatch, sounds: { ready: soundsReady, sfx }, quit, atlasUsed: MD.atlasUsed, game, start, pipe, hud, hud2, startSplit, startVeyl, pause, resume, split: () => split, game2: () => game2, setFree: (v: boolean) => { freeMouse = v; }, hold: (v: boolean) => { still = v; }, pickMap, pickSize, pickSide: (s: number, f = 0) => { mode = "skirm"; sideI = s; foeI = s ? s - 1 : f; showSide(); fresh(); }, unlock: () => { camp = STORY_JOBS; mpOpen = true; mode = 'multi'; showMode(); }, net: () => net, pickJob: (i: number) => { mode = 'camp'; camp = Math.max(camp, Math.min(i, STORY_JOBS)); jobI = i; showMode(); fresh(); }, playCuts, cuts: CUTS, cutP, startStory: (i: number) => { mode = 'camp'; jobI = i; camp = Math.max(camp, Math.min(i, STORY_JOBS)); start(); } };
+(window as any).__ore = { MAP: () => MAP, models: MD, tx: TX, mats: M, gloamB: GLOAM_BUILDINGS, gloamBloom: bloomPatch, sounds: { ready: soundsReady, sfx }, quit, atlasUsed: MD.atlasUsed, game, start, pipe, hud, hud2, startSplit, startVeyl, pause, resume, touch: pad, setTouch, padDrive: (p: Gamepad, dt = 1 / 30) => padDrive(game, p, 0, dt), split: () => split, game2: () => game2, setFree: (v: boolean) => { freeMouse = v; }, hold: (v: boolean) => { still = v; }, pickMap, pickSize, pickSide: (s: number, f = 0) => { mode = "skirm"; sideI = s; foeI = s ? s - 1 : f; showSide(); fresh(); }, unlock: () => { camp = STORY_JOBS; mpOpen = true; mode = 'multi'; showMode(); }, net: () => net, pickJob: (i: number) => { mode = 'camp'; camp = Math.max(camp, Math.min(i, STORY_JOBS)); jobI = i; showMode(); fresh(); }, playCuts, cuts: CUTS, cutP, startStory: (i: number) => { mode = 'camp'; jobI = i; camp = Math.max(camp, Math.min(i, STORY_JOBS)); start(); } };
 requestAnimationFrame(frame);

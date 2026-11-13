@@ -11,6 +11,7 @@ import { Director } from './director';
 import type { Mission } from './campaign';
 import type { Net } from './net';
 import { HitFx, Surface } from './hitfx';
+import { Stance } from './stance';
 import { applySnap, netTick } from './netgame';
 import { Bloom, G_PAIR, G_TUNE, GBKind } from './gloam';
 import { poseLegs } from './gloam-art';
@@ -90,7 +91,7 @@ export class Game {
   projs: Proj[] = []; boltProto = MD.bolt(); nadeProto = MD.grenade();
   shake = 0; noRender = false; alertT = 0; mood = 0;
   /** Hit reactions, deaths and what a bullet does where it lands. All of it is for show. */
-  fx!: HitFx;
+  fx!: HitFx; stance!: Stance;
   introT = 0; menuPos = V3(); menuQuat = new THREE.Quaternion(); hitStop = 0; streak = 0; streakT = 0; kick = 0; stepPhase = 0; dustT = 0; hopT = 0; hopCd = 0; hopX = 0; hopZ = 0; endT = 0; endWon = false;
 
   constructor(public pipe: Pipeline | ViewPipe, public hud: Hud, public diff: Difficulty = DIFFS[1], public mapI = 0, public mission: Mission | null = null, public net: Net | null = null, /** The Veyl run a real economy (Tenders, building, training) instead of breeding raids for free. On whenever somebody plays the Veyl. */ public eco = false) {
@@ -114,7 +115,7 @@ export class Game {
     for (let i = 0; i < 6; i++) { const g = new THREE.Group(), mats = [0x0e0d14, 0xffb23a, 0xfff6c0].map(c => new THREE.MeshBasicMaterial({ color: c, transparent: true, depthWrite: false })); mats.forEach((m, j) => { const k = [1, .86, .5][j]; mk(G.burst, m, [0, 0, j * .03], [k, k, 1], [0, 0, j === 2 ? .24 : 0], g).renderOrder = 5 + j; }); setLayer(g, L_FX); g.visible = false; s.add(g); this.bursts.push({ g, t: 0, s: 1, rot: 0, mats }); }
     this.bubbles = pool(10, G.sph, bubbleMat, true).map(m => ({ m, t: 0, u: null }));
     this.warns = pool(6, G.ringG, warnMat, true).map(m => { m.rotation.x = -Math.PI / 2; return { m, t: 0, life: 1, r: 1 }; });
-    this.fx = new HitFx(this);
+    this.fx = new HitFx(this); this.stance = new Stance(this);
     const field = (list: number[][], amount: number) => { for (const [x, z, n, sc] of list) { const obj = MD.oreCluster(n, sc); obj.position.set(x, 0, z); s.add(obj); this.ores.push({ pos: V3(x, 0, z), amount, max: amount, obj }); } };
     field(YARD_SEAMS, 900);
     // the rich seam, then the other fields out on the map, each with room for a new Headframe on the side facing the yard
@@ -942,7 +943,7 @@ export class Game {
   }
   /** Turns each unit's state into a pose: legs, arms, bob and muzzle flash. */
   poseUnits(dt: number) {
-    const us = this.units, t = this.time; this.fx.pre();
+    const us = this.units, t = this.time; this.fx.pre(); this.stance.pre();
     for (const u of us) {
       if (!u.alive) continue; const r = u.rig, o = u.obj; o.position.x = u.pos.x; o.position.z = u.pos.z;
       let dy = u.yaw - o.rotation.y; dy = Math.atan2(Math.sin(dy), Math.cos(dy)); o.rotation.y += dy * Math.min(1, dt * 12);
@@ -952,14 +953,14 @@ export class Game {
         poseLegs(o, u.phase, u.moving, ease); o.position.y = u.moving ? Math.abs(Math.sin(u.phase)) * .05 : 0;
         const working = u.state === 'mining' || u.state === 'build' || u.state === 'repair';
         r.body.rotation.x += ((u.moving ? (u.dashT > 0 ? .25 : .06) : 0) - u.pop * .12 - (u.wind > 0 ? .25 : 0) + u.swing * .2 - r.body.rotation.x) * ease; r.body.rotation.z = u.moving ? Math.sin(u.phase * 2) * .03 : 0;
-        if (r.head) { r.head.rotation.x = working ? Math.sin(t * 22 + u.id) * .12 + .15 : u.swing * .35; r.head.rotation.y += ((u.moving || u.target || working ? 0 : Math.sin(t * .9 + u.id) * .4) - r.head.rotation.y) * Math.min(1, dt * 4); }
+        if (r.head) { r.head.rotation.x = working ? Math.sin(t * 22 + u.id) * .12 + .15 : u.swing * .35; r.head.rotation.y += -r.head.rotation.y * Math.min(1, dt * 4); }
         if (r.flash) r.flash.visible = u.flashT > 0;
         if (u.kind === 'blister') { const k = 1 + Math.sin(t * 7 + u.id) * .04 + (u.target ? .05 : 0); o.scale.set(sc * k, sc * k, sc * k); }
       } else if (r.legL && r.legR) {
         const s = Math.sin(u.phase) * amp; r.legL.rotation.x += (s - r.legL.rotation.x) * ease; r.legR.rotation.x += (-s - r.legR.rotation.x) * ease; o.position.y = u.moving ? Math.abs(Math.cos(u.phase)) * .07 : 0;
         const working = u.state === 'mining' || u.state === 'build' || u.state === 'repair';
         r.body.rotation.x += ((u.moving ? .1 : working ? .16 : 0) - u.pop * .12 - r.body.rotation.x) * ease; r.body.rotation.z = u.moving ? Math.sin(u.phase) * .04 : 0;
-        if (r.head) r.head.rotation.y += ((u.moving || u.target || working ? 0 : Math.sin(t * .7 + u.id) * .5) - r.head.rotation.y) * Math.min(1, dt * 4);
+        if (r.head) r.head.rotation.y += -r.head.rotation.y * Math.min(1, dt * 4);
         if (u.kind === 'rigger') { if (r.armL) r.armL.rotation.x += (-s * .8 - r.armL.rotation.x) * ease; if (r.armR) r.armR.rotation.x = working ? -.5 + Math.sin(t * 34 + u.id) * .05 : s * .3; }
         else { if (r.arms) { r.arms.rotation.x += (-u.pitch * .8 + (u.moving && !u.target ? .25 : 0) - u.swing * .1 - r.arms.rotation.x) * ease; r.arms.position.z = .05 - u.swing * .1; } if (r.armL) r.armL.rotation.x = u.moving ? Math.sin(u.phase) * .12 : 0; if (r.flash) { r.flash.visible = u.flashT > 0; if (u.flashT > 0) r.flash.rotation.z = t * 40; } }
       } else {
@@ -971,7 +972,7 @@ export class Game {
         if (big && r.armL && r.armR) { const k = u.wind > 0 ? Math.min(1, (1 - u.wind / .9) * 1.4) : 0; const a = u.wind > 0 ? -2.4 * k : u.swing * .9; r.armL.rotation.x += (a - r.armL.rotation.x) * Math.min(1, dt * 18); r.armR.rotation.x = r.armL.rotation.x; }
       }
     }
-    this.fx.post(dt);
+    this.stance.post(dt); this.fx.post(dt);
   }
   /** A worker the AI drives: a Rigger or a Tender. Builds what it was sent to, otherwise mines the best seam and carries the ore home. */
   aiRigger(u: Unit, dt: number) {

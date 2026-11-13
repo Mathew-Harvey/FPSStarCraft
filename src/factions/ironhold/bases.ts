@@ -160,7 +160,7 @@ defineBuildings({
   dugout: { actions: () => dugActions(), note: b => `${usedOf(b)} of 4 inside` },
   flaktower: { tick(g, b, dt) {
     b.cd -= dt; if (b.cd > 0) return; const t = nearest(g, { pos: b.pos, team: b.team }, 13, o => !!o.air && seenBy(g, b.team, o)); if (!t) { b.cd = .25; return; }
-    b.cd = .6; const a = V3(b.pos.x, b.h, b.pos.z), e = V3(t.pos.x, UNIT[t.kind].bodyY + (t.alt || 0), t.pos.z); g.tracer(a, e, tracerMat, .1); if (g.vol(b.pos) > .05) sfx.turret(g.vol(b.pos) * .6); g.damage(t, 12 * g.gunMul(b.team), b);
+    b.cd = .6; mem(b).aim = t; mem(b).aimT = g.time; const a = V3(b.pos.x, b.h, b.pos.z), e = V3(t.pos.x, UNIT[t.kind].bodyY + (t.alt || 0), t.pos.z); g.tracer(a, e, tracerMat, .1); if (g.vol(b.pos) > .05) sfx.turret(g.vol(b.pos) * .6); g.damage(t, 12 * g.gunMul(b.team), b);
   } },
   watchpost: { detect: (g, b) => g.upOf(b.team).spotlight ? 11 : 0 },
   mast: { actions: () => mastActions(), note: b => (mem(b).charges || 0) > 0 ? 'A Deep Charge is ready' : mem(b).chargeT > 0 ? `Deep Charge ready in ${Math.ceil(mem(b).chargeT)} s` : '' },

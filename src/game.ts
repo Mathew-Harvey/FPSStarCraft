@@ -6,6 +6,7 @@ import * as MD from './models';
 import { sfx, drillSound, setMood, babble } from './audio';
 import type { Hud } from './hud';
 import { Fog } from './fog';
+import { LOD } from './meshes';
 import { Intel } from './scout';
 import { Kind, BKind, UNIT, BLD, BUILDABLE, UPGRADES, TRAINS, UNIT_NEEDS, UpKey, Unit, Building, Prop, OreNode, Difficulty, DIFFS, OUTPOST, GATE, MAP, MAPS, ROAD, VHOME, FACTION, SIDE, setMap, veylPt, isUnit, isSoldier, isWorker, isFighter, foeOf, fac, MIRROR, atHome, endPt, swapEnd , STORY, turnOf, LAYOUT, OVERTIME, CHOIR_REACH, CLEAVE } from './data';
 import { Director } from './director';
@@ -180,12 +181,12 @@ export class Game {
     const md = unitRule(kind).figure?.() ?? figureOf(kind); tintMirror(md.obj, team); const st = UNIT[kind], hp = st.hp * (fac(team) === 0 || this.eco ? this.armorMul(team) : 1), sh = st.shield * (fac(team) && this.eco ? this.armorMul(team) : 1);
     const rs = st.rad * 3.6, ring = mk(G.ringG, ringMat, [0, .08, 0], [rs, rs, 1], [-Math.PI / 2, 0, 0], md.obj); ring.layers.set(L_FX); ring.visible = false;
     const u: Unit = { id: id || nextId++, kind, team, pilot: 0, nx: x, nz: z, pos: V3(x, 0, z), yaw: R(0, 6), hp, maxHp: hp, shield: sh, maxShield: sh, obj: md.obj, rig: md.rig, ring, alive: true, speed: st.speed, moving: false, phase: R(0, 6), cd: R(0, 1), think: R(0, .3), target: null, order: { type: 'guard', x, z }, lastHit: -99, state: 'idle', timer: 0, carrying: 0, node: null, site: null, dashCd: R(2, 5), dashT: 0, swing: 0, slot: 0, flashT: 0, pop: 0, wind: 0, windX: 0, windZ: 0, kx: 0, kz: 0, pitch: 0, brace: false };
-    md.obj.position.copy(u.pos); md.obj.rotation.y = u.yaw; this.scene.add(md.obj); this.units.push(u);
+    md.obj.position.copy(u.pos); md.obj.rotation.y = u.yaw; md.obj.userData.team = team; md.obj.userData.worker = isWorker(kind); this.scene.add(md.obj); this.units.push(u);
     if (this.dir && !this.net && isFighter(u) && (this.eco || team === SIDE.home)) this.dir.enlist(u);
     return u;
   }
   addBuilding(kind: BKind, team: number, x: number, z: number, built: boolean, rot = false, id = 0): Building {
-    const st = BLD[kind], obj = this.model(kind); obj.position.set(x, 0, z); if (rot) obj.rotation.y = Math.PI / 2; tintMirror(obj, team); this.scene.add(obj);
+    const st = BLD[kind], obj = this.model(kind); obj.position.set(x, 0, z); if (rot) obj.rotation.y = Math.PI / 2; tintMirror(obj, team); obj.userData.team = team; obj.userData.markR = Math.max(st.hx, st.hz) * 1.15; this.scene.add(obj);
     const b: Building = { id: id || nextId++, kind, team, pos: V3(x, 0, z), hx: rot ? st.hz : st.hx, hz: rot ? st.hx : st.hz, h: st.h, hp: built ? st.hp : st.hp * .1, maxHp: st.hp, obj, holo: null, built, progress: built ? 1 : 0, pdone: built ? 1 : 0, queue: [], alive: true, cd: R(0, 1), builder: null, lastHit: -99, rot, smokeT: 0, stage: 0 };
     for (const q of this.props) if (q.dress && q.alive && Math.abs(q.x - x) < b.hx + q.r * .6 && Math.abs(q.z - z) < b.hz + q.r * .6) this.damageProp(q, 1e4, null);
     if (!built) { b.holo = MD.hologram(obj, holoOK); b.holo.position.copy(obj.position); b.holo.rotation.copy(obj.rotation); this.scene.add(b.holo); obj.scale.y = .06; }
@@ -986,7 +987,7 @@ export class Game {
       }
     }
     cam.updateProjectionMatrix(); cam.updateMatrixWorld(); this.lamps(cam);
-    pipe.draw(this.scene, cam, me ? me.pos : V3(), 110);
+    LOD.myTeam = this.myTeam; pipe.draw(this.scene, cam, me ? me.pos : V3(), 110);
     this.hud.update(this, cam);
     // music follows how hot things are around the player
     if (me) { let hot = this.time - me.lastHit < 6 ? 1 : 0; if (!hot) for (const u of this.units) if (u.team !== this.myTeam && u.alive && Math.abs(u.pos.x - me.pos.x) < 45 && Math.abs(u.pos.z - me.pos.z) < 45) { hot = 1; break; } this.mood += (hot - this.mood) * Math.min(1, dt * (hot ? 2 : .4)); setMood(this.phase === 'play' ? .25 + this.mood * .75 : .15); }

@@ -69,9 +69,10 @@ function fire(g: Game, u: Unit, a: AbilityDef, t: Target) {
 }
 
 /** Every frame: energy grows back, cooldowns count down, wind-ups go off, and bot bodies use what their hooks pick. */
-let aiT = 0;
+/** Each game's own think timer: a server runs many matches, and a replay must start the clock where the match did (K). */
+const AIT = new WeakMap<Game, number>();
 export function tickAbilities(g: Game, dt: number) {
-  aiT -= dt; const think = aiT <= 0; if (think) aiT = .5;
+  let aiT = (AIT.get(g) ?? 0) - dt; const think = aiT <= 0; if (think) aiT = .5; AIT.set(g, aiT);
   for (const u of g.units) {
     if (!u.alive) continue;
     if (u.maxEnergy) u.energy = Math.min(u.maxEnergy, (u.energy ?? 0) + ENERGY.regen * dt);

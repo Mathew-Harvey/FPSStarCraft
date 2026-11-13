@@ -6,6 +6,7 @@ import * as MD from './models';
 import { sfx, drillSound, setMood, babble } from './audio';
 import type { Hud } from './hud';
 import { Fog } from './fog';
+import { LOD } from './meshes';
 import { Intel } from './scout';
 import { Kind, BKind, UNIT, BLD, BUILDABLE, UPGRADES, TRAINS, UNIT_NEEDS, UpKey, Unit, Building, Prop, OreNode, Difficulty, DIFFS, OUTPOST, GATE, MAP, MAPS, ROAD, VHOME, FACTION, SIDE, setMap, veylPt, isUnit, isSoldier, isWorker, isFighter, foeOf, fac, MIRROR, atHome, endPt, swapEnd , STORY, turnOf, LAYOUT, OVERTIME, CHOIR_REACH, CLEAVE } from './data';
 import { Director } from './director';
@@ -17,7 +18,7 @@ import { unitRule, bldRule, factionRule, DEFAULTS, HIT_FILTERS, type Hit } from 
 import './factions';
 import { plainBody } from './core/plain';
 import { Stance } from './stance';
-import { levelMul, armourHit, canHit, LEVELS, catOf } from './core/combat';
+import { levelMul, armourHit, canHit, LEVELS, catOf, inCat } from './core/combat';
 import { tickStatus, statusPace, canAct, soak, hasStatus } from './core/status';
 import { initEnergy, tickAbilities, useAbility, type Target } from './core/ability';
 import { initAir, tickAir, airCollide, sameLayer, flyKeys } from './core/air';
@@ -194,7 +195,7 @@ export class Game {
     const rs = st.rad * 3.6, ring = mk(G.ringG, ringMat, [0, .08, 0], [rs, rs, 1], [-Math.PI / 2, 0, 0], md.obj); ring.layers.set(L_FX); ring.visible = false;
     const u: Unit = { id: id || nextId++, kind, team, pilot: 0, nx: x, nz: z, pos: V3(x, 0, z), yaw: R(0, 6), hp, maxHp: hp, shield: sh, maxShield: sh, obj: md.obj, rig: md.rig, ring, alive: true, speed: st.speed, moving: false, phase: R(0, 6), cd: R(0, 1), think: R(0, .3), target: null, order: { type: 'guard', x, z }, lastHit: -99, state: 'idle', timer: 0, carrying: 0, node: null, site: null, dashCd: R(2, 5), dashT: 0, swing: 0, slot: 0, flashT: 0, pop: 0, wind: 0, windX: 0, windZ: 0, kx: 0, kz: 0, pitch: 0, brace: false };
     initEnergy(u); initAir(u);
-    md.obj.position.copy(u.pos); md.obj.rotation.y = u.yaw; this.scene.add(md.obj); this.units.push(u);
+    md.obj.position.copy(u.pos); md.obj.rotation.y = u.yaw; md.obj.userData.team = team; md.obj.userData.worker = isWorker(kind); this.scene.add(md.obj); this.units.push(u);
     if (this.dir && !this.net && isFighter(u) && (this.eco || team === SIDE.home)) this.dir.enlist(u);
     return u;
   }
@@ -202,7 +203,7 @@ export class Game {
   remodel(u: Unit, kind: Kind) {
     const md = unitRule(kind).figure?.() ?? figureOf(kind); tintMirror(md.obj, u.team); this.scene.remove(u.obj);
     const st = UNIT[kind], rs = st.rad * 3.6; u.ring = mk(G.ringG, ringMat, [0, .08, 0], [rs, rs, 1], [-Math.PI / 2, 0, 0], md.obj); u.ring.layers.set(L_FX); u.ring.visible = false;
-    md.obj.position.copy(u.pos); md.obj.rotation.y = u.yaw; u.obj = md.obj; u.rig = md.rig; this.scene.add(md.obj); if (u === this.me) this.bodyLayer(u, true);
+    md.obj.position.copy(u.pos); md.obj.rotation.y = u.yaw; md.obj.userData.team = u.team; md.obj.userData.worker = isWorker(kind); u.obj = md.obj; u.rig = md.rig; this.scene.add(md.obj); if (u === this.me) this.bodyLayer(u, true);
   }
   /** How fast a finished building works (FactionRules.works): 0 silent, 1 normal, more when sped up. */
   rate(b: Building) { const w = factionRule(b.team).works; return w ? w(this, b) : 1; }
@@ -230,7 +231,7 @@ export class Game {
   /** Uses one of a body's abilities (src/core/ability.ts): `key` from abilitiesOf(kind), aimed at a spot or a body. */
   useAbility(u: Unit, key: string, t?: Target) { return useAbility(this, u, key, t); }
   addBuilding(kind: BKind, team: number, x: number, z: number, built: boolean, rot = false, id = 0): Building {
-    const st = BLD[kind], obj = this.model(kind); obj.position.set(x, 0, z); if (rot) obj.rotation.y = Math.PI / 2; tintMirror(obj, team); this.scene.add(obj);
+    const st = BLD[kind], obj = this.model(kind); obj.position.set(x, 0, z); if (rot) obj.rotation.y = Math.PI / 2; tintMirror(obj, team); obj.userData.team = team; obj.userData.markR = Math.max(st.hx, st.hz) * 1.15; this.scene.add(obj);
     const b: Building = { id: id || nextId++, kind, team, pos: V3(x, 0, z), hx: rot ? st.hz : st.hx, hz: rot ? st.hx : st.hz, h: st.h, hp: built ? st.hp : st.hp * .1, maxHp: st.hp, obj, holo: null, built, progress: built ? 1 : 0, pdone: built ? 1 : 0, queue: [], alive: true, cd: R(0, 1), builder: null, lastHit: -99, rot, smokeT: 0, stage: 0 };
     for (const q of this.props) if (q.dress && q.alive && Math.abs(q.x - x) < b.hx + q.r * .6 && Math.abs(q.z - z) < b.hz + q.r * .6) this.damageProp(q, 1e4, null);
     if (!built) { b.holo = MD.hologram(obj, holoOK); b.holo.position.copy(obj.position); b.holo.rotation.copy(obj.rotation); this.scene.add(b.holo); obj.scale.y = .06; }
@@ -673,7 +674,7 @@ export class Game {
     if (!canPay(this, t, costOf(key))) { if (manual) { sfx.deny(); this.feed(v, `${u.name} is ${u.cost} ore${u.flux ? ` and ${u.flux} Flux` : ''}. ${fac(t) === 2 ? 'Chew some more.' : fac(t) ? 'Hum some more.' : 'Keep digging.'}`, 'al', t); } return false; }
     pay(this, t, costOf(key)); this.upOf(t)[key] = true; sfx.built();
     // An armour level (percent mode) thickens every body the side already has, by that level's share.
-    const plate = u.line === 'arm' && u.lvl && LEVELS.mode === 'percent' ? u.pct ?? LEVELS.pct[u.lvl - 1] : 0; if (key === 'gbloom') this.carpet.deepen(t); if (plate) for (const x of this.own(undefined, t)) { if (u.cat && catOf(x.kind) !== u.cat) continue; x.maxHp *= plate; x.hp *= plate; if (fac(t)) { x.maxShield *= plate; x.shield *= plate; } } factionRule(t).bought?.(this, t, key);
+    const plate = u.line === 'arm' && u.lvl && LEVELS.mode === 'percent' ? u.pct ?? LEVELS.pct[u.lvl - 1] : 0; if (key === 'gbloom') this.carpet.deepen(t); if (plate) for (const x of this.own(undefined, t)) { if (!inCat(u.cat, catOf(x.kind))) continue; x.maxHp *= plate; x.hp *= plate; if (fac(t)) { x.maxShield *= plate; x.shield *= plate; } } factionRule(t).bought?.(this, t, key);
     this.feed(v, u.say, '', t); return true;
   }
   canPlace(k: BKind, x: number, z: number, rot: boolean, team = 0) {
@@ -683,8 +684,10 @@ export class Game {
     const [mx, mz] = MAP.mid!, fromMid = Math.hypot(x - mx, z - mz); if (fromMid + Math.max(hx, hz) > MAP.rad! * .99) return false;
     // And nothing goes up on the enemy's doorstep. A new base always needed 45 m of clear ground from the enemy; the buildings round it
     // did not, so a Headframe 45 m out could put a Watchpost, Thorn Spire or Stinger Stalk right beside the enemy's ore line.
-    for (const b of this.buildings) if (b.alive && b.team !== team && Math.hypot(b.pos.x - x, b.pos.z - z) < 45) return false;
+    const far = bldRule(k).far, gap = far ? 12 : 45;
+    for (const b of this.buildings) if (b.alive && b.team !== team && Math.hypot(b.pos.x - x, b.pos.z - z) < gap) return false;
     if (k === hq) { if (fromMid > MAP.rad! * .95) return false; }
+    else if (far) { /* placeOK decides */ }
     else if ((team || Math.hypot(x, z) > 80) && !this.buildings.some(b => b.alive && b.team === team && b.built && this.isHQ(b) && Math.hypot(b.pos.x - x, b.pos.z - z) < 42)) return false;
     for (const b of this.buildings) if (b.alive && Math.abs(x - b.pos.x) < hx + b.hx + 1.6 && Math.abs(z - b.pos.z) < hz + b.hz + 1.6) return false;
     for (const o of this.ores) if (o.amount > 0 && Math.abs(x - o.pos.x) < hx + 2.4 && Math.abs(z - o.pos.z) < hz + 2.4) return false;
@@ -700,7 +703,7 @@ export class Game {
   placeWhy = '';
   place(k: BKind, x: number, z: number, rot: boolean, team = 0, by: Unit | null = this.me) { if (this.net) { this.net.cmd('pl', k, x, z, rot ? 1 : 0); sfx.place(); this.puff(TMP.set(x, .3, z), 5, 1.2, M.dust, .5, 2); return null; }
     // A Gloam building is a Grazer that put down roots. No Grazer to spare, no building.
-    let root: Unit | null = null; if (fac(team) === 2) { root = rootGrazer(this, x, z, by && by.team === team ? by : null, team); if (!root) return null; }
+    let root: Unit | null = null; if (fac(team) === 2 && !bldRule(k).free) { root = rootGrazer(this, x, z, by && by.team === team ? by : null, team); if (!root) return null; }
     pay(this, team, costOf(k)); const b = this.addBuilding(k, team, x, z, false, rot); { const vt = bldRule(k).tap ? ventAt(this, x, z) : null; if (vt) vt.tap = b; } if (root) consume(this, root); sfx.place(); this.puff(TMP.set(x, .3, z), 5, 1.2, fac(team) ? M.violet : M.dust, .5, 2); return b; }
 
   weldAcc = 0;
@@ -1067,7 +1070,7 @@ export class Game {
       }
     }
     cam.updateProjectionMatrix(); cam.updateMatrixWorld(); this.lamps(cam);
-    pipe.draw(this.scene, cam, me ? me.pos : V3(), 110);
+    LOD.myTeam = this.myTeam; pipe.draw(this.scene, cam, me ? me.pos : V3(), 110);
     this.hud.update(this, cam);
     // music follows how hot things are around the player
     if (me) { let hot = this.time - me.lastHit < 6 ? 1 : 0; if (!hot) for (const u of this.units) if (u.team !== this.myTeam && u.alive && Math.abs(u.pos.x - me.pos.x) < 45 && Math.abs(u.pos.z - me.pos.z) < 45) { hot = 1; break; } this.mood += (hot - this.mood) * Math.min(1, dt * (hot ? 2 : .4)); setMood(this.phase === 'play' ? .25 + this.mood * .75 : .15); }

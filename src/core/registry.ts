@@ -139,6 +139,11 @@ export interface BldRules {
   spot?(g: Game, team: number, x: number, z: number): [number, number] | null;
   /** This kind also counts as these for needs, research and training (an Elder Cap is still a Mother Cap). */
   counts?: BKind[];
+  /** Placing it uses up no worker (the Gloam Tunnel Root takes no Grazer). */
+  free?: boolean;
+  /** Goes up away from home: canPlace skips the near-a-home-building rule and lets it within 12 m of the enemy instead of 45.
+   *  The faction's placeOK still decides (a spot the side can see, say). */
+  far?: boolean;
 }
 /** A command on a building (BldRules.actions). `ok` returns '' or the plain reason it cannot run now. */
 export interface BldAction { key: string; name: string; hotkey: string; cost?: [number, number]; blurb?: string; ok?(g: Game, b: Building): string; run(g: Game, b: Building): void }

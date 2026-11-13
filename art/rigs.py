@@ -299,10 +299,17 @@ def piledriver():
     # the hull: a low box with a sloped nose, a hatch, tool boxes and the stake rams on its corners
     hull = S.box((0, .82, -.05), (.62, .32, 1.4), .08)
     hull = S.cut(hull, S.plane((0, 1.0, 1.25), (0, -.7, -1)), S.plane((0, 1.0, -1.3), (0, -.8, 1)))
+    # the engine grille on the sloped nose: a recessed bay with five louvres standing proud in it, so the ink and the edge light catch
+    # every slat (a flat painted patch here read as a hole)
+    GR, GC = rot(-.61, 0, 0), V(0, 1.0, 1.25)
+    hull = S.cut(hull, S.box(GC, (.34, .1, .035), .012, GR))
     hull = dents(hull, 4.1, .014, 3)
     fig.add('hull', 'body', 'pY', hull, 1500, voxel=.01, uv=('box',), sharp=40,
-            detail=S.fine(rivets([V(x, 1.15, z) for x in (-.55, .55) for z in np.linspace(-1.0, 1.0, 7)], .02, .008), S.slit((0, .95, 0), (0, 1, 0), .006, .006)),
-            marks=[(S.inside(S.box((0, .9, 1.3), (.3, .12, .2), 0, rot(-.6, 0, 0))), (.1, .09, .08))])
+            detail=S.fine(rivets([V(x, 1.15, z) for x in (-.55, .55) for z in np.linspace(-1.0, 1.0, 7)], .02, .008), S.slit((0, .95, 0), (0, 1, 0), .006, .006),
+                          rivets([GC + GR @ V(x, y, .0) for x in (-.37, .37) for y in (-.075, .075)], .018, .008)),
+            marks=[(S.inside(S.both(S.box(GC, (.38, .14, .06), .01, GR), lambda p: -S.box(GC, (.345, .105, .1), .012, GR)(p))), (.1, .09, .08))])
+    lv = S.union(*[S.box(GC + GR @ V(0, y, -.012), (.32, .007, .022), .004, GR @ rot(.5, 0, 0)) for y in np.linspace(-.072, .072, 5)])
+    fig.add('grille', 'body', 'gunm', S.union(lv, S.box(GC + GR @ V(0, 0, -.03), (.33, .09, .006), .004, GR), k=.004), 400, voxel=.004, uv=('front',), sharp=40)
     fig.add('belly', 'body', 'gunm', S.box((0, .55, 0), (.55, .08, 1.3), .05), 300, voxel=.01, uv=('box',))
     tb = S.union(S.box((-.45, 1.2, -1.0), (.14, .08, .22), .03), S.box((.45, 1.2, -1.05), (.14, .1, .2), .03))
     fig.add('toolboxes', 'body', 'tank', dents(tb, 6.6, .01, 6), 400, voxel=.006, uv=('box',), sharp=40)

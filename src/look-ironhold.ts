@@ -6,6 +6,9 @@
 // move a bot result, and the match server, which carries no meshes, never gets past `model` returning null.
 import * as THREE from 'three';
 import { figure } from './meshes';
+import { M } from './gfx';
+import { put, can } from './units';
+import { rbox, ring } from './sculpt';
 
 /** The new Ironhold kinds this file draws (batch 1). */
 export const KINDS = ['sapper', 'hauldrone', 'dustbike', 'piledriver'] as const;
@@ -18,7 +21,22 @@ export function model(kind: Kind): Fig | null {
   const f = figure(kind) as Fig | null; if (!f) return null;
   f.root.userData.kind = kind; f.root.userData.groups = f.groups; f.root.userData.points = f.points;
   if (f.groups.pack) f.groups.pack.visible = false;
+  if (kind === 'sapper') { const sat = satchelIn(f); sat.visible = false; f.groups.satchel = sat; }
   rest(f); return f;
+}
+/** Copies the named parts of a figure into a new group, each where it stands relative to `to` (the group the copy will hang from).
+ *  The copies share geometry and paint with the figure, so they cost a draw call each and no memory. */
+function copyParts(f: Fig, names: string[], to: THREE.Object3D) {
+  f.root.updateMatrixWorld(true); const inv = to.matrixWorld.clone().invert(), out = new THREE.Group();
+  f.root.traverse(o => { const m = o as THREE.Mesh; if (!m.isMesh || !names.includes(m.name)) return; const c = m.clone(); new THREE.Matrix4().multiplyMatrices(inv, m.matrixWorld).decompose(c.position, c.quaternion, c.scale); out.add(c); });
+  return out;
+}
+const centre = (o: THREE.Object3D) => { o.updateMatrixWorld(true); return new THREE.Box3().setFromObject(o).getCenter(new THREE.Vector3()); };
+/** The Sapper's charge in hand: a second stick bundle, like the one on his back, gripped in the left glove. Shown while he sets one. */
+function satchelIn(f: Fig) {
+  const arms = f.groups.arms, hand = copyParts(f, ['gloveL'], arms), at = centre(hand), sat = copyParts(f, ['bundle', 'bundletape', 'bundlefuse'], f.root);
+  const mid = centre(sat); for (const c of sat.children) { c.position.sub(mid); c.name = 'held ' + c.name; }   // renamed, so copies of the figure never pick these up twice
+  const g = new THREE.Group(); g.add(sat); sat.rotation.set(1.2, .3, 0); g.position.copy(at).add(new THREE.Vector3(0, -.02, .06)); g.name = 'satchel'; arms.add(g); return g;
 }
 /** Remembers every group's sculpted place and turn, so a pose is always laid over the same start and never drifts. */
 function rest(f: Fig) { for (const k in f.groups) { const g = f.groups[k]; g.userData.r0 = g.rotation.clone(); g.userData.p0 = g.position.clone(); } }
@@ -53,6 +71,7 @@ export function animate(kind: Kind, f: Fig, s: State) {
     g.legL.rotation.x = Math.sin(ph) * sw; g.legR.rotation.x = -Math.sin(ph) * sw; f.root.position.y = s.speed > .05 ? Math.abs(Math.cos(ph)) * (.05 + run * .05) : 0;
     g.body.rotation.x = s.speed * .1 + run * .12; g.body.rotation.z = s.speed > .05 ? Math.sin(ph) * .04 : 0;
     g.arms.rotation.x = -s.pitch * .8 + (s.speed > .05 && s.kick <= 0 ? .3 : 0) - s.kick * .12; g.arms.position.z += -s.kick * .06;
+    if (g.satchel) g.satchel.visible = s.work;
     if (s.work) {          // down on one knee, the body over the hole, the arms going up and down
       const dig = Math.sin(t * 6 + s.id) * .5 + .5;
       g.legR.rotation.x = -1.35; g.legL.rotation.x = .2; f.root.position.y = -.38; g.body.rotation.x = .55 - dig * .2; g.arms.rotation.x = .9 + dig * .5; g.head.rotation.x = .3;
@@ -65,14 +84,17 @@ export function animate(kind: Kind, f: Fig, s: State) {
   } else if (kind === 'hauldrone') {
     // it never touches the ground: it bobs, tips into the way it is going, spins its fans faster when loaded or in a hurry, and swings the
     // drill boom down onto the seam to work. At rest it sinks lower and idles its fans.
-    const bob = Math.sin(t * 2.3 + s.id) * .05;
-    f.root.position.y = .35 + bob - settle * .12 + (s.load ? -.06 : 0);
-    g.body.rotation.x = s.speed * .16; g.body.rotation.z = Math.sin(t * 1.7 + s.id) * .03;
-    const spin = (14 + s.speed * 12 + (s.load ? 6 : 0) - settle * 8) * t;
-    for (let i = 0; i < 4; i++) if (g['rotor' + i]) g['rotor' + i].rotation.y = spin * (i % 2 ? -1 : 1) + i;
+    // At rest it comes down onto its skids: fans run down to a slow turn, the boom folds up under the nose and the eye droops, so a
+    // parked drone reads from across the yard as sat down, not hovering.
+    const land = s.work || s.speed > .05 || s.load ? 0 : settle, up = 1 - land;
+    const bob = Math.sin(t * 2.3 + s.id) * .05 * up;
+    f.root.position.y = (.35 + bob + (s.load ? -.06 : 0)) * up - .53 * land;
+    g.body.rotation.x = s.speed * .16 + land * .05; g.body.rotation.z = Math.sin(t * 1.7 + s.id) * .03 * up;
+    const spin = (14 + s.speed * 12 + (s.load ? 6 : 0)) * t;
+    for (let i = 0; i < 4; i++) if (g['rotor' + i]) g['rotor' + i].rotation.y = (spin * up + t * 1.2 * land) * (i % 2 ? -1 : 1) + i;
     if (g.pack) g.pack.visible = s.load;
-    g.arms.rotation.x = s.work ? .7 + Math.sin(t * 30 + s.id) * .04 : -.15 + settle * -.15;
-    g.head.rotation.y = s.work ? 0 : Math.sin(t * .6 + s.id * 3) * .5; g.head.rotation.x = s.work ? .35 : .1;
+    g.arms.rotation.x = s.work ? .7 + Math.sin(t * 30 + s.id) * .04 : -.15 - land * .55;
+    g.head.rotation.y = s.work ? 0 : Math.sin(t * .6 + s.id * 3) * .5 * up + land * .25; g.head.rotation.x = s.work ? .35 : .1 + land * .4;
   } else if (kind === 'dustbike') {
     // wheels roll with distance, the bike leans into turns (aim stands in for the turn), the rider tucks at a boost, and at rest he sits
     // up, puts a boot down and looks about.
@@ -82,7 +104,14 @@ export function animate(kind: Kind, f: Fig, s: State) {
     const boost = clamp(s.speed - 1); g.body.rotation.x = -boost * .08; g.head.rotation.x = boost * .3;
     f.root.position.y = s.speed > .05 ? Math.abs(Math.sin(s.dist * 2.1)) * .03 : 0;
     if (s.kick > 0) g.arms.position.z -= s.kick * .03;
-    if (s.speed < .05) { g.body.rotation.z = .12; g.legL.rotation.x = .6 * settle + .3; g.legL.rotation.z = -.2; g.head.rotation.y = Math.sin(t * .5 + s.id) * .6 * settle; g.head.rotation.x = -.15 * settle; }
+    if (s.speed < .05) {
+      // stopped: the boots come off the pegs at once; parked a while, the bike sags over on its stand, the bars swing to full lock,
+      // both legs hang out wide and the rider twists round to look back. Lean, bars and the splayed legs read from across the yard.
+      const k = Math.max(.35, settle);
+      g.body.rotation.z = .3 * k; g.body.rotation.x = 0; g.arms.rotation.y = .6 * k;
+      g.legL.rotation.z = -.5 * k; g.legR.rotation.z = .5 * k; g.legL.rotation.x = .25 * k; g.legR.rotation.x = -.15 * k;
+      g.head.rotation.y = (.9 + Math.sin(t * .4 + s.id) * .25) * settle; g.head.rotation.x = -.1 * settle;
+    }
   } else if (kind === 'piledriver') {
     // tracks run with distance; the turret turns to aim; anchoring drops the four stakes and lifts the gun, in that order; each shot
     // throws the drop weight back up the frame and lets it fall.
@@ -97,13 +126,60 @@ export function animate(kind: Kind, f: Fig, s: State) {
 
 /** First person: where the eye sits in the figure (its own space, metres) and which groups are hidden so the camera is not inside them.
  *  Every new body is drivable this way: the player sees the body's own hands, bars, boom or gun frame from where its crew would sit. */
-// vm: a group brought up into view, the way a view model is (the Sapper's carbine sits at the hip, out of a forward look).
-export const FIRST: Record<Kind, { eye: [number, number, number]; hide: string[]; fov: number; /** how far the look drops over 3 m ahead */ drop: number; vm?: { group: string; at: [number, number, number] } }> = {
-  sapper: { eye: [0, 1.66, .12], hide: ['head'], fov: 70, drop: .45, vm: { group: 'arms', at: [.02, .3, -.12] } },
-  hauldrone: { eye: [0, 1.3, .5], hide: ['head'], fov: 80, drop: 1.5 },   // over the nose, looking down past the camera eye at the boom and bit
+// vm: this kind has a view model (see viewModel below) to hang on the camera.
+export const FIRST: Record<Kind, { eye: [number, number, number]; hide: string[]; fov: number; /** how far the look drops over 3 m ahead */ drop: number; vm?: boolean }> = {
+  sapper: { eye: [0, 1.66, .12], hide: ['head', 'arms'], fov: 70, drop: .12, vm: true },
+  hauldrone: { eye: [0, 1.05, .62], hide: ['head', 'arms'], fov: 80, drop: .5, vm: true },   // from the camera eye itself, framed by its housing, the boom reaching out below
   dustbike: { eye: [0, 1.62, .14], hide: ['head'], fov: 76, drop: .8 },           // the rider's eyes: bars, burner and tank ahead
   piledriver: { eye: [-.62, 2.12, -.45], hide: [], fov: 66, drop: .25 },  // head out of the cab hatch, looking past the frame along the barrel
 };
+
+/** A first person view model: the body's own sculpted hands, gun or boom, copied out of the figure and hung in front of the camera
+ *  (add it to the camera; camera space is x right, y up, -z ahead). Built once per body kind and reused.
+ *  - sapper 'gun': both gloves on the drum carbine, held across the body the way the Linesman holds his rifle.
+ *  - sapper 'charge': the carbine slung low on the right, the left glove holding a charge bundle out ahead, ready to set.
+ *  - hauldrone: the camera eye's own frame, bolted round the view, with the drill boom reaching out under it.
+ *  Kinds without one (the Dustbike and Pile Driver) are driven from their seat and see their bars or gun in the world. */
+export function viewModel(kind: Kind, mode: 'gun' | 'charge' = 'gun'): THREE.Group | null {
+  const f = model(kind); if (!f) return null;
+  const out = new THREE.Group(); out.name = 'vm:' + kind;
+  // copies parts into figure space, then turns them so the figure's forward (+z) is the camera's (-z) and the eye is the origin
+  // (mirrored across x as well, so the right hand is on the right of the screen, where every other view model holds its gun)
+  const fromEye = (names: string[], eye: [number, number, number]) => { const c = copyParts(f, names, f.root), turn = new THREE.Group(); turn.rotation.y = Math.PI; turn.scale.x = -1; c.position.set(-eye[0], -eye[1], -eye[2]); turn.add(c); return turn; };
+  const cam = (v: THREE.Vector3, eye: [number, number, number]) => new THREE.Vector3(v.x - eye[0], v.y - eye[1], eye[2] - v.z);
+  const about = (o: THREE.Object3D, pivot: THREE.Vector3) => { const g = new THREE.Group(); g.position.copy(pivot); o.position.sub(pivot); g.add(o); return g; };
+  if (kind === 'sapper') {
+    // forearms and gloves only (the sleeves would start in front of the eye). Each forearm is swung about its glove so its open end
+    // runs out of the bottom corner of the screen, the way a held gun's arms come up from below.
+    const E: [number, number, number] = [-.08, 1.55, -.55], at = (n: string) => cam(centre(copyParts(f, [n], f.root)), E);
+    const gun = ['receiver', 'barrel', 'shroud', 'brake', 'drum', 'grip', 'stock', 'sights'];
+    const arm = (side: 'L' | 'R', rx: number, ry: number) => { const g = about(fromEye(['vambrace' + side, 'cuffband' + side, 'elbow' + side, 'glove' + side], E), at('glove' + side)); g.rotation.set(rx, ry, 0); return g; };
+    if (mode === 'gun') { const all = new THREE.Group(); all.add(fromEye(gun, E), arm('R', .7, .5), arm('L', .8, .35)); out.add(all); }
+    else {
+      const R = new THREE.Group(); R.add(fromEye(gun, E), arm('R', .7, .5)); const Rp = about(R, at('gloveR')); Rp.rotation.set(-.4, .3, -.25); Rp.position.add(new THREE.Vector3(.06, -.06, .04)); out.add(Rp);
+      // the left glove is brought up to the lower left of the view (the arm pivots about the glove, so its place is the glove's),
+      // holding a bundle like the one on his back, fuse up
+      const L = arm('L', .9, .4), sat = copyParts(f, ['bundle', 'bundletape', 'bundlefuse'], f.root), mid = centre(sat);
+      for (const c of sat.children) c.position.sub(mid);
+      sat.scale.setScalar(.75); sat.rotation.set(-.35, .2, .3); sat.position.set(.0, .1, -.03);
+      L.position.set(-.2, -.3, -.62); L.add(sat); out.add(L);
+    }
+  } else if (kind === 'hauldrone') {
+    // the camera eye's own port: a dark plate with a round window, a steel lip with bolts round it, a hazard strip along the bottom
+    // and a red lamp that shows the camera is live
+    const z = -.2, r = .232, plate = new THREE.Shape(); plate.moveTo(-.6, -.45); plate.lineTo(.6, -.45); plate.lineTo(.6, .45); plate.lineTo(-.6, .45); plate.lineTo(-.6, -.45);
+    const hole = new THREE.Path(); hole.absarc(0, 0, r, 0, Math.PI * 2, true); plate.holes.push(hole);
+    put(new THREE.ShapeGeometry(plate, 48), M.gunm, out, [0, 0, z - .01]);
+    put(ring(r, .016, 1, 64), M.bS, out, [0, 0, z]);
+    for (let i = 0; i < 8; i++) { const a = i / 8 * Math.PI * 2 + Math.PI / 8; put(can(.009, .012), M.nS, out, [Math.cos(a) * (r + .022), Math.sin(a) * (r + .022), z + .004], [Math.PI / 2, 0, 0]); }
+    put(rbox(.3, .014, .01, .004), M.haz, out, [0, -r - .03, z]);
+    put(can(.01, .01), M.red, out, [-r - .02, r - .02, z + .004], [Math.PI / 2, 0, 0]);
+    // the boom, swung up from under the camera so its bit sits in the bottom of the window
+    const E: [number, number, number] = [0, 1.05, .62], boom = about(fromEye(['boom', 'boomram', 'bit', 'chuck'], E), cam(new THREE.Vector3(0, .86, .42), E));
+    boom.rotation.x = .6; boom.position.set(0, -.3, -.05); out.add(boom);
+  } else return null;
+  out.userData.kind = kind; out.userData.mode = mode; return out;
+}
 
 // ---------------------------------------------------------------- ability effects: sketches until stream H's effect kit lands
 // Each returns an object to add to the scene and a step function; step(dt) returns false when the effect is over and can be removed.

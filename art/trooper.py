@@ -347,12 +347,12 @@ if sap:
     skirt = S.cut(skirt, lambda p: p[..., 1] - (.71 + .012 * np.sin(p[..., 0] * 60)))
     apron = S.union(S.bump(vest, quilt), S.bump(skirt, quilt), k=.03)
     apron = S.bump(apron, lambda p: (S.noise(p, 18, 4.4) - .5) * .008)
-    fig.add('apron', 'body', 'vestB', apron, 1400, voxel=.0035, uv=('cyl', V(0, 1.1, 0)),
+    fig.add('apron', 'body', 'fab', apron, 1400, voxel=.0035, uv=('cyl', V(0, 1.1, 0)),
             detail=S.fine(S.only(S.slit((0, 1.3, 0), (1, 0, 0), .004, .004), lambda p: p[..., 2] > .0), S.stitch((0, 1.02, 0), (0, 1, 0), .016, .004, .003, along=(1, 0, 0))),
             marks=[(S.chevrons((0, .75, 0), (1, 0, .0), .07, lambda p: (p[..., 1] < .79) * (p[..., 2] > .0)), (.1, .09, .08))])
     collar = S.union(S.torus((0, 1.49, -.012), .118, .052, squash=1.15), S.torus((0, 1.535, -.03), .1, .04, rot(.18, 0, 0)), k=.03)
     collar = S.bump(collar, lambda p: .008 * np.sqrt(np.abs(np.sin(np.arctan2(p[..., 0], p[..., 2]) * 6))))
-    fig.add('collar', 'body', 'vestB', collar, 700, voxel=.0032, uv=('cyl', V(0, 1.5, 0)))
+    fig.add('collar', 'body', 'fab', collar, 700, voxel=.0032, uv=('cyl', V(0, 1.5, 0)))
     # three charges on a sash from the left shoulder to the right hip, each taped and tagged
     sash = S.chain([S.skin(apron, (x, y, -.02), (x * .8, 0, 1), out=.006) for x, y in ((-.2, 1.47), (-.12, 1.37), (-.04, 1.28), (.05, 1.18), (.13, 1.1), (.2, 1.03))], .024)
     sash = S.squash(sash, (1, 1, .55), (0, 1.25, .25))
@@ -382,7 +382,14 @@ if sap:
     fig.add('reelframe', 'body', 'gunm', frame, 140, voxel=.0025)
     cord = S.chain([RC + V(.06, -.07, .03), V(.2, 1.42, -.2), V(.27, 1.2, -.08), V(.25, 1.04, .06), dc + V(.04, .0, -.02)], .009)
     fig.add('firecord', 'body', 'red', cord, 160, voxel=.0022, glow=.25)
-    sa, sb = V(-.2, 1.06, -.47), V(.17, 1.7, -.43)
+    # a bundle of red charges standing up behind the left shoulder: with the spade blade over the right one, it is the shape that says
+    # Sapper from across the yard and from straight above (the Rigger beside him has neither)
+    BC = V(-.17, 1.5, -.37)
+    sticks = [S.rcone(BC + V(dx, 0, dz), BC + V(dx * 1.2, .4 + .03 * (i % 2), dz * 1.2), .034, .031) for i, (dx, dz) in enumerate(((-.04, -.02), (.035, -.03), (0, .03), (-.05, .045), (.045, .035)))]
+    fig.add('bundle', 'body', 'tank', S.union(*sticks, k=.006), 500, voxel=.003, uv=('cyl', BC), sharp=35)
+    fig.add('bundletape', 'body', 'haz', S.union(*[S.cyl(BC + V(0, y - .022, .005), BC + V(0, y + .022, .005), .098, .006) for y in (.1, .3)]), 220, voxel=.0028, uv=('cyl', BC))
+    fig.add('bundlefuse', 'body', 'red', S.chain([BC + V(0, .42, .0), BC + V(.03, .5, .03), BC + V(-.02, .55, .06), BC + V(.04, .58, .04)], .008), 80, voxel=.002, glow=.4)
+    sa, sb = V(.21, 2.02, -.42), V(-.16, 1.2, -.46)
     sax = (sb - sa) / np.linalg.norm(sb - sa)
     shaft = S.union(S.rcone(sa + sax * .18, sb, .017), S.rcone(sb - V(.06, 0, 0) * 1, sb + V(.06, .0, 0), .015), k=.006)
     fig.add('spadeshaft', 'body', 'wood', shaft, 200, voxel=.0025, uv=('side',))
@@ -410,7 +417,7 @@ if sap:
     for sx in (-1, 1):
         cap = S.union(cap, S.both(S.box(Fp(sx * .1, -.06, -.02), (.03, .07, .055), .025), S.cut(S.grow(skl, .03), S.grow(skl, -.03))), k=.012)     # the ear flaps
     cap = S.bump(cap, lambda p: .004 * np.sqrt(np.abs(np.sin((p[..., 0] - FC[0]) * 70))) + (S.noise(p, 24, 5.5) - .5) * .005)
-    fig.add('crashcap', 'head', 'lea', cap, 1200, voxel=.0028, uv=('cyl', FC), texel=1.1,
+    fig.add('crashcap', 'head', 'fabR', cap, 1200, voxel=.0028, uv=('cyl', FC), texel=1.1,
             detail=S.fine(S.slit(FC, (1, 0, 0), .004, .004), S.studs([Fp(sx * .118, -.1, .0) for sx in (-1, 1)], .009, .004)))
     gup, gls = [], []
     for sx in (-1, 1):
@@ -580,7 +587,7 @@ else:       # the off hand under the fore-end
         if sap:     # quilted rolls on the shoulders, the same padding as the apron
             c = (ShR if sx > 0 else V(-.24, 1.42, -.01)) + V(sx * .03, .035, -.005)
             roll = S.bump(S.ellipsoid(c, (.1, .075, .115), rot(0, 0, -sx * .45)), lambda p: .008 * np.sqrt(np.abs(np.sin(p[..., 2] * 48))))
-            fig.add('pauldron' + ('R' if sx > 0 else 'L'), 'arms', 'vestB', roll, 600, voxel=.003, uv=('top',))
+            fig.add('pauldron' + ('R' if sx > 0 else 'L'), 'arms', 'fab', roll, 600, voxel=.003, uv=('top',))
             continue
         fig.add('pauldron' + ('R' if sx > 0 else 'L'), 'arms', PM(big), pd, 900 if big else 620, voxel=.0026, uv=('top',), sharp=36, detail=det, marks=marks)
     ShL, ElL = V(-.24, 1.42, -.01), V(-.16, 1.2, .17)

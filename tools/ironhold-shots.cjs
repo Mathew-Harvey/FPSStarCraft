@@ -32,7 +32,7 @@ const fs = require('fs');
         const r = fg.root; r.position.set(ox + f.x, Y(ox + f.x, oz + f.z), oz + f.z); r.rotation.y = f.yaw || 0; if (f.scale) r.scale.setScalar(f.scale);
         if (f.state) L.animate(f.kind, fg, Object.assign({ t: 3, id: 1, speed: 0, dist: 0, kick: 0, pitch: 0, aim: 0, work: false, load: false, anchor: 0, idle: 0 }, f.state));
         if (f.clay) { const cm = window.__ore.mats.oreDead; r.traverse(m => { if (m.isMesh) m.material = cm; }); }
-        if (f.fp) { const F = L.FIRST[f.kind]; for (const k of F.hide) if (fg.groups[k]) fg.groups[k].visible = false; if (F.vm) { const q = fg.groups[F.vm.group]; if (q) { q.position.x += F.vm.at[0]; q.position.y += F.vm.at[1]; q.position.z += F.vm.at[2]; } } window.__fp = { root: r, F }; }
+        if (f.fp) { const F = L.FIRST[f.kind]; for (const k of F.hide) if (fg.groups[k]) fg.groups[k].visible = false; window.__fp = { root: r, F, vm: F.vm ? L.viewModel(f.kind, f.vm || 'gun') : null }; }
         if (f.groups) for (const k in f.groups) { const q = fg.groups[k]; if (q) { const v = f.groups[k]; if (v.r) q.rotation.set(...v.r); if (v.p) q.position.set(...v.p); if (v.hide) q.visible = false; } }
         g.scene.add(r); window.__placed.push(r);
       }
@@ -42,6 +42,7 @@ const fs = require('fs');
       if (s.cam.fp) { const { root, F } = window.__fp; root.updateMatrixWorld(true); cam = new T.PerspectiveCamera(F.fov, w / h, .03, 4000); const e = root.localToWorld(new T.Vector3(...F.eye)), l = root.localToWorld(new T.Vector3(F.eye[0], F.eye[1] - (F.drop ?? .45), F.eye[2] + 3)); cam.position.copy(e); cam.lookAt(l); }
       else if (s.cam.top) { const sp = s.cam.span; cam = new T.OrthographicCamera(-sp / 2 * w / h, sp / 2 * w / h, sp / 2, -sp / 2, .1, 600); cam.position.set(ox + s.cam.top[0], 300, oz + s.cam.top[1]); cam.up.set(0, 0, 1); cam.lookAt(ox + s.cam.top[0], 0, oz + s.cam.top[1]); }
       else { cam = new T.PerspectiveCamera(s.cam.fov || 50, w / h, .05, 4000); const a = s.cam.at, l = s.cam.look; cam.position.set(ox + a[0], Y(ox + a[0], oz + a[2]) + a[1], oz + a[2]); cam.lookAt(ox + l[0], Y(ox + l[0], oz + l[2]) + l[1], oz + l[2]); }
+      if (s.cam.fp && window.__fp.vm) { cam.add(window.__fp.vm); g.scene.add(cam); window.__placed.push(cam); }
       cam.updateProjectionMatrix(); cam.updateMatrixWorld();
       pipe.resize && pipe.resize(w, h);
       window.__draw = () => { for (let i = 0; i < 3; i++) pipe.draw(g.scene, cam, new T.Vector3(ox, 0, oz), s.span || 40, true); };
@@ -49,7 +50,7 @@ const fs = require('fs');
     }, s);
     await p.waitForTimeout(400);
     await p.evaluate(() => window.__draw());   // painted pictures load a moment after a figure is first made
-    await p.screenshot({ path: out + '/' + s.name + '.png' });
+    await p.screenshot({ path: out + '/' + s.name + '.png', timeout: 180000 });
   }
   fs.writeFileSync(out + '/console.txt', logs.join('\n'));
   await b.close();

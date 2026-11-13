@@ -10,8 +10,9 @@
     "start": "node dist/server.mjs",
     "test:rules": "node tools/run-ts.mjs test/matchups.ts",
     "sim": "node tools/run-ts.mjs tools/sim.ts",
-    "test": "node tools/run-ts.mjs test/matchups.ts && node tools/run-ts.mjs test/story.ts 1 && node tools/run-ts.mjs test/playthrough.ts && node test/story.mjs && node test/server.mjs && node test/coop.mjs && node test/versus.mjs && node test/split.mjs && node test/touch.mjs && node test/veyl.mjs && node test/gloam.mjs && node test/sweep.mjs && node test/command.mjs",
-    "test:command": "node test/command.mjs"
+    "test": "node tools/run-ts.mjs test/matchups.ts && node tools/run-ts.mjs test/story.ts 1 && node tools/run-ts.mjs test/playthrough.ts && node test/story.mjs && node test/server.mjs && node test/coop.mjs && node test/versus.mjs && node test/split.mjs && node test/touch.mjs && node test/veyl.mjs && node test/gloam.mjs && node test/sweep.mjs && node test/command.mjs && node test/controls.mjs",
+    "test:command": "node test/command.mjs",
+    "test:controls": "node test/controls.mjs"
   },
   "dependencies": {
     "three": "0.160.0",

@@ -60,7 +60,7 @@ try {
   check(r.seam, 'a right click on ore sends a worker to that seam, and it keeps to it');
   check(r.site, 'a right click on a building site puts the worker on it');
   // a building: E trains from above
-  r = await p.evaluate(() => { const g = __ore.game, C = g.cmd, bh = g.addBuilding('bunkhouse', 0, 16, 16, true); for (const x of [-34, -42]) g.addBuilding('depot', 0, x, 24, true); g.ore = 600; C.focus.set(16, 0, 16); step(2); aim(16, 16, 0); click(0); const sel = C.selB === bh; step(1); const shop = C.shop; key('KeyE'); return { sel, shop, q: bh.queue.length, ore: g.ore, pan: document.getElementById('cpan').textContent }; });
+  r = await p.evaluate(() => { const g = __ore.game, C = g.cmd, bh = g.addBuilding('bunkhouse', 0, 16, 16, true); for (const x of [-34, -42]) g.addBuilding('depot', 0, x, 24, true); g.ore = 600; C.focus.set(16, 0, 16); step(2); aim(16, 16, 0); click(0); const sel = C.selB === bh; step(1); const shop = C.card.map(b => b.label).join(' '); key('KeyE'); return { sel, shop, q: bh.queue.length, ore: g.ore, pan: document.getElementById('cpan').textContent }; });
   check(r.sel && /Linesman/.test(r.shop) && r.q === 1 && r.ore < 600, `picking a building and pressing E trains from above (${r.q} queued)`);
   await shot('command-building');
 

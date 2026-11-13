@@ -2,6 +2,7 @@
 import * as THREE from 'three';
 import type { Game } from './game';
 import { UNIT, BLD, FACTION, SIDE, fac, foeOf, atHome, Kind, Unit, Building, MAP, MAPS, OUTPOST, ROAD, NORTH_PATH, roadPt, isWorker } from './data';
+import { keyName } from './card';
 const capW = (t: string) => t.charAt(0).toUpperCase() + t.slice(1);
 
 const V = new THREE.Vector3();
@@ -26,7 +27,7 @@ export class Hud {
   constructor(private root: HTMLElement = document.getElementById('hud')!) {
     this.anchors = this.$('anchors'); this.mini = (this.$('mini') as HTMLCanvasElement).getContext('2d')!;
     for (let i = 0; i < 48; i++) { const b = document.createElement('div'); b.className = 'hb'; const f = document.createElement('i'); b.appendChild(f); b.hidden = true; this.anchors.appendChild(b); this.bars.push(b); this.barFill.push(f); }
-    for (let i = 0; i < 10; i++) { const l = document.createElement('div'); l.className = 'lab'; l.hidden = true; l.appendChild(document.createElement('div')); this.anchors.appendChild(l); this.labs.push(l); }
+    for (let i = 0; i < 24; i++) { const l = document.createElement('div'); l.className = 'lab'; l.hidden = true; l.appendChild(document.createElement('div')); this.anchors.appendChild(l); this.labs.push(l); }
   }
   /** The smallest screen, in HUD pixels, the HUD is laid out for. Touch screens use a smaller one so the text is big enough to read. */
   fit: [number, number] = [1280, 900];
@@ -101,7 +102,9 @@ export class Hud {
     this.vis('hudMain', !tab && !lost); this.vis('jump', tab); this.vis('lost', lost); this.vis('anchors', !lost);
     // top row
     const side = g.myTeam, F = FACTION[side], cash = g.cash(side); this.set('ore', String(Math.floor(cash)));
-    const used = g.supplyUsed(side), cap = g.supplyCap(side); this.set('sup', `${used}/${cap}`); this.cls('resSup', used >= cap ? 'low' : '');
+    // Supply is out of 200 at most, however many supply buildings stand. Flux is the second resource; it reads 0 until the side has any.
+    const used = g.supplyUsed(side), cap = Math.min(200, g.supplyCap(side)); this.set('sup', `${used}/${cap}`); this.cls('resSup', used >= cap ? 'low' : '');
+    { const f = (g as any).flux, fx = typeof f === 'function' ? f.call(g, side) : 0; this.set('flux', String(Math.floor(fx || 0))); }
     const m = Math.floor(g.time / 60), s = Math.floor(g.time % 60); this.set('clock', `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`);
     const D = g.dir, S = D.side(side), pb = S.playbook, ph = pb.idx;
     // The squad's playbook means nothing until there is a squad: in the first minutes (and all of Job 1) it was a strip of jargon over the tutorial.
@@ -151,13 +154,20 @@ export class Hud {
       const y = UNIT[u.kind].headY + .75;
       if (u.maxShield && u.shield > 0) bar(u.pos, y + .22, u.shield / u.maxShield, 'hb s');
       bar(u.pos, y, u.hp / u.maxHp, u.team !== g.myTeam ? 'hb e' : 'hb');
+      // Energy, for bodies that cast: under the health bar, own side only.
+      { const me2 = u as any; if (me2.maxEnergy > 0 && u.team === g.myTeam) bar(u.pos, y - .2, me2.energy / me2.maxEnergy, 'hb n'); }
     }
     const foeT = foeOf(side), near = g.nearestStone(me.pos), nearHF = g.eco ? g.ownB(FACTION[foeT].hq, false, foeT).filter(b => g.fog.seen(b.pos.x, b.pos.z)).sort((a, b) => a.pos.distanceTo(me.pos) - b.pos.distanceTo(me.pos))[0] : null;
     for (const b of g.buildings as Building[]) {
       if (!b.alive || !b.obj.visible) continue; const d = cv ? 1 : b.pos.distanceTo(me.pos);
       if (!b.built) { bar(b.pos, BLD[b.kind].h + 1.2, b.progress, 'hb big p'); if (d < 60) lab(b.pos, BLD[b.kind].h + 1.6, `<div class="mark" style="color:var(--cyan)">${BLD[b.kind].name} ${Math.floor(b.progress * 100)}%</div>`); }
       else if (b.hp < b.maxHp && (d < 90 || tab)) bar(b.pos, b.h + 1.2, b.hp / b.maxHp, b.team !== g.myTeam ? 'hb big e' : 'hb big');
-      if (cv && C.selB === b) lab(b.pos, b.h + 2.4, `<div class="mark out" style="color:var(--cyan)">${BLD[b.kind].name}</div>`);
+      if (cv && b.team === side && b.built) {
+        // From above, each of the player's buildings says what it is making, and each base how its seams are worked.
+        const q = b.queue, hq = b.kind === FACTION[side].hq, sat = hq ? this.saturation(g, b) : null;
+        const parts = [C.selB === b ? BLD[b.kind].name : '', q.length && b.kind !== 'mothercap' ? `${UNIT[q[0].kind].name} ${Math.floor((1 - q[0].t / UNIT[q[0].kind].time) * 100)}%${q.length > 1 ? ' · +' + (q.length - 1) : ''}` : '', sat ? `<span class="sat ${sat.cls}">Workers ${sat.n}/${sat.want} · ${sat.word}</span>` : ''].filter(Boolean);
+        if (parts.length && (C.selB === b || d < 200)) lab(b.pos, b.h + 2.4, `<div class="mark out" style="color:var(--cyan)">${parts.join('<br>')}</div>`);
+      }
       if (b.kind === 'wardpylon' && d < 110 && !tab && !building && !cv) lab(b.pos, b.h + 1.6, `<div class="mark out" style="color:var(--cyan)">Ward Pylon · shielding the base</div>`);
       if (!g.eco && b.kind === FACTION[SIDE.out].hq && b.team === SIDE.out && !side && d > 45 && !tab && !building && !cv && g.fog.seen(b.pos.x, b.pos.z)) lab(b.pos, b.h + 2, `<div class="mark out">${b === near ? (SIDE.out === 2 ? 'Mother Caps · ' : 'Choir Stones · ') + Math.round(d) + 'm' : ''}</div>`);
       if (b === nearHF && d > 45 && !tab && !building && !cv) lab(b.pos, b.h + 3, `<div class="mark out">${BLD[b.kind].name} · ${Math.round(d)}m</div>`);
@@ -194,14 +204,43 @@ export class Hud {
     if (!C.mapPt) C.mapPt = (x, y) => { const m = this.bm, lx = (x - m.l) / m.w * 260, lz = (y - m.t) / m.h * 180; return lx < 0 || lz < 0 || lx > 260 || lz > 180 ? null : [m.x0 + lx / m.k, m.z0 + lz / m.k]; };
     // what is picked
     let html = '';
-    if (C.selB) { const b = C.selB; html = `<h4>${BLD[b.kind].name}</h4><div class="hpl"><i style="width:${(b.hp / b.maxHp * 100).toFixed(0)}%"></i></div>` + (!b.built ? `<p>Going up · ${Math.floor(b.progress * 100)}%</p>` : C.shop ? `<div class="shop">${C.shop.replace(/ &nbsp; /g, '<br>')}</div>` : '<p>Nothing to order here</p>'); }
+    if (C.selB) {
+      const b = C.selB, q = b.queue, r = C.rally.get(b);
+      html = `<h4>${BLD[b.kind].name}</h4><div class="hpl"><i style="width:${(b.hp / b.maxHp * 100).toFixed(0)}%"></i></div>` + (!b.built ? `<p>Going up · ${Math.floor(b.progress * 100)}%</p>` : '');
+      // The queue: five slots, the first one filling as it trains. A click on a slot takes it off and pays the ore back.
+      if (b.built && g.sells(b) && b.kind !== 'mothercap') html += `<div class="queue">${[0, 1, 2, 3, 4].map(i => { const e = q[i]; return e ? `<div class="qs" data-cb="q:${i}" title="Click to cancel"><img src="${this.portraits[e.kind] || ''}" alt=""><span>${UNIT[e.kind].name}</span>${i === 0 ? `<em><i style="width:${Math.floor((1 - e.t / UNIT[e.kind].time) * 100)}%"></i></em>` : ''}</div>` : '<div class="qs none"></div>'; }).join('')}</div>`;
+      if (b.kind === 'mothercap') html += `<p>${b.buds || 0} Bud${b.buds === 1 ? '' : 's'} ripe${q.length ? ` · ${q.length} hatching` : ''}</p>`;
+      if (b.built && g.sells(b)) html += `<p>${r ? (r.ore !== undefined ? 'Rally: new workers go to a seam' : r.id ? 'Rally: new bodies go to a body' : 'Rally: new bodies gather at a spot') : 'No rally point: new bodies stay by the door'}<br><b>Right click</b> set the rally point</p>`;
+      else if (b.built) html += '<p>Nothing to order here</p>';
+    }
     else if (C.sel.size) {
       const by = new Map<Kind, number>(); let hp = 0, max = 0; for (const u of C.sel) { by.set(u.kind, (by.get(u.kind) || 0) + 1); hp += u.hp; max += u.maxHp; }
-      html = `<h4>${C.sel.size === 1 ? UNIT[[...by.keys()][0]].name : C.sel.size + ' picked'}</h4><div class="hpl"><i style="width:${(hp / Math.max(1, max) * 100).toFixed(0)}%"></i></div>` + (C.sel.size > 1 ? `<div class="kinds">${[...by].map(([k, n]) => `<span>${UNIT[k].name} ×${n}</span>`).join('')}</div>` : '') + `<p><b>Right click</b> go, attack, mine or build<br><b>F</b> jump in · <b>R</b> back to the squad</p>`;
-    } else html = `<h4>Command view</h4><p>Click one of yours, or drag a box round several.<br>Click a building to order from it.</p>`;
+      const queued = [...C.sel].reduce((n, u) => n + (C.queue.get(u)?.length || 0), 0);
+      html = `<h4>${C.sel.size === 1 ? UNIT[[...by.keys()][0]].name : C.sel.size + ' picked'}</h4><div class="hpl"><i style="width:${(hp / Math.max(1, max) * 100).toFixed(0)}%"></i></div>` + (C.sel.size > 1 ? `<div class="kinds">${[...by].map(([k, n]) => `<span>${UNIT[k].name} ×${n}</span>`).join('')}</div>` : '') + `<p><b>Right click</b> go, attack, mine or build${queued ? ` · ${queued} more order${queued > 1 ? 's' : ''} lined up` : ''}<br><b>Shift</b> + right click adds an order after the last one<br><b>Ctrl</b> + a number keeps them as a group</p>`;
+    } else {
+      const bases = g.ownB(FACTION[g.myTeam].hq, true, g.myTeam).map(b => this.saturation(g, b));
+      html = `<h4>Command view</h4><p>Click one of yours, or drag a box round several.<br>Click a building to order from it.<br><b>F1</b> idle worker · <b>F2</b> every fighter</p>` + (bases.length ? `<div class="bases">${bases.map((s, i) => `<span class="sat ${s.cls}">Base ${i + 1}: ${s.n}/${s.want} workers · ${s.word}</span>`).join('')}</div>` : '');
+    }
     this.set('cpan', html, true);
+    // The command card: one button per order, with its key, greyed with the reason when it cannot be given now.
+    const cards = C.card; this.vis('ccard', !map && cards.length > 0);
+    if (cards.length) this.set('ccard', cards.map(b => `<div class="cb${b.off ? ' off' : ''}${b.on ? ' on' : ''}" data-cb="${b.id}"><span class="k">${keyName(b.key)}</span>${b.icon && this.portraits[b.icon] ? `<img src="${this.portraits[b.icon]}" alt="">` : ''}<b>${b.label}</b><small>${b.off || b.sub}</small></div>`).join(''), true);
+    const aim = C.aim; this.set('caim', aim ? (aim.k === 'stake' ? `<b>Click</b> stake out the ${BLD[aim.b].name} · <b>R</b> turn it · <b>Shift</b> keep staking · <b>Right click</b> stop` : `<b>Click</b> ${aim.k === 'move' ? 'where to go' : aim.k === 'patrol' ? 'the far end of the patrol' : aim.k === 'gather' ? 'a seam to work' : 'the rally point: ground, a body or a seam'} · <b>Shift</b> line up more · <b>Right click</b> stop`) : '', true); this.vis('caim', !!aim);
     this.set('cnote', map ? '<b>Click</b> look there · <b>Right click</b> send the picked crew · <b>M</b> close' : `Your crew fight without your bonus while you are up here`, true);
     this.set('ckeysBar', map ? '' : '<span><span class="k">Wheel</span> Zoom, all the way in to jump</span><span><span class="k">MMB</span> Hold to slide</span><span><span class="k">M</span> Map</span><span><span class="k">N</span> Back to your body</span>', true);
+  }
+  /** How a base's seams are worked: two workers a seam is full, three is all a seam can use. */
+  saturation(g: Game, hq: Building) {
+    const seams = g.ores.filter(o => o.amount > 0 && Math.hypot(o.pos.x - hq.pos.x, o.pos.z - hq.pos.z) < 26), want = seams.length * 2, most = seams.length * 3;
+    const n = g.units.filter(u => u.alive && u.team === hq.team && isWorker(u.kind) && ((u.node && seams.includes(u.node)) || (u.pref && seams.includes(u.pref)) || (u.state === 'toHQ' && Math.hypot(u.pos.x - hq.pos.x, u.pos.z - hq.pos.z) < 30))).length;
+    const cls = !seams.length ? 'dry' : n > most ? 'over' : n >= want ? 'full' : 'short', word = !seams.length ? 'no ore left' : n > most ? `${n - most} too many` : n >= want ? 'full' : `${want - n} short`;
+    return { n, want, most, cls, word };
+  }
+  /** The card button or queue slot under a spot in HUD pixels, by its id, or null. */
+  cardAt(x: number, y: number): string | null {
+    if (this.root.hidden) return null; const R = this.root.getBoundingClientRect(), cx = R.left + x * this.scale, cy = R.top + y * this.scale;
+    for (const e of this.root.querySelectorAll<HTMLElement>('#cmdUI [data-cb]')) { const r = e.getBoundingClientRect(); if (r.width && cx >= r.left && cx <= r.right && cy >= r.top && cy <= r.bottom) return e.dataset.cb || null; }
+    return null;
   }
   private drawMap(g: Game, c: CanvasRenderingContext2D, big: boolean) {
     const q = big ? 4 : 1; c.setTransform(q, 0, 0, q, 0, 0);

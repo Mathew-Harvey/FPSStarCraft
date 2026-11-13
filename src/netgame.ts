@@ -5,7 +5,7 @@ import * as THREE from 'three';
 import { Game, beamMat } from './game';
 import { UNIT, BLD, BUILDABLE, UPGRADES, TRAINS, UNIT_NEEDS, FACTION, VOICE_SIDE, SIDE, fac, atHome, Kind, BKind, Unit, Building, UpKey, isSoldier, isWorker, type StatusKey } from './data';
 import { useAbility, abilityOf, whyNot, bodyOf, showCast, type Target } from './core/ability';
-import { packLook, applyLook } from './net-look';
+import { packLook, applyLook, packUnitLook, applyUnitLook, DEATHS } from './net-look';
 import { abilityWords } from './card';
 import { seenBy } from './core/sight';
 import { multi, MATCH } from './core/sides';
@@ -43,6 +43,7 @@ export class Wire {
   /** Call once per snapshot round, before `snap`: takes the events and works out what every side that has a seat can see. */
   begin(teams: Iterable<number>) {
     const g = this.g; this.ev = g.evq || []; g.evq = []; this.byId.clear(); for (const u of g.units) this.byId.set(u.id, u);
+    for (const e of this.ev) if (e[0] === 'ku') { const u = DEATHS.get(e); if (u) { e[3] = packUnitLook(g, u); DEATHS.delete(e); } }   // how it died, for its look
     if (WIRE.fog) for (const t of new Set(teams)) if (t >= 0) this.view(t).update(g);
   }
   snap(team: number | null) {
@@ -75,7 +76,7 @@ export class Wire {
       st: sts, mo: g.mission ? D.objectives() : 0, mc: g.mission && g.ms.clock !== undefined ? r1(g.ms.clock) : -1, sc: Object.keys(g.score).map(k => [+k, g.score[+k][0], Math.floor(g.score[+k][1]), g.score[+k][2]]),
     };
     // Extra fields only some bodies have: energy, effects, height and the carrier it rides in. Only for bodies this side is sent.
-    { const sent = new Set<number>(u.map(r => r[0] as number)); out.ux = g.units.filter(x => x.alive && sent.has(x.id) && (x.maxEnergy || x.status?.length || x.alt || x.inside || x.cast)).map(x => [x.id, Math.floor(x.energy || 0), statusBits(x), Math.round((x.alt || 0) * 10), x.inside ? x.inside.id : 0, castRow(x)]); }
+    { const sent = new Set<number>(u.map(r => r[0] as number)); out.ux = g.units.filter(x => x.alive && sent.has(x.id) && (x.maxEnergy || x.status?.length || x.alt || x.inside || x.cast || packUnitLook(g, x))).map(x => [x.id, Math.floor(x.energy || 0), statusBits(x), Math.round((x.alt || 0) * 10), x.inside ? x.inside.id : 0, castRow(x), packUnitLook(g, x)]); }
     out.fl = [ok(H) ? Math.floor(g.flux(H)) : null, ok(Ot) ? Math.floor(g.flux(Ot)) : null];   // Flux: each side its own
     const ups = (t: number) => UPS.map((k, i) => g.upOf(t)[k] ? i : -1).filter(i => i >= 0);
     // A side's own purse, plan and research. The other side's research only while some of it is in sight, because it shows on the bodies (shields, the Bloom).
@@ -221,7 +222,7 @@ function event(g: Game, e: any[]) {
   else if (k === 'tr') { if (e[9] !== net.id) g.tracer(V3(e[1], e[2], e[3]), V3(e[4], e[5], e[6]), e[7] ? beamMat : tracerMat, e[8]); }
   else if (k === 'ex') { if (e[6] !== net.id) g.explode(V3(e[1], e[2], e[3]), -2, 0, e[4], null, e[5] === 2 ? 2 : !!e[5]); }
   else if (k === 'pj') { if (e[10] !== net.id) g.shoot(V3(e[1], e[2], e[3]), V3(e[4], e[5], e[6]), e[7], 0, !!e[8], null, e[9]); }
-  else if (k === 'ku') { const u = g.uById.get(e[1]); if (u && u.alive) g.killUnit(u, g.uById.get(e[2]) || g.bById.get(e[2]) || null); }
+  else if (k === 'ku') { const u = g.uById.get(e[1]); if (u && u.alive) { applyUnitLook(g, u, e[3]); g.killUnit(u, g.uById.get(e[2]) || g.bById.get(e[2]) || null); } }
   else if (k === 'kb') { const b = g.bById.get(e[1]); if (b && b.alive) { g.fallA = e[2]; g.killBuilding(b); } }
   else if (k === 'pr') { const p = g.props[e[1]]; if (p && p.alive && p.hp > e[2]) g.damageProp(p, p.hp - e[2], null); }
   else if (k === 'wn') g.warn(e[1], e[2], e[3], e[4]);
@@ -260,6 +261,7 @@ export function applySnap(g: Game, s: any) {
   for (const u of g.units) { if (!u.alive) continue; const r = ext.get(u.id);
     if (u.maxEnergy) u.energy = r ? r[1] : u.energy; u.status = r && r[2] ? SBITS.filter((_, i) => r[2] & (1 << i)).map(k => ({ k, t: 1 })) : undefined;
     // a wind-up: the same record kept while it runs (the looks notice a new one by identity), counted down here between snapshots
+    applyUnitLook(g, u, r && r[6]);
     const c0 = r && r[5]; if (!c0) u.cast = null; else if (u.cast && u.cast.key === c0[0] && u.cast.x === c0[2] && u.cast.z === c0[3]) u.cast.t = c0[1]; else u.cast = { key: c0[0], t: c0[1], x: c0[2], z: c0[3], id: c0[4] };
     if (r) u.alt = r[3] / 10; else if (!u.air) u.alt = 0; const c = r && r[4] ? (g.uById.get(r[4]) || g.bById.get(r[4]) || null) : null; u.inside = c; if (c) { u.obj.visible = false; u.obj.userData.netHid = true; } else if (u.obj.userData.netHid) { u.obj.visible = true; u.obj.userData.netHid = false; } }
   const seenB = new Set<number>();

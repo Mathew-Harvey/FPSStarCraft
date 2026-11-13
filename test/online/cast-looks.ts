@@ -9,6 +9,7 @@ import { DIFFS, SIDE, UNIT, BLD, FACTION, setMap, setSides, Kind, BKind, Unit, B
 import { abilitiesOf, useAbility, whyNot, type AbilityDef } from '../../src/core/ability';
 import { Wire, applySnap, netTick } from '../../src/netgame';
 import { mem } from '../../src/factions/ironhold/kit';
+import { defineUnitLook } from '../../src/net-look';
 
 initHeadless();
 const fail: string[] = []; const check = (ok: boolean, what: string) => { console.log((ok ? 'PASS ' : 'FAIL ') + what); if (!ok) fail.push(what); };
@@ -111,6 +112,18 @@ check(hidOk === tried, `and never on the other side's, which cannot see the cast
   check(cb().air === true && (cb().alt || 0) > .5, `a building lifted off to fly rises on the screens too (${(cb().alt || 0).toFixed(1)} m)`);
   b.air = false; run(); check(cb().air === false, 'and comes down');
   b.alive = false; foe.alive = false; run();
+}
+
+// ---------------------------------------------------------------- body looks, alive and at death
+{
+  // a test look: a number the rules keep on a body, and one they set as it dies (a mine that blew, or fizzled)
+  defineUnitLook({ key: 'ztest', get: (_g, u) => mem(u).ztest || 0, set: (_g, u, v) => { mem(u).ztest = v; } });
+  const u = g.spawn(FACTION[H].worker, H, quiet.x + 5, quiet.z - 5); u.pilot = 0; mem(u).ztest = 7; run();
+  const cu = () => cH.units.find(x => x.id === u.id)!;
+  check(mem(cu()).ztest === 7 && mem(cW.units.find(x => x.id === u.id)!).ztest === 7, 'a body\'s look number reaches the screens while it lives');
+  mem(u).ztest = 0; run(); check(!mem(cu()).ztest, 'and clears when the rules clear it');
+  const c0 = cu(); g.killUnit(u, null); mem(u).ztest = 3; run();   // set after the death event, as a dying hook would
+  check(!c0.alive && mem(c0).ztest === 3, 'its death carries the look as the rules left it, read before the screen plays the death');
 }
 
 console.log(fail.length ? `\n${fail.length} FAILED` : '\nall cast and look checks passed'); process.exit(fail.length ? 1 : 0);

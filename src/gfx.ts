@@ -117,7 +117,7 @@ void main(){ vUv=uv*uRep;
 #endif
   float cq=floor(aEm/32.+.001), er=aEm-32.*cq; vCav=cq<.5?0.:(cq-16.)/15.; float sq=floor(er*.5+.001); vEm=er-2.*sq; vSh=sq*.1; vO=position*length(modelMatrix[0].xyz); vOn=normal; vec4 w=modelMatrix*vec4(position,1.); vW=w.xyz; vec4 mv=viewMatrix*w; vP=mv.xyz; vN=normalize(normalMatrix*normal); vWn=normalize(mat3(modelMatrix)*normal); vL=(viewMatrix*vec4(uL,0.)).xyz; gl_Position=projectionMatrix*mv; }`;
 const TOON_FS = `precision highp float;
-uniform vec3 uColor,uFog; uniform sampler2D uMap,uShadow; uniform mat4 uShadowMat; uniform float uEmis,uOpacity,uHatch,uFogK,uFlat,uPx,uShadowTex,uGrit,uShine,uKey,uFogD,uMist;
+uniform vec3 uColor,uFog; uniform sampler2D uMap,uShadow; uniform mat4 uShadowMat; uniform float uEmis,uOpacity,uHatch,uFogK,uFlat,uPx,uShadowTex,uGrit,uShine,uKey,uFogD,uMist,uCloudK,uCloudTh,uRimK; uniform vec2 uCloudO; uniform vec3 uRimC;
 uniform vec3 uSunT,uAmbT,uFogS; uniform vec4 uPLp[8]; uniform vec3 uPLc[8]; uniform int uPLn;
 varying vec3 vN,vL,vP,vW,vWn,vO,vOn; varying vec2 vUv; varying float vEm,vSh,vCav;
 #ifdef WEAR
@@ -292,6 +292,8 @@ void main(){
 #else
   float ky=uKey;
   float sh=shadowAt(vW+wn*.07);
+  // Clouds go over: their shadows slide across the land, soft-edged, and whatever stands under one is in shade until it has passed.
+  if(uCloudK>0.&&!isOrthographic){ float cs=vnoise(vW.xz*.016+uCloudO)*.62+vnoise(vW.xz*.041+uCloudO*1.6+5.)*.38; sh*=1.-uCloudK*smoothstep(uCloudTh,uCloudTh+.1,cs); }
 #endif
   // ky is how strong the key light is this hour: with none, nothing is lit and nothing is in shadow, and the inker's shading eases off
   float lit=smoothstep(-.03,.03,t)*smoothstep(.3,.7,sh)*ky, hi=smoothstep(.74,.78,t)*sh*ky, dk=mix(.35,1.,ky), deep=(1.-smoothstep(-.6,-.54,t))*dk;
@@ -330,11 +332,15 @@ void main(){
   float rim=pow(1.-max(dot(n,normalize(-vP)),0.),3.)*(1.-lit)*.4; col+=rim*vec3(.45,.6,.95);
   // The hour: whatever the key light reaches takes its colour, and the shade takes the colour of the sky that fills it.
   { float wl=lit/(lit+.3*(1.-lit)); col*=mix(uAmbT,uSunT,wl); }
+#if !defined(GROUND)&&!defined(CLIFF)&&!defined(BLOOM)
+  // A low sun, or the planet at night, catches the edge of whatever turns toward it: a hard bright line down one side, as a comic backlights a figure.
+  { vec3 Lr=normalize(vL); col+=smoothstep(.58,.66,fres)*smoothstep(-.45,.2,dot(n,Lr))*smoothstep(.1,.5,sh)*(1.+1.8*max(0.,dot(normalize(vP),Lr)))*uRimK*uRimC*(base*.5+.32)*(1.-uFlat); }
+#endif
   // Lamps, fires and crystals each throw a pool of light with a hard-edged heart, the way a comic paints lamplight.
   { vec3 pl=vec3(0.); for(int i=0;i<8;i++){ if(i>=uPLn) break; vec3 dl=uPLp[i].xyz-vW; float r=uPLp[i].w, dd=dot(dl,dl);
       if(dd<r*r){ float q=1.-sqrt(dd)/r+nz*.05, nl=dot(wn,dl)*inversesqrt(dd+1e-4); pl+=uPLc[i]*(smoothstep(0.,.55,q)*.4+smoothstep(.42,.47,q)*.28+smoothstep(.72,.77,q)*.32)*(smoothstep(-.3,.2,nl)*.82+.18); } }
     // inside a pool the lamp is the light you see by, so the colour of the hour steps back and the lamp's own comes forward
-    col=col*(1.-.55*clamp(max(pl.r,max(pl.g,pl.b)),0.,1.))+(base*1.12+.03)*pl; }
+    pl=min(pl,vec3(1.05,.92,.8)); col=col*(1.-.55*clamp(max(pl.r,max(pl.g,pl.b)),0.,1.))+(base*1.12+.03)*pl; }
 #ifdef BLOOM
   float em=min(1.,uEmis+vEm+bl.a*.8);
 #else
@@ -359,7 +365,7 @@ void main(){
 const WHITE = new THREE.DataTexture(new Uint8Array([255, 255, 255, 255]), 1, 1, THREE.RGBAFormat); WHITE.needsUpdate = true;
 // Uniforms shared by every toon material so the shadow map and pixel scale update in one place.
 export const SHARED = { uShadow: { value: WHITE as THREE.Texture }, uShadowMat: { value: new THREE.Matrix4() }, uShadowTex: { value: 1 / 2048 }, uPx: { value: 1 }, uL: { value: LIGHT }, uFog: { value: FOG }, uGrit: { value: 1 },
-  uFogS: { value: FOGS }, uSunT: { value: V3(1, 1, 1) }, uAmbT: { value: V3(1, 1, 1) }, uKey: { value: 1 }, uFogD: { value: 1 }, uMist: { value: 0 }, uPLp: { value: LAMP_P }, uPLc: { value: LAMP_C }, uPLn: LAMP_N };
+  uCloudK: { value: 0 }, uCloudTh: { value: .55 }, uCloudO: { value: new THREE.Vector2() }, uRimK: { value: 0 }, uRimC: { value: V3(1, 1, 1) }, uFogS: { value: FOGS }, uSunT: { value: V3(1, 1, 1) }, uAmbT: { value: V3(1, 1, 1) }, uKey: { value: 1 }, uFogD: { value: 1 }, uMist: { value: 0 }, uPLp: { value: LAMP_P }, uPLc: { value: LAMP_C }, uPLn: LAMP_N };
 if (LAMPS !== 8) throw new Error('the toon shader is written for eight lamps');
 export interface ToonOpts { color?: string; emis?: number; hatch?: number; fog?: number; flat?: number; rx?: number; ry?: number; side?: THREE.Side; ground?: boolean; cliff?: boolean; bloom?: boolean; /** 0 is chalk, 1 is polished metal. */ shine?: number }
 export function T(map?: THREE.Texture | null, o: ToonOpts = {}) {
@@ -387,7 +393,7 @@ function makeMaterials() {
     rock: T(TX.rock), mesa: T(null, { cliff: true }), ground: T(null, { hatch: .55, flat: 1, ground: true }), ore: T(TX.ore, { emis: .35 }), oreDead: T(TX.rock, { color: '#b9b0a8' }),
     indigo: T(TX.indigo), indigoL: T(TX.indigo, { color: '#c9c2ff' }), indigoD: T(TX.indigoD), smoke: T(TX.smoke, { hatch: .5 }), soot: T(TX.smoke, { color: '#6d5f68' }), dust: T(TX.smoke, { hatch: .3, color: '#f0b98a' }),
     visor: T(null, { color: '#ffe27a', emis: 1 }), cyan: T(null, { color: '#8ff2ff', emis: 1 }), teal: T(null, { color: '#35e0c8', emis: .9 }), mag: T(null, { color: '#ff4f9a', emis: .9 }), red: T(null, { color: '#ff4b3a', emis: 1 }),
-    planet: T(TX.planet, { fog: 0, hatch: .4 }), ring: T(null, { color: '#ffe9c4', emis: .8, fog: 0, side: THREE.DoubleSide }),
+    planet: T(TX.planet, { fog: 0, hatch: .4 }), ring: T(null, { color: '#f4d9ae', emis: .3, fog: 0, side: THREE.DoubleSide }),
     orange: T(TX.yellowP, { color: '#ff9a5c' }), helmetB: T(TX.helmet, { color: '#ffb08a' }), gold: T(TX.yellowP, { color: '#ffe2a0', emis: .35 }), crys: T(TX.ore, { color: '#8ff7ff', emis: .5 }),
     scorch: T(null, { color: '#2a1a1c', hatch: 0, flat: 1 }), bolt: T(null, { color: '#9dfcff', emis: 1 }), fire: T(null, { color: '#ffc04a', emis: .62, hatch: 0 }), fireD: T(null, { color: '#ff7a2a', emis: .7, hatch: 0 }), spark: T(null, { color: '#fff1a0', emis: 1 }),
     sign: T(TX.sign), violet: T(null, { color: '#b58cff', emis: .9 }), flash: T(null, { color: '#fff6c0', emis: 1, side: THREE.DoubleSide }),
@@ -447,8 +453,8 @@ function makeMotes() {
   if (!moteGeo) { let sd = 5; const r = () => (sd = (sd * 16807) % 2147483647) / 2147483647, p = new Float32Array(MOTE_N * 3), a = new Float32Array(MOTE_N); for (let i = 0; i < MOTE_N; i++) { p[i * 3] = r(); p[i * 3 + 1] = r(); p[i * 3 + 2] = r(); a[i] = r(); }
     moteGeo = new THREE.BufferGeometry(); moteGeo.setAttribute('position', new THREE.BufferAttribute(p, 3)); moteGeo.setAttribute('aR', new THREE.BufferAttribute(a, 1)); }
   if (!moteMat) moteMat = new THREE.ShaderMaterial({ uniforms: { ...MOTEU, uShadow: SHARED.uShadow, uShadowMat: SHARED.uShadowMat }, transparent: true, depthWrite: false,
-    // the picture's fourth channel says what glows, so the specks are blended into the colour only
-    blending: THREE.CustomBlending, blendSrc: THREE.SrcAlphaFactor, blendDst: THREE.OneMinusSrcAlphaFactor, blendSrcAlpha: THREE.ZeroFactor, blendDstAlpha: THREE.OneFactor,
+    // the picture's fourth channel says what glows: a speck takes a little off it, so it glows a little, as dust in a sunbeam and a firefly both do
+    blending: THREE.CustomBlending, blendSrc: THREE.SrcAlphaFactor, blendDst: THREE.OneMinusSrcAlphaFactor, blendSrcAlpha: THREE.ZeroFactor, blendDstAlpha: THREE.OneMinusSrcAlphaFactor,
     vertexShader: `uniform vec3 uCam,uDrift; uniform float uPxH; uniform mat4 uShadowMat; uniform sampler2D uShadow; attribute float aR; varying float vA,vLit; const vec3 B=vec3(26.,10.,26.);
     void main(){ vec3 q=position*B+uDrift*(.6+.8*aR); vec3 w=vec3(mod(q.x-uCam.x,B.x)-B.x*.5,mod(q.y,B.y),mod(q.z-uCam.z,B.z)-B.z*.5), wp=vec3(uCam.x+w.x,w.y+.15,uCam.z+w.z);
       vec4 mv=viewMatrix*vec4(wp,1.); gl_Position=projectionMatrix*mv; float dist=-mv.z; gl_PointSize=clamp(.06*(.5+aR)*uPxH/max(dist,.3),2.,uPxH*.017);
@@ -457,6 +463,17 @@ function makeMotes() {
     fragmentShader: `precision highp float; uniform vec3 uCol; uniform float uAmt,uKey; varying float vA,vLit;
     void main(){ float a=(1.-smoothstep(.2,.5,length(gl_PointCoord-.5)))*vA*uAmt*mix(.28,1.,mix(1.,vLit,uKey)); if(a<.004) discard; gl_FragColor=vec4(uCol,a); }` });
   const pts = new THREE.Points(moteGeo, moteMat); pts.frustumCulled = false; pts.renderOrder = 5; setLayer(pts, L_FX); return pts;
+}
+/** The cone of lit air under a floodlight. It is brightest near the lamp and along the middle, and fades out at its edges and toward the ground. */
+export const CONEU = { uK: { value: 0 }, uCol: { value: V3(1, .76, .42) } };
+let coneMat: THREE.ShaderMaterial | null = null, coneGeo: THREE.BufferGeometry | null = null;
+export function makeCone() {
+  if (!coneGeo) { coneGeo = new THREE.ConeGeometry(5.2, 6.4, 24, 1, true); coneGeo.translate(0, -3.2, 0); }
+  if (!coneMat) coneMat = new THREE.ShaderMaterial({ uniforms: CONEU, transparent: true, depthWrite: false, side: THREE.DoubleSide, blending: THREE.AdditiveBlending,
+    vertexShader: `varying vec3 vN,vP; varying float vY; void main(){ vY=uv.y; vN=normalMatrix*normal; vec4 mv=modelViewMatrix*vec4(position,1.); vP=mv.xyz; gl_Position=projectionMatrix*mv; }`,
+    fragmentShader: `precision highp float; uniform float uK; uniform vec3 uCol; varying vec3 vN,vP; varying float vY;
+    void main(){ float f=abs(dot(normalize(vN),normalize(-vP))); float a=uK*pow(f,1.4)*(.16+.84*vY*vY*(.4+.6*vY))*smoothstep(0.,.2,vY); if(a<.004) discard; gl_FragColor=vec4(uCol,a); }` });
+  const m = new THREE.Mesh(coneGeo, coneMat); m.frustumCulled = true; m.renderOrder = 4; setLayer(m, L_FX); return m;
 }
 /** What the sky reads each frame. The far air is shared with everything else, so the land fades into the sky's own horizon. */
 const SKYU = { uSunD: { value: SUNDIR }, uKeyD: { value: KEYDIR }, uTop: { value: V3() }, uMid: { value: V3() }, uCloud: { value: V3(1, 1, 1) }, uDisc: { value: V3(1, 1, 1) }, uStars: { value: 0 }, uCover: { value: .5 }, uTime: { value: 0 } };
@@ -498,7 +515,7 @@ export function makeSky() {
 }
 
 // ---------------------------------------------------------------- pipeline
-const POST_FS = `precision highp float; varying vec2 vUv; uniform sampler2D tC,tD,tN; uniform vec2 uRes; uniform sampler2D tB; uniform vec2 uSun; uniform float uNear,uFar,uOrtho,uPx,uSat,uStatic,uTime,uFlash,uBold,uProj,uAO,uGrit,uGlow,uShaft; uniform sampler2D tB2,tS; uniform vec3 uTint,uLift,uShaftC; ${NOISE}
+const POST_FS = `precision highp float; varying vec2 vUv; uniform sampler2D tC,tD,tN; uniform vec2 uRes; uniform sampler2D tB; uniform vec2 uSun; uniform float uNear,uFar,uOrtho,uPx,uSat,uStatic,uTime,uFlash,uBold,uProj,uAO,uGrit,uGlow,uShaft; uniform sampler2D tB2,tB3,tS; uniform vec3 uTint,uLift,uShaftC; uniform float uVig,uPunch,uFlare,uAsp; uniform vec2 uSunUV; ${NOISE}
 float lin(vec2 uv){ float d=texture2D(tD,uv).x; if(uOrtho>.5) return uNear+d*(uFar-uNear); float z=d*2.-1.; return 2.*uNear*uFar/(uFar+uNear-z*(uFar-uNear)); }
 vec3 nrm(vec2 uv){ return texture2D(tN,uv).xyz*2.-1.; }
 float edgeAt(vec2 u, vec2 sp){
@@ -552,15 +569,26 @@ void main(){
     col=mix(col,min(col*1.5+vec3(.1,.09,.06),vec3(1.)),wear*.5*uGrit); } }
   col=mix(col,vec3(.05,.045,.075),min(1.,edge*.95));
   // Lights spill: lamps, visors, fire and crystals glow into the air round them, tightly and then in a wide soft halo.
-  if(uGlow>0.) col+=(texture2D(tB,vUv).rgb+texture2D(tB2,vUv).rgb*.6)*uGlow;
+  if(uGlow>0.){ vec3 gl=(texture2D(tB,vUv).rgb*1.15+texture2D(tB2,vUv).rgb*1.25+texture2D(tB3,vUv).rgb*1.25)*uGlow;
+    // the glow goes into the air round a bright thing far more than on top of it, so the thing itself keeps its colour and does not burn out to white
+    col+=gl*(1.-col*.5)*(1.-.8*smoothstep(.3,.85,dot(col,vec3(.3,.59,.11)))); }
   // Shafts: where the sun comes past the edge of a thing, the dust in the air shows the light as rays.
-  if(uShaft>0.){ float sf=texture2D(tS,vUv).r; col=1.-(1.-col)*(1.-uShaftC*min(sf*uShaft*.52,.75)); }
+  if(uShaft>0.){ float sf=texture2D(tS,vUv).r; col=1.-(1.-col)*(1.-uShaftC*min(sf*uShaft*.7,.86)); }
+  // Looking into the sun: a glare round it, a long streak across the lens, and two faint rings thrown the other side of the middle.
+  if(uFlare>0.){ vec2 fa=vec2(uAsp,1.), fd=(vUv-uSunUV)*fa; float fr=length(fd);
+    float fl=exp(-fr*fr*16.)*.34+exp(-abs(fd.y)*70.)*exp(-abs(fd.x)*1.9)*.55+exp(-abs(fd.y)*300.)*exp(-abs(fd.x)*.9)*.35;
+    vec2 gc=vec2(.5)+(vec2(.5)-uSunUV)*.42, gd=vec2(.5)+(vec2(.5)-uSunUV)*1.05; float g1=length((vUv-gc)*fa), g2=length((vUv-gd)*fa);
+    fl+=smoothstep(.062,.055,g1)*(.05+.07*smoothstep(.03,.058,g1))+smoothstep(.13,.12,g2)*(.025+.05*smoothstep(.08,.125,g2));
+    float fv=(texture2D(tS,uSunUV).r+texture2D(tS,uSunUV+vec2(.016,0.)).r+texture2D(tS,uSunUV-vec2(.016,0.)).r+texture2D(tS,uSunUV+vec2(0.,.028)).r+texture2D(tS,uSunUV-vec2(0.,.028)).r)*.2;
+    col=1.-(1.-col)*(1.-uShaftC*min(fl*uFlare*fv,.9)); }
   col=col*uTint+uLift;
+  // the corners fall off a little, which pulls the eye in and deepens the mood of the hour
+  if(uOrtho<.5){ vec2 vq=vUv-.5; col*=1.-uVig*smoothstep(.25,.95,dot(vq,vq)*2.2); }
   // The sky steps back: paler and less teal under the grade, so it is a backdrop and not the loudest thing in the frame.
   if(uOrtho<.5&&uGrit>0.&&lin(vUv)>900.){ float sl=dot(col,vec3(.3,.59,.11)); col=mix(col,mix(vec3(sl),col,.6)*vec3(1.,.99,1.02)+vec3(.04,.035,.045),uGrit); }
   col=mix(vec3(dot(col,vec3(.3,.59,.11))),col,1.18*uSat);
   // The grade: a firmer curve so darks go properly dark, colour held back a little, cool shadows under warm lights.
-  { vec3 g=clamp(col,0.,1.); float l=dot(g,vec3(.3,.59,.11)); g=mix(g,g*g*(3.-2.*g),.75); g=mix(vec3(dot(g,vec3(.3,.59,.11))),g,.9);
+  { vec3 g=clamp(col,0.,1.); float l=dot(g,vec3(.3,.59,.11)); g=mix(g,g*g*(3.-2.*g),min(1.,.75+.13*uPunch)); { float gl2=dot(g,vec3(.3,.59,.11)), sa=max(g.r,max(g.g,g.b))-min(g.r,min(g.g,g.b)); g=mix(vec3(gl2),g,.9+uPunch*(.34-.2*sa)); }
     g*=mix(vec3(.9,.93,1.08),vec3(1.05,1.,.93),smoothstep(.08,.6,l)); col=mix(col,g,uGrit); }
   col*=.95+.08*vnoise(sp*.5);
   float v=smoothstep(1.3,.5,length((vUv-.5)*vec2(1.25,1.))); col*=mix(mix(.8,.68,uGrit),1.,v);
@@ -570,18 +598,18 @@ void main(){
 }`;
 
 // Glow: the bright pass keeps what a material marked as glowing (alpha below one) and anything white-hot, at a quarter size; two blurs spread it.
-const GLOW_PICK = `precision highp float; varying vec2 vUv; uniform sampler2D tC; uniform vec2 uT;
-void main(){ vec3 a=vec3(0.); for(int i=0;i<4;i++){ vec2 o=vec2(i==0||i==2?-1.:1.,i<2?-1.:1.)*uT; vec4 c=texture2D(tC,vUv+o); float k=max(1.-c.a,smoothstep(.9,1.,min(c.r,min(c.g,c.b)))*.3); a+=c.rgb*k; } gl_FragColor=vec4(a*.25,1.); }`;
+const GLOW_PICK = `precision highp float; varying vec2 vUv; uniform sampler2D tC; uniform vec2 uT; uniform float uHot;
+void main(){ vec3 a=vec3(0.); for(int i=0;i<4;i++){ vec2 o=vec2(i==0||i==2?-1.:1.,i<2?-1.:1.)*uT; vec4 c=texture2D(tC,vUv+o); float k=max(1.-c.a,max(smoothstep(.9,1.,min(c.r,min(c.g,c.b)))*.3,smoothstep(.6,1.,dot(c.rgb,vec3(.3,.59,.11)))*uHot*.42)); a+=c.rgb*k; } gl_FragColor=vec4(a*.25,1.); }`;
 const GLOW_BLUR = `precision highp float; varying vec2 vUv; uniform sampler2D tC; uniform vec2 uT;
 void main(){ vec3 a=texture2D(tC,vUv).rgb*.2; a+=(texture2D(tC,vUv+uT*1.45).rgb+texture2D(tC,vUv-uT*1.45).rgb)*.17; a+=(texture2D(tC,vUv+uT*3.4).rgb+texture2D(tC,vUv-uT*3.4).rgb)*.125; a+=(texture2D(tC,vUv+uT*5.35).rgb+texture2D(tC,vUv-uT*5.35).rgb)*.07; a+=(texture2D(tC,vUv+uT*7.3).rgb+texture2D(tC,vUv-uT*7.3).rgb)*.035; gl_FragColor=vec4(a,1.); }`;
 // Sun shafts. First, at a quarter size, what lets the sun's light through: the sky and the far haze do, anything near blocks it.
 const SHAFT_PICK = `precision highp float; varying vec2 vUv; uniform sampler2D tD; uniform vec2 uSunUV; uniform float uNear,uFar,uAsp;
-void main(){ float z=texture2D(tD,vUv).x*2.-1., l=2.*uNear*uFar/(uFar+uNear-z*(uFar-uNear)); float a=smoothstep(90.,700.,l)*(1.-smoothstep(0.,.95,length((vUv-uSunUV)*vec2(uAsp,1.)))); gl_FragColor=vec4(vec3(a*a*a),1.); }`;
+void main(){ float z=texture2D(tD,vUv).x*2.-1., l=2.*uNear*uFar/(uFar+uNear-z*(uFar-uNear)); float a=smoothstep(90.,700.,l)*(1.-smoothstep(0.,1.25,length((vUv-uSunUV)*vec2(uAsp,1.)))); gl_FragColor=vec4(vec3(a*a*a),1.); }`;
 // Then that is smeared away from the sun, twice: a long smear and a short one to take the steps out of it.
 // A step that lands off the edge of the picture is taken as open sky, or the edge would smear into rays of its own.
 const SHAFT_BLUR = `precision highp float; varying vec2 vUv; uniform sampler2D tC; uniform vec2 uSunUV; uniform float uLen,uAsp,uOpen;
 void main(){ vec2 st=(uSunUV-vUv)*uLen/12., p=vUv+st*fract(52.9829189*fract(dot(gl_FragCoord.xy,vec2(.06711056,.00583715)))); float a=0., w=1., ws=0.;
-  for(int i=0;i<12;i++){ float v; if(uOpen>.5&&(p.x<0.||p.x>1.||p.y<0.||p.y>1.)){ v=1.-smoothstep(0.,.95,length((p-uSunUV)*vec2(uAsp,1.))); v=v*v*v; } else v=texture2D(tC,p).r; a+=v*w; ws+=w; w*=.92; p+=st; } gl_FragColor=vec4(vec3(a/ws),1.); }`;
+  for(int i=0;i<12;i++){ float v; if(uOpen>.5&&(p.x<0.||p.x>1.||p.y<0.||p.y>1.)){ v=1.-smoothstep(0.,1.25,length((p-uSunUV)*vec2(uAsp,1.))); v=v*v*v; } else v=texture2D(tC,p).r; a+=v*w; ws+=w; w*=.92; p+=st; } gl_FragColor=vec4(vec3(a/ws),1.); }`;
 const SUNV = new THREE.Vector3();
 export class Pipeline {
   renderer: THREE.WebGLRenderer;
@@ -589,7 +617,7 @@ export class Pipeline {
   private rtC: THREE.WebGLRenderTarget; private rtN: THREE.WebGLRenderTarget; private rtS: THREE.WebGLRenderTarget;
   private normalMat = new THREE.MeshNormalMaterial({ side: THREE.DoubleSide });
   private depthMat = new THREE.MeshBasicMaterial({ colorWrite: false, side: THREE.DoubleSide });
-  private rtG: THREE.WebGLRenderTarget[] = []; private rtW: THREE.WebGLRenderTarget[] = []; private rtR: THREE.WebGLRenderTarget[] = []; private glowMat: THREE.ShaderMaterial; private blurMat: THREE.ShaderMaterial; private pickMat: THREE.ShaderMaterial; private rayMat: THREE.ShaderMaterial; private fsq: THREE.Mesh;
+  private rtG: THREE.WebGLRenderTarget[] = []; private rtW: THREE.WebGLRenderTarget[] = []; private rtX: THREE.WebGLRenderTarget[] = []; private rtR: THREE.WebGLRenderTarget[] = []; private glowMat: THREE.ShaderMaterial; private blurMat: THREE.ShaderMaterial; private pickMat: THREE.ShaderMaterial; private rayMat: THREE.ShaderMaterial; private fsq: THREE.Mesh;
   private postMat: THREE.ShaderMaterial; private postScene = new THREE.Scene(); private postCam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
   private sun = new THREE.OrthographicCamera(-50, 50, 50, -50, 1, 500);
   sat = 1; static = 0; time = 0; flash = 0; private aaNow = -1;
@@ -626,11 +654,11 @@ export class Pipeline {
     SHARED.uShadow.value = this.rtS.depthTexture; SHARED.uShadowTex.value = 1 / S;
     this.rtC = new THREE.WebGLRenderTarget(4, 4); this.rtN = new THREE.WebGLRenderTarget(4, 4);
     this.postMat = new THREE.ShaderMaterial({
-      uniforms: { tC: { value: null }, tD: { value: null }, tN: { value: null }, uRes: { value: new THREE.Vector2(1, 1) }, uNear: { value: .06 }, uFar: { value: 4000 }, uOrtho: { value: 0 }, uPx: SHARED.uPx, uSat: { value: 1 }, uFlash: { value: 0 }, uStatic: { value: 0 }, uTime: { value: 0 }, uBold: { value: 1 }, uProj: { value: 1 }, uAO: { value: 1 }, uGrit: SHARED.uGrit, uGlow: { value: 1 }, uSun: { value: new THREE.Vector2(-.6, .8) }, tB: { value: null }, tB2: { value: null }, tS: { value: null }, uShaft: { value: 0 }, uShaftC: { value: V3(1, 1, 1) }, uTint: { value: V3(1, 1, 1) }, uLift: { value: V3() } },
+      uniforms: { tC: { value: null }, tD: { value: null }, tN: { value: null }, uRes: { value: new THREE.Vector2(1, 1) }, uNear: { value: .06 }, uFar: { value: 4000 }, uOrtho: { value: 0 }, uPx: SHARED.uPx, uSat: { value: 1 }, uFlash: { value: 0 }, uStatic: { value: 0 }, uTime: { value: 0 }, uBold: { value: 1 }, uProj: { value: 1 }, uAO: { value: 1 }, uGrit: SHARED.uGrit, uGlow: { value: 1 }, tB3: { value: null }, uPunch: { value: 1 }, uFlare: { value: 0 }, uAsp: { value: 1 }, uSunUV: { value: new THREE.Vector2(.5, .5) }, uSun: { value: new THREE.Vector2(-.6, .8) }, tB: { value: null }, tB2: { value: null }, tS: { value: null }, uShaft: { value: 0 }, uVig: { value: .2 }, uShaftC: { value: V3(1, 1, 1) }, uTint: { value: V3(1, 1, 1) }, uLift: { value: V3() } },
       vertexShader: `varying vec2 vUv; void main(){ vUv=uv; gl_Position=vec4(position.xy,0.,1.); }`, fragmentShader: POST_FS, depthTest: false, depthWrite: false,
     });
     this.postScene.add(this.fsq = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), this.postMat));
-    const quad = (fs: string) => new THREE.ShaderMaterial({ uniforms: { tC: { value: null }, uT: { value: new THREE.Vector2() } }, vertexShader: `varying vec2 vUv; void main(){ vUv=uv; gl_Position=vec4(position.xy,0.,1.); }`, fragmentShader: fs, depthTest: false, depthWrite: false });
+    const quad = (fs: string) => new THREE.ShaderMaterial({ uniforms: { tC: { value: null }, uT: { value: new THREE.Vector2() }, uHot: { value: 0 } }, vertexShader: `varying vec2 vUv; void main(){ vUv=uv; gl_Position=vec4(position.xy,0.,1.); }`, fragmentShader: fs, depthTest: false, depthWrite: false });
     this.glowMat = quad(GLOW_PICK); this.blurMat = quad(GLOW_BLUR);
     this.pickMat = quad(SHAFT_PICK); Object.assign(this.pickMat.uniforms, { tD: { value: null }, uSunUV: { value: new THREE.Vector2() }, uNear: { value: .06 }, uFar: { value: 4000 }, uAsp: { value: 1 } });
     this.rayMat = quad(SHAFT_BLUR); Object.assign(this.rayMat.uniforms, { uSunUV: this.pickMat.uniforms.uSunUV, uLen: { value: 1 }, uAsp: this.pickMat.uniforms.uAsp, uOpen: { value: 1 } });
@@ -649,23 +677,33 @@ export class Pipeline {
     this.rtN = new THREE.WebGLRenderTarget(w, h, { minFilter: THREE.NearestFilter, magFilter: THREE.NearestFilter });
     for (const t of this.rtG) t.dispose(); const gw = Math.max(2, w >> 2), gh = Math.max(2, h >> 2);
     this.rtG = [0, 1].map(() => new THREE.WebGLRenderTarget(gw, gh, { minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter, depthBuffer: false }));
-    for (const t of this.rtW) t.dispose(); for (const t of this.rtR) t.dispose(); const small = (x: number, y: number) => new THREE.WebGLRenderTarget(Math.max(2, x), Math.max(2, y), { minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter, depthBuffer: false });
-    this.rtW = [0, 1].map(() => small(w >> 3, h >> 3)); this.rtR = [0, 1].map(() => small(w >> 2, h >> 2));
-    const u = this.postMat.uniforms; u.tC.value = this.rtC.texture; u.tD.value = this.rtC.depthTexture; u.tN.value = this.rtN.texture; u.uRes.value.set(w, h); u.tB.value = this.rtG[0].texture; u.tB2.value = this.rtW[0].texture; u.tS.value = this.rtR[0].texture;
+    for (const t of this.rtW) t.dispose(); for (const t of this.rtX) t.dispose(); for (const t of this.rtR) t.dispose(); const small = (x: number, y: number) => new THREE.WebGLRenderTarget(Math.max(2, x), Math.max(2, y), { minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter, depthBuffer: false });
+    this.rtW = [0, 1].map(() => small(w >> 3, h >> 3)); this.rtX = [0, 1].map(() => small(w >> 4, h >> 4)); this.rtR = [0, 1].map(() => small(w >> 2, h >> 2));
+    const u = this.postMat.uniforms; u.tC.value = this.rtC.texture; u.tD.value = this.rtC.depthTexture; u.tN.value = this.rtN.texture; u.uRes.value.set(w, h); u.tB.value = this.rtG[0].texture; u.tB2.value = this.rtW[0].texture; u.tB3.value = this.rtX[0].texture; u.tS.value = this.rtR[0].texture;
   }
 
+  /** How bright a lightning flash is this frame, 0 to 1. */ flashK = 0;
   /** Sets the light by the old dial: 0 is midday, about .7 sunset, 1 night. */
   setDusk(k: number) { this.setSky(hourOf(k)); }
   /** Sets the light for an hour of the day (0 to 24) under a weather at strength `w`. See light.ts. */
-  setSky(hour: number, wx = 'clear', w = 0) { setLight(hour, wx, w); this.light(); }
+  setSky(hour: number, wx = 'clear', w = 0) {
+    setLight(hour, wx, w); this.flashK = 0;
+    // Dry lightning inside a dust storm: every so often the whole sky jumps, twice in quick succession. Plain arithmetic on the clock, no dice.
+    if (wx === 'dust' && w > .35 && this.shafts > 0) { const n = Math.floor(this.time / 6.5), h = (a: number) => { const v = Math.sin(a * 127.1 + 31.7) * 43758.5453; return v - Math.floor(v); };
+      if (h(n) < .6) { const d = this.time - (n * 6.5 + h(n + .5) * 5), L = (d < 0 || d > .5 ? 0 : d < .08 ? 1 : d < .15 ? .15 : d < .22 ? .75 : .75 * (1 - (d - .22) / .28)) * (w - .35) / .65;
+        this.flashK = L; if (L > 0) for (let j = 0; j < 3; j++) { ENV.fog[j] *= 1 + L * .5; ENV.fogS[j] *= 1 + L * .5; ENV.amb[j] *= 1 + L * .6; ENV.top[j] *= 1 + L * 1.5; ENV.mid[j] *= 1 + L * 1.3; ENV.cloud[j] *= 1 + L * 1.2; } } }
+    this.light();
+  }
   /** Hands the hour's light to everything that draws. */
   private light() {
     const e = ENV, S = SHARED, u = this.postMat.uniforms;
     S.uSunT.value.fromArray(e.sun); S.uAmbT.value.fromArray(e.amb); S.uKey.value = e.key; S.uFogD.value = e.fogK; S.uMist.value = e.mist; FOG.fromArray(e.fog); FOGS.fromArray(e.fogS);
     SKYU.uTop.value.fromArray(e.top); SKYU.uMid.value.fromArray(e.mid); SKYU.uCloud.value.fromArray(e.cloud); SKYU.uDisc.value.fromArray(e.disc); SKYU.uStars.value = e.stars; SKYU.uCover.value = e.cover;
-    u.uTint.value.fromArray(e.tint); u.uLift.value.fromArray(e.lift); u.uShaftC.value.fromArray(e.disc);
+    u.uTint.value.fromArray(e.tint); u.uLift.value.fromArray(e.lift); u.uShaftC.value.fromArray(e.disc); u.uVig.value = .2 + e.stars * .16;
+    S.uRimK.value = e.rim * e.key; S.uRimC.value.fromArray(e.disc); S.uCloudK.value = Math.min(.85, e.key * 1.2) * (e.cover > .82 ? Math.max(0, (.95 - e.cover) / .13) : 1) * .62; S.uCloudTh.value = 1.1 - e.cover * 1.04;
+    this.glowMat.uniforms.uHot.value = e.hot / (Math.max(1, e.fogK * .75) * (1 + e.mist * 30));   // thick air is bright all over, and must not all glow
     // by night the ringed planet is what lights the land, so it shines
-    if (M.planet) (M.planet as THREE.ShaderMaterial).uniforms.uEmis.value = e.stars * .5;
+    if (M.planet) (M.planet as THREE.ShaderMaterial).uniforms.uEmis.value = e.stars * .2;
   }
   /** Renders the scene with shadows centred on `focus`, covering `span` metres. */
   draw(scene: THREE.Scene, cam: THREE.PerspectiveCamera | THREE.OrthographicCamera, focus: THREE.Vector3, span: number, shadows = false) {
@@ -673,7 +711,7 @@ export class Pipeline {
     // the dust in the air is placed round this view's camera before anything is drawn
     { const dt = Math.min(.1, Math.max(0, this.time - this.lastT)), wd = ENV.wind, m = MOTEU, ortho = !!(cam as any).isOrthographicCamera; this.lastT = this.time; this.gust.x += dt * wd * 1.5; this.gust.z += dt * wd * .5; this.gust.y -= dt * (.04 + wd * .02);
       m.uCam.value.copy(cam.position); m.uDrift.value.copy(this.gust); m.uPxH.value = this.h * cam.projectionMatrix.elements[5] * .5; m.uKey.value = ENV.key; m.uAmt.value = ortho || this.shafts <= 0 ? 0 : Math.min(.9, .42 + ENV.motes * .07);
-      { const nk = 1 - .5 * ENV.stars; m.uCol.value.set(Math.min(1, ENV.fog[0] * .4 + .62) * nk, Math.min(1, ENV.fog[1] * .4 + .6) * nk, Math.min(1, ENV.fog[2] * .4 + .56) * nk); }   // lighter than the air behind them, or they cannot be seen
+      { const nk = ENV.stars, dk = 1 - nk; m.uCol.value.set(Math.min(1, ENV.fog[0] * .4 + .62) * dk + nk, Math.min(1, ENV.fog[1] * .4 + .6) * dk + .86 * nk, Math.min(1, ENV.fog[2] * .4 + .56) * dk + .36 * nk); }   // by night they are fireflies   // lighter than the air behind them, or they cannot be seen
       if (moteGeo) moteGeo.setDrawRange(0, Math.min(MOTE_N, Math.round(220 * ENV.motes))); }
     if (this.frameN++ % this.shadowEvery === 0 || shadows) {
       sun.left = sun.bottom = -span / 2; sun.right = sun.top = span / 2; sun.updateProjectionMatrix();
@@ -690,20 +728,24 @@ export class Pipeline {
 
     const u = this.postMat.uniforms; u.uOrtho.value = (cam as any).isOrthographicCamera ? 1 : 0; u.uProj.value = cam.projectionMatrix.elements[5]; u.uBold.value = this.bold; u.uAO.value = this.ao; u.uNear.value = cam.near; u.uFar.value = cam.far; u.uSat.value = this.sat; u.uFlash.value = this.flash; u.uStatic.value = this.static; u.uTime.value = this.time;
     SUNV.copy(LIGHT).transformDirection(cam.matrixWorldInverse); u.uSun.value.set(SUNV.x, SUNV.y); if (u.uSun.value.lengthSq() < 1e-4) u.uSun.value.set(0, 1); u.uSun.value.normalize();
-    SHARED.uGrit.value = this.grit; u.uGlow.value = this.glow * .9 * ENV.glow; SKYU.uTime.value = this.time;
+    SHARED.uGrit.value = this.grit; u.uGlow.value = this.glow * .9 * ENV.glow; SKYU.uTime.value = this.time; SHARED.uCloudO.value.set(this.time * .011 * (1 + ENV.wind * .6), this.time * .004);
     if (this.glow > 0) { const [a, b] = this.rtG, g = this.glowMat, bl = this.blurMat;
       this.fsq.material = g; g.uniforms.tC.value = this.rtC.texture; g.uniforms.uT.value.set(1 / this.w, 1 / this.h); r.setRenderTarget(a); r.render(this.postScene, this.postCam);
       this.fsq.material = bl; bl.uniforms.tC.value = a.texture; bl.uniforms.uT.value.set(1 / a.width, 0); r.setRenderTarget(b); r.render(this.postScene, this.postCam);
       bl.uniforms.tC.value = b.texture; bl.uniforms.uT.value.set(0, 1 / a.height); r.setRenderTarget(a); r.render(this.postScene, this.postCam);
       // the wide halo: the same blur again at half the size
       const [c, d] = this.rtW; bl.uniforms.tC.value = a.texture; bl.uniforms.uT.value.set(1 / c.width, 0); r.setRenderTarget(d); r.render(this.postScene, this.postCam);
-      bl.uniforms.tC.value = d.texture; bl.uniforms.uT.value.set(0, 1 / c.height); r.setRenderTarget(c); r.render(this.postScene, this.postCam); this.fsq.material = this.postMat; }
+      bl.uniforms.tC.value = d.texture; bl.uniforms.uT.value.set(0, 1 / c.height); r.setRenderTarget(c); r.render(this.postScene, this.postCam);
+      // and once more at half that, for the glow that fills the air round a bright thing
+      const [e, f] = this.rtX; bl.uniforms.tC.value = c.texture; bl.uniforms.uT.value.set(1 / e.width, 0); r.setRenderTarget(f); r.render(this.postScene, this.postCam);
+      bl.uniforms.tC.value = f.texture; bl.uniforms.uT.value.set(0, 1 / e.height); r.setRenderTarget(e); r.render(this.postScene, this.postCam); this.fsq.material = this.postMat; }
     // Shafts are drawn only when the light is in front of you and somewhere near the picture.
-    u.uShaft.value = 0;
+    u.uShaft.value = 0; u.uFlare.value = 0;
     if (this.shafts > 0 && ENV.shaft > .02 && !(cam as any).isOrthographicCamera) {
       SUNV.copy(NOW.hour > 5.4 && NOW.hour < 19.8 ? SUNDIR : LIGHT).transformDirection(cam.matrixWorldInverse);
       if (SUNV.z < -.05) { const pe = cam.projectionMatrix.elements, sx = SUNV.x / -SUNV.z * pe[0], sy = SUNV.y / -SUNV.z * pe[5], off = Math.max(Math.abs(sx), Math.abs(sy)), k = this.shafts * ENV.shaft * Math.min(1, Math.max(0, (1.7 - off) / .7)) * Math.min(1, (-SUNV.z - .05) / .3);
-        if (k > .01) { const [a, b] = this.rtR, pk = this.pickMat, ry = this.rayMat; pk.uniforms.uSunUV.value.set(sx * .5 + .5, sy * .5 + .5); pk.uniforms.tD.value = this.rtC.depthTexture; pk.uniforms.uNear.value = cam.near; pk.uniforms.uFar.value = cam.far; pk.uniforms.uAsp.value = this.w / this.h;
+        if (k > .01) { const [a, b] = this.rtR, pk = this.pickMat, ry = this.rayMat; pk.uniforms.uSunUV.value.set(sx * .5 + .5, sy * .5 + .5); u.uSunUV.value.copy(pk.uniforms.uSunUV.value); u.uAsp.value = this.w / this.h;
+          u.uFlare.value = (NOW.hour > 5.4 && NOW.hour < 19.8 ? 1 : .3) * Math.min(1, ENV.shaft) * this.shafts * Math.min(1, Math.max(0, (1.1 - off) / .3)) * Math.min(1, (-SUNV.z - .05) / .3); pk.uniforms.tD.value = this.rtC.depthTexture; pk.uniforms.uNear.value = cam.near; pk.uniforms.uFar.value = cam.far; pk.uniforms.uAsp.value = this.w / this.h;
           this.fsq.material = pk; r.setRenderTarget(a); r.render(this.postScene, this.postCam);
           this.fsq.material = ry; ry.uniforms.tC.value = a.texture; ry.uniforms.uLen.value = .9; ry.uniforms.uOpen.value = 1; r.setRenderTarget(b); r.render(this.postScene, this.postCam);
           ry.uniforms.tC.value = b.texture; ry.uniforms.uLen.value = .16; ry.uniforms.uOpen.value = 0; r.setRenderTarget(a); r.render(this.postScene, this.postCam); this.fsq.material = this.postMat; u.uShaft.value = k; } } }

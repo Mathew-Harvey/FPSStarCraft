@@ -1,14 +1,14 @@
 // The simulation and the player: entities, combat, effects, the first-person bodies,
 // and jumping between them. Strategy (economy AI, raids, squad plans) lives in director.ts.
 import * as THREE from 'three';
-import { Pipeline, ViewPipe, V3, M, G, R, mk, setLayer, L_FX, L_SELF, holoOK, holoBad, ringMat, tracerMat, makeSky, heldMaterial } from './gfx';
+import { Pipeline, ViewPipe, V3, M, G, R, mk, setLayer, L_FX, L_SELF, holoOK, holoBad, ringMat, tracerMat, makeSky, heldMaterial, makeCone, CONEU } from './gfx';
 import * as MD from './models';
 import { sfx, drillSound, setMood, babble } from './audio';
 import type { Hud } from './hud';
 import { Fog } from './fog';
 import { Kind, BKind, UNIT, BLD, BUILDABLE, UPGRADES, TRAINS, UNIT_NEEDS, UpKey, Unit, Building, Prop, OreNode, Difficulty, DIFFS, OUTPOST, GATE, MAP, MAPS, ROAD, VHOME, FACTION, SIDE, setMap, veylPt, isUnit, isSoldier, isWorker, isFighter, foeOf, fac, MIRROR, atHome, endPt, swapEnd , STORY } from './data';
 import { Director } from './director';
-import { ENV, hourOf, matchHour, matchWeather, lampsBegin, lamp, flashLamp, lampsCommit, flicker } from './light';
+import { ENV, hourOf, matchHour, matchWeather, lampsBegin, lamp, flashLamp, lampsCommit, flicker, LAMP_ON } from './light';
 import type { Mission } from './campaign';
 import type { Net } from './net';
 import { HitFx, Surface } from './hitfx';
@@ -274,7 +274,7 @@ export class Game {
   tracer(a: THREE.Vector3, b: THREE.Vector3, mat: THREE.Material = tracerMat, w = .07) {
     if (this.evq) { this.evq.push(['tr', r1(a.x), r1(a.y), r1(a.z), r1(b.x), r1(b.y), r1(b.z), mat === tracerMat ? 0 : 1, w]); return; }
     if (this.net && !this.applying) this.net.cmd('tr', r1(a.x), r1(a.y), r1(a.z), r1(b.x), r1(b.y), r1(b.z), mat === tracerMat ? 0 : 1, w);
-    flashLamp(a.x, a.y, a.z, 4.5 + w * 22, mat === tracerMat ? MUZZLE : mat === beamMat ? TEAL : ROSE, .09);
+    flashLamp(a.x, a.y, a.z, 7 + w * 26, mat === tracerMat ? MUZZLE : mat === beamMat ? TEAL : ROSE, .11);
     const tr = this.tracers.find(t => t.t <= 0); if (!tr) return; const d = TMP.copy(b).sub(a), len = d.length(); if (len < .1) return;
     tr.m.material = mat; tr.m.scale.set(w * 1.7, len, w * 1.7); tr.m.position.copy(a).addScaledVector(d, .5); tr.m.quaternion.setFromUnitVectors(UP, d.normalize()); tr.m.visible = true; tr.t = mat === tracerMat ? .06 : .16;
   }
@@ -300,7 +300,7 @@ export class Game {
     this.blastProps(p, radius, dmg, from); this.shove(p, radius * 1.6, 9);
     const g = V3(p.x, .6, p.z); this.puff(g, 5, radius * .62, acid ? M.gS : veyl ? M.teal : M.fire, 2.2, 1.5); this.puff(g, 3, radius * .5, acid ? M.gGlow : veyl ? M.cyan : M.fireD, 1.6, 2); this.puff(TMP2.set(p.x, 1.1, p.z), 5, radius * .7, acid ? M.gGlow : veyl ? M.indigoL : M.soot, 1.5, 1.7, 2.3); this.debris(g, 8, .3, acid ? M.gH : veyl ? M.crys : M.rock, 7); this.pow(g, radius * 1.5, acid ? 2 : veyl ? 1 : 0); this.scorchAt(p, radius * 1.5); if (radius >= 3.5) this.crater(p, radius * .55);
     const v = this.vol(p); this.shake = Math.max(this.shake, v * 1.1); if (!veyl) this.pipe.flash = Math.max(this.pipe.flash, v * .5); sfx.boom(v);
-    flashLamp(p.x, 1.4, p.z, radius * 3 + 7, acid ? SICK : veyl ? TEAL : FIRE, .4);
+    flashLamp(p.x, 1.4, p.z, radius * 4 + 10, acid ? SICK : veyl ? TEAL : FIRE, .6);
     this.hud.damage(V3(p.x, 2.2, p.z), acid ? 'SPLORCH!' : veyl ? 'WHUMM!' : 'BOOM!', team === this.myTeam || (team < 0 && !veyl) ? 'ko' : 'kobad');
   }
 
@@ -1239,7 +1239,7 @@ export class Game {
     // music follows how hot things are around the player
     if (me) { let hot = this.time - me.lastHit < 6 ? 1 : 0; if (!hot) for (const u of this.units) if (u.team !== this.myTeam && u.alive && Math.abs(u.pos.x - me.pos.x) < 45 && Math.abs(u.pos.z - me.pos.z) < 45) { hot = 1; break; } this.mood += (hot - this.mood) * Math.min(1, dt * (hot ? 2 : .4)); setMood(this.phase === 'play' ? .25 + this.mood * .75 : .15); }
   }
-  private lampDt = 0;
+  private lampDt = 0; private cones = new Map<Prop, THREE.Mesh>();
   /** Every lamp, fire and glowing thing near the camera, handed to the renderer for this frame. All for show. */
   private lamps(cam: THREE.Camera) {
     lampsBegin(); const t = this.pipe.time, c = cam.position, me = this.me, far = 95 * 95;
@@ -1261,8 +1261,11 @@ export class Game {
       // what you are driving carries a lamp that lights the ground ahead of it
       if (me && me.alive && !this.tab && this.phase !== 'menu' && this.phase !== 'cut') { const f = fac(me.team), s = Math.sin(this.yaw), q = Math.cos(this.yaw); lamp(me.pos.x + s * 3.2, UNIT[me.kind].eye * .7, me.pos.z + q * 3.2, f === 2 ? 8 : 11, f === 0 ? HEAD : f === 1 ? TEAL : SICK, f === 2 ? .7 : 1.1); }
       for (const o of this.ores) { if (o.amount <= 0 || (o.pos.x - c.x) ** 2 + (o.pos.z - c.z) ** 2 > far * .5) continue; lamp(o.pos.x, 1.6, o.pos.z, 7, ORE, .55 + .08 * Math.sin(t * 1.7 + o.pos.x)); }
-      for (const p of this.props) { if (!p.alive || (p.kind !== 'crystal' && p.name !== 'Floodlight') || (p.x - c.x) ** 2 + (p.z - c.z) ** 2 > far) continue; if (p.name === 'Floodlight') lamp(p.x, 6.8, p.z, 18, FLOOD, 1.1 * flicker(t, p.id, .05)); else lamp(p.x, p.y0 + Math.min(3, p.h * .5), p.z, p.r * 1.6 + 5, ORE, .5); }
+      for (const p of this.props) { if (!p.alive || (p.kind !== 'crystal' && p.name !== 'Floodlight') || (p.x - c.x) ** 2 + (p.z - c.z) ** 2 > far) continue; if (p.name === 'Floodlight') { lamp(p.x, 6.8, p.z, 18, FLOOD, 1.1 * flicker(t, p.id, .05)); if (!this.cones.has(p)) { const m = makeCone(); m.position.set(p.x, 6.7, p.z); this.scene.add(m); this.cones.set(p, m); } } else lamp(p.x, p.y0 + Math.min(3, p.h * .5), p.z, p.r * 1.6 + 5, ORE, .5); }
     }
+    // the air under a floodlight shows its light as a cone, more so the thicker the air is
+    CONEU.uK.value = LAMP_ON.value ? Math.min(.5, ENV.pool * (.2 + ENV.mist * 5 + Math.max(0, ENV.fogK - 1.2) * .06)) : 0;
+    for (const [p, m] of this.cones) { if (!p.alive) { this.scene.remove(m); this.cones.delete(p); } else m.visible = CONEU.uK.value > .01; }
     lampsCommit(c, this.lampDt); this.lampDt = 0;
   }
   /** Split screen halves are very wide or very tall. This keeps the view from stretching in the first and from feeling boxed in in the second. */

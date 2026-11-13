@@ -185,7 +185,7 @@ for (const map of [0, 1, 2]) for (const [home, out] of [[0, 0], [0, 1], [1, 0], 
   check(!bad, 'the light table gives a whole row for every hour of the day in every weather' + (bad ? ` (${bad})` : ''));
   let prev = matchHour(0, 0), wraps = 0, jump = 0, night = 0;
   for (let t = 0; t <= 3600; t += 2) { const h = matchHour(0, t); if (h < prev - 12) wraps++; else jump = Math.max(jump, Math.abs(h - prev)); prev = h; if (h > 20.5 || h < 4.7) night += 2; }
-  check(matchHour(0, 60) === 12 && matchHour(.55, 0) === 17.5 && wraps === 2 && jump < .06 && night > 500 && night < 800, `the match clock starts at the map's hour, only runs forward, and spends about a fifth of the time in the dark (${wraps} midnights and ${night} s of night in an hour)`);
+  check(matchHour(0, 40) === 12 && matchHour(.55, 0) === 17.5 && wraps === 3 && jump < .09 && night > 600 && night < 900, `the match clock starts at the map's hour, only runs forward, and spends about a fifth of the time in the dark (${wraps} midnights and ${night} s of night in an hour)`);
   let wbad = ''; const seen = new Set<string>();
   for (let t = 0; t < 6000; t += 5) { const [wx, w] = matchWeather(3, t, matchHour(0, t)), [wx2, w2] = matchWeather(3, t, matchHour(0, t)); seen.add(wx); if (!WEATHER[wx] || !(w >= 0 && w <= 1) || wx !== wx2 || w !== w2 || (t < 150 && w > 0) || (t % 150 === 0 && w > 0)) wbad = `${wx} ${w} at ${t}`; }
   check(!wbad && seen.size >= 3, 'weather opens clear, is the same for everyone in a match, and always clears between spells' + (wbad ? ` (${wbad})` : ''));

@@ -165,7 +165,7 @@ export interface MapDef {
 }
 export const MAPS: MapDef[] = [
   { name: 'Needle\'s Eye', blurb: 'One road east, one ridge north', out: [124, 13], flank: [[118, -40], [62, -50], [20, -30]], road: 'east road', flankName: 'north ridge', exp: [61, -28], arch: 68, wreck: [46, 30],
-    rocks: 260, spireEvery: 8, buttes: 9, crystals: 22, ground: [1, 1, 1], mesa: [1, 1, 1], rock: [1, 1, 1], dusk: 0 },
+    rocks: 260, spireEvery: 8, buttes: 9, crystals: 22, ground: [1, 1, 1], mesa: [1, 1, 1], rock: [1, 1, 1], dusk: .3 },
   { name: 'Switchback', blurb: 'Tight canyon, long way round', out: [92, -98], flank: [[118, -62], [112, 4], [44, 22]], road: 'canyon road', flankName: 'south bend', exp: [-52, -44], arch: 0, wreck: [64, -22],
     rocks: 420, spireEvery: 4, buttes: 14, crystals: 14, ground: [1, .85, .72], mesa: [1, .79, .65], rock: [.91, .78, .7], dusk: .55 },
   { name: 'Glass Flats', blurb: 'Wide open, nowhere to hide', out: [-136, 62], flank: [[-96, 104], [-30, 92], [4, 40]], road: 'west causeway', flankName: 'salt shelf', exp: [-58, -30], arch: 76, wreck: null,

@@ -4,7 +4,8 @@ import json, math, os, subprocess, sys
 from PIL import Image, ImageDraw, ImageFont
 
 kind, out = sys.argv[1], sys.argv[2]
-H = {'sapper': 1.9, 'hauldrone': 1.8, 'dustbike': 1.9, 'piledriver': 3.2}.get(kind, 2.0)
+H = {'sapper': 1.9, 'hauldrone': 1.8, 'dustbike': 1.9, 'piledriver': 3.2, 'hopper': 3.6, 'flakkite': 3.4, 'gadfly': 3.6, 'surveyor': 4.8, 'claimbarge': 7.5}.get(kind, 2.0)
+FLY = {'hopper': 1.2, 'flakkite': 1.2, 'gadfly': 1.2, 'surveyor': 1.0, 'claimbarge': 1.5}.get(kind, 0)   # fliers float this high in the pictures (the game flies them higher)
 fr = lambda v: v - math.floor(v)
 rest_id = lambda want: next(i for i in range(1, 400) if math.floor(fr(math.sin(i * 127.1 + 2 * 311.7) * 43758.5453) * 3) == want)
 POSES = {
@@ -12,6 +13,11 @@ POSES = {
                ('walk', {'speed': 1, 'dist': .45}), ('run', {'speed': 1.6, 'dist': .9}), ('fire', {'kick': 1, 'pitch': .05}), ('dig in / set charge', {'work': True})],
     'hauldrone': [('hover', {}), ('flying', {'speed': 1}), ('drilling', {'work': True}), ('loaded', {'load': True, 'speed': 1}), ('rest: landed', {'idle': 12})],
     'dustbike': [('rolling', {'speed': 1, 'dist': .3, 'aim': .25}), ('Kick Start', {'speed': 1.6, 'dist': .3}), ('burner', {'kick': 1}), ('rest: parked', {'idle': 12, 'id': 3})],
+    'hopper': [('hovering', {}), ('flying', {'speed': 1}), ('landed', {'air': 0}), ('ramp down, from behind', {'air': 0, 'work': True, '_yaw': 2.2}), ('Afterburn', {'speed': 1.6})],
+    'flakkite': [('flying', {'speed': 1}), ('banking', {'speed': 1, 'aim': .6}), ('landing', {'air': .5}), ('walking', {'air': 0, 'speed': 1, 'dist': .5}), ('landed, firing', {'air': 0, 'kick': 1, 'pitch': .3}), ('landed, rest', {'air': 0, 'idle': 12})],
+    'gadfly': [('hover', {}), ('flying', {'speed': 1}), ('gun on target', {'aim': .6, 'pitch': .25}), ('firing', {'kick': 1, 'aim': .3})],
+    'surveyor': [('drifting', {}), ('searching', {'work': True, 'aim': .6, 'pitch': .3}), ('stake gun', {'kick': 1, 'pitch': .4}), ('under way', {'speed': 1})],
+    'claimbarge': [('cruising', {'speed': .5}), ('gun up', {'pitch': .8}), ('Foreclosure, fired', {'pitch': .5, 'kick': 1})],
     'piledriver': [('on the road', {'anchor': 0}), ('anchoring', {'anchor': .5}), ('anchored', {'anchor': 1, 'pitch': .35}), ('fire', {'anchor': 1, 'pitch': .35, 'kick': .5}), ('anchored, turret turned', {'anchor': 1, 'pitch': .2, 'aim': .9})],
 }[kind]
 d = H * 1.9
@@ -30,7 +36,12 @@ shots = [
 if kind == 'sapper':
     shots.append({'name': 'fp2', 'w': 1000, 'h': 640, 'figs': [{'kind': kind, 'x': 0, 'z': 0, 'yaw': 0, 'fp': True, 'vm': 'charge', 'state': {}}], 'cam': {'fp': True}})
 for i, (lab, st) in enumerate(POSES):
-    shots.append({'name': 'pose%d' % i, 'w': 600, 'h': 700, 'figs': [{'kind': kind, 'x': 0, 'z': 0, 'yaw': -1.25, 'state': dict(st, t=3.3)}], 'cam': three()})
+    st = dict(st); yaw = st.pop('_yaw', -1.25)
+    shots.append({'name': 'pose%d' % i, 'w': 600, 'h': 700, 'figs': [{'kind': kind, 'x': 0, 'z': 0, 'yaw': yaw, 'y': FLY * st.get('air', 1), 'state': dict(st, t=3.3)}], 'cam': three()})
+for sh in shots:                 # every other picture of a flier shows it in the air
+    if sh['name'] != 'fp' and not sh['name'].startswith('pose'):
+        for fg in sh['figs']:
+            if fg['kind'] == kind and 'y' not in fg: fg['y'] = FLY
 os.makedirs(out, exist_ok=True)
 spec = os.path.join(out, kind + '-spec.json')
 json.dump(shots, open(spec, 'w'))

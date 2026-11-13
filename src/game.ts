@@ -1,5 +1,6 @@
 // The simulation and the player: entities, combat, effects, the first-person bodies,
 // and jumping between them. Strategy (economy AI, raids, squad plans) lives in director.ts.
+import { DEATHS } from './net-look';
 import * as THREE from 'three';
 import { Pipeline, ViewPipe, V3, M, G, R, mk, setLayer, L_FX, L_SELF, holoOK, holoBad, ringMat, tracerMat, makeSky, heldMaterial, makeCone, CONEU, SHARED } from './gfx';
 import * as MD from './models';
@@ -456,7 +457,7 @@ export class Game {
   /** Veyl player: cooldown on the body's second move and the Cantor's rising combo. */
   vCd = 0; combo = 0; comboT = 0;
   killUnit(u: Unit, from: Unit | Building | null) {
-    if (this.evq) { this.evq.push(['ku', u.id, from ? from.id : 0]); const kp = from && (from as Unit).pilot; if (kp && u.team !== from!.team && this.score[kp]) this.score[kp][0]++; }
+    if (this.evq) { const e = ['ku', u.id, from ? from.id : 0]; this.evq.push(e); DEATHS.set(e, u);   /* its looks are added when it is sent (K, src/net-look.ts) */ const kp = from && (from as Unit).pilot; if (kp && u.team !== from!.team && this.score[kp]) this.score[kp][0]++; }
     if (u.alive) unitRule(u.kind).dying?.(this, u, from);
     if (u.cargo?.length) spill(this, u, from); if (u.inside) { const c = u.inside; c.cargo = (c.cargo || []).filter(x => x !== u); u.inside = null; }
     u.alive = false; const away = u.team !== SIDE.home, v = this.vol(u.pos), st = UNIT[u.kind];

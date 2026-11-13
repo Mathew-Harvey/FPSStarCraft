@@ -2,7 +2,7 @@
 // dist/index.html is the standalone game. dist/fragment.html is the same page without the
 // document wrapper, for hosts that supply their own.
 import { build } from 'esbuild';
-import { readFileSync, writeFileSync, mkdirSync, readdirSync, rmSync } from 'node:fs';
+import { readFileSync, writeFileSync, mkdirSync, readdirSync, rmSync, existsSync, statSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { deflateRawSync } from 'node:zlib';
 
@@ -42,8 +42,16 @@ function artList() {
   rmSync('dist/art', { recursive: true, force: true }); mkdirSync('dist/art', { recursive: true });
   // A model is published as <kind>.wasm: the artifact service only serves standard web media types and refuses .bin (415), and
   // application/wasm is served byte for byte. The bytes are the deflated model, not WebAssembly.
-  listed = artNames().map(f => { const b = artBytes(f), name = f.replace(/\.bin$/, '.wasm'); writeFileSync('dist/art/' + name, b); return { name, bytes: b.length, v: createHash('sha1').update(b).digest('hex').slice(0, 10) }; });
+  const fac = artFactions();
+  listed = artNames().map(f => { const b = artBytes(f), name = f.replace(/\.bin$/, '.wasm'), kind = name.replace(/\.(wasm|webp)$/, '').replace(/\.(mid|far|wear|top)$/, ''); writeFileSync('dist/art/' + name, b); return { name, bytes: b.length, v: createHash('sha1').update(b).digest('hex').slice(0, 10), f: fac(kind) }; });
   return listed;
+}
+// Which faction's art each kind is: the faction whose code names it ('kind' or kind:), so the page fetches it only for a match with that
+// faction (src/artfiles.ts). A kind named by more than one faction's code, or by none, is shared (-1) and comes with any match.
+function artFactions() {
+  const read = d => existsSync(d) ? (statSync(d).isDirectory() ? readdirSync(d).flatMap(n => read(d + '/' + n)) : d.endsWith('.ts') ? [readFileSync(d, 'utf8')] : []) : [];
+  const src = [read('src/factions/ironhold').concat(read('src/look-ironhold.ts')).join('\n'), read('src/factions/veyl').join('\n'), read('src/factions/gloam').join('\n')];
+  return kind => { const re = new RegExp(`['"]${kind}['"]|\\b${kind}\\s*:`); const hit = src.map((t, i) => re.test(t) ? i : -1).filter(i => i >= 0); return hit.length === 1 ? hit[0] : -1; };
 }
 import { createServer } from 'node:http';
 

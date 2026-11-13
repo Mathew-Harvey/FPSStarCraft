@@ -12,6 +12,7 @@ import { UNIT, BLD, UPGRADES, TRAINS, UNIT_NEEDS, DIFFS, Kind, BKind, mapCode, v
 import { MISSIONS, STORY_JOBS, ACTS, missionSides, charterTeam, Mission } from './campaign';
 import { CUTS, CutPlayer } from './cutscene';
 import { Net, Lobby } from './net';
+import { artGate, artSoon } from './artgate';
 import { TouchPad, TouchPref, touchDevice, touchWords } from './touch';
 
 THREE.ColorManagement.enabled = false;
@@ -143,8 +144,9 @@ document.addEventListener('visibilitychange', () => { if (document.hidden) { pad
 document.addEventListener('pointerlockerror', () => { freeMouse = true; });
 document.addEventListener('pointerlockchange', () => { if (!locked() && live() && !freeMouse) pause(); });
 
-function fresh() { endSplit(); hush(); hud.reset(); reroll(); const w = want(); game.dispose(); game = new Game(pipe, hud, w.d, w.map, w.m); game.sens = sens; ended = false; (window as any).__ore.game = game; }
-function start() { if (mode === 'skirm' && sideI) { startVeyl(); return; } if (mode !== 'skirm' && MISSIONS[jobI].out) { startStory(MISSIONS[jobI]); return; } if (sidesCode() !== wantCode()) fresh(); initAudio(); setVolume(vol); setMusic(mus); { const w = want(); if (game.diff !== w.d || game.mapI !== w.map || game.mission !== w.m || game.time > 0) fresh(); } $('menu').hidden = true; $('pause').hidden = true; $('end').hidden = true; hud.show(true); game.phase = 'play'; game.introT = 1.8; lock(); }
+function fresh() { endSplit(); hush(); hud.reset(); reroll(); const w = want(); game.dispose(); game = new Game(pipe, hud, w.d, w.map, w.m); game.sens = sens; ended = false; (window as any).__ore.game = game;
+  artSoon(sidesWanted(), () => { if (!$('menu').hidden && game.phase !== 'play' && !game.net && !split) fresh(); }); }   // the art for sides picked in the menu comes while the player looks
+function start() { if (!artGate(sidesWanted(), () => { fresh(); start(); })) return; if (mode === 'skirm' && sideI) { startVeyl(); return; } if (mode !== 'skirm' && MISSIONS[jobI].out) { startStory(MISSIONS[jobI]); return; } if (sidesCode() !== wantCode()) fresh(); initAudio(); setVolume(vol); setMusic(mus); { const w = want(); if (game.diff !== w.d || game.mapI !== w.map || game.mission !== w.m || game.time > 0) fresh(); } $('menu').hidden = true; $('pause').hidden = true; $('end').hidden = true; hud.show(true); game.phase = 'play'; game.introT = 1.8; lock(); }
 /** The pause screen shows the whole tech tree: what is standing, what can be built next and what each building sells. */
 function showTree() {
   const g = game, t = g.myTeam, tiers: BKind[][] = fac(t) === 2 ? [['mothercap'], ['sporesac', 'warren'], ['stinger', 'quillgarden', 'blisterbed'], ['tuskhollow'], ['oldgrowth']] : t ? [['choir'], ['hushwell', 'broodpit'], ['thornspire', 'wardpylon'], ['reedgate']] : [['headframe'], ['bunkhouse', 'depot'], ['watchpost', 'machineshop', 'assay'], ['foundry'], ['mast']], hq = FACTION[t].hq;
@@ -225,6 +227,7 @@ function p2Labels() {
 /** The match a split screen or a solo Veyl run is playing: co-op, versus, or the Veyl side. */
 let splitMode: SplitMode = 'coop';
 function startSplit(how: SplitMode | boolean = splitMode) {
+  { const sm = how === true ? 'versus' : how === false ? 'coop' : how; if (!artGate(sidesWanted(sm === 'versus'), () => startSplit(how))) return; }
   splitMode = how === true ? 'versus' : how === false ? 'coop' : how; splitVs = splitMode === 'versus'; setSides(...sidesWanted(splitVs)); STORY.charter = -1; initAudio(); setVolume(vol); setMusic(mus); mode = 'skirm'; hud.reset(); hud2.reset();
   reroll(); const prev = split, m = split = new LocalMatch(playMap, diffI, 2, splitMode), mk = (i: number) => { const g = new Game(i ? view2 : view1, i ? hud2 : hud, DIFFS[diffI], playMap, null, m.seats[i], m.host.eco); g.sens = i ? 1 : sens; g.names = m.names; g.teams = m.teams; g.myTeam = m.teams[i + 1] ?? SIDE.home; g.phase = 'play'; g.introT = 1.8; return g; };
   const old = [game, game2, prev?.host]; game = mk(0); game2 = mk(1); for (const g of old) if (g && g !== game) g.dispose(); view1.time = view2.time = pipe.time; ended = false; (window as any).__ore.game = game;
@@ -256,7 +259,7 @@ function playCuts(ids: string[], then: () => void) {
 }
 function nextCut() {
   const id = cutQ.shift(); if (!id) { const t = cutThen; cutThen = null; t?.(); return; }
-  const c = CUTS[id]; endSplit(); hush(); hud.reset(); setSides(...c.sides); STORY.charter = c.charter === 'home' ? SIDE.home : c.charter === 'out' ? SIDE.out : -1;
+  const c = CUTS[id]; if (!artGate(c.sides, () => { cutQ.unshift(id); nextCut(); })) return; endSplit(); hush(); hud.reset(); setSides(...c.sides); STORY.charter = c.charter === 'home' ? SIDE.home : c.charter === 'out' ? SIDE.out : -1;
   game.dispose(); STORY.on = true; game = new Game(pipe, hud, DIFFS[1], c.map, null); STORY.on = false; game.duskFix = c.dusk; game.sens = sens; ended = false; (window as any).__ore.game = game;
   $('menu').hidden = true; $('pause').hidden = true; $('end').hidden = true; hud.show(false); if (document.pointerLockElement) document.exitPointerLock();
   cutP.start(c, game, nextCut);
@@ -319,6 +322,7 @@ function showLobby(l: Lobby) {
   $('mStart').hidden = !host; $('mReady').hidden = host; $('mReady').textContent = me && me.ready ? 'Not ready' : 'Ready'; ($('mStart') as HTMLButtonElement).disabled = !l.players.every(p => p.ready || p.id === l.host);
 }
 async function mpConnect(then: (n: Net) => void) {
+  artSoon([0, 1, 2]);   // any side may be picked in a lobby: fetch every faction's art while the players gather
   pname = mName.value.trim().slice(0, 14) || 'Rigger'; srv = mServer.value.trim(); save(); mErr('');
   if (!srv) { mErr('This copy of the game is not on a game server, so there is nobody to connect to. Open the game from its server address, or paste a server address above.'); return; }
   if (net && net.open) { then(net); return; }

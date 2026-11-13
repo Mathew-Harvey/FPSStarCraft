@@ -5,7 +5,7 @@ import type { FightDef, Line } from './core/combat';
 import type { Vent } from './core/econ';
 
 import { I_UNIT, I_BLD, I_BUILDABLE, I_FACTION, I_TRAINS, I_NEEDS, I_UPGRADES, type IKind, type IBKind, type IUpKey } from './factions/ironhold/numbers';
-import { V_UNIT, V_BLD, V_FACTION, V_TRAINS, V_UPGRADES, type VKind, type VBKind, type VUpKey } from './factions/veyl/numbers';
+import { V_UNIT, V_BLD, V_FACTION, V_TRAINS, V_UPGRADES, V_NEEDS, type VKind, type VBKind, type VUpKey } from './factions/veyl/numbers';
 import { G_UNIT, G_BLD, G_UPGRADES, G_FACTION, G_TRAINS, G_UNLOCK, type GKind, type GBKind, type GUpKey } from './factions/gloam/numbers';
 // Each faction's numbers live in src/factions/<faction>/numbers.ts. This file joins them into the tables the shared code reads.
 export type Kind = IKind | VKind | GKind;
@@ -14,7 +14,9 @@ export type BKind = IBKind | VBKind | GBKind;
 export interface UnitDef { name: string; team: number; hp: number; shield: number; speed: number; eye: number; headY: number; bodyY: number; rad: number; cost: number; time: number; supply: number; quip: string; ack: string[]; /** Flux on top of the ore cost. */ flux?: number;
   /** Flies (src/core/air.ts): over cliffs and buildings, hit only by weapons that reach the air. */ air?: boolean; /** Energy for abilities, up to this. */ energy?: number;
   /** Unseen until detected (always, not just when an ability says so), and how far it sees unseen bodies. */ cloak?: boolean; detect?: number;
-  /** Cargo slots it carries, and the slots it takes up inside one. */ cargo?: number; slots?: number }
+  /** Cargo slots it carries, and the slots it takes up inside one. */ cargo?: number; slots?: number;
+  /** Mines and builds like a Rigger (the Haul Drone). */ worker?: boolean; /** Walks up cliffs (the Reedwalker; read by the terrain). */ climb?: boolean;
+  /** A driven body's attack, for the server's checks (stream K's net-arms): reach in metres, most damage one hit can do, hits a second. */ reach?: number; hit?: number; rate?: number }
 export interface UnitDef extends FightDef {}
 export const UNIT: Record<Kind, UnitDef> = { ...I_UNIT, ...V_UNIT, ...(G_UNIT as Record<GKind, UnitDef>) };
 export interface BldDef { name: string; hp: number; hx: number; hz: number; h: number; cost: number; time: number; blurb: string; needs?: BKind[]; /** Flux on top of the ore cost. */ flux?: number; /** Sees unseen bodies this far. */ detect?: number; /** Bodies it can hold (a bunker). */ cargo?: number }
@@ -51,11 +53,11 @@ export const homeXZ = (team: number): [number, number] => atHome(team) ? [0, 0] 
 export const swapEnd = (x: number, z: number): [number, number] => [VHOME.x - x, VHOME.z - z];
 /** A point written for the yard (`yard` true) or the outpost, moved to wherever this team actually stands. */
 export const endPt = (team: number, x: number, z: number, yard: boolean): [number, number] => atHome(team) === yard ? [x, z] : swapEnd(x, z);
-export const isWorker = (k: Kind) => k === 'rigger' || k === 'tender' || k === 'grazer';
-export const isGloam = (k: Kind) => k === 'grazer' || k === 'snapper' || k === 'quillback' || k === 'blister' || k === 'mulcher';
+export const isWorker = (k: Kind) => k === 'rigger' || k === 'tender' || k === 'grazer' || !!UNIT[k]?.worker;
+export const isGloam = (k: Kind) => fac(UNIT[k]?.team ?? 0) === 2;
 /** What each building trains, and the extra building a unit needs standing before it can be trained. */
 export const TRAINS: Partial<Record<BKind, Kind[]>> = { ...I_TRAINS, ...V_TRAINS, ...G_TRAINS };
-export const UNIT_NEEDS: Partial<Record<Kind, BKind>> = { ...I_NEEDS, snapper: G_UNLOCK.snapper, quillback: G_UNLOCK.quillback, blister: G_UNLOCK.blister, mulcher: G_UNLOCK.mulcher };
+export const UNIT_NEEDS: Partial<Record<Kind, BKind>> = { ...I_NEEDS, ...V_NEEDS, ...Object.fromEntries(Object.entries(G_UNLOCK).filter(([k]) => k !== 'grazer')) };
 export type UpKey = IUpKey | VUpKey | GUpKey;
 /** Research. `at` is the building that sells it, and `needs` is the research that has to be bought first. */
 export interface UpDef { key: UpKey; /** A research level: its line (attack, armour, shields) and level 1 to 3 (src/core/combat.ts). */ line?: Line; lvl?: number; /** Percent mode: what this level multiplies by (default 25%, 20%, 15%). */ pct?: number; name: string; cost: number; /** Flux on top of the ore cost. */ flux?: number; blurb: string; at: BKind; say: string; needs?: UpKey; /** The side that can buy it. Ironhold when left out. */ team?: number }
@@ -85,7 +87,7 @@ export interface Unit {
 }
 /** One effect on a body: its key, seconds left, a strength (a slow's fraction, a shield's points, burning's damage a second) and who put it there. */
 export interface Status { k: StatusKey; t: number; n?: number; from?: number }
-export type StatusKey = 'slow' | 'stun' | 'root' | 'unseen' | 'revealed' | 'borrowed' | 'lifted' | 'shielded' | 'burning';
+export type StatusKey = 'slow' | 'stun' | 'root' | 'unseen' | 'revealed' | 'dug' | 'lifted' | 'shielded' | 'burning' | 'borrowed';
 export interface Building {
   id: number; kind: BKind; team: number; pos: THREE.Vector3; hx: number; hz: number; h: number; hp: number; maxHp: number; obj: THREE.Group; holo: THREE.Group | null;
   built: boolean; progress: number; /** progress already paid out as health, so damage to a site sticks */ pdone: number; queue: { kind: Kind; t: number }[]; alive: boolean; cd: number; builder: Unit | null; lastHit: number; rot: boolean; smokeT: number; stage: number;

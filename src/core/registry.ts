@@ -4,7 +4,7 @@
 import type * as THREE from 'three';
 import type { Game } from '../game';
 import type { Director, Side } from '../director';
-import type { Unit, Building, OreNode, Prop, Kind } from '../data';
+import type { Unit, Building, OreNode, Prop, Kind, BKind } from '../data';
 import type { Model } from '../models';
 
 /** A ray hit, as Game.ray returns it. */
@@ -87,8 +87,16 @@ export interface UnitRules {
   view?(g: Game, pose: VmPose, rl: number, gun: Weapon | null): void;
   /** One line for the Tab list: what a body of this kind is doing. */
   task?(g: Game, u: Unit): string | null;
-  /** It keeps thinking and fighting while dug in (status 'borrowed'), the way a burrowed ambusher does. */
+  /** It keeps thinking and fighting while dug in (status 'dug'), the way a burrowed ambusher does. */
   dugFight?: boolean;
+  /** Trains at a Bud building without using a Bud (the Gloam Keeper). */
+  noBud?: boolean;
+  /** No side may have more than this many, alive and queued (the Cantus: one). */
+  limit?: number;
+  /** A worker's own job before the usual mining and building (a Rigger repairing machines). Return true when it handled the body this frame. */
+  work?(g: Game, u: Unit, dt: number): boolean;
+  /** Mines this much faster than a plain worker (the Haul Drone digs at 2). */
+  dig?: number;
 }
 
 /** What a kind of building does. Every hook is optional. */
@@ -117,7 +125,21 @@ export interface BldRules {
   lamps?: [number, number, number, number][];
   /** Goes square on a vent and lets its side's workers carry Flux from it (src/core/econ.ts). */
   tap?: boolean;
+  /** Commands the building offers beside training and research (add-ons, crawl, scan, sell). Online they go as 'ba' and the server checks `ok`. */
+  actions?(g: Game, b: Building): BldAction[];
+  /** Why this building cannot train this kind now ('' when it can): a missing add-on, say. */
+  trains?(g: Game, b: Building, k: Kind): string;
+  /** Counts as a home building (a Survey Rig or Bastion Head is still a Headframe): banks ore, gives supply, anchors new buildings, ends the match when the last falls. */
+  hq?: boolean;
+  /** Its own side's bodies walk over it (a sunk Depot). */
+  walkOver?(g: Game, b: Building, u: Unit): boolean;
+  /** Sees hidden bodies this far (on top of BldDef.detect, e.g. once a research is bought). */
+  detect?(g: Game, b: Building): number;
+  /** Snaps a spot to where this building has to go (an add-on beside a free host). Returns null when there is no such spot near. */
+  spot?(g: Game, team: number, x: number, z: number): [number, number] | null;
 }
+/** A command on a building (BldRules.actions). `ok` returns '' or the plain reason it cannot run now. */
+export interface BldAction { key: string; name: string; hotkey: string; cost?: [number, number]; blurb?: string; ok?(g: Game, b: Building): string; run(g: Game, b: Building): void }
 
 /** What a whole faction does that is not tied to one kind. */
 export interface FactionRules {
@@ -159,6 +181,21 @@ export interface FactionRules {
   tab?: Kind[];
   /** One line for the Tab list: what a body of this faction is doing (default: the squad's task). */
   task?(g: Game, u: Unit): string | null;
+  /** An extra need on top of the tables: returns the plain name of what is missing ('Elder Cap'), or '' when this side may build, train or
+   *  research `what`. Read by unlocked(), train(), buyUpgrade(), the training menu and the server. */
+  gate?(g: Game, team: number, what: string): string;
+  /** Extra supply this side has beyond its supply buildings (Gloam Drifters keep their beds afloat). Added before the 200 cap. */
+  beds?(g: Game, team: number): number;
+  /** A site of this faction builds itself: no worker is sent to it (Gloam, Veyl seeds). Repairs are unchanged. */
+  grows?: boolean;
+  /** An extra rule for a building spot: '' allows it, anything else refuses it and is the plain reason for the feed line. */
+  placeOK?(g: Game, k: BKind, x: number, z: number, team: number): string;
+  /** How fast a finished building works: 0 silent, 1 normal, more when sped up. Training, research and its tick follow it. */
+  works?(g: Game, b: Building): number;
+  /** Why a silent building is silent, in plain words. */
+  whySilent?(g: Game, b: Building): string;
+  /** A research was just bought (after any armour level is applied): the faction applies its own lines, such as shields. */
+  bought?(g: Game, team: number, key: string): void;
 }
 
 const UNITS: Record<string, UnitRules> = {}, BLDS: Record<string, BldRules> = {}, FACTIONS: Record<number, FactionRules> = {};

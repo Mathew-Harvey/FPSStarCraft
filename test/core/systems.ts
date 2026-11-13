@@ -5,8 +5,8 @@
 import { noHud, noPipe } from '../../server/shim';
 import { Game } from '../../src/game';
 import { initHeadless } from '../../src/gfx';
-import { DIFFS, UNIT, BLD, FACTION, UPGRADES, setMap, setSides, Kind, BKind, Unit, SIDE, VHOME, swapEnd } from '../../src/data';
-import { defineBuildings } from '../../src/core/registry';
+import { DIFFS, UNIT, BLD, FACTION, UPGRADES, setMap, setSides, Kind, BKind, Unit, SIDE, VHOME, swapEnd, fac } from '../../src/data';
+import { defineBuildings, defineFaction, defineUnits } from '../../src/core/registry';
 import { ECON, costOf, canPay, sendToVent, seamRate, ventSpots } from '../../src/core/econ';
 import { LEVELS, level, levelMul, canHit } from '../../src/core/combat';
 import { addStatus, hasStatus, statusPace, canAct } from '../../src/core/status';
@@ -160,7 +160,7 @@ const run = (g: Game, secs: number, each?: () => boolean | void) => { for (let i
   const eye = g.spawn('xeye' as Kind, H, 40, 95); check(seenBy(g, H, ghost) && g.acquire(gun, 20, 0) === ghost, 'a detector in range reveals it, and it can be fought');
   eye.pos.set(40, 0, 60); check(!seenBy(g, H, ghost), 'out of the detector\'s range it is hidden again');
   addStatus(ghost, 'revealed', 3); check(seenBy(g, H, ghost), 'revealed by an effect, anyone can see it');
-  const plain = g.spawn('xplain' as Kind, O, 44, 100); addStatus(plain, 'borrowed', Infinity); check(isHidden(plain) && statusPace(plain) === 0 && !canAct(plain), 'dug in: hidden, still, and not fighting');
+  const plain = g.spawn('xplain' as Kind, O, 44, 100); addStatus(plain, 'dug', Infinity); check(isHidden(plain) && statusPace(plain) === 0 && !canAct(plain), 'dug in: hidden, still, and not fighting');
 }
 
 // ---------------------------------------------------------------- 7. Cargo
@@ -197,11 +197,39 @@ const run = (g: Game, secs: number, each?: () => boolean | void) => { for (let i
   const g = world(); check(g.purse.length >= TEAM_SLOTS && g.ups.length >= TEAM_SLOTS && g.cash(20) === 100 && g.upOf(20) !== g.upOf(0), 'every team slot has its own purse and research');
 }
 
+// ---------------------------------------------------------------- 9b. Faction hooks for extra needs, Bud-free training and extra beds
+{
+  const g = world(), H = SIDE.home; const bk = g.addBuilding(FACTION[H].barracks, H, 30, 30, true); g.purse[H] = 1000;
+  defineFaction(fac(H), { gate: (gg, t, what) => what === 'xplain' ? 'Scratch Lab' : '', beds: () => 6 });
+  check(!g.train(bk, 'xplain' as Kind) && g.gated(H, 'xplain') === 'Scratch Lab' && g.train(bk, 'xtank' as Kind), 'a faction gate refuses what it names and lets everything else through');
+  const cap0 = g.supplyCap(H); defineFaction(fac(H), { gate: undefined, beds: undefined }); check(cap0 === g.supplyCap(H) + 6, 'a faction\'s extra beds add to its supply');
+}
+
+// ---------------------------------------------------------------- 9c. Hooks the faction streams asked for
+{
+  const g = world(), H = SIDE.home, O = SIDE.out, f = fac(H); g.purse[H] = 5000;
+  const bk = g.addBuilding(FACTION[H].barracks, H, 30, 40, true); let ran = 0;
+  defineUnits({ xtank: { limit: 1 } }); check(g.train(bk, 'xtank' as Kind) && !g.train(bk, 'xtank' as Kind), 'a kind with a limit of one trains once per side'); bk.queue.length = 0;
+  defineBuildings({ [FACTION[H].barracks]: { trains: (gg, b, k) => k === 'xplain' ? 'needs a Lab Bay on this building' : '', actions: () => [{ key: 'lab', name: 'Lab Bay', hotkey: 'L', cost: [50, 0], ok: () => '', run: () => { ran++; } }] } });
+  check(!g.train(bk, 'xplain' as Kind) && g.buildingAction(bk, 'lab') && ran === 1 && g.cash(H) === 5000 - 50 - UNIT.xtank.cost, 'a building can refuse one kind and offer its own paid commands');
+  defineBuildings({ [FACTION[H].barracks]: { trains: undefined, actions: undefined } });
+  defineFaction(f, { works: (gg, b) => b === bk ? 0 : 1, whySilent: () => 'It is outside a song field.' }); g.train(bk, 'xsoft' as Kind);
+  check(g.silent(bk) === 'It is outside a song field.' && bk.queue.length === 0, 'a silent building refuses to train, with the faction\'s reason');
+  defineFaction(f, { works: undefined, whySilent: undefined });
+  defineFaction(f, { placeOK: (gg, k) => k === FACTION[H].supply ? 'It has to stand inside a song field.' : '' });
+  check(!g.canPlace(FACTION[H].supply, -14, 14, false, H) && g.placeWhy.includes('song field'), 'a faction can refuse a building spot and say why'); defineFaction(f, { placeOK: undefined });
+  add('xtall', { tall: true }); add('xsky', { hits: 'air' }); const tall = g.spawn('xtall' as Kind, O, 60, 60), sky = g.spawn('xsky' as Kind, H, 60, 52), short = g.spawn('xplain' as Kind, O, 62, 60);
+  check(canHit(sky, tall) && !canHit(sky, short), 'an air-only weapon can hit a tall walker but not a short one');
+  const depot = g.addBuilding(FACTION[H].supply, H, 20, 60, true); defineBuildings({ [FACTION[H].supply]: { hq: true } });
+  check(g.isHQ(depot) && g.hqs(H).includes(depot) && g.nearHQ(20, 62, H) === depot, 'a building whose rules say hq counts as a home building'); defineBuildings({ [FACTION[H].supply]: { hq: undefined } });
+  const id = depot.id; check(g.rebuild(depot, FACTION[H].barracks) && depot.id === id && depot.kind === FACTION[H].barracks, 'a building can change kind in place');
+}
+
 // ---------------------------------------------------------------- 10. What the server sends each side
 {
   const g = world(), H = SIDE.home, O = SIDE.out; const ghost = g.spawn('xcloak' as Kind, O, 40, 140), pal = g.spawn('xcaster' as Kind, H, 40, 120);
   g.evq!.push(['test']); const snaps = buildSnaps(g, [H, O]), sh = JSON.parse(snaps.get(H)!), so = JSON.parse(snaps.get(O)!);
-  check(!sh.u.some((r: any[]) => r[0] === ghost.id) && sh.hz.includes(ghost.id) && so.u.some((r: any[]) => r[0] === ghost.id), 'online: a hidden body is left out of the enemy\'s snapshot (only its id, so the browser hides it) and sent to its own side');
+  check(!sh.u.some((r: any[]) => r[0] === ghost.id) && !JSON.stringify(sh).includes(String(ghost.id) + ',') && so.u.some((r: any[]) => r[0] === ghost.id), 'online: a hidden body is left out of the enemy\'s snapshot entirely and sent to its own side');
   check(sh.e.length === 1 && so.e.length === 1 && g.evq!.length === 0, 'online: both sides\' snapshots carry the tick\'s events once');
   const one = buildSnap(g); check(one.u.some((r: any[]) => r[0] === ghost.id) && one.ux.some((r: any[]) => r[0] === pal.id && r[1] === Math.floor(pal.energy!)) && Array.isArray(one.fl), 'online: the full snapshot carries energy, Flux and every body');
 }

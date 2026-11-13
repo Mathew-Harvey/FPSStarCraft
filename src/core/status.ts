@@ -17,17 +17,17 @@ export const statusOf = (u: Unit, k: StatusKey) => u.status?.find(s => s.k === k
 /** Speed multiplier from effects: 0 when stunned, rooted, dug in or lifted, else less for a slow. 1 with none. */
 export function statusPace(u: Unit) {
   const L = u.status; if (!L || !L.length) return 1; let m = 1;
-  for (const s of L) { if (s.t <= 0) continue; if (s.k === 'stun' || s.k === 'root' || s.k === 'borrowed' || s.k === 'lifted') return 0; if (s.k === 'slow') m *= 1 - Math.min(.9, s.n ?? .5); }
+  for (const s of L) { if (s.t <= 0) continue; if (s.k === 'stun' || s.k === 'root' || s.k === 'dug' || s.k === 'lifted') return 0; if (s.k === 'slow') m *= 1 - Math.min(.9, s.n ?? .5); }
   return m;
 }
 /** Can the body think, shoot or cast? Not while stunned or lifted. A dug-in body only if its kind says it fights dug in (see the registry's `dugFight`). */
 export function canAct(u: Unit, dugFight = false) {
   const L = u.status; if (!L || !L.length) return true;
-  for (const s of L) if (s.t > 0 && (s.k === 'stun' || s.k === 'lifted' || (s.k === 'borrowed' && !dugFight))) return false;
+  for (const s of L) if (s.t > 0 && (s.k === 'stun' || s.k === 'lifted' || (s.k === 'dug' && !dugFight))) return false;
   return true;
 }
 /** Is the body hidden from enemy eyes by an effect (cloaked or dug in), before detection is counted? */
-export const hiddenBy = (u: Unit) => !!u.status && u.status.some(s => s.t > 0 && (s.k === 'unseen' || s.k === 'borrowed')) && !hasStatus(u, 'revealed');
+export const hiddenBy = (u: Unit) => !!u.status && u.status.some(s => s.t > 0 && (s.k === 'unseen' || s.k === 'dug')) && !hasStatus(u, 'revealed');
 
 /** A hit on a body: an effect shield soaks it first. Returns what is left of the hit. */
 export function soak(u: Unit, amt: number) {

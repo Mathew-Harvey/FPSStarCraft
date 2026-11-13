@@ -16,11 +16,10 @@ const F_MOVE = 1, F_TGT = 2, F_WORK = 4, F_CARRY = 8, F_FIRE = 16, F_BRACE = 128
 
 // ---------------------------------------------------------------- server: world to snapshot
 /** The world as one side may see it. `team` -1 is everything (nothing hidden on the map, or split screen); a side's own snapshot leaves out
- *  enemy bodies it cannot see (src/core/sight.ts), listing only their ids under `hz` so the browser hides them instead of killing them.
+ *  enemy bodies it cannot see (src/core/sight.ts) entirely: not even their ids, which would give away how many there are.
  *  `ev` is the event list when several sides' snapshots share one tick's events. */
 export function buildSnap(g: Game, team = -1, ev?: any[]) {
   const D = g.dir, vis = (x: Unit) => team < 0 || seenBy(g, team, x);
-  const hz = team < 0 ? [] : g.units.filter(x => x.alive && !vis(x)).map(x => x.id);
   // Extra fields only some bodies have: energy, effects, height and the carrier it rides in.
   const ux = g.units.filter(x => x.alive && vis(x) && (x.maxEnergy || x.status?.length || x.alt || x.inside)).map(x => [x.id, Math.floor(x.energy || 0), statusBits(x), Math.round((x.alt || 0) * 10), x.inside ? x.inside.id : 0]);
   const u = g.units.filter(x => x.alive && vis(x)).map(x => [x.id, KINDS.indexOf(x.kind), x.team, r1(x.pos.x), r1(x.pos.z), Math.round(x.yaw * 100), Math.ceil(x.hp), Math.ceil(x.maxHp), Math.floor(x.shield),
@@ -31,7 +30,7 @@ export function buildSnap(g: Game, team = -1, ev?: any[]) {
   return {
     t: 's', time: r1(g.time), ore: Math.floor(g.cash(SIDE.home)), up: UPS.map((k, i) => g.upOf(SIDE.home)[k] ? i : -1).filter(i => i >= 0), uo: UPS.map((k, i) => g.upOf(SIDE.out)[k] ? i : -1).filter(i => i >= 0), o: g.ores.map(n => Math.round(n.amount)), u, b,
     d: [r1(D.raidIn), D.raidDir === 'north' ? 1 : 0, D.raidLive ? 1 : 0, D.auto ? 1 : 0, D.plan ? [D.plan.phase, r1(D.plan.t), D.plan.label, D.plan.book] : 0, D.callout ? [D.callout.who, D.callout.text, r1(D.callout.t), D.callout.dur, D.callout.keys] : 0, [D.playbook.name, D.playbook.steps, D.playbook.idx]],
-    v: g.eco ? sideSnap(D.vs) : 0, vo: Math.floor(g.cash(SIDE.out)), fl: [Math.floor(g.flux(SIDE.home)), Math.floor(g.flux(SIDE.out))], ux, hz,
+    v: g.eco ? sideSnap(D.vs) : 0, vo: Math.floor(g.cash(SIDE.out)), fl: [Math.floor(g.flux(SIDE.home)), Math.floor(g.flux(SIDE.out))], ux, hid: team >= 0 ? 1 : 0,
     st: [Math.floor(st.mined), st.built, st.kills, st.lost, Math.floor(st.minedV)], e, mo: g.mission ? D.objectives() : 0, mc: g.mission && g.ms.clock !== undefined ? r1(g.ms.clock) : -1, sc: Object.keys(g.score).map(k => [+k, g.score[+k][0], Math.floor(g.score[+k][1]), g.score[+k][2]]),
   };
 }
@@ -44,7 +43,7 @@ function sideApply(g: Game, S: Side, d: any[]) {
   S.playbook.name = d[4][0]; S.playbook.steps = d[4][1]; S.playbook.idx = d[4][2];
 }
 
-const SBITS: StatusKey[] = ['slow', 'stun', 'root', 'unseen', 'revealed', 'borrowed', 'lifted', 'shielded', 'burning'];
+const SBITS: StatusKey[] = ['slow', 'stun', 'root', 'unseen', 'revealed', 'dug', 'lifted', 'shielded', 'burning', 'borrowed'];
 const statusBits = (u: Unit) => (u.status || []).reduce((n, s) => s.t > 0 ? n | (1 << SBITS.indexOf(s.k)) : n, 0);
 /** Snapshots for every side with a player, sharing one tick's events. One snapshot for all when nobody on the map is hidden. */
 export function buildSnaps(g: Game, teams: number[]): Map<number, string> {
@@ -84,7 +83,7 @@ export function serverCmd(g: Game, pid: number, unit: Unit | null, c: any[]) {
   else if (k === 'pj') { if (c.length === 9) g.evq!.push(['pj', ...c.slice(1).map(Number), 2, pid]); }
   else if (k === 'tn') {
     const b = g.buildings.find(x => x.id === num(1)), kind = c[2] as Kind; if (!b || !b.alive || b.team !== side || !b.built || !(TRAINS[b.kind] || []).includes(kind) || (UNIT[kind].team || 0) !== fac(side)) return;
-    const nb = UNIT_NEEDS[kind]; if (nb && !g.ownB(nb, true, side).length) return;
+    const nb = UNIT_NEEDS[kind]; if (nb && !g.ownB(nb, true, side).length) return; if (g.gated(side, kind)) return;
     g.feedTo = pid; g.train(b, kind, true); g.feedTo = 0;
   }
   else if (k === 'up') { const u = UPGRADES.find(x => x.key === c[1]); if (u && (u.team || 0) === fac(side) && g.ownB(u.at, true, side).length) { g.feedTo = pid; g.buyUpgrade(u.key, side, true); g.feedTo = 0; } }
@@ -151,11 +150,11 @@ export function applySnap(g: Game, s: any) {
     if (r[8] < u.shield - 1) g.bubble(u); if (r[6] < u.hp - .5 || r[8] < u.shield - 1) g.fx.remote(u, Math.max(1, u.hp - r[6], u.shield - r[8]), r[8] < u.shield - 1); u.hp = r[6]; u.shield = u.maxShield ? Math.min(r[8], u.maxShield) : r[8]; (u as any).nf = r[9]; u.wind = r[12] / 10;
     if (u !== g.me) { u.yaw = r[5] / 100; u.pitch = r[11] / 100; u.pilot = r[10]; } else if (r[10] === net.id || s.time > g.possT + 1.5) u.pilot = r[10];
   }
-  // Bodies the server says are there but hidden from this side: kept, and not drawn. Anything else missing is gone.
-  const hid = new Set<number>(s.hz || []); for (const id of hid) { const u = g.uById.get(id); if (u && u.alive) { u.obj.visible = false; u.obj.userData.netHid = true; seen.add(id); } }
-  for (const u of g.units) if (u.alive && !seen.has(u.id)) { u.alive = false; g.scene.remove(u.obj); if (u === g.me) g.staticT = .2; }
+  // A body missing from the snapshot is gone, or out of this side's sight (hidden). An enemy one is set aside, not killed, while the map has
+  // hidden bodies, so it can come back when seen; its death still arrives as a 'ku' event.
+  for (const u of g.units) if (u.alive && !seen.has(u.id)) { if (s.hid && u.team !== g.myTeam) { u.obj.visible = false; u.obj.userData.netHid = true; continue; } u.alive = false; g.scene.remove(u.obj); if (u === g.me) g.staticT = .2; }
   const ext = new Map<number, any[]>(); for (const r of s.ux || []) ext.set(r[0], r);
-  for (const u of g.units) { if (!u.alive || hid.has(u.id)) continue; const r = ext.get(u.id);
+  for (const u of g.units) { if (!u.alive || !seen.has(u.id)) continue; const r = ext.get(u.id);
     if (u.maxEnergy) u.energy = r ? r[1] : u.energy; u.status = r && r[2] ? SBITS.filter((_, i) => r[2] & (1 << i)).map(k => ({ k, t: 1 })) : undefined;
     if (r) u.alt = r[3] / 10; else if (!u.air) u.alt = 0; const c = r && r[4] ? (g.uById.get(r[4]) || g.bById.get(r[4]) || null) : null; u.inside = c; if (c) { u.obj.visible = false; u.obj.userData.netHid = true; } else if (u.obj.userData.netHid) { u.obj.visible = true; u.obj.userData.netHid = false; } }
   const seenB = new Set<number>();

@@ -11,7 +11,7 @@ import { abilitiesOf, type Target } from '../../core/ability';
 import { ripening } from '../../core/morph';
 import { isEnemy } from '../../core/sides';
 import { hasStatus } from '../../core/status';
-import { defineBuildingLook } from '../../net-look';
+import { defineBuildingLook, defineUnitLook } from '../../net-look';
 import { plainBody } from '../../core/plain';
 import { heldMaterial, setLayer } from '../../gfx';
 import type { Model } from '../../models';
@@ -153,6 +153,11 @@ export function wrapCasts() {
 // The Flak Tower's aim and a crawling building, sent to every screen (src/net-look.ts): the rules keep both only where they run.
 defineBuildingLook({ key: 'iaim', get(g, b) { const m = mem(b), t = m.aim as Unit | undefined; return t && t.alive && g.time - (m.aimT || 0) < 2 ? t.id : 0; },
   set(g, b, v) { if (!v) return; const m = mem(b); m.aim = g.uById.get(v) || null; m.aimT = g.time; } });
+// A sunk or raised Depot: the rule runs only on the host, so other screens get the flag and sink the building themselves (moveParts).
+defineBuildingLook({ key: 'idepot', get(_g, b) { return b.kind === 'depot' && mem(b).raised ? 1 : 0; }, set(_g, b, v) { mem(b).raised = !!v; } });
+// How a Shaft Mine went: 1 it blew, 2 it fizzled because its Sapper died. Sent with the death, so every screen plays the right one.
+defineUnitLook({ key: 'imine', get(_g, u) { const m = mem(u); return u.kind !== 'shaftmine' ? 0 : m.went ? 1 : m.fizzled ? 2 : 0; },
+  set(_g, u, v) { const m = mem(u); m.went = v === 1; m.fizzled = v === 2; } });
 defineBuildingLook({ key: 'icrawl', get(_g, b) { return mem(b).crawl ? 1 : 0; }, set(_g, b, v) { const m = mem(b); if (!v) { if (m.crawl) m.crawl = null; } else if (!m.crawl) m.crawl = { x: b.pos.x, z: b.pos.z, t: 0 }; } });
 
 // ---------------------------------------------------------------- once a frame, on every screen (online too)
@@ -165,7 +170,7 @@ export function showTick(g: Game, dt: number) {
   for (const u of g.units) {
     if (fac(u.team) !== 0) continue;
     if (DROPS[u.kind] && u.alive && !mem(u).dropSeen) {
-      const m = mem(u); m.dropSeen = true;
+      const m = mem(u); m.dropSeen = true; m.born ??= g.time;   // another screen gets the body when it is first sent: that is its call-down
       if (g.time - (m.born ?? g.time) < .5) m.dropAt = g.time;
       if (m.dropAt === g.time && u.kind === 'hauldrone') { E.callDown(k, { root: new THREE.Group(), groups: {}, points: {} }, V(u.pos.x, 0, u.pos.z), DROP); }   // E's mark and dust; the pose above does the fall
     }
@@ -178,7 +183,7 @@ export function showTick(g: Game, dt: number) {
     if (u.cast && m.castSeen !== u.cast) { m.castSeen = u.cast; const s = START[u.cast.key]; if (s) try { s(k, g, u, { x: u.cast.x, z: u.cast.z, id: u.cast.id }); } catch (e) { console.warn('ironhold fx', u.cast.key, e); } }
     if (m.seat && u !== g.me) { m.seat(); m.seat = null; }
   }
-  for (const [u, obj] of mines) if (!u.alive) { obj.visible = false; obj.scale.setScalar(1e-4); mines.delete(u); const mm = mem(u); if (mm.went || (g.net && !mm.fizzled)) E.blast(k, V(u.pos.x, 0, u.pos.z), TUNE.mine.r); else if (ours(g, u.team)) k.add(cloud({ x: u.pos.x, z: u.pos.z, r: .8, time: 1, color: '#d9a46a', puffs: 3 })); }
+  for (const [u, obj] of mines) if (!u.alive) { obj.visible = false; obj.scale.setScalar(1e-4); mines.delete(u); const mm = mem(u); if (mm.went) E.blast(k, V(u.pos.x, 0, u.pos.z), TUNE.mine.r); else if (ours(g, u.team)) k.add(cloud({ x: u.pos.x, z: u.pos.z, r: .8, time: 1, color: '#d9a46a', puffs: 3 })); }
   for (const b of g.buildings) if (b.alive && fac(b.team) === 0) moveParts(g, b, dt);
 }
 /** The Flak Tower's gun follows what it shoots, the Hangar's doors open while it trains, and a crawling building rides on skids. */
@@ -201,6 +206,7 @@ function moveParts(g: Game, b: Building, dt: number) {
   }
   // A sunk Depot shows its lid flush with the ground, so a crewman walking over it walks on a plate, not on sand.
   if (b.kind === 'depot') {
+    if (g.net && b.built) { const want = m.raised ? 0 : -(b.h - .5); b.obj.position.y += (want - b.obj.position.y) * Math.min(1, dt * 3); }   // the host's rule does this there
     if (!ud.lid) { ud.lid = depotSunk(); b.obj.add(ud.lid); }
     const sunk = b.obj.position.y < -.5; ud.lid.visible = sunk; if (sunk) ud.lid.position.y = -b.obj.position.y + .02;
   }

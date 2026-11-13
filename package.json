@@ -12,7 +12,7 @@
     "test:scout": "node tools/run-ts.mjs test/scouting.ts",
     "test:core": "node tools/run-ts.mjs test/core/registry.ts && node tools/run-ts.mjs test/core/systems.ts",
     "sim": "node tools/run-ts.mjs tools/sim.ts",
-    "test": "node tools/run-ts.mjs test/core/registry.ts && node tools/run-ts.mjs test/core/systems.ts && node tools/run-ts.mjs test/matchups.ts && node tools/run-ts.mjs test/scouting.ts && node tools/run-ts.mjs test/story.ts 1 && node tools/run-ts.mjs test/playthrough.ts && node test/story.mjs && node test/server.mjs && node tools/run-ts.mjs test/online/claims.ts && node test/online/fog.mjs && node test/online/fog-page.mjs && node test/coop.mjs && node test/versus.mjs && node test/split.mjs && node test/touch.mjs && node test/veyl.mjs && node test/gloam.mjs && node test/sweep.mjs && node test/artfiles.mjs"
+    "test": "node tools/run-ts.mjs test/core/registry.ts && node tools/run-ts.mjs test/core/systems.ts && node tools/run-ts.mjs test/matchups.ts && node tools/run-ts.mjs test/scouting.ts && node tools/run-ts.mjs test/story.ts 1 && node tools/run-ts.mjs test/playthrough.ts && node test/story.mjs && node test/server.mjs && node tools/run-ts.mjs test/online/claims.ts && node test/online/fog.mjs && node test/online/fog-page.mjs && node test/coop.mjs && node test/versus.mjs && node test/split.mjs && node test/touch.mjs && node test/veyl.mjs && node test/gloam.mjs && node test/sweep.mjs && node test/artfiles.mjs && node test/fx.mjs"
   },
   "dependencies": {
     "three": "0.160.0",

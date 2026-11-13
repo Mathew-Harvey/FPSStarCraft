@@ -29,6 +29,10 @@ export function drawShimmer(g: Game) {
   for (const u of g.units) {
     if (!u.alive) continue; const s = UNIT[u.kind].cloak || u.status?.length ? shimmerOf(g, u) : 1, was = u.obj.userData.shim ?? 1;
     if (s === was) continue; u.obj.userData.shim = s; u.obj.visible = s > 0 && !u.inside;
-    u.obj.traverse((o: any) => { const m = o.material; if (!o.isMesh || !m || Array.isArray(m)) return; if (!o.userData.mat0) o.userData.mat0 = m; if (s >= 1) o.material = o.userData.mat0; else { const c = o.userData.mat0.clone(); c.transparent = true; c.opacity = s; c.depthWrite = false; o.material = c; } });
+    SHIM.apply(u.obj, s);
   }
 }
+/** How a hidden body's look is changed: `s` as shimmerOf gives it (1 back to plain). src/fx/hide.ts puts the glass shader in. */
+export const SHIM = { apply: (obj: { traverse(f: (o: any) => void): void }, s: number) => {
+  obj.traverse((o: any) => { const m = o.material; if (!o.isMesh || !m || Array.isArray(m)) return; if (!o.userData.mat0) o.userData.mat0 = m; if (s >= 1) o.material = o.userData.mat0; else { const c = o.userData.mat0.clone(); c.transparent = true; c.opacity = s; c.depthWrite = false; o.material = c; } });
+} };

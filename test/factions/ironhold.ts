@@ -145,6 +145,10 @@ const bolt = (g: Game, host: Building, k: 'labbay' | 'twinbay') => { const ok = 
   // Flak Kite lands and takes off
   const kite = at('flakkite', 80, 20); useAbility(g, kite, 'land'); run(g, TUNE.land + 1); check(kite.kind === 'flakwalker' && !kite.air, 'a Flak Kite lands as a walker');
   useAbility(g, kite, 'takeoff'); run(g, TUNE.land + 1); check(kite.kind === 'flakkite' && !!kite.air, 'and takes off again');
+  { // its bot asks whether to land when a hidden ground foe is near: that check needs the real game (a copy loses upOf), or the match dies
+    const FT = g.units.find(u => u.alive && u.team !== T)!.team, hid = g.spawn('cantor' as Kind, FT, kite.pos.x + 4, kite.pos.z); require('../../src/core/status').addStatus(hid, 'unseen', 9); const post = g.addBuilding('watchpost' as any, T, kite.pos.x - 6, kite.pos.z + 6, true);
+    let ok = true; try { abilitiesOf('flakkite').find(a => a.key === 'land')!.ai!(g, kite); } catch (e) { ok = false; console.log(String(e)); }
+    check(ok, 'a Flak Kite weighs landing near a hidden ground foe without throwing'); hid.alive = false; hid.obj.visible = false; post.alive = false; post.obj.visible = false; }
   // Gadfly cloak
   const gad = at('gadfly', 85, 30); gad.energy = 200; check(!!why(gad, 'cloak'), 'Smoke Cloak is refused before the research');
   U.smoke = true; check(useAbility(g, gad, 'cloak') && isHidden(gad), 'with the research the Gadfly goes unseen');

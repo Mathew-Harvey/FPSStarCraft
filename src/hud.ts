@@ -63,7 +63,8 @@ export class Hud {
   private killMark = false; private hitFlip = false;
   streak(text: string) { const e = this.$('streak'); e.textContent = text; e.hidden = false; e.style.animation = 'none'; void e.offsetWidth; e.style.animation = ''; clearTimeout(this.streakTimer); this.streakTimer = setTimeout(() => { e.hidden = true; }, 1300) as any; }
   private streakTimer = 0;
-  ping(p: THREE.Vector3) { this.pingPos.copy(p); this.pingT = 3; }
+  ping(p: THREE.Vector3, text = 'Squad moving here') { this.pingPos.copy(p); this.pingT = 3; this.pingText = text; }
+  private pingText = 'Squad moving here';
   titleCard(kind: string, name: string, quip: string) { const e = this.$('tcard'); if (!name) { e.hidden = true; return; } this.$('tcName').textContent = name; this.$('tcQuip').textContent = quip; this.$('tcSide').textContent = (UNIT[kind as Kind]?.team || 0) === 2 ? 'The Gloam · a mouth of the swarm' : UNIT[kind as Kind]?.team ? 'Veyl Chorus · a voice you borrow' : 'Ironhold Charter · now under your control'; const src = this.portraits[kind]; if (src) (this.$('tcImg') as HTMLImageElement).src = src; e.hidden = false; }
   showEnd(g: Game) {
     this.$('endTitle').textContent = g.won ? (g.story ? 'Job done' : 'Paid in full') : 'Shift over'; this.$('endTitle').className = 'logo sm' + (g.won ? '' : ' bad');
@@ -95,7 +96,8 @@ export class Hud {
   update(g: Game, cam: THREE.Camera) {
     const now = performance.now() / 1000, dt = Math.min(.1, now - this.last || .016); this.last = now;
     const me = g.me; if (!me) return;
-    const tab = g.tab, lost = g.staticT > 0;
+    const C = g.cmd, cv = C.on, tab = g.tab, lost = g.staticT > 0 && !cv, ref = cv ? C.focus : me.pos;
+    if (this.cache.get('cv') !== (cv ? '1' : '0')) { this.cache.set('cv', cv ? '1' : '0'); this.root.classList.toggle('cmdv', cv); } this.command(g, cv);
     this.vis('hudMain', !tab && !lost); this.vis('jump', tab); this.vis('lost', lost); this.vis('anchors', !lost);
     // top row
     const side = g.myTeam, F = FACTION[side], cash = g.cash(side); this.set('ore', String(Math.floor(cash)));
@@ -104,7 +106,7 @@ export class Hud {
     const D = g.dir, S = D.side(side), pb = S.playbook, ph = pb.idx;
     // The squad's playbook means nothing until there is a squad: in the first minutes (and all of Job 1) it was a strip of jargon over the tutorial.
     this.vis('play', ph > 0 || !!S.plan || g.army(side).length > 0); this.set('play', `<b>${pb.name}</b>` + pb.steps.map((n, i) => `<span class="${i === ph ? 'on' : i < ph ? 'dn' : ''}">${n}</span>`).join(''), true);
-    const st = g.stones().length, sq = g.army(side).length, hfs = g.ownB('headframe').length; this.set('whoSub', 'You · ' + F.name); const foe = foeOf(side), fq = FACTION[foe].hq, nq = g.ownB(fq, false, foe).length; const clock = g.story && g.ms.clock !== undefined && g.ms.clock >= 0 ? ` · <em>${g.story.clockLabel || 'Clock'} ${Math.floor(g.ms.clock / 60)}:${String(Math.floor(g.ms.clock % 60)).padStart(2, '0')}</em>` : '';
+    const st = g.stones().length, sq = g.army(side).length, hfs = g.ownB('headframe').length; { const n = g.ledCount(); this.set('whoSub', 'You · ' + F.name + (n ? ` · leading ${n}` : '')); } const foe = foeOf(side), fq = FACTION[foe].hq, nq = g.ownB(fq, false, foe).length; const clock = g.story && g.ms.clock !== undefined && g.ms.clock >= 0 ? ` · <em>${g.story.clockLabel || 'Clock'} ${Math.floor(g.ms.clock / 60)}:${String(Math.floor(g.ms.clock % 60)).padStart(2, '0')}</em>` : '';
     if (g.eco && !g.story) this.set('goal', `${['Break', 'Silence', 'Squash'][fac(foe)]} ${nq > 1 ? 'every ' + BLD[fq].name : 'the ' + BLD[fq].name} · <em>${nq} standing</em>` + (sq ? ` · ${['Squad', 'Chorus', 'Swarm'][fac(side)]} ${sq}` : ''), true); else if (g.story) { const next = D.objectives().find(o => !o.done); this.set('goal', (next ? next.text : 'Job done') + clock + (sq ? ` · ${['Squad', 'Chorus', 'Swarm'][fac(side)]} ${sq}` : ''), true); } else this.set('goal', `${SIDE.out === 2 ? 'Squash the Mother Caps' : 'Smash the Choir Stones'} · <em>${st} left</em>` + (sq ? ` · Squad ${sq}` : ''), true);
     this.set('qm', `<span class="k" style="font-size:13px">G</span> ${F.voice} <b>${S.auto ? 'Auto' : 'Off'}</b>`, true); this.cls('qm', 'qm c out' + (S.auto ? '' : ' off'));
     // who
@@ -121,13 +123,13 @@ export class Hud {
     const building = rig && g.tool === 2, blist = FACTION[me.team].builds; this.vis('build', building);
     if (building) this.set('buildRows', blist.map((k, i) => { const lock = !g.unlocked(k, me.team), miss = g.missing(k, me.team); return `<div class="${i === g.buildSel ? 'on' : ''}${lock ? ' lock' : cash < BLD[k].cost ? ' no' : ''}"><span>${BLD[k].name}<small>${lock ? (miss.length ? 'Needs ' + miss.map(n => BLD[n].name).join(' and ') : 'Not on this job') : BLD[k].blurb}</small></span><span>${lock ? 'locked' : BLD[k].cost + ' ore'}</span></div>`; }).join(''), true);
     this.vis('prompt', !!g.prompt && !building); if (g.prompt) this.set('prompt', g.prompt, true);
-    this.set('hint', `<span><span class="k">TAB</span> Jump${g.jumpCd > 0 ? ` <span class="cd">${g.jumpCd.toFixed(1)}s</span>` : ''}</span>` + (g.lastBody?.alive ? `<span><span class="k">Q</span> Last body</span>` : '') + (g.army(side).some(u => u !== me) ? `<span><span class="k">V</span> ${D.following(S) ? 'Send squad home' : 'Squad on me'}</span><span><span class="k">MMB</span> Send</span>` : ''), true);
+    this.set('hint', `<span><span class="k">TAB</span> Jump${g.jumpCd > 0 ? ` <span class="cd">${g.jumpCd.toFixed(1)}s</span>` : ''}</span>` + (g.lastBody?.alive ? `<span><span class="k">Q</span> Last body</span>` : '') + (g.army(side).some(u => u !== me) ? `<span><span class="k">V</span> ${D.following(S) ? 'Send squad home' : 'Squad on me'}</span><span><span class="k">MMB</span> Send</span>` : '') + `<span><span class="k">N</span> Command</span><span><span class="k">M</span> Map</span>`, true);
     // squad callout and countdown
     const co = S.callout; this.vis('callout', !!co && !tab);
     if (co) { this.set('callKeys', co.keys.map(k => `<span><b>${k[0]}</b>${k[1]}</span>`).join(''), true); this.set('callWho', co.who); this.set('callText', co.text, true); this.img('callImg', F.lead); this.$('callTm').style.width = Math.max(0, co.t / co.dur * 100) + '%'; }
     const cnt = S.plan?.phase === 'count'; this.vis('count', !!cnt); if (cnt) { this.set('countN', (fac(side) === 2 ? 'SWARM IN ' : fac(side) ? 'SING IN ' : 'GO IN ') + Math.ceil(S.plan!.t)); this.set('countL', S.plan!.label); }
     const raid = !side && !g.eco && D.raidIn < 15 && g.stones().length > 0 && !co && !cnt; this.vis('raid', raid); if (raid) this.set('raid', `Raid in ${Math.max(0, Math.ceil(D.raidIn))} · ${D.raidDir === 'north' ? capW(MAP.flankName) : capW(MAP.road)}`);
-    const objs = D.objectives(), teach = g.story ? true : !(objs[0].done && objs[1].done && objs[2].done) && g.time < 600; this.vis('objs', teach && !building); if (teach) this.set('objs', `<h6>${g.story ? g.story.tag + ' · ' + g.story.name : fac(side) ? 'First verse' : 'First shift'}</h6>` + objs.map(o => `<div class="${o.done ? 'dn' : ''}">${o.text}</div>`).join(''), true);
+    const objs = D.objectives(), teach = g.story ? true : !(objs[0].done && objs[1].done && objs[2].done) && g.time < 600; this.vis('objs', teach && !building && !C.map); if (teach) this.set('objs', `<h6>${g.story ? g.story.tag + ' · ' + g.story.name : fac(side) ? 'First verse' : 'First shift'}</h6>` + objs.map(o => `<div class="${o.done ? 'dn' : ''}">${o.text}</div>`).join(''), true);
     let boss: Unit | null = null; for (const u of g.units) if (u.alive && (u.kind === 'warden' || u.kind === 'gantry') && u.team !== side && u.pos.distanceTo(me.pos) < 70) { boss = u; break; }
     this.vis('boss', !!boss && !co && !cnt && !raid); if (boss) { this.$('bossHp').style.width = (boss.hp / boss.maxHp * 100).toFixed(1) + '%'; this.$('bossSh').style.width = (boss.shield / boss.maxShield * 100).toFixed(1) + '%'; }
     // jump cards
@@ -142,26 +144,27 @@ export class Hud {
     const lab = (p: THREE.Vector3, y: number, html: string) => { if (li >= this.labs.length) return; const q = new THREE.Vector3(p.x, y, p.z); if (!this.project(q, cam)) return; const l = this.labs[li]; l.hidden = false; l.style.transform = `translate(${Math.max(150, Math.min(this.W - 150, V.x)).toFixed(1)}px,${Math.max(130, V.y).toFixed(1)}px)`; const k = 'l' + li; if (this.cache.get(k) !== html) { this.cache.set(k, html); l.firstElementChild!.innerHTML = html; } li++; };
     for (const p of g.pings) lab(V.set(p.x, 0, p.z).clone(), 2.2, `<div class="mark ping out">${g.names[p.pid] || 'Ping'} · ${Math.round(Math.hypot(p.x - me.pos.x, p.z - me.pos.z))}m</div>`);
     for (const u of g.units as Unit[]) {
-      if (!u.alive || u === me && !tab) continue; const d = u.pos.distanceTo(me.pos);
+      if (!u.alive || u === me && !tab && !cv || !u.obj.visible) continue; const d = u.pos.distanceTo(ref), sel = cv && C.sel.has(u);
       if (u.pilot && u !== me && g.names[u.pilot] && d < (u.team === g.myTeam ? 120 : 30)) lab(u.pos, UNIT[u.kind].headY + 1.25, `<div class="mark out" style="color:var(--yel)">${g.names[u.pilot]}</div>`);
-      if (!tab && d > 70) continue;
-      const hurtU = u.hp < u.maxHp || u.shield < u.maxShield; if (u.team === g.myTeam && !hurtU && !tab) continue; if (u.team !== g.myTeam && !hurtU && d > 40) continue;
+      if (!tab && !sel && d > Math.max(70, cv ? C.h * 2.2 : 0)) continue;
+      const hurtU = u.hp < u.maxHp || u.shield < u.maxShield; if (u.team === g.myTeam && !hurtU && !tab && !sel) continue; if (u.team !== g.myTeam && !hurtU && d > 40) continue;
       const y = UNIT[u.kind].headY + .75;
       if (u.maxShield && u.shield > 0) bar(u.pos, y + .22, u.shield / u.maxShield, 'hb s');
       bar(u.pos, y, u.hp / u.maxHp, u.team !== g.myTeam ? 'hb e' : 'hb');
     }
     const foeT = foeOf(side), near = g.nearestStone(me.pos), nearHF = g.eco ? g.ownB(FACTION[foeT].hq, false, foeT).filter(b => g.fog.seen(b.pos.x, b.pos.z)).sort((a, b) => a.pos.distanceTo(me.pos) - b.pos.distanceTo(me.pos))[0] : null;
     for (const b of g.buildings as Building[]) {
-      if (!b.alive) continue; const d = b.pos.distanceTo(me.pos);
+      if (!b.alive || !b.obj.visible) continue; const d = cv ? 1 : b.pos.distanceTo(me.pos);
       if (!b.built) { bar(b.pos, BLD[b.kind].h + 1.2, b.progress, 'hb big p'); if (d < 60) lab(b.pos, BLD[b.kind].h + 1.6, `<div class="mark" style="color:var(--cyan)">${BLD[b.kind].name} ${Math.floor(b.progress * 100)}%</div>`); }
       else if (b.hp < b.maxHp && (d < 90 || tab)) bar(b.pos, b.h + 1.2, b.hp / b.maxHp, b.team !== g.myTeam ? 'hb big e' : 'hb big');
-      if (b.kind === 'wardpylon' && d < 110 && !tab && !building) lab(b.pos, b.h + 1.6, `<div class="mark out" style="color:var(--cyan)">Ward Pylon · shielding the base</div>`);
-      if (!g.eco && b.kind === FACTION[SIDE.out].hq && b.team === SIDE.out && !side && d > 45 && !tab && !building && g.fog.seen(b.pos.x, b.pos.z)) lab(b.pos, b.h + 2, `<div class="mark out">${b === near ? (SIDE.out === 2 ? 'Mother Caps · ' : 'Choir Stones · ') + Math.round(d) + 'm' : ''}</div>`);
-      if (b === nearHF && d > 45 && !tab && !building) lab(b.pos, b.h + 3, `<div class="mark out">${BLD[b.kind].name} · ${Math.round(d)}m</div>`);
-      if (b.kind === FACTION[side].hq && b.team === side && g.time - b.lastHit < 6 && d > 30) lab(b.pos, b.h + 3, `<div class="mark out" style="color:var(--red)">${BLD[b.kind].name} under attack</div>`);
+      if (cv && C.selB === b) lab(b.pos, b.h + 2.4, `<div class="mark out" style="color:var(--cyan)">${BLD[b.kind].name}</div>`);
+      if (b.kind === 'wardpylon' && d < 110 && !tab && !building && !cv) lab(b.pos, b.h + 1.6, `<div class="mark out" style="color:var(--cyan)">Ward Pylon · shielding the base</div>`);
+      if (!g.eco && b.kind === FACTION[SIDE.out].hq && b.team === SIDE.out && !side && d > 45 && !tab && !building && !cv && g.fog.seen(b.pos.x, b.pos.z)) lab(b.pos, b.h + 2, `<div class="mark out">${b === near ? (SIDE.out === 2 ? 'Mother Caps · ' : 'Choir Stones · ') + Math.round(d) + 'm' : ''}</div>`);
+      if (b === nearHF && d > 45 && !tab && !building && !cv) lab(b.pos, b.h + 3, `<div class="mark out">${BLD[b.kind].name} · ${Math.round(d)}m</div>`);
+      if (b.kind === FACTION[side].hq && b.team === side && g.time - b.lastHit < 6 && (d > 30 || cv)) lab(b.pos, b.h + 3, `<div class="mark out" style="color:var(--red)">${BLD[b.kind].name} under attack</div>`);
     }
     if (building) { const k = blist[g.buildSel] || blist[0]; lab(g.placePos, BLD[k].h + 1.4, `<div class="tag${g.placeOK ? '' : ' bad'}"><span class="d" style="font-size:30px;color:${g.placeOK ? 'var(--cyan)' : 'var(--red)'}">${BLD[k].name}</span> <span class="d" style="font-size:24px;color:var(--ore);margin-left:14px">${BLD[k].cost} ore</span><div class="c" style="font-size:14px">${g.placeOK ? 'Click place · R rotate · Right-click cancel' : cash < BLD[k].cost ? 'Not enough ore' : 'Can\'t build there'}</div></div>`); }
-    if (this.pingT > 0) { this.pingT -= dt; lab(this.pingPos, 1.5, `<div class="mark ping out">Squad moving here</div>`); }
+    if (this.pingT > 0) { this.pingT -= dt; lab(this.pingPos, 1.5, `<div class="mark ping out">${this.pingText}</div>`); }
     for (let i = bi; i < this.bars.length; i++) if (!this.bars[i].hidden) this.bars[i].hidden = true;
     for (let i = li; i < this.labs.length; i++) if (!this.labs[i].hidden) this.labs[i].hidden = true;
     // floating numbers
@@ -172,7 +175,7 @@ export class Hud {
       const pop = k < .15 ? .6 + k / .15 * .6 : 1.2 - Math.min(1, (k - .15) * 2) * .2; f.el.style.opacity = k > .7 ? ((1 - k) / .3).toFixed(2) : '1'; f.el.style.transform = `translate(${V.x.toFixed(1)}px,${V.y.toFixed(1)}px) translate(-50%,-50%) scale(${pop.toFixed(2)}) rotate(-6deg)`;
     }
     // minimap
-    this.miniT -= dt; if (this.miniT <= 0) { this.miniT = .12; this.drawMini(g); this.crew(g); }
+    this.miniT -= dt; if (this.miniT <= 0) { this.miniT = .12; this.drawMap(g, this.mini, false); if (C.map) this.drawMap(g, this.big || (this.big = (this.$('bigmapC') as HTMLCanvasElement).getContext('2d')!), true); this.crew(g); }
   }
 
   private crew(g: Game) {
@@ -180,10 +183,31 @@ export class Hud {
     const html = Object.keys(g.names).map(k => { const id = +k, u = (g.units as Unit[]).find(x => x.alive && x.pilot === id), s = g.score[id] || [0, 0, 0]; return `<div class="${id === g.net!.id ? 'me' : ''}${g.teams[id] ? ' v' : ''}"><b>${g.names[id]}</b><span>${u ? UNIT[u.kind].name : 'Down'}</span><em>${s[0]} kills · ${s[1]} ore</em></div>`; }).join('');
     if (this.cache.get('crew') !== html) { this.cache.set('crew', html); el.innerHTML = html; } el.hidden = false;
   }
-  private drawMini(g: Game) {
+  private big: CanvasRenderingContext2D | null = null; private wasMap = false; private face = ''; private bm = { x0: 0, z0: 0, k: 1, l: 0, t: 0, w: 1, h: 1 }; private hatchBig: HTMLCanvasElement | null = null;
+  /** The command view's own parts: the cursor, the box being dragged, what is picked, and the full map. */
+  private command(g: Game, on: boolean) {
+    this.vis('cmdUI', on); if (!on) return; const C = g.cmd, map = C.map;
+    this.$('ccur').style.transform = `translate(${C.cx.toFixed(1)}px,${C.cy.toFixed(1)}px)`;
+    const bx = C.box; this.vis('cbox', !!bx); if (bx) { const s = this.$('cbox').style; s.left = bx[0] + 'px'; s.top = bx[1] + 'px'; s.width = bx[2] - bx[0] + 'px'; s.height = bx[3] - bx[1] + 'px'; }
+    this.vis('bigmap', map); this.vis('cpan', !map); if (map !== this.wasMap) { this.wasMap = map; this.miniT = 0; }
+    if (map) { const w = Math.min(this.W - 140, (this.H - 190) / .6923), h = w * .6923, l = (this.W - w) / 2, t = (this.H - h) / 2 - 6, k = `${w.toFixed(0)}|${l.toFixed(0)}|${t.toFixed(0)}`; this.bm.l = l; this.bm.t = t; this.bm.w = w; this.bm.h = h; if (this.cache.get('bmR') !== k) { this.cache.set('bmR', k); const s = this.$('bigmap').style; s.left = l + 'px'; s.top = t + 'px'; s.width = w + 'px'; s.height = h + 'px'; } }
+    if (!C.mapPt) C.mapPt = (x, y) => { const m = this.bm, lx = (x - m.l) / m.w * 260, lz = (y - m.t) / m.h * 180; return lx < 0 || lz < 0 || lx > 260 || lz > 180 ? null : [m.x0 + lx / m.k, m.z0 + lz / m.k]; };
+    // what is picked
+    let html = '';
+    if (C.selB) { const b = C.selB; html = `<h4>${BLD[b.kind].name}</h4><div class="hpl"><i style="width:${(b.hp / b.maxHp * 100).toFixed(0)}%"></i></div>` + (!b.built ? `<p>Going up · ${Math.floor(b.progress * 100)}%</p>` : C.shop ? `<div class="shop">${C.shop.replace(/ &nbsp; /g, '<br>')}</div>` : '<p>Nothing to order here</p>'); }
+    else if (C.sel.size) {
+      const by = new Map<Kind, number>(); let hp = 0, max = 0; for (const u of C.sel) { by.set(u.kind, (by.get(u.kind) || 0) + 1); hp += u.hp; max += u.maxHp; }
+      html = `<h4>${C.sel.size === 1 ? UNIT[[...by.keys()][0]].name : C.sel.size + ' picked'}</h4><div class="hpl"><i style="width:${(hp / Math.max(1, max) * 100).toFixed(0)}%"></i></div>` + (C.sel.size > 1 ? `<div class="kinds">${[...by].map(([k, n]) => `<span>${UNIT[k].name} ×${n}</span>`).join('')}</div>` : '') + `<p><b>Right click</b> go, attack, mine or build<br><b>F</b> jump in · <b>R</b> back to the squad</p>`;
+    } else html = `<h4>Command view</h4><p>Click one of yours, or drag a box round several.<br>Click a building to order from it.</p>`;
+    this.set('cpan', html, true);
+    this.set('cnote', map ? '<b>Click</b> look there · <b>Right click</b> send the picked crew · <b>M</b> close' : `Your crew fight without your bonus while you are up here`, true);
+    this.set('ckeysBar', map ? '' : '<span><span class="k">Wheel</span> Zoom, all the way in to jump</span><span><span class="k">MMB</span> Hold to slide</span><span><span class="k">M</span> Map</span><span><span class="k">N</span> Back to your body</span>', true);
+  }
+  private drawMap(g: Game, c: CanvasRenderingContext2D, big: boolean) {
+    const q = big ? 4 : 1; c.setTransform(q, 0, 0, q, 0, 0);
     // framed on everything worth finding: the yard, the outpost, both routes and every ore field
     const pts = [[0, 0], [OUTPOST.x, OUTPOST.z], ...NORTH_PATH, ...(MAP.sites || [])], bx0 = Math.min(...pts.map(p => p[0])) - 26, bx1 = Math.max(...pts.map(p => p[0])) + 26, bz0 = Math.min(...pts.map(p => p[1])) - 22, bz1 = Math.max(...pts.map(p => p[1])) + 22;
-    const c = this.mini, S = 260, span = Math.max(bx1 - bx0, (bz1 - bz0) / .69), x0 = (bx0 + bx1) / 2 - span / 2, z0 = (bz0 + bz1) / 2 - span * .345, k = S / span, X = (x: number) => (x - x0) * k, Z = (z: number) => (z - z0) * k;
+    const S = 260, span = Math.max(bx1 - bx0, (bz1 - bz0) / .69), x0 = (bx0 + bx1) / 2 - span / 2, z0 = (bz0 + bz1) / 2 - span * .345, k = S / span, X = (x: number) => (x - x0) * k, Z = (z: number) => (z - z0) * k;
     const fog = g.fog; fog.update(g, .12);
     c.fillStyle = '#4a2f29'; c.fillRect(0, 0, S, 180);
     c.strokeStyle = '#6b4a3a'; c.lineWidth = 7; c.beginPath(); { const a = roadPt(4), b = roadPt(ROAD.len + 6); c.moveTo(X(a[0]), Z(a[1])); c.lineTo(X(b[0]), Z(b[1])); c.stroke(); }
@@ -195,18 +219,28 @@ export class Hud {
       for (let i = 0; i < fog.cells.length; i++) { const v = fog.cells[i]; d[i * 4] = 22; d[i * 4 + 1] = 15; d[i * 4 + 2] = 14; d[i * 4 + 3] = v === 2 ? 0 : v === 1 ? 105 : 236; }
       cx.putImageData(img, 0, 0);
       // Ground nobody has seen is hatched like the blank part of a survey sheet, rather than left as a black slab.
-      const hc = this.fogHatch || (this.fogHatch = document.createElement('canvas')); if (hc.width !== S) { hc.width = S; hc.height = 180; } const hx = hc.getContext('2d')!;
+      const hc = big ? this.hatchBig || (this.hatchBig = document.createElement('canvas')) : this.fogHatch || (this.fogHatch = document.createElement('canvas')); if (hc.width !== S * q) { hc.width = S * q; hc.height = 180 * q; } const hx = hc.getContext('2d')!; hx.setTransform(q, 0, 0, q, 0, 0);
       if (!this.hatchPat) { const t = document.createElement('canvas'); t.width = t.height = 9; const tg = t.getContext('2d')!; tg.fillStyle = '#211614'; tg.fillRect(0, 0, 9, 9); tg.strokeStyle = '#4a332c'; tg.lineWidth = 1.3; tg.beginPath(); tg.moveTo(-1, 10); tg.lineTo(10, -1); tg.moveTo(-1, 1); tg.lineTo(1, -1); tg.moveTo(8, 10); tg.lineTo(10, 8); tg.stroke(); this.hatchPat = hx.createPattern(t, 'repeat'); }
       hx.globalCompositeOperation = 'source-over'; hx.clearRect(0, 0, S, 180); hx.imageSmoothingEnabled = true; hx.drawImage(cv, X(fog.x0), Z(fog.z0), n * 4 * k, n * 4 * k);
-      hx.globalCompositeOperation = 'source-in'; hx.fillStyle = this.hatchPat || '#211614'; hx.fillRect(0, 0, S, 180); c.drawImage(hc, 0, 0); }
+      hx.globalCompositeOperation = 'source-in'; hx.fillStyle = this.hatchPat || '#211614'; hx.fillRect(0, 0, S, 180); c.drawImage(hc, 0, 0, S, 180); }
     for (const o of g.ores) { if (o.amount <= 0 || !fog.seen(o.pos.x, o.pos.z)) continue; c.fillStyle = '#b8f58c'; c.fillRect(X(o.pos.x) - 2.5, Z(o.pos.z) - 2.5, 5, 5); }
     c.lineWidth = 1.5; c.strokeStyle = '#0e0d14';
     for (const b of g.buildings) { if (!b.alive || (b.team !== g.myTeam && !fog.seen(b.pos.x, b.pos.z))) continue; const w = Math.max(5, b.hx * 2 * k), h = Math.max(5, b.hz * 2 * k); c.fillStyle = b.team !== g.myTeam ? (b.kind === 'reedgate' ? '#c58bff' : '#35e0c8') : b.built ? '#ffc21a' : '#7ef0ff'; c.fillRect(X(b.pos.x) - w / 2, Z(b.pos.z) - h / 2, w, h); c.strokeRect(X(b.pos.x) - w / 2, Z(b.pos.z) - h / 2, w, h); }
-    for (const u of g.units) { if (!u.alive || u === g.me || (u.team !== g.myTeam && !fog.sees(u.pos.x, u.pos.z))) continue; const foeU = u.team !== g.myTeam; c.fillStyle = foeU ? (u.kind === 'tender' ? '#c58bff' : this.cb ? '#ff9d1a' : '#ff4f9a') : isWorker(u.kind) ? (this.cb ? '#4da3ff' : '#8be04e') : '#f4ead2'; c.beginPath(); c.arc(X(u.pos.x), Z(u.pos.z), u.kind === 'warden' ? 5 : foeU ? 2.6 : 2.2, 0, 7); c.fill(); }
+    for (const u of g.units) { if (!u.alive || (u === g.me && !g.cmd.on) || (u.team !== g.myTeam && !fog.sees(u.pos.x, u.pos.z))) continue; const foeU = u.team !== g.myTeam; c.fillStyle = foeU ? (u.kind === 'tender' ? '#c58bff' : this.cb ? '#ff9d1a' : '#ff4f9a') : isWorker(u.kind) ? (this.cb ? '#4da3ff' : '#8be04e') : '#f4ead2'; c.beginPath(); c.arc(X(u.pos.x), Z(u.pos.z), u.kind === 'warden' ? 5 : foeU ? 2.6 : 2.2, 0, 7); c.fill(); }
     for (const p of g.pings) { c.strokeStyle = '#ffc21a'; c.lineWidth = 2.5; c.beginPath(); c.arc(X(p.x), Z(p.z), 4 + (8 - p.t) % 1 * 7, 0, 7); c.stroke(); }
     for (const u of g.units) if (u.alive && u.pilot && u !== g.me && u.team === g.myTeam) { c.fillStyle = '#ffc21a'; c.strokeStyle = '#0e0d14'; c.lineWidth = 1.5; c.beginPath(); c.arc(X(u.pos.x), Z(u.pos.z), 3.6, 0, 7); c.fill(); c.stroke(); }
     const D = g.dir; if (g.myTeam === SIDE.home && !g.eco && (D.raidIn < 15 || D.raidLive) && g.stones().length && Math.floor(performance.now() / 300) % 2) { c.fillStyle = '#ff4b3a'; c.strokeStyle = '#0e0d14'; c.lineWidth = 2; c.beginPath(); { const n = NORTH_PATH.length, p = D.raidDir === 'north' ? [(NORTH_PATH[n - 1][0] + NORTH_PATH[n - 2][0]) / 2, (NORTH_PATH[n - 1][1] + NORTH_PATH[n - 2][1]) / 2] : roadPt(62), a = Math.atan2(-p[1], -p[0]); c.moveTo(X(p[0]) + Math.cos(a) * 9, Z(p[1]) + Math.sin(a) * 9); c.lineTo(X(p[0]) + Math.cos(a + 2.4) * 8, Z(p[1]) + Math.sin(a + 2.4) * 8); c.lineTo(X(p[0]) + Math.cos(a - 2.4) * 8, Z(p[1]) + Math.sin(a - 2.4) * 8); } c.closePath(); c.fill(); c.stroke(); }
     if (this.pingT > 0) { c.strokeStyle = '#ffc21a'; c.lineWidth = 2; c.beginPath(); c.arc(X(this.pingPos.x), Z(this.pingPos.z), 5, 0, 7); c.stroke(); }
-    const me = g.me; if (me) { c.save(); c.translate(X(me.pos.x), Z(me.pos.z)); c.rotate(-g.yaw); c.fillStyle = '#fff'; c.strokeStyle = '#0e0d14'; c.lineWidth = 1.5; c.beginPath(); c.moveTo(0, 8); c.lineTo(5, -5); c.lineTo(0, -2); c.lineTo(-5, -5); c.closePath(); c.fill(); c.stroke(); c.restore(); }
+    const me = g.me, C = g.cmd;
+    // picked bodies are ringed, and the ground the command view is looking at is framed
+    if (C.on) { c.strokeStyle = '#7ef0ff'; c.lineWidth = 1.2; for (const u of C.sel) { c.beginPath(); c.arc(X(u.pos.x), Z(u.pos.z), 4, 0, 7); c.stroke(); } }
+    if (C.on && !C.map) { const p = new THREE.Vector3(), pts: number[][] = []; for (const [sx, sy] of [[0, 0], [this.W, 0], [this.W, this.H], [0, this.H]]) if (C.ground(sx, sy, p)) pts.push([X(p.x), Z(p.z)]); if (pts.length === 4) { c.strokeStyle = '#fff'; c.lineWidth = 1.5; c.beginPath(); pts.forEach((pt, i) => i ? c.lineTo(pt[0], pt[1]) : c.moveTo(pt[0], pt[1])); c.closePath(); c.stroke(); } }
+    if (me && me.alive && !(C.on && g.net && me.pilot !== g.net.id)) { c.save(); c.translate(X(me.pos.x), Z(me.pos.z)); c.rotate(-g.yaw); c.fillStyle = '#fff'; c.strokeStyle = '#0e0d14'; c.lineWidth = 1.5; c.beginPath(); c.moveTo(0, 8); c.lineTo(5, -5); c.lineTo(0, -2); c.lineTo(-5, -5); c.closePath(); c.fill(); c.stroke(); c.restore(); }
+    if (!big) return;
+    // the full map names what is on it
+    this.bm.x0 = x0; this.bm.z0 = z0; this.bm.k = k;
+    const name = (x: number, z: number, t: string, col: string) => { c.font = `700 5.6px ${this.face || (this.face = getComputedStyle(this.root).fontFamily || 'sans-serif')}`; t = t.toUpperCase(); c.textAlign = 'center'; c.lineJoin = 'round'; c.lineWidth = 1.8; c.strokeStyle = '#0e0d14'; c.strokeText(t, X(x), Z(z)); c.fillStyle = col; c.fillText(t, X(x), Z(z)); };
+    for (const b of g.buildings) { if (!b.alive) continue; const mine = b.team === g.myTeam; if (b.kind !== FACTION[b.team].hq || (!mine && !fog.seen(b.pos.x, b.pos.z))) continue; name(b.pos.x, b.pos.z - b.hz - 4 / k, mine ? BLD[b.kind].name : 'Enemy ' + BLD[b.kind].name, mine ? '#ffc21a' : '#35e0c8'); }
+    if (me && me.alive) name(me.pos.x, me.pos.z + 12 / k, 'You', '#fff');
   }
 }

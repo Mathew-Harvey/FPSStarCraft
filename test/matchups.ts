@@ -4,7 +4,7 @@
 import { noHud, noPipe } from '../server/shim';
 import { Game } from '../src/game';
 import { initHeadless } from '../src/gfx';
-import { DIFFS, SIDE, FACTION, BLD, MAP, VHOME, UPGRADES, setMap, setSides, fac, Kind, BKind } from '../src/data';
+import { DIFFS, SIDE, FACTION, BLD, MAP, VHOME, UPGRADES, NORTH_PATH, homeXZ, setMap, setSides, fac, Kind, BKind } from '../src/data';
 const UPGRADE_AT = Object.fromEntries(UPGRADES.map(u => [u.key, u.at]));
 
 initHeadless();
@@ -157,6 +157,19 @@ for (const [home, out, map] of [[0, 1, 2], [0, 2, 20], [0, 0, 1], [1, 1, 0], [2,
   for (let i = 0; i < 40 * 60 * 30 && g.phase !== 'over'; i++) { g.update(1 / 30); g.evq!.length = 0; if (g.cash(H) < -1 || g.cash(O) < -1) bad = 'negative ore'; }
   check(!bad, `${tag}: no negative ore`);
   check(g.phase === 'over', `${tag}: the bots finish the match inside 40 minutes (ended at ${Math.round(g.time)} s)`);
+}
+
+// Each side's squad waits at its own end, and a back-door alarm sends it toward the ridge path's end at its own base. The far end used to borrow
+// the yard's points turned through the middle of the map; the ridge is not symmetric, so its army stood 40 m behind its base while a flank
+// push walked through the mining line (the yard won 12 of 15 Ironhold mirrors).
+for (const map of [0, 1, 2]) for (const [home, out] of [[0, 0], [0, 1], [1, 0], [2, 1], [1, 2]]) {
+  const g = match(out, map, home), d = (a: { x: number; z: number } | number[], b: number[]) => Math.hypot((Array.isArray(a) ? a[0] : a.x) - b[0], (Array.isArray(a) ? a[1] : a.z) - b[1]);
+  for (const s of [g.dir, g.dir.vs]) {
+    const atYard = s === g.dir, base = homeXZ(s.team), foeBase = homeXZ(s === g.dir ? g.dir.vs.team : g.dir.team), ridge = atYard ? NORTH_PATH[NORTH_PATH.length - 1] : NORTH_PATH[0];
+    const road = g.dir.rallyAt(0, false, s), north = g.dir.rallyAt(0, true, s), tag = `map ${map}, ${FACTION[home].short} v ${FACTION[out].short}, ${atYard ? 'yard' : 'far end'}`;
+    check(d(road, base) < d(road, foeBase) && d(north, base) < d(north, foeBase), `${tag}: the squad's rally points are on its own half`);
+    check(d(north, ridge) < d(base, ridge), `${tag}: the ridge rally sits between the base and the ridge path (${Math.round(d(north, ridge))} m from the path's end, base ${Math.round(d(base, ridge))} m)`);
+  }
 }
 
 console.log(fail.length ? `\n${fail.length} FAILED` : '\nALL PASS'); process.exit(fail.length ? 1 : 0);

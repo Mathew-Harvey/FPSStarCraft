@@ -116,7 +116,7 @@ export const UPGRADES: UpDef[] = [
 /** Research a side can buy. */
 export const upsOf = (team: number) => UPGRADES.filter(u => (u.team || 0) === fac(team));
 
-export interface Order { type: 'guard' | 'amove' | 'follow' | 'raid'; x: number; z: number; path?: number[][]; lead?: Unit }
+export interface Order { type: 'guard' | 'amove' | 'follow' | 'raid'; x: number; z: number; path?: number[][]; lead?: Unit; /** Seconds to stand and let the rest of the march catch up. */ waitT?: number }
 export interface Unit {
   /** Set once a Veyl guard has broken off to regrow its shield, so it only does that once. */
   fled?: boolean; leashed?: boolean;

@@ -37,7 +37,7 @@ def stripes(c, n, pitch, where=None, col=(.1, .09, .08)):
 def hopper():
     """The crew bus: a slab-sided cabin with a ramp at the back, a glazed nose, and a jet pod on each stub wing that swivels down to
     lift and back to fly. Afterburn lights the pods' tails."""
-    fig = B.Figure('hopper', lo=(-2.8, -.1, -3.2), hi=(2.8, 3.2, 3.4), coarse=.04, detail=1.6, paint=1536, brush=1.9)
+    fig = B.Figure('hopper', lo=(-2.8, -.1, -3.2), hi=(2.8, 3.2, 3.4), coarse=.04, detail=1.6, paint=1024, brush=1.9)
     fig.group('body', (0, 0, 0))
     fig.group('head', (0, 1.6, 2.2), 'body')                  # the cockpit
     fig.group('podL', (-1.75, 1.85, .2), 'body')              # jet pods swivel about x
@@ -96,7 +96,7 @@ def hopper():
 def flakkite():
     """A one-seat crop duster with a box kite for a wing and two flak guns under it. Landed, the wings fold up over the back and two
     bird legs take its weight, and it walks with the guns still under its chin."""
-    fig = B.Figure('flakkite', lo=(-2.6, -.1, -2.2), hi=(2.6, 3.0, 2.4), coarse=.03, detail=1.2, paint=1536, brush=1.6)
+    fig = B.Figure('flakkite', lo=(-2.6, -.1, -2.2), hi=(2.6, 3.0, 2.4), coarse=.03, detail=1.2, paint=1024, brush=1.6)
     fig.group('body', (0, 0, 0))
     fig.group('head', (0, 1.75, .55), 'body')
     fig.group('wingL', (-.4, 2.0, 0), 'body')                # the wings fold about z for landing
@@ -199,7 +199,7 @@ def gadfly():
 def surveyor():
     """A survey balloon with a gondola: a patched gas bag, a gondola full of instruments, a searchlight that sees what hides, a pair of
     pusher props, and a stake gun slung underneath."""
-    fig = B.Figure('surveyor', lo=(-2.2, -.1, -3.2), hi=(2.2, 4.4, 3.0), coarse=.04, detail=1.6, paint=1536, brush=1.8)
+    fig = B.Figure('surveyor', lo=(-2.2, -.1, -3.2), hi=(2.2, 4.4, 3.0), coarse=.04, detail=1.6, paint=1024, brush=1.8)
     fig.group('body', (0, 0, 0))
     fig.group('head', (0, .95, 1.0), 'body')                 # the searchlight turns and tips
     fig.group('arms', (0, .6, -.2), 'body')                  # the stake gun

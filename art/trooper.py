@@ -20,7 +20,7 @@ capm = 'hazC' if heavy else 'cW' if patch else 'cD' if long_ else 'cY'
 pants = 'fabG' if long_ else 'fabT' if sap else 'fab'
 steel = 'bD' if heavy else 'bS'
 
-fig = B.Figure(ROLE, scale=1.2 if heavy else 1.05 if sap else 1.08, detail=.8, paint=1024)
+fig = B.Figure(ROLE, scale=1.2 if heavy else 1.05 if sap else 1.08, detail=.66 if ROLE in ('longshot', 'patch') else .8, paint=1024)   # the two with the most gear are thinned harder to stay inside the 450 KB budget
 HIP = .93
 fig.group('body', (0, 0, 0))
 fig.group('legL', (-.105, HIP, 0))

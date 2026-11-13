@@ -272,7 +272,7 @@ def dustbike():
 def piledriver():
     """A claim-fence post driver on tracks, its hammer frame now carrying a gun. Anchored, it drops four stakes into the ground and the
     drop weight behind the breech rides the recoil. Sculpted anchored (stakes down, barrel up); the game folds the stakes for the road."""
-    fig = B.Figure('piledriver', lo=(-1.9, -.2, -2.2), hi=(1.9, 3.6, 3.2), coarse=.04, detail=.9, paint=1536, brush=2.0)
+    fig = B.Figure('piledriver', lo=(-1.9, -.2, -2.2), hi=(1.9, 3.6, 3.2), coarse=.04, detail=.9, paint=1024, brush=2.0)
     fig.group('body', (0, 0, 0))
     fig.group('trackL', (-.88, .42, 0), 'body')
     fig.group('trackR', (.88, .42, 0), 'body')

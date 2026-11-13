@@ -129,5 +129,64 @@ try {
   r = await p.evaluate(() => { const g = __ore.game, C = g.cmd, hf = g.ownB('headframe')[0]; look(hf.pos.x, hf.pos.z); step(2); return [...document.querySelectorAll('#anchors .lab .sat')].map(e => e.textContent); });
   check(r.some(t => /Workers \d+\/\d+/.test(t)), `from above each base says how many workers it has against what its seams want (${r[0]})`);
   await shot('hud-bases');
+
+  // ---- page three: the tech tree screen, touch and controller into the command view and card
+  await p.close(); p = await open();
+  r = await p.evaluate(() => { const g = __ore.game; key('KeyN'); step(20); g.phase = 'play'; __ore.pause();
+    const q = s => [...document.querySelectorAll(s)], names = () => q('#tree .node h4').map(e => e.textContent);
+    const own = { shown: !document.getElementById('pause').hidden, names: names(), tabs: q('#ttabs .ttab').map(e => e.textContent), rows: q('#tree .tier').length, have: q('#tree .node.have h4').map(e => e.textContent), text: document.getElementById('tree').textContent };
+    q('#ttabs [data-f="1"]')[0].click(); const veyl = names(); q('#ttabs [data-f="2"]')[0].click(); const gloam = { names: names(), marks: q('#tree .node.have').length };
+    __ore.resume(); g.phase = 'play'; return { own, veyl, gloam, want: [...new Set(['headframe', ...g.dir ? [] : [], ...window.__ore.MAP ? [] : []])] }; });
+  check(r.own.shown && r.own.tabs[0] === 'Ironhold (you)' && r.own.tabs.length === 3, `the pause screen has a tech tree with a tab for each faction (${r.own.tabs.join(', ')})`);
+  check(r.own.names[0] === 'Headframe' && r.own.rows >= 4 && r.own.names.includes('Signal Mast'), `the player's own tree starts at the main building and runs in rows by what each building needs (${r.own.rows} rows: ${r.own.names.join(', ')})`);
+  check(r.own.have.includes('Headframe') && /Linesman\s*60 ore · 1 supply/.test(r.own.text) && /Needs Machine Shop/.test(r.own.text), 'it marks what is standing, and lists each unit with its price, supply and what it needs');
+  check(r.veyl.includes('Choir Stone') && r.gloam.names.includes('Mother Cap') && r.gloam.marks === 0, `the other factions' trees can be read too, with nothing marked as ours (${r.veyl.length} Veyl, ${r.gloam.names.length} Gloam buildings)`);
+  await p.evaluate(() => { __ore.game.phase = 'play'; __ore.pause(); });
+  await shot('tech-tree');
+  await p.evaluate(() => { __ore.resume(); __ore.game.phase = 'play';
+    { const g = __ore.game; g.supplyCap = () => 60; }   // room to train: the six extra fighters fill the starting beds
+    // The touch layer: switched on as on a phone, with its per-frame work run by the test between steps.
+    const T = __ore.touch, tf = T.frame.bind(T); T.frame = () => {}; window.tframe = () => tf(); __ore.setTouch(true); __ore.setFree(true); window.dispatchEvent(new Event('resize'));
+    const el = document.getElementById('touch'); let id = 1;
+    window.tdown = (x, y) => { const i = id++; el.dispatchEvent(new PointerEvent('pointerdown', { pointerId: i, clientX: x, clientY: y, bubbles: true })); return i; };
+    window.tmove = (i, x, y) => el.dispatchEvent(new PointerEvent('pointermove', { pointerId: i, clientX: x, clientY: y, bubbles: true }));
+    window.tup = (i, x, y) => el.dispatchEvent(new PointerEvent('pointerup', { pointerId: i, clientX: x, clientY: y, bubbles: true }));
+    window.ttap = (x, y) => { const i = tdown(x, y); tup(i, x, y); tframe(); step(1); tframe(); step(1); tframe(); step(1); };
+    window.tbtn = b => { const e = document.querySelector(`#touch [data-b="${b}"]`), r = e.getBoundingClientRect(), i = id++; e.dispatchEvent(new PointerEvent('pointerdown', { pointerId: i, clientX: r.x + r.width / 2, clientY: r.y + r.height / 2, bubbles: true })); el.dispatchEvent(new PointerEvent('pointerup', { pointerId: i, clientX: r.x + 2, clientY: r.y + 2, bubbles: true })); tframe(); step(1); tframe(); };
+    window.page = (hx, hy) => { const R = document.getElementById('hud').getBoundingClientRect(), k = __ore.game.hud.scale; return [R.left + hx * k, R.top + hy * k]; };
+    window.unitAt = u => { const C = __ore.game.cmd, s = [0, 0]; C.screen(u.pos.x, 1, u.pos.z, s); return page(s[0], s[1]); };
+    tframe(); step(2); tframe(); });
+  r = await p.evaluate(() => { const g = __ore.game, C = g.cmd, up = document.querySelector('#touch [data-b="up"]'); const was = C.on, seen = !up.hidden && up.textContent; tbtn('up'); step(25); tframe(); return { was, seen, on: C.on, label: up.textContent }; });
+  check(!r.was && r.seen === 'Above' && r.on && r.label === 'Down', `on a touch screen an "Above" button lifts the player into the command view, and turns into "Down" (${r.seen} → ${r.label})`);
+  r = await p.evaluate(() => { const g = __ore.game, C = g.cmd, u = g.own('linesman')[0]; look(u.pos.x, u.pos.z); C.sel.clear(); step(1); const [x, y] = unitAt(u); ttap(x, y); return C.sel.has(u) && C.sel.size === 1; });
+  check(r, 'a tap on a body picks it');
+  r = await p.evaluate(() => { const g = __ore.game, C = g.cmd, u = [...C.sel][0], f0 = C.focus.clone(); const [x, y] = page(g.hud.W * .5, g.hud.H * .5); const i = tdown(x, y); for (let k = 1; k <= 6; k++) { tmove(i, x - k * 25, y); step(1); } tup(i, x - 150, y); tframe(); step(1); tframe(); step(1); return { moved: Math.hypot(C.focus.x - f0.x, C.focus.z - f0.z), kept: C.sel.has(u) && C.sel.size === 1 }; });
+  check(r.moved > 3 && r.kept, `a one-finger drag slides the ground (${r.moved.toFixed(1)} m) and does not change the pick`);
+  r = await p.evaluate(() => { const g = __ore.game, C = g.cmd, u = [...C.sel][0]; look(u.pos.x, u.pos.z); tbtn('corder'); const lit = document.querySelector('#touch [data-b="corder"]').classList.contains('on'); const [x, y] = page(g.hud.W * .7, g.hud.H * .45); ttap(x, y); return { lit, mine: !!u.order.mine, ty: u.order.type }; });
+  check(r.lit && r.mine && r.ty === 'amove', `with Order lit, a tap on the ground orders the picked bodies there (${r.ty})`);
+  r = await p.evaluate(() => { const g = __ore.game, C = g.cmd; tbtn('corder'); const hf = g.ownB('headframe')[0]; C.sel.clear(); C.selB = hf; look(hf.pos.x, hf.pos.z); step(1); tframe(); const e = document.querySelector('#ccard [data-cb^="tr:"]'), r = e.getBoundingClientRect(), n = hf.queue.length; ttap(r.x + r.width / 2, r.y + r.height / 2); return { n0: n, n1: hf.queue.length, id: e.dataset.cb }; });
+  check(r.n1 === r.n0 + 1, `a tap on a card button presses it (${r.id}: queue ${r.n0} → ${r.n1})`);
+  await p.evaluate(() => { tframe(); step(1); });   // a capture after hand-stepped frames is sometimes black: one more frame
+  await shot('touch-command');
+  r = await p.evaluate(() => { const g = __ore.game, C = g.cmd; C.zt = .5; C.z = .5; step(1); const z0 = C.zt, [x, y] = page(g.hud.W * .5, g.hud.H * .5); const a = tdown(x - 40, y), b2 = tdown(x + 40, y); for (let k = 1; k <= 2; k++) { tmove(a, x - 40 - k * 30, y); tmove(b2, x + 40 + k * 30, y); step(1); } tup(a, x - 100, y); tup(b2, x + 100, y); tframe(); step(1); return { z0, z1: C.zt, on: C.on }; });
+  check(r.z1 < r.z0 && r.on, `two fingers spread apart zoom in (${r.z0.toFixed(2)} → ${r.z1.toFixed(2)})`);
+  await p.evaluate(() => { __ore.setTouch(false); __ore.setFree(true); window.dispatchEvent(new Event('resize')); tframe(); step(1); });
+
+  // ---- a controller: a fake pad, driven through the same code the page polls
+  await p.evaluate(() => { window.pad = { connected: true, buttons: Array.from({ length: 17 }, () => ({ pressed: false, value: 0 })), axes: [0, 0, 0, 0] };
+    window.pbtn = (i, on) => { pad.buttons[i] = { pressed: on, value: on ? 1 : 0 }; };
+    window.pdrive = () => { __ore.padDrive(pad); step(1); };
+    window.ptap = i => { pbtn(i, true); pdrive(); pbtn(i, false); pdrive(); };
+    const g = __ore.game; if (g.cmd.on) { key('KeyN'); step(25); } g.phase = 'play'; });
+  r = await p.evaluate(() => { pbtn(8, true); pdrive(); return __ore.game.cmd.on; });
+  await p.waitForTimeout(500);
+  r = await p.evaluate(was => { pdrive(); step(25); const on = __ore.game.cmd.on; pbtn(8, false); pdrive(); step(2); return { was, on, still: __ore.game.cmd.on }; }, r);
+  check(!r.was && r.on && r.still, 'holding View on a controller lifts the player into the command view (a short press still calls the squad)');
+  r = await p.evaluate(() => { const g = __ore.game, C = g.cmd, z0 = C.zt; ptap(12); return { z0, z1: C.zt }; });
+  check(r.z1 < r.z0, `D-pad up zooms in from above (${r.z0.toFixed(2)} → ${r.z1.toFixed(2)})`);
+  r = await p.evaluate(() => { const g = __ore.game, C = g.cmd, hf = g.ownB('headframe')[0]; C.sel.clear(); C.selB = hf; step(1); C.padFocus = -1; ptap(15); const f = C.padFocus, lit = document.querySelector('#ccard .cb.pf')?.dataset.cb; const n = hf.queue.length; ptap(0); return { f, lit, n0: n, n1: hf.queue.length }; });
+  check(r.f === 0 && r.lit === 'tr:rigger' && r.n1 === r.n0 + 1, `D-pad right steps onto the card (outlined: ${r.lit}) and A presses it (queue ${r.n0} → ${r.n1})`);
+  r = await p.evaluate(() => { const g = __ore.game, C = g.cmd; C.selB = null; step(1); ptap(3); const army = C.sel.size; ptap(8); step(25); return { army, on: C.on }; });
+  check(r.army >= 5 && !r.on, `Y picks the whole army (${r.army}) and a tap of View drops back into the body`);
 } finally { await b.close(); }
 console.log(fail.length ? `\n${fail.length} FAILED` : '\nall passed'); process.exit(fail.length ? 1 : 0);

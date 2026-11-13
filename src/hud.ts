@@ -228,7 +228,7 @@ export class Hud {
     this.set('cpan', html, true);
     // The command card: one button per order, with its key, greyed with the reason when it cannot be given now.
     const cards = C.card; this.vis('ccard', !map && cards.length > 0);
-    if (cards.length) this.set('ccard', cards.map(b => `<div class="cb${b.off ? ' off' : ''}${b.on ? ' on' : ''}" data-cb="${b.id}"><span class="k">${keyName(b.key)}</span>${b.icon && this.portraits[b.icon] ? `<img src="${this.portraits[b.icon]}" alt="">` : ''}<b>${b.label}</b><small>${b.off || b.sub}</small></div>`).join(''), true);
+    if (cards.length) this.set('ccard', cards.map((b, i) => `<div class="cb${b.off ? ' off' : ''}${b.on ? ' on' : ''}${i === C.padFocus ? ' pf' : ''}" data-cb="${b.id}"><span class="k">${keyName(b.key)}</span>${b.icon && this.portraits[b.icon] ? `<img src="${this.portraits[b.icon]}" alt="">` : ''}<b>${b.label}</b><small>${b.off || b.sub}</small></div>`).join(''), true);
     const aim = C.aim; this.set('caim', aim ? (aim.k === 'stake' ? `<b>Click</b> stake out the ${BLD[aim.b].name} · <b>R</b> turn it · <b>Shift</b> keep staking · <b>Right click</b> stop` : `<b>Click</b> ${aim.k === 'move' ? 'where to go' : aim.k === 'patrol' ? 'the far end of the patrol' : aim.k === 'gather' ? 'a seam to work' : 'the rally point: ground, a body or a seam'} · <b>Shift</b> line up more · <b>Right click</b> stop`) : '', true); this.vis('caim', !!aim);
     this.set('cnote', map ? '<b>Click</b> look there · <b>Right click</b> send the picked crew · <b>M</b> close' : `Your crew fight without your bonus while you are up here`, true);
     this.set('ckeysBar', map ? '' : '<span><span class="k">Wheel</span> Zoom, all the way in to jump</span><span><span class="k">MMB</span> Hold to slide</span><span><span class="k">M</span> Map</span><span><span class="k">N</span> Back to your body</span>', true);
@@ -241,6 +241,8 @@ export class Hud {
     return { n, want, most, cls, word };
   }
   /** The card button or queue slot under a spot in HUD pixels, by its id, or null. */
+  /** A point on the page (CSS pixels) in HUD pixels, where the command view keeps its cursor. */
+  toHud(x: number, y: number): [number, number] { const R = this.root.getBoundingClientRect(); return [(x - R.left) / this.scale, (y - R.top) / this.scale]; }
   cardAt(x: number, y: number): string | null {
     if (this.root.hidden) return null; const R = this.root.getBoundingClientRect(), cx = R.left + x * this.scale, cy = R.top + y * this.scale;
     for (const e of this.root.querySelectorAll<HTMLElement>('#cmdUI [data-cb]')) { const r = e.getBoundingClientRect(); if (r.width && cx >= r.left && cx <= r.right && cy >= r.top && cy <= r.bottom) return e.dataset.cb || null; }

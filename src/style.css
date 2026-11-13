@@ -291,6 +291,10 @@ body.cb{--grn:#4da3ff;--mag:#ff9d1a}
 
 /* tech tree on the pause screen */
 .treeh{font-family:var(--display);font-weight:400;font-size:24px;letter-spacing:.04em;text-transform:uppercase;color:var(--yel);margin:14px 0 4px}
+.ttabs{display:flex;gap:6px;margin:0 0 8px;flex-wrap:wrap;justify-content:center}
+.ttab{font-family:var(--display);font-size:18px;letter-spacing:.04em;text-transform:uppercase;background:rgba(14,13,20,.78);color:var(--muted);border:3px solid var(--ink);padding:3px 14px;cursor:pointer}
+.ttab.on{color:var(--ink);background:var(--yel)}
+.tree .note{color:var(--paper);text-transform:none;letter-spacing:0;font-weight:600}
 .tree{display:flex;flex-direction:column;gap:8px;width:100%;max-width:1040px}
 #intel{width:100%;max-width:1040px}
 .intel{background:rgba(14,13,20,.78);border:3px solid var(--ink);box-shadow:4px 4px 0 var(--teal);padding:8px 12px 10px;font-family:var(--cond);font-size:18px;font-weight:600;line-height:1.3}
@@ -316,6 +320,11 @@ body.cb{--grn:#4da3ff;--mag:#ff9d1a}
 #touch[hidden]{display:none}
 #touch button{position:absolute;font-family:var(--display);font-weight:400;text-transform:uppercase;letter-spacing:.03em;color:var(--paper);background:rgba(14,13,20,.55);border:3px solid rgba(14,13,20,.9);box-shadow:3px 3px 0 rgba(14,13,20,.6);border-radius:50%;padding:0;font-size:calc(var(--u)*.24);line-height:1;touch-action:none;-webkit-tap-highlight-color:transparent;display:flex;align-items:center;justify-content:center;text-align:center}
 #touch button[hidden]{display:none}
+#touch .tbar .tc{display:none}
+body.tcmdon #touch .tbar .tc{display:flex}
+body.tcmdon #touch .tleft,body.tcmdon #touch .tright,body.tcmdon #touch .tstick,body.tcmdon #touch .tctx{display:none}
+body.tcmdon #touch .tbar button:not([data-b=pause]):not([data-b=up]):not(.tc){display:none}
+body.touch .ckeysbar{display:none}
 #touch button.on{background:var(--yel);color:var(--ink)}
 .tright button{width:calc(var(--u)*1.12);height:calc(var(--u)*1.12)}
 .tright{position:absolute;right:var(--sr);bottom:var(--sb);width:calc(var(--u)*5.2);height:calc(var(--u)*3.8)}
@@ -441,6 +450,7 @@ body.touch .only-keys,body.touch #freeNote{display:none!important}
 .ccard .cb small{position:relative;font-size:11.5px;font-weight:700;letter-spacing:.04em;line-height:1.15;color:var(--muted);text-transform:uppercase;margin-top:2px;max-height:28px;overflow:hidden}
 .ccard .cb .k{position:absolute;left:6px;top:5px;font-size:13px;min-width:20px;padding:1px 5px;background:var(--yel);color:var(--ink);text-align:center;font-weight:700}
 .ccard .cb.on{border-color:var(--cyan);box-shadow:inset 0 0 0 2px var(--cyan),3px 3px 0 var(--cyan)}
+.ccard .cb.pf{outline:3px solid var(--yel);outline-offset:2px}
 .ccard .cb.off{opacity:.62}.ccard .cb.off b{color:var(--muted)}.ccard .cb.off small{color:#ff8a7a}.ccard .cb.off .k{background:var(--muted)}
 .caim{right:30px;bottom:380px;font-size:15px;white-space:nowrap;background:rgba(14,13,20,.85);padding:4px 12px 6px;border:3px solid var(--ink);color:var(--yel)}
 .caim b{color:var(--paper)}

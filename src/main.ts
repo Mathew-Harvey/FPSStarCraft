@@ -16,6 +16,7 @@ import { MISSIONS, STORY_JOBS, ACTS, missionSides, charterTeam, Mission } from '
 import { CUTS, CutPlayer } from './cutscene';
 import { Net, Lobby } from './net';
 import { watchInit, watchFrame } from './watch';
+import { treeHtml, treeTabs } from './tree';
 import { TouchPad, TouchPref, touchDevice, touchWords } from './touch';
 
 THREE.ColorManagement.enabled = false;
@@ -152,24 +153,24 @@ document.addEventListener('pointerlockchange', () => { if (!locked() && live() &
 function fresh() { endSplit(); hush(); hud.reset(); reroll(); const w = want(); game.dispose(); game = new Game(pipe, hud, w.d, w.map, w.m); game.sens = sens; ended = false; (window as any).__ore.game = game; }
 function start() { if (mode === 'skirm' && sideI) { startVeyl(); return; } if (mode !== 'skirm' && MISSIONS[jobI].out) { startStory(MISSIONS[jobI]); return; } if (sidesCode() !== wantCode()) fresh(); initAudio(); setVolume(vol); setMusic(mus); { const w = want(); if (game.diff !== w.d || game.mapI !== w.map || game.mission !== w.m || game.time > 0) fresh(); } $('menu').hidden = true; $('pause').hidden = true; $('end').hidden = true; hud.show(true); game.phase = 'play'; game.introT = 1.8; lock(); }
 /** The pause screen shows the whole tech tree: what is standing, what can be built next and what each building sells. */
+let treeF = -1;
 function showTree() {
-  const g = game, t = g.myTeam, tiers: BKind[][] = fac(t) === 2 ? [['mothercap'], ['sporesac', 'warren'], ['stinger', 'quillgarden', 'blisterbed'], ['tuskhollow'], ['oldgrowth']] : t ? [['choir'], ['hushwell', 'broodpit'], ['thornspire', 'wardpylon'], ['reedgate']] : [['headframe'], ['bunkhouse', 'depot'], ['watchpost', 'machineshop', 'assay'], ['foundry'], ['mast']], hq = FACTION[t].hq;
-  $('tree').innerHTML = tiers.map(row => `<div class="tier">${row.map(k => {
-    const have = g.ownB(k, true, t).length > 0, miss = g.missing(k, t), off = !!g.paper(t) && k !== FACTION[t].hq && !g.paper(t)!.allow.includes(k);
-    const units = (TRAINS[k] || []).map(u => { const nb = UNIT_NEEDS[u], ok = have && (!nb || g.ownB(nb, true, t).length > 0); return `<li class="${ok ? 'ok' : ''}"><b>${UNIT[u].name}</b><small>${nb ? 'Needs ' + BLD[nb].name : 'Unit'} · ${UNIT[u].cost}</small></li>`; }).join('');
-    const ups = UPGRADES.filter(u => u.at === k).map(u => { const nu = u.needs ? UPGRADES.find(x => x.key === u.needs)! : null; return `<li class="${g.upOf(t)[u.key] ? 'dn' : have && (!nu || g.upOf(t)[nu.key]) ? 'ok' : ''}"><b>${u.name}</b><small>${g.upOf(t)[u.key] ? 'Bought' : u.blurb + ' · ' + u.cost}${nu && !g.upOf(t)[u.key] ? ' · after ' + nu.name : ''}</small></li>`; }).join('');
-    return `<div class="node ${have ? 'have' : off || miss.length ? 'lock' : 'can'}"><h4>${BLD[k].name}</h4><p>${have ? 'Standing' : off ? 'Not on this job' : miss.length ? 'Needs ' + miss.map(n => BLD[n].name).join(' and ') : k === hq ? '' : 'Ready to build · ' + BLD[k].cost}</p>${units || ups ? `<ul>${units}${ups}</ul>` : `<ul><li class="${have ? 'ok' : ''}"><small>${BLD[k].blurb}</small></li></ul>`}</div>`;
-  }).join('')}</div>`).join('');
+  const g = game, t = g.myTeam, mine = fac(t); if (treeF < 0) treeF = mine;
+  $('ttabs').innerHTML = treeTabs(mine, treeF);
+  $('tree').innerHTML = treeF === mine ? treeHtml(mine, g, t) : treeHtml(treeF);
   // What the scouts have seen of the other side: the buildings, how long ago, and what that says about their plan. Not shown on story jobs.
   const I = g.intel, show = !g.mission; $('intel').hidden = !show; if (!show) return;
   const tl = I.tally(t), rd = I.read(t), recs = [...I.seen[I.ix(t)].values()], ago = recs.length ? Math.max(0, Math.round(g.time - Math.max(...recs.map(r => r.t)))) : 0, when = ago < 8 ? 'in sight now' : ago < 90 ? ago + ' seconds ago' : Math.round(ago / 60) + ' minutes ago';
   $('intelBody').innerHTML = !tl.length ? `<p><b>Not found yet.</b> ${MAP.hid ? 'One of the roads out of your base ends at theirs. Press H to send a scout down one, or walk it yourself.' : 'Nobody has looked at their base. Press H to send a scout.'}</p>`
     : `<p><b>${rd.short}.</b> ${rd.line}</p><ul>${tl.map(([k, n]) => `<li>${n > 1 ? n + ' × ' : ''}${BLD[k].name}</li>`).join('')}</ul><p><small>Last seen ${when}. Press H to send a scout for another look.</small></p>`;
 }
-function pause() { if (game.phase !== 'play' && game.phase !== 'card') return; hush(); showTree(); for (const g of [game, game2]) if (g && g.phase === 'card') g.hud.titleCard('', '', ''); if (game2) { game2.phase = 'paused'; game2.keys.clear(); game2.lmb = game2.rmb = false; look2.clear(); } if (game.net) { game.phase = 'paused'; game.keys.clear(); game.lmb = game.rmb = false; $('pause').hidden = false; return; } game.phase = 'paused'; game.keys.clear(); game.lmb = game.rmb = false; $('pause').hidden = false; }
+let pausedAt = 0;
+function pause() { if (game.phase !== 'play' && game.phase !== 'card') return; pausedAt = performance.now(); hush(); treeF = -1; showTree(); for (const g of [game, game2]) if (g && g.phase === 'card') g.hud.titleCard('', '', ''); if (game2) { game2.phase = 'paused'; game2.keys.clear(); game2.lmb = game2.rmb = false; look2.clear(); } if (game.net) { game.phase = 'paused'; game.keys.clear(); game.lmb = game.rmb = false; $('pause').hidden = false; return; } game.phase = 'paused'; game.keys.clear(); game.lmb = game.rmb = false; $('pause').hidden = false; }
 function resume(byPad = false) { if (game.phase !== 'paused') return; initAudio(); $('pause').hidden = true; game.phase = 'play'; if (game2) game2.phase = 'play'; if (!byPad) lock(); }
 $('start').addEventListener('click', start);
-$('resume').addEventListener('click', () => resume());
+// A tap on the touch pause button is followed by the browser's own click where the finger was, which can land on this button as the
+// pause screen opens: clicks in the first 400 ms are not taken as a press.
+$('resume').addEventListener('click', () => { if (performance.now() - pausedAt > 400) resume(); });
 $('again').addEventListener('click', () => {
   const st = game.story; if (st && mode !== 'skirm') { const i = MISSIONS.indexOf(st); if (game.won && i < STORY_JOBS - 1) { jobI = i + 1; const nx = MISSIONS[jobI]; playCuts([...(st.cutOut || []), ...(nx.cutIn || [])], () => { fresh(); start(); }); } else if (game.won && i === STORY_JOBS - 1) playCuts(st.cutOut || [], () => { mode = 'camp'; toMenu(); }); else { fresh(); start(); } return; }
   if (split && !game2) { startVeyl(); return; } if (split) { startSplit(splitMode); return; } if (game.net) { toMenu(); return; } fresh(); start(); });
@@ -187,6 +188,7 @@ const KBDKEYS: Record<string, string> = { E: 'H', R: 'N', C: 'M', F: ';', Tab: "
 const look2 = new Set<string>();
 /** True once player two has a controller. Until then the keyboard fallback is live. */
 let padTwo = false, padBlocked = false, p2Seen = false, p2Hint = 0;
+const padViewT = [0, 0], padViewDone = [false, false];
 const padHeld: Set<string>[] = [new Set(), new Set()], padWas: boolean[][] = [[], []], padRun = [false, false], padFire = [[false, false], [false, false]];
 function pads(): Gamepad[] { try { return Array.from(navigator.getGamepads ? navigator.getGamepads() : []).filter(p => !!p && p.connected && p.buttons.length >= 10) as Gamepad[]; } catch (e) { padBlocked = true; return []; } }
 /** Turns one controller into the keys and mouse movement the game already understands. */
@@ -195,14 +197,31 @@ function padDrive(g: Game, p: Gamepad, slot: number, dt: number) {
   const was = padWas[slot], down = (i: number) => !!p.buttons[i] && (p.buttons[i].pressed || p.buttons[i].value > .35), hit = (i: number) => down(i) && !was[i];
   const mine = padHeld[slot], hold = (code: string, on: boolean) => { if (on) { if (!mine.has(code)) { mine.add(code); g.keys.add(code); g.pressed.add(code); } } else if (mine.has(code)) { mine.delete(code); g.keys.delete(code); } };
   const tap = (i: number, code: string) => { if (hit(i)) g.pressed.add(code); };
-  if (game.phase === 'play' || game.phase === 'card') {
+  // Holding View (button 8) for under half a second is the squad's follow order, as before; holding it longer lifts the player into the
+  // command view, and a tap there drops back down.
+  if (down(8) && !was[8]) padViewT[slot] = performance.now();
+  const viewTap = !down(8) && was[8] && performance.now() - padViewT[slot] < 400, viewHeld = down(8) && performance.now() - padViewT[slot] >= 400 && !padViewDone[slot];
+  if (!down(8)) padViewDone[slot] = false;
+  if ((game.phase === 'play' || game.phase === 'card') && g.cmd.on) {
+    // From above: left stick slides the view (W A S D), right stick moves the cursor, RT picks or presses the card under the cursor,
+    // LT gives an order, D-pad up and down zoom, left and right step through the card and A presses it, X idle worker, Y whole army.
+    const lx = ax(0), ly = ax(1), rx = ax(2), ry = ax(3), C = g.cmd;
+    hold('KeyW', ly < -.3); hold('KeyS', ly > .3); hold('KeyA', lx < -.3); hold('KeyD', lx > .3); hold('ShiftLeft', false); hold('Tab', false);
+    g.mdx += rx * (.35 + .65 * Math.abs(rx)) * 1100 * dt; g.mdy += ry * (.35 + .65 * Math.abs(ry)) * 1100 * dt;
+    const f = padFire[slot], rt = down(7), lt = down(6);
+    if (rt !== f[0]) { f[0] = rt; g.lmb = rt; if (rt) g.pressed.add('Mouse0'); } if (lt !== f[1]) { f[1] = lt; g.rmb = lt; if (lt) g.pressed.add('Mouse2'); }
+    if (hit(12)) g.wheel = -1; if (hit(13)) g.wheel = 1; if (hit(14)) C.padStep(-1); if (hit(15)) C.padStep(1);
+    if (hit(0)) C.padPress(); tap(2, 'F1'); tap(3, 'F2'); if (viewTap) g.pressed.add('KeyN');
+    if (hit(9)) pause();
+  } else if (game.phase === 'play' || game.phase === 'card') {
+    if (viewHeld) { padViewDone[slot] = true; g.keys.delete('KeyV'); g.pressed.add('KeyN'); }
     const lx = ax(0), ly = ax(1), rx = ax(2), ry = ax(3);
     hold('KeyW', ly < -.3); hold('KeyS', ly > .3); hold('KeyA', lx < -.3); hold('KeyD', lx > .3);
     if (hit(10)) padRun[slot] = true; if (ly > -.5) padRun[slot] = false; hold('ShiftLeft', padRun[slot]);
     g.mdx += rx * (.35 + .65 * Math.abs(rx)) * 1500 * dt; g.mdy += ry * (.35 + .65 * Math.abs(ry)) * 1000 * dt;
     const f = padFire[slot], rt = down(7), lt = down(6);
     if (rt !== f[0]) { f[0] = rt; g.lmb = rt; if (rt) g.pressed.add('Mouse0'); } if (lt !== f[1]) { f[1] = lt; g.rmb = lt; if (lt) g.pressed.add('Mouse2'); }
-    tap(0, 'Space'); tap(1, 'KeyC'); tap(2, 'KeyR'); tap(3, 'KeyE'); tap(5, 'KeyF'); tap(8, 'KeyV'); tap(11, 'Mouse1'); if (g.net && hit(11)) g.pressed.add('KeyB');
+    tap(0, 'Space'); tap(1, 'KeyC'); tap(2, 'KeyR'); tap(3, 'KeyE'); tap(5, 'KeyF'); if (viewTap) g.pressed.add('KeyV'); tap(11, 'Mouse1'); if (g.net && hit(11)) g.pressed.add('KeyB');
     hold('Tab', down(4));
     // the D-pad does whatever the screen is offering
     const pr = g.prompt || '', train = /<b>[TYU]<\/b>/.test(pr), picking = g.tab || (g.tool === 2 && !!g.me && isWorker(g.me.kind)), call = !!g.dir.side(g.myTeam).callout;
@@ -213,7 +232,9 @@ function padDrive(g: Game, p: Gamepad, slot: number, dt: number) {
   for (let i = 0; i < p.buttons.length; i++) was[i] = down(i);
 }
 function padPoll(dt: number) {
-  if (!game2) return; const ps = pads();
+  // Playing alone, the first controller drives player one (keyboard and mouse keep working too).
+  if (!game2) { const p = pads()[0]; if (p) padDrive(game, p, 0, dt); return; }
+  const ps = pads();
   // One controller belongs to player two. With two, player one may use the first and keep the keyboard as well.
   const two = ps.length > 1 ? ps[1] : ps[0], one = ps.length > 1 ? ps[0] : null;
   if (!!two !== padTwo) { padTwo = !!two; look2.clear(); game2.keys.clear(); game2.lmb = game2.rmb = false; padHeld[1].clear(); p2Labels(); }
@@ -272,6 +293,7 @@ $('cut').addEventListener('click', e => { e.preventDefault(); if ((e.target as H
 /** Starts the selected job, with its opening scenes the first time through. */
 function startJob() { const m = MISSIONS[jobI]; if (mode !== 'skirm' && m.cutIn && !jobDone(jobI)) playCuts(m.cutIn, () => { fresh(); start(); }); else start(); }
 function endSplit() { if (!split && !game2) return; split?.host.dispose(); game2?.dispose(); split = null; game2 = null; hud2.show(false); $('game').classList.remove('split', 'stack'); pipe.w = 0; resize(); }
+$('ttabs').addEventListener('click', e => { const b = (e.target as HTMLElement).closest('[data-f]') as HTMLElement | null; if (!b) return; treeF = +b.dataset.f!; showTree(); });
 $('startSplit').addEventListener('click', () => startSplit(sideI ? 'veyl' : 'coop')); $('startSplitVs').addEventListener('click', () => startSplit(true));
 const splitBtns = Array.from($('splitDir').querySelectorAll('button')) as HTMLButtonElement[];
 const showSplit = () => splitBtns.forEach((b, i) => { const on = (i === 0) === splitSide; b.classList.toggle('on', on); b.setAttribute('aria-pressed', String(on)); });
@@ -415,7 +437,7 @@ function frame(now: number) {
     if (game.phase !== 'paused') split.frame(dt);
     padPoll(dt);
     audioSeat(.65, 0); game.update(dt); audioSeat(.65, 1); game2.update(dt); audioSeat(1, 0);
-  } else { if (split && game.phase !== 'paused') split.frame(dt); if (cutP.on) cutP.frame(dt); game.update(dt); }
+  } else { if (split && game.phase !== 'paused') split.frame(dt); if (cutP.on) cutP.frame(dt); if (!still) padPoll(dt); game.update(dt); }
   if (fpsOn) { fpsN++; fpsT += dt; fpsWorst = Math.max(fpsWorst, dt); if (fpsT >= .5) { const info = pipe.renderer.info.render; $('fps').textContent = `${Math.round(fpsN / fpsT)} fps · worst ${Math.round(fpsWorst * 1000)} ms · ${pipe.w | 0}×${pipe.h | 0} · ${game.units.length} units`; fpsN = 0; fpsT = 0; fpsWorst = 0; void info; } }
   const GL = SIDE.out === 2, classic = fac(SIDE.home) === 0 && fac(SIDE.out) !== 0, hqN = (t: number) => BLD[FACTION[t].hq].name;
   if (game.story) { /* a story job writes its own end screen */ }
@@ -438,5 +460,5 @@ function frame(now: number) {
   if (fast > 900 && quality < 1) { quality = Math.min(1, quality / .85); fast = 0; pipe.aa = aaFor(); pipe.ao = aoFor(); pipe.glow = pipe.shafts = glowFor(); LAMP_ON.value = (gfxI as number) !== 1; resize(); }
   requestAnimationFrame(frame);
 }
-(window as any).__ore = { MAP: () => MAP, ter: () => TER, models: MD, tx: TX, mats: M, gloamB: GLOAM_BUILDINGS, gloamBloom: bloomPatch, sounds: { ready: soundsReady, sfx }, quit, atlasUsed: MD.atlasUsed, game, start, pipe, hud, hud2, startSplit, startVeyl, split: () => split, game2: () => game2, setFree: (v: boolean) => { freeMouse = v; }, hold: (v: boolean) => { still = v; }, pickMap, pickSize, pickSide: (s: number, f = 0) => { mode = "skirm"; sideI = s; foeI = s ? s - 1 : f; showSide(); fresh(); }, unlock: () => { camp = STORY_JOBS; mpOpen = true; mode = 'multi'; showMode(); }, net: () => net, pickJob: (i: number) => { mode = 'camp'; camp = Math.max(camp, Math.min(i, STORY_JOBS)); jobI = i; showMode(); fresh(); }, playCuts, cuts: CUTS, cutP, startStory: (i: number) => { mode = 'camp'; jobI = i; camp = Math.max(camp, Math.min(i, STORY_JOBS)); start(); } };
+(window as any).__ore = { MAP: () => MAP, ter: () => TER, models: MD, tx: TX, mats: M, gloamB: GLOAM_BUILDINGS, gloamBloom: bloomPatch, sounds: { ready: soundsReady, sfx }, quit, atlasUsed: MD.atlasUsed, game, start, pipe, hud, hud2, startSplit, startVeyl, pause, resume, touch: pad, setTouch, padDrive: (p: Gamepad, dt = 1 / 30) => padDrive(game, p, 0, dt), split: () => split, game2: () => game2, setFree: (v: boolean) => { freeMouse = v; }, hold: (v: boolean) => { still = v; }, pickMap, pickSize, pickSide: (s: number, f = 0) => { mode = "skirm"; sideI = s; foeI = s ? s - 1 : f; showSide(); fresh(); }, unlock: () => { camp = STORY_JOBS; mpOpen = true; mode = 'multi'; showMode(); }, net: () => net, pickJob: (i: number) => { mode = 'camp'; camp = Math.max(camp, Math.min(i, STORY_JOBS)); jobI = i; showMode(); fresh(); }, playCuts, cuts: CUTS, cutP, startStory: (i: number) => { mode = 'camp'; jobI = i; camp = Math.max(camp, Math.min(i, STORY_JOBS)); start(); } };
 requestAnimationFrame(frame);

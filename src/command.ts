@@ -283,6 +283,12 @@ export class Command {
     else if (a.t === 'back') { this.menu = ''; this.aim = null; sfx.blip(); }
     else if (a.t === 'cancel' && this.selB) this.cancel(this.selB, this.selB.queue.length - 1);
   }
+  /** The card button a controller's D-pad has moved to (-1 for none); A presses it. */
+  padFocus = -1;
+  /** A controller steps the card focus by `d`, wrapping round. */
+  padStep(d: number) { const n = this.card.length; if (!n) { this.padFocus = -1; return; } this.padFocus = this.padFocus < 0 ? (d > 0 ? 0 : n - 1) : (this.padFocus + d + n) % n; sfx.blip(); }
+  /** A controller presses the focused card button. */
+  padPress() { const b = this.card[this.padFocus]; if (b) this.press(b); else sfx.deny(); }
   /** A click on the card: a button, or one of the slots of the picked building's queue. */
   private clickCard(id: string) {
     if (id.startsWith('q:')) { if (this.selB) this.cancel(this.selB, +id.slice(2)); return; }

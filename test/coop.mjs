@@ -22,7 +22,7 @@ try {
   await A.waitForFunction(() => document.querySelectorAll('#mPlayers button').length === 2); check(true, 'second player joined and both see two names');
   check(await A.evaluate(() => document.getElementById('mStart').disabled), 'host cannot start until the crew is ready');
   await A.click('#mMaps button:nth-child(1)'); await B.click('#mReady'); await A.waitForFunction(() => !document.getElementById('mStart').disabled); await A.click('#mStart');
-  for (const p of [A, B]) { await p.waitForFunction(() => __ore.game.net && __ore.game.me && __ore.game.units.length > 6); await p.evaluate(() => { __ore.game.noRender = true; __ore.hold(false); }); }
+  for (const p of [A, B]) { await p.waitForFunction(() => __ore.game.net && __ore.game.me && __ore.game.units.length > 6); await p.evaluate(() => { __ore.hold(false); __ore.game.noRender = true; }); }
   const state = p => p.evaluate(() => { const g = __ore.game; return { me: g.me && g.me.id, kind: g.me && g.me.kind, units: g.units.filter(u => u.alive).length, bld: g.buildings.filter(b => b.alive).length, ore: g.ore, time: g.time, pilots: g.units.filter(u => u.pilot).map(u => u.id).sort(), props: g.props.length, propsAlive: g.props.filter(q => q.alive).length, stones: g.stones().length }; });
   let a = await state(A), c = await state(B);
   check(a.me && c.me && a.me !== c.me, `each player drives a different body (${a.me}, ${c.me})`);
@@ -73,7 +73,7 @@ try {
   check(await until(A, () => __ore.game.units.filter(u => u.pilot).length === 1), 'when Bo leaves, his body goes back to the crew and the match carries on');
   // Bo comes back mid-match with the same code and gets a body and the same world
   const B2 = await open('Bo'); await B2.evaluate(() => { __ore.hold(true); }); await B2.fill('#mCode', code); await B2.click('#mJoinBtn');
-  await B2.waitForFunction(() => __ore.game.net && __ore.game.me && __ore.game.units.length > 6); await B2.evaluate(() => { __ore.game.noRender = true; __ore.hold(false); }); c = await state(B2);
+  await B2.waitForFunction(() => __ore.game.net && __ore.game.me && __ore.game.units.length > 6); await B2.evaluate(() => { __ore.hold(false); __ore.game.noRender = true; }); c = await state(B2);
   // Bo's body can be shot out from under him by a raid while this runs, so ask for whichever body he is in now.
   let back = false; for (let i = 0; i < 40 && !back; i++) { const id = await B2.evaluate(() => { const g = __ore.game; return g.me && g.me.alive ? g.me.id : 0; }); back = !!id && await A.evaluate(id => __ore.game.units.filter(u => u.pilot).length === 2 && !!__ore.game.uById.get(id)?.pilot, id); if (!back) await sleep(400); }
   check(back, 'Bo rejoins the running match with the code and gets a body'); await sleep(1500);

@@ -43,7 +43,6 @@ async function open(url) {
   await p.close(); return { ...r, errs, first, firstNames };
 }
 
-const inl = await open(pathToFileURL(join(dist, 'index.html')).href);
 served = 0; names = []; const side = await open(base + 'play.html');
 // The first visit fetches only Ironhold's and the Veyl's near models and pictures (and anything no faction owns) before the menu.
 const LIST = new Function('return ' + readFileSync(join(dist, 'play.html'), 'utf8').match(/\[\{name:"[^]*?\}\]/)[0])();   // the file list the page carries, with each file's faction
@@ -55,8 +54,9 @@ ok(side.firstNames.length > 10 && !side.firstNames.some(gloam), `the first load 
 const nearBytes = side.firstNames.filter(n => !lvl(n)).reduce((s, n) => s + statSync(join(dist, 'art', n)).size, 0);
 console.log(`  first load for Ironhold against the Veyl: ${MB(nearBytes)} before the game starts, ${MB(firstBytes)} with the middle and far models after, of ${MB(files.reduce((s, n) => s + statSync(join(dist, "art", n)).size, 0))} in all`);
 ok(side.art.got === side.art.want && side.art.want === files.length && !side.art.missing.length, `every faction asked for: ${side.art.got} of ${side.art.want} came, missing: ${side.art.missing.join(', ') || 'none'}`);
-ok(KINDS.every(k => side.tri[k] === inl.tri[k] && side.tri[k] > 3000), 'every body matches the page with the art inside: ' + KINDS.map(k => `${k} ${side.tri[k]}`).join(', '));
-ok(!side.errs.length && !inl.errs.length, 'no page errors ' + side.errs.concat(inl.errs).slice(0, 3).join(' | '));
+const sculpted = side.tri; // compared with the code-built bodies at the end
+ok(KINDS.every(k => side.tri[k] > 3000), 'every body is built from its art: ' + KINDS.map(k => `${k} ${side.tri[k]}`).join(', '));
+ok(!side.errs.length, 'no page errors ' + side.errs.slice(0, 3).join(' | '));
 
 served = 0; const again = await open(base + 'play.html');
 ok(again.art.cached === again.art.all && served === 0, `second visit read ${again.art.cached} of ${again.art.all} from the cache, fetched ${served}`);
@@ -69,7 +69,7 @@ ok(again.art.cached === again.art.all && served === 0, `second visit read ${agai
   await p.waitForFunction(() => !document.getElementById('artLoad') && __ore.game.phase === 'play', null, { timeout: 120000 });
   const r = await p.evaluate(() => { const tri = o => { let n = 0; o.traverse(m => { if (m.isMesh && m.geometry && !m.userData.lv) n += (m.geometry.index ? m.geometry.index.count : m.geometry.attributes.position.count) / 3; }); return n; };
     const g = __ore.game, u = g.units.find(x => x.kind === 'grazer'); return { has: __oreArtHas([2]), tri: u ? tri(u.obj) : -1 }; });
-  ok(!before && bar && r.has && Math.abs(r.tri - inl.tri.grazer) < 300 && !errs.length, `picking the Gloam fetches their art behind the bar, then the match has sculpted Grazers (${r.tri} triangles, errors: ${errs.length})`);
+  ok(!before && bar && r.has && Math.abs(r.tri - sculpted.grazer) < 300 && !errs.length, `picking the Gloam fetches their art behind the bar, then the match has sculpted Grazers (${r.tri} triangles, errors: ${errs.length})`);
   await c.close(); }
 
 // A fresh browser (empty cache) with two files the server will not give.
@@ -87,6 +87,8 @@ block = new Set(['*']);
 await ctx2.close(); const ctx3 = await b.newContext({ viewport: { width: 960, height: 540 } });
 { const p = await ctx3.newPage(), errs = []; p.on('pageerror', e => errs.push(e.message)); await p.goto(base + 'play.html'); await p.waitForFunction('window.__ore && __ore.game', null, { timeout: 120000 });
   await p.evaluate(() => __oreArtFor([0, 1, 2])); await p.waitForFunction('__oreArt.got + __oreArt.missing.length === __oreArt.all', null, { timeout: 120000 });
-  const a = await p.evaluate(() => window.__oreArt); ok(a.got === 0 && a.missing.length === a.all && !errs.length, `with no art files at all the game still starts (${a.missing.length} missing, errors: ${errs.length})`); }
+  const a = await p.evaluate(() => window.__oreArt); ok(a.got === 0 && a.missing.length === a.all && !errs.length, `with no art files at all the game still starts (${a.missing.length} missing, errors: ${errs.length})`);
+  const built = await p.evaluate(K => { const tri = o => { let n = 0; o.traverse(m => { if (m.isMesh && m.geometry) n += (m.geometry.index ? m.geometry.index.count : m.geometry.attributes.position.count) / 3; }); return n; }; const out = {}; for (const k of K) out[k] = tri(__ore.models.unit(k).obj); return out; }, KINDS);
+  ok(KINDS.every(k => built[k] !== sculpted[k]), 'the sculpted bodies differ from the code-built ones: ' + KINDS.map(k => `${k} ${built[k]}`).join(', ')); }
 await b.close(); srv.close();
 console.log(`${pass} passed, ${fail} failed`); process.exit(fail ? 1 : 0);

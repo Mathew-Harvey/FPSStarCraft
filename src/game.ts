@@ -7,7 +7,7 @@ import { sfx, drillSound, setMood, babble } from './audio';
 import type { Hud } from './hud';
 import { Fog } from './fog';
 import { Intel } from './scout';
-import { Kind, BKind, UNIT, BLD, BUILDABLE, UPGRADES, TRAINS, UNIT_NEEDS, UpKey, Unit, Building, Prop, OreNode, Difficulty, DIFFS, OUTPOST, GATE, MAP, MAPS, ROAD, VHOME, FACTION, SIDE, setMap, veylPt, isUnit, isSoldier, isWorker, isFighter, foeOf, fac, MIRROR, atHome, endPt, swapEnd , STORY } from './data';
+import { Kind, BKind, UNIT, BLD, BUILDABLE, UPGRADES, TRAINS, UNIT_NEEDS, UpKey, Unit, Building, Prop, OreNode, Difficulty, DIFFS, OUTPOST, GATE, MAP, MAPS, ROAD, VHOME, FACTION, SIDE, setMap, veylPt, isUnit, isSoldier, isWorker, isFighter, foeOf, fac, MIRROR, atHome, endPt, swapEnd , STORY, turnOf, LAYOUT, OVERTIME, CHOIR_REACH, CLEAVE } from './data';
 import { Director } from './director';
 import { ENV, hourOf, matchHour, matchWeather, lampsBegin, lamp, flashLamp, lampsCommit, flicker, LAMP_ON } from './light';
 import type { Mission } from './campaign';
@@ -109,8 +109,10 @@ export class Game {
   constructor(public pipe: Pipeline | ViewPipe, public hud: Hud, public diff: Difficulty = DIFFS[1], public mapI = 0, public mission: Mission | null = null, public net: Net | null = null, /** The Veyl run a real economy (Tenders, building, training) instead of breeding raids for free. On whenever somebody plays the Veyl. */ public eco = false) {
     // Only the classic match (Ironhold at home, the Veyl at the outpost) can run the Veyl as a free raid factory. The Gloam, the mirrors and
     // anyone else at home always run a real economy on both sides.
-    setMap(mapI); if (!(fac(SIDE.home) === 0 && fac(SIDE.out) === 1) || MAP.hid) this.eco = true;   // and on a hidden map nobody starts with a base already built
-    (M.ground as any).uniforms.uColor.value.setRGB(MAP.ground[0], MAP.ground[1], MAP.ground[2]); (M.mesa as any).uniforms.uColor.value.setRGB(MAP.mesa[0], MAP.mesa[1], MAP.mesa[2]); (M.rock as any).uniforms.uColor.value.setRGB(MAP.rock[0], MAP.rock[1], MAP.rock[2]); 
+    if (!(fac(SIDE.home) === 0 && fac(SIDE.out) === 1) || turnOf(mapI) > 0) this.eco = true;   // and on a hidden map nobody starts with a base already built
+    // Two economies and no story job: the ore is laid out the same for both ends (see LAYOUT). A story job keeps the fields it was written round.
+    this.fair = LAYOUT.fair = this.eco && !mission && !STORY.on;
+    setMap(mapI); this.sites = MAP.sites!; (M.ground as any).uniforms.uColor.value.setRGB(MAP.ground[0], MAP.ground[1], MAP.ground[2]); (M.mesa as any).uniforms.uColor.value.setRGB(MAP.mesa[0], MAP.mesa[1], MAP.mesa[2]); (M.rock as any).uniforms.uColor.value.setRGB(MAP.rock[0], MAP.rock[1], MAP.rock[2]); 
     this.wxSalt = mapI + (net ? 0 : Date.now() % 50);   // the clock, not the dice: a draw here would move every bot match that follows
     const s = this.scene; s.add(makeSky()); MD.buildWorld(s, this.props, this.anim); this.spires = this.props.filter(p => p.solid); s.add(this.cam);
     this.vm = { drill: MD.vmDrill(), rifle: MD.vmRifle(), scatter: MD.vmScatter(), shield: MD.vmShield(), cannon: MD.vmCannon(), long: MD.vmLong(), pistol: MD.vmPistol(), veyl: MD.vmVeyl() };
@@ -132,11 +134,18 @@ export class Game {
     const field = (list: number[][], amount: number) => { for (const [x, z, n, sc] of list) { const obj = MD.oreCluster(n, sc); obj.position.set(x, 0, z); s.add(obj); this.ores.push({ pos: V3(x, 0, z), amount, max: amount, obj }); } };
     field(YARD_SEAMS, 900);
     // the rich seam, then the other fields out on the map, each with room for a new Headframe on the side facing the yard
-    MAP.sites!.forEach(([ex, ez], i) => { if (!i) field([[ex - 1, ez, 10, 1.5], [ex + 4, ez + 4, 8, 1.3], [ex - 3, ez - 5, 9, 1.4]], 1600); else { const l = Math.hypot(ex, ez) || 1, ux = ex / l, uz = ez / l; field([[ex + ux * 3 - uz * 6, ez + uz * 3 + ux * 6, 8, 1.2], [ex + ux * 6, ez + uz * 6, 9, 1.3], [ex + ux * 3 + uz * 6, ez + uz * 3 - ux * 6, 7, 1.1], [ex + ux * 9 - uz * 2, ez + uz * 9 + ux * 2, 8, 1.2]].map(p => [Math.round(p[0]), Math.round(p[1]), p[2], p[3]]), 1000); } });
+    // In a fair layout a field marked as a twin is the one before it turned round, seam for seam, and a field the same walk from both ends
+    // faces away from the middle of the map and not away from the yard.
+    { let prev: number[][] = [], prevAmt = 0; const mid = swapEnd(0, 0).map(v => v / 2);
+      MAP.sites!.forEach(([ex, ez, twin], i) => { let list: number[][], amt = 1000;
+        if (twin && prev.length) { list = prev.map(([x, z, n, sc]) => { const [mx, mz] = swapEnd(x, z); return [Math.round(mx), Math.round(mz), n, sc]; }); amt = prevAmt; }
+        else if (!i) { list = [[ex - 1, ez, 10, 1.5], [ex + 4, ez + 4, 8, 1.3], [ex - 3, ez - 5, 9, 1.4]]; amt = 1600; }
+        else { const even = this.fair && Math.abs(Math.hypot(ex, ez) - Math.hypot(ex - mid[0] * 2, ez - mid[1] * 2)) < 6, fx = even ? ex - mid[0] : ex, fz = even ? ez - mid[1] : ez, l = Math.hypot(fx, fz) || 1, ux = fx / l, uz = fz / l; list = [[ex + ux * 3 - uz * 6, ez + uz * 3 + ux * 6, 8, 1.2], [ex + ux * 6, ez + uz * 6, 9, 1.3], [ex + ux * 3 + uz * 6, ez + uz * 3 - ux * 6, 7, 1.1], [ex + ux * 9 - uz * 2, ez + uz * 9 + ux * 2, 8, 1.2]].map(p => [Math.round(p[0]), Math.round(p[1]), p[2], p[3]]); }
+        field(list, amt); prev = list; prevAmt = amt; }); }
     // The home seams at the outpost end. Against Ironhold at the yard they are the Veyl's own, a few metres closer to the Choir Stone than the
     // yard's are to the Headframe (the pairings were balanced with that). Any other pairing gets the yard's layout turned end for end, so a
     // mirror match starts both sides the same walk from their ore: with the closer seams the outpost side won 25 of 30 mirror bot matches.
-    const classic = fac(SIDE.home) === 0 && fac(SIDE.out) !== 0 && !MAP.hid;
+    const classic = fac(SIDE.home) === 0 && fac(SIDE.out) !== 0 && !this.fair && !MAP.hid;
     if (classic) field([[25, -11, 8, 1.2], [28, -4, 7, 1.0], [28, 5, 8, 1.3], [24, 12, 7, 1.1], [31, -14, 6, .9], [32, 11, 7, 1.0]].map(([lx, lz, n, sc]) => { const [x, z] = veylPt(lx, lz); return [Math.round(x), Math.round(z), n, sc]; }), 900);
     else {
       const seams = YARD_SEAMS.map(([x, z, n, sc]) => { const [mx, mz] = swapEnd(x, z); return [Math.round(mx), Math.round(mz), n, sc]; }); field(seams, 900);
@@ -233,6 +242,16 @@ export class Game {
   ms: Record<string, number> = {};
   /** The campaign job this screen is showing. The same as `mission` except on a seat of a local match, where the hidden host runs the job. */
   story: Mission | null = null;
+  /** This match's ore layout: fair (see LAYOUT) or as a story job or the classic raid match has it, and the fields that came of it. */
+  fair = false; sites: number[][] = [];
+  /** The map, the sides and the layout are shared by every Game in the process. A server that runs several matches sets the map and sides before it
+   *  touches one, and this puts back the layout that match was built with. */
+  pin() { LAYOUT.fair = this.fair; MAP.sites = this.sites; }
+  /** How far out a Choir Stone takes a Tender's ore (see CHOIR_REACH: a dial for balance tables, 0 in play). */
+  bankReach(hq: Building) { return hq.kind === 'choir' ? CHOIR_REACH.m : 0; }
+  otSaid = false;
+  /** How much more damage buildings take by now and how much less towers do, as a share: 0 unless OVERTIME is switched on and has started. */
+  overtime() { return this.fair && OVERTIME.start > 0 && this.time > OVERTIME.start ? (this.time - OVERTIME.start) / 60 * OVERTIME.perMin : 0; }
   /** Objectives as the host last sent them, for a seat of a local match. */
   netObjs: { text: string; done: boolean }[] | null = null;
   /** Nobody shoots: towers hold fire and bodies do not pick targets. Job 14 walks up the road under it. */
@@ -317,6 +336,7 @@ export class Game {
     if (t === this.me && this.safeT > 0) return;
     if (!t.alive || amt <= 0) return; t.lastHit = this.time;
     const u = isUnit(t) ? t : null, me = this.me;
+    if (!u) amt *= 1 + this.overtime(); else if (from && !isUnit(from)) amt /= 1 + this.overtime();
     // A unit sheltering behind scenery: shots from the far side by anything but a player mostly chew up the scenery instead.
     if (u && u.cover && u.cover.alive && from && from !== me && isUnit(from) && !from.pilot) { const c = u.cover, cx = c.x - u.pos.x, cz = c.z - u.pos.z; if (Math.hypot(cx, cz) < c.r + 2.4 && cx * (from.pos.x - u.pos.x) + cz * (from.pos.z - u.pos.z) > 0 && Math.random() < .55) { this.damageProp(c, amt, from); return; } }
     if (u && u.kind === 'breacher' && from) { const dx = from.pos.x - u.pos.x, dz = from.pos.z - u.pos.z, d = Math.hypot(dx, dz) || 1; if ((dx * Math.sin(u.yaw) + dz * Math.cos(u.yaw)) / d > .25) { if (u === me && this.brace) { this.payback = Math.min(1, this.payback + amt * .75 / 50); amt *= .25; sfx.clang(); } else if (u.pilot) { if (u.brace) amt *= .25; } else if (u !== me) amt *= .55; } }
@@ -471,6 +491,7 @@ export class Game {
 
   // ------------------------------------------------------------ frame
   update(dtReal: number) {
+    this.pin();
     const P = this.pressed; dtReal = Math.min(dtReal, .1);
     this.pipe.time += dtReal;
     if (this.phase === 'card') { this.cardT -= dtReal; if (this.cardT <= 0) { this.phase = 'play'; this.hud.titleCard('', '', ''); } }
@@ -484,6 +505,7 @@ export class Game {
       if (this.endT > 0) { this.endT -= dtReal; this.shake = Math.max(this.shake, .5 * this.endT / 2.4); if (this.endT <= 0) { this.end(this.endWon); P.clear(); return; } }
       const dt = this.net ? dtReal : dtReal * (this.endT > 0 ? .22 : this.tab ? .25 : this.hitStop > 0 ? .12 : 1);
       this.time += dt; this.safeT = Math.max(0, this.safeT - dt); this.jumpCd = Math.max(0, this.jumpCd - dtReal);
+      if (!this.net && !this.otSaid && this.overtime() > 0) { this.otSaid = true; this.feed('Signal', `Overtime. From here every building takes ${Math.round(OVERTIME.perMin * 100)}% more damage for each minute that passes, and every tower does that much less.`, 'al'); }
       if (this.staticT > 0) { this.staticT -= dtReal; if (this.staticT <= 0) this.respawn(); }
       else if (this.me?.alive && !this.tab) this.updatePlayer(dt, P);
       if (SIDE.out === 2) gloamFx(this, dt);
@@ -943,7 +965,7 @@ export class Game {
   updateUnits(dt: number) {
     const us = this.units, me = this.me, t = this.time;
     for (const u of us) {
-      if (!u.alive) continue; if (u.carrying > 0 && (u === me || u.pilot)) { const hq = this.nearHQ(u.pos.x, u.pos.z, u.team); if (hq && this.distToBox(hq, u.pos.x, u.pos.z) < 2.6) this.bank(u); } if (u !== me) u.moving = false; u.cd -= dt; u.think -= dt; u.swing = Math.max(0, u.swing - dt * 4); u.flashT -= dt; u.pop = Math.max(0, u.pop - dt * 7);
+      if (!u.alive) continue; if (u.carrying > 0 && (u === me || u.pilot)) { const hq = this.nearHQ(u.pos.x, u.pos.z, u.team); if (hq && this.distToBox(hq, u.pos.x, u.pos.z) < 2.6 + this.bankReach(hq)) this.bank(u); } if (u !== me) u.moving = false; u.cd -= dt; u.think -= dt; u.swing = Math.max(0, u.swing - dt * 4); u.flashT -= dt; u.pop = Math.max(0, u.pop - dt * 7);
       if (u.maxShield && t - u.lastHit > 5) u.shield = Math.min(u.maxShield, u.shield + 14 * (fac(u.team) === 1 && this.upOf(u.team).vbloom ? 2 : 1) * dt);
       if (fac(u.team) === 2 && u.hp < u.maxHp && t - u.lastHit > 3 && this.carpet.on(u.pos.x, u.pos.z, 0, u.team)) u.hp = Math.min(u.maxHp, u.hp + Math.max(G_TUNE.bloomHeal, u.maxHp * .01) * (this.carpet.isDeep(u.team) ? 2 : 1) * dt);
       if (fac(u.team) === 0 && this.upOf(u.team).weld && u.hp < u.maxHp && t - u.lastHit > 8) u.hp = Math.min(u.maxHp, u.hp + u.maxHp * .02 * dt);
@@ -1014,7 +1036,7 @@ export class Game {
     if (u.state === 'idle' || (u.node && u.node.amount <= 0 && u.state !== 'toHQ')) { let best: OreNode | null = null, bd = 1e9; for (const n of this.ores) { if (n.amount <= 0 || this.buildings.some(b => b.alive && b.team !== side && Math.hypot(b.pos.x - n.pos.x, b.pos.z - n.pos.z) < 30)) continue; const d = n.pos.distanceTo(u.pos) + (this.units.filter(o => o.node === n).length) * 6 + (hq ? (() => { const h = this.nearHQ(n.pos.x, n.pos.z, side)!; return Math.hypot(n.pos.x - h.pos.x, n.pos.z - h.pos.z) * .6; })() : 0); if (d < bd) { bd = d; best = n; } } u.node = best; u.state = best ? 'toOre' : 'wait'; }
     if (u.state === 'toOre' && u.node) { if (this.moveTo(u, u.node.pos.x, u.node.pos.z, dt, 2.5)) { u.state = 'mining'; u.timer = 3; } }
     else if (u.state === 'mining' && u.node) { u.yaw = Math.atan2(u.node.pos.x - u.pos.x, u.node.pos.z - u.pos.z); u.timer -= dt * (quick ? 1.3 : 1); if (u.think <= 0) { u.think = .5; if (this.vol(u.pos) > .3) this.debris(TMP.set(u.pos.x + Math.sin(u.yaw) * 1.1, 1, u.pos.z + Math.cos(u.yaw) * 1.1), 1, .1, M.ore, 3); } if (u.timer <= 0) { const n = Math.min((fac(side) === 0 && up.buckets) || (fac(side) === 2 && up.ggut) ? 10 : 7, u.node.amount); u.node.amount -= n; u.carrying = n; this.oreCheck(u.node); if (u.rig.pack) u.rig.pack.visible = true; u.state = 'toHQ'; } }
-    else if (u.state === 'toHQ') { if (!hq) { u.state = 'wait'; return; } if (this.distToBox(hq, u.pos.x, u.pos.z) < 1.7) { this.purse[side] += u.carrying * this.oreK(side); if (!atHome(side)) this.stats.minedV += u.carrying; else this.stats.mined += u.carrying; u.carrying = 0; if (u.rig.pack) u.rig.pack.visible = false; u.state = 'idle'; } else { /* Walk to the near face of the home building, so neither end of the map has a longer walk round it than the other. */ const x = Math.max(hq.pos.x - hq.hx - .8, Math.min(hq.pos.x + hq.hx + .8, u.pos.x)), z = Math.max(hq.pos.z - hq.hz - .8, Math.min(hq.pos.z + hq.hz + .8, u.pos.z)); this.moveTo(u, x, z, dt, .3); } }
+    else if (u.state === 'toHQ') { if (!hq) { u.state = 'wait'; return; } if (this.distToBox(hq, u.pos.x, u.pos.z) < 1.7 + this.bankReach(hq)) { this.purse[side] += u.carrying * this.oreK(side); if (!atHome(side)) this.stats.minedV += u.carrying; else this.stats.mined += u.carrying; u.carrying = 0; if (u.rig.pack) u.rig.pack.visible = false; u.state = 'idle'; } else { /* Walk to the near face of the home building, so neither end of the map has a longer walk round it than the other. */ const x = Math.max(hq.pos.x - hq.hx - .8, Math.min(hq.pos.x + hq.hx + .8, u.pos.x)), z = Math.max(hq.pos.z - hq.hz - .8, Math.min(hq.pos.z + hq.hz + .8, u.pos.z)); this.moveTo(u, x, z, dt, .3); } }
   }
   acquire(u: Unit, range: number, bRange: number) {
     if (this.truce) return null;
@@ -1105,7 +1127,7 @@ export class Game {
       else { u.yaw = Math.atan2(t.pos.x - u.pos.x, t.pos.z - u.pos.z); if (u.cd <= 0) { u.cd = .95; u.swing = 1; sfx.slash(this.vol(u.pos)); const d = (isB ? 10 : 13) * this.vMul(u.team); this.damage(t, d, u);
         // The sweep carries on through whatever is pressed up against the target: half the cut to two more bodies inside the arc. Against a spread
         // rifle line it finds nobody; against a swarm at its ankles it is the only thing that keeps a Cantor worth its ore.
-        if (!isB) { let n = 0; for (const o of this.units) { if (n >= 2) break; if (o === t || !o.alive || o.team === u.team || Math.hypot(o.pos.x - t.pos.x, o.pos.z - t.pos.z) > 1.9 || Math.hypot(o.pos.x - u.pos.x, o.pos.z - u.pos.z) > 3.4) continue; n++; this.damage(o, d * .5, u); } } } }
+        if (!isB) { let n = 0; for (const o of this.units) { if (n >= CLEAVE.n) break; if (o === t || !o.alive || o.team === u.team || Math.hypot(o.pos.x - t.pos.x, o.pos.z - t.pos.z) > 1.9 || Math.hypot(o.pos.x - u.pos.x, o.pos.z - u.pos.z) > 3.4) continue; n++; this.damage(o, d * .5, u); } } } }
       return;
     }
     this.vIdle(u, dt, u.order.type === 'raid' ? 3 : 1.5, u.order.type !== 'guard' || this.dir.alarmT > 0 ? 1 : .6);

@@ -56,7 +56,7 @@ export const G_TUNE = {
   bloomR: { mothercap: 20, sporesac: 8, warren: 10, stinger: 7, quillgarden: 10, blisterbed: 9, tuskhollow: 11, oldgrowth: 12 } as Record<GBKind, number>,
   bloomRate: .7, bloomSpeed: 1.25, bloomHeal: 2,
   pack: 15, packFat: 21,
-  bite: { snapper: 7, grazer: 5, mulcher: 30, blister: 70 },
+  bite: { snapper: 7, grazer: 5, mulcher: 30, blister: 70, gnaw: 6 },
   biteCd: { snapper: .42, grazer: .7, mulcher: 1.0 },
   quill: { dmg: 11, cd: .55, speed: 70, fan: 5, fanCd: 6 },
   blister: { r: 4.2, bld: 2 },

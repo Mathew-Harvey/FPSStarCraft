@@ -97,7 +97,7 @@ export class Director implements Side {
     for (const s of [this, this.vs] as Side[]) { const b = this.books(s)[0]; s.playbook = { name: b.name, steps: b.steps, idx: 0 }; }
     this.raidIn = g.eco ? 1e9 : 170 * g.diff.raid;
     // Two built bases that are not the classic Ironhold-against-Veyl pairing start on the same clock, so neither end plans its first push sooner.
-    if (g.eco && !(fac(SIDE.home) === 0 && fac(SIDE.out) !== 0)) { this.vs.nextPlan = this.nextPlan; this.vs.chatT = this.chatT; }
+    if (g.eco && (g.fair || !(fac(SIDE.home) === 0 && fac(SIDE.out) !== 0))) { this.vs.nextPlan = this.nextPlan; this.vs.chatT = this.chatT; }
     const guard = (k: Kind, x: number, z: number) => { if (g.net || g.eco) return; const u = g.spawn(k, 1, x, z); u.order = { type: 'guard', x, z }; };
     for (const [x, z] of [[-14, -5], [-12, 7], [-4, 0], [-18, 1]]) guard('cantor', ...veylPt(x, z));
     for (const [x, z] of [[0, -7], [0, 9]]) guard('lancer', ...veylPt(x, z));

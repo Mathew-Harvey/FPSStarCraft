@@ -8,7 +8,8 @@
 //   cmd     the command view (the game's own tilted overhead view, the same size the game uses)
 //   map     straight down and close: what the top faces carry (the full map draws a small picture of this)
 //   line    side by side with a Cantor and a Warden
-//   poses   every pose the look file has for it, in a row
+//   pose-*  every pose the look file has for it, each close
+//   vm-*    the first person view model in each of its modes
 // Env: HOUR (default 15), PX width (default 1280).
 const { chromium } = require('playwright');
 const path = require('path');
@@ -20,7 +21,7 @@ const W = +(process.env.PX || 1280), H = Math.round(W * 9 / 16);
   const b = await chromium.launch({ args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist', '--enable-webgl'] });
   const p = await b.newPage({ viewport: { width: W, height: H } }); p.setDefaultTimeout(0);
   p.on('pageerror', e => console.log('page error', e.message));
-  p.on('console', m => { if (m.type() === 'error') console.log('console', m.text().slice(0, 300)); });
+  p.on('console', m => { if (m.type() === 'error' || m.text().startsWith('vm ')) console.log('console', m.text().slice(0, 300)); });
   await p.goto('file://' + path.resolve('dist-bench/index.html'));
   await p.evaluate((q) => { localStorage.clear(); if (q) localStorage.setItem('ore-else', JSON.stringify({ q })); }, +(process.env.Q || 0));
   await p.reload();
@@ -70,8 +71,8 @@ const W = +(process.env.PX || 1280), H = Math.round(W * 9 / 16);
     // every sketched ability effect in a row, each caught part way through, seen near and from the command view
     await p.evaluate(() => {
       const V = window.__veyl, g = window.__ore.game, [X, Z] = window.__spot, P = g.cam.position.constructor; window.__fx = [];
-      const at = (i) => new P(X + (i % 5 - 2) * 7.5, 0, Z - Math.floor(i / 5) * 9);
-      const mk = [['glassWall', () => V.glassWall(), 3], ['wardHum', () => V.wardHum(), 1.2], ['falseVoice', () => { const b = V.veylBody('tuner'); const f = V.falseVoice(b); f.obj.add(b); return f; }, 1], ['stepThrough', () => V.stepThrough(4), .2], ['shatterNote', () => V.shatterNote(), 2.1], ['drain', () => V.drain(new P(-2.5, 1.2, 0), new P(2.5, 2.2, 0)), .4], ['join', () => V.join(new P(-2.5, 0, 0), new P(2.5, 0, 0)), 1.2], ['ringShell', () => V.ringShell(), 1], ['toll', () => V.toll(new P(1, 0, 0), 3), 3.2], ['settle', () => V.settle(3), 1]];
+      const at = (i) => new P(X + (i % 5 - 2) * 7.5, 0, Z - Math.floor(i / 5) * 9 + 4);
+      const mk = [['glassWall', () => V.glassWall(), 3], ['wardHum', () => V.wardHum(), 1.2], ['falseVoice', () => { const b = V.veylBody('tuner'); const f = V.falseVoice(b); f.obj.add(b); return f; }, 1], ['stepThrough', () => V.stepThrough(4), .2], ['shatterNote', () => V.shatterNote(), 2.1], ['drain', () => V.drain(new P(-2.5, 1.2, 0), new P(2.5, 2.2, 0)), .4], ['join', () => V.join(new P(-2.5, 0, 0), new P(2.5, 0, 0)), 1.2], ['ringShell', () => V.ringShell(), 1], ['toll', () => V.toll(new P(1, 0, 0), 3), 3.2], ['settle', () => V.settle(3), 1], ['unfold', () => V.unfold(3), 2], ['lift', () => V.lift(4), 1], ['burnBright', () => V.burnBright(6), 2], ['shrill', () => V.shrill(5), .5], ['reveal', () => V.reveal(3), 1.5], ['stillStone', () => V.stillStone(2.5), 2.5], ['songField', () => V.songField(3), 3]];
       mk.forEach(([n, f, t], i) => { const e = f(); e.obj.position.copy(at(i)); g.scene.add(e.obj); e.tick(t); window.__fx.push(e.obj); });
     });
     await shoot('fx-near', { at: [0, 6, 24], look: [0, 1.5, 0], fov: 60 });
@@ -88,6 +89,14 @@ const W = +(process.env.PX || 1280), H = Math.round(W * 9 / 16);
     const m = h / 2.6;           // sizes the close shots to the figure
     await shoot(`${kind}-paint`, { at: [2.4 * m, h * .6, 3.6 * m], look: [0, h * .52, 0], fov: 34 });
     if (process.env.QUICK) { await clear(); continue; }
+    const hall = await p.evaluate(k => window.__veyl.VEYL_HALLS.includes(k), kind);
+    if (hall) {                                        // a building: also in a song field, and silent (out of any field)
+      await p.evaluate(([k, h]) => { const s = window.__stood[0], V = window.__veyl, g = window.__ore.game; const f = V.songField(Math.max(6.5, h * .9)); f.obj.position.copy(s.root.position); g.scene.add(f.obj); f.tick(3); window.__field = f.obj; }, [kind, h]);
+      await shoot(`${kind}-field`, { at: [5 * m, h * .9, 8 * m], look: [0, h * .3, 0], fov: 44 });
+      await p.evaluate(([h]) => { const g = window.__ore.game; g.scene.remove(window.__field); window.__veyl.silentLook(window.__stood[0].root, true, h); }, [h]);
+      await shoot(`${kind}-silent`, { at: [2.4 * m, h * .6, 3.6 * m], look: [0, h * .52, 0], fov: 34 });
+      await p.evaluate(([h]) => window.__veyl.silentLook(window.__stood[0].root, false, h), [h]);
+    }
     await shoot(`${kind}-fp`, { at: [-.6, 1.7, 4], look: [0, h * .5, 0], fov: 68 });
     await shoot(`${kind}-near`, { at: [6, 4, 19], look: [0, h * .4, 0], fov: 68 });
     await shoot(`${kind}-mid`, { at: [20, 14, 78], look: [0, h * .4, 0], fov: 68 });
@@ -98,17 +107,34 @@ const W = +(process.env.PX || 1280), H = Math.round(W * 9 / 16);
     await stand('cantor', -2.6, 0); await stand(kind, 0, 0); await stand('warden', 4.2, -.5);
     await shoot(`${kind}-line`, { at: [.6, 3.4, 13], look: [.6, 2.4, 0], fov: 40 });
     await clear();
-    // every pose in its table, side by side and a few seconds in
+    // every pose in its table, each in its own close shot (about 5 m), caught part way through
     const names = await p.evaluate(k => Object.keys(window.__veyl.POSES[k] || {}), kind);
-    const gap = Math.max(2.2, h * .8);
-    for (let i = 0; i < names.length; i++) {
-      await stand(kind, (i - (names.length - 1) / 2) * gap, 0);
-      await p.evaluate(([i, n]) => { const s = window.__stood[i]; const fn = window.__veyl.POSES[s.kind][n]; const one = /^(attack|glasswall|falsevoice|stepthrough|shatter|drain|join|toll)$/.test(n); window.__veyl.pose(s.look.rig, fn, one ? .52 : 2.3, 1); }, [i, names[i]]);
+    await stand(kind, 0, 0);
+    for (const n of names) {
+      await p.evaluate(([n]) => { const s = window.__stood[0]; const fn = window.__veyl.POSES[s.kind][n]; const one = /^(attack|glasswall|falsevoice|stepthrough|shatter|drain|join|toll|ringshell|unfold|lift|burn|shrill|reveal|still|gather|hold)/.test(n); window.__undo = [window.__veyl.pose(s.look.rig, fn, one ? .52 : 2.3, 1)]; }, [n]);
+      await shoot(`${kind}-pose-${n}`, { at: [3.2 * m, h * .55, 4.2 * m], look: [0, h * .48, 0], fov: 36 });
+      await unpose();
     }
-    const span = names.length * gap;
-    await shoot(`${kind}-poses`, { at: [0, h * .6, span * .5 + 2], look: [0, h * .45, 0], fov: 56 });
     fs.writeFileSync(path.join(out, `${kind}-poses.txt`), names.join(' '));
     await clear();
+    // first person: the body's own view model hung on the camera, at eye height, a Cantor standing 9 m ahead for scale
+    const modes = await p.evaluate(k => Object.keys(window.__veyl.VM[k] || {}), kind);
+    if (modes.length) {
+      await stand('cantor', .8, 9, Math.PI);
+      for (const mo of modes) {
+        await p.evaluate(([k, mo]) => {
+          const g = window.__ore.game, [X, Z] = window.__spot, V = g.cam.position.constructor;
+          if (window.__vm) g.scene.remove(window.__vm);
+          const vm = window.__veyl.viewModel(k, mo), hold = new (vm.constructor)(); hold.add(vm);
+          hold.position.set(X, 1.75, Z); hold.lookAt(new V(X, 1.6, Z + 10)); hold.rotateY(Math.PI); g.scene.add(hold); window.__vm = hold;
+          hold.updateMatrixWorld(true); const bb = new (g.cam.position.constructor)(); let n = 0, vis = 0; vm.traverse(o => { if (o.isMesh) { n++; if (o.visible) vis++; } }); const B = new (window.__veyl.THREE.Box3)().setFromObject(vm); console.log('vm', k, mo, n, vis, JSON.stringify(window.__spot), JSON.stringify(B.min), JSON.stringify(B.max));
+        }, [kind, mo]);
+        await shoot(`${kind}-vm-${mo}`, { at: [0, 1.75, 0], look: [0, 1.6, 10], fov: 70 });
+      }
+      await p.evaluate(() => { const g = window.__ore.game; if (window.__vm) g.scene.remove(window.__vm); window.__vm = null; });
+      fs.writeFileSync(path.join(out, `${kind}-vm.txt`), modes.join(' '));
+      await clear();
+    }
     console.log(kind, 'shot in', ((Date.now() - t0) / 1000).toFixed(0) + 's');
   }
   await b.close();

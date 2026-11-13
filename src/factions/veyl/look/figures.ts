@@ -8,7 +8,7 @@ import { figure } from '../../../meshes';
 import { M } from '../../../gfx';
 
 /** The Veyl figures this file dresses, in the plan's roster order. A kind is drawn from its sculpt when the page carries one. */
-export const VEYL_NEW = ['tuner', 'mute', 'choirmaster', 'chord', 'bell', 'reedwalker', 'knell', 'listener'] as const;
+export const VEYL_NEW = ['tuner', 'mute', 'choirmaster', 'chord', 'bell', 'reedwalker', 'knell', 'listener', 'ferry', 'swift', 'prism', 'omen'] as const;
 export type VKind = typeof VEYL_NEW[number];
 
 export type Rig = Record<string, THREE.Object3D | undefined>;
@@ -46,11 +46,21 @@ export function standIn(kind: string): THREE.Group {
     const halo = group('halo', root, [0, 3.75, -.5]); part(halo, geo.ring, 'teal', [0, 0, 0], [1.25, 1.25, 1.25]);
     return root;
   }
-  const y = kind === 'choirmaster' ? 1.4 : kind === 'mute' ? 1.05 : 1.2;
+  if (kind === 'ferry' || kind === 'swift' || kind === 'prism') {        // the flyers with no upper body: a long hull nose forward, a halo, wings or leaves
+    const y = kind === 'ferry' ? 2.1 : kind === 'swift' ? 1.7 : 2.4, len = kind === 'ferry' ? 4.6 : kind === 'swift' ? 2 : 4, w = kind === 'ferry' ? .78 : kind === 'swift' ? .19 : .7;
+    const body = group('body', root, [0, 0, 0]); part(body, geo.sph, kind === 'prism' ? 'vC' : 'vI', [0, y, 0], [w, w, len / 2]);
+    const head = group('head', body, [0, y, len / 2]); part(head, geo.sph, kind === 'prism' ? 'vM' : 'vL', [0, 0, 0], [w * .4, w * .4, w * .3]);
+    const halo = group('halo', body, kind === 'ferry' ? [0, y - .95, 0] : [0, y, -len / 2]); part(halo, geo.ring, 'teal', [0, 0, 0], kind === 'ferry' ? [1.35, 1.35, 1.35] : [w * 1.4, w * 1.4, w * 1.4], kind === 'ferry' ? [PI / 2, 0, 0] : [0, 0, 0]);
+    if (kind === 'ferry') for (let i = 0; i < 6; i++) { const sx = i % 2 ? 1 : -1, z = 1 - Math.floor(i / 2); const l = group('leaf' + i, body, [sx * .5, y + .55, z]); part(l, geo.box, 'vD', [sx * .4, -.45, 0], [.06, 1.1, .9], [0, 0, sx * .6]); }
+    else for (const [n, sx] of [['wingL', -1], ['wingR', 1]] as [string, number][]) { const wg = group(n, body, [sx * w * .6, y + .1, 0]); part(wg, geo.box, kind === 'swift' ? 'vC' : 'vD', [sx * .8, 0, -.3], [1.6, .02, .5], [0, sx * .4, 0]); }
+    return root;
+  }
+  const y = kind === 'choirmaster' ? 1.4 : kind === 'mute' ? 1.05 : kind === 'omen' ? 1.3 : 1.2;
   r = torso(root, y, 1);
   const halo = group('halo', r.body!, [0, y + 1.0, -.3]); part(halo, geo.ring, kind === 'mute' ? 'vD' : 'teal', [0, 0, 0], [.32, .32, .32]);
   if (kind === 'tuner') { part(r.head!, geo.cyl, 'vC', [-.1, .55, 0], [.02, .5, .02]); part(r.head!, geo.cyl, 'vC', [.1, .55, 0], [.02, .5, .02]); part(r.armL!, geo.box, 'vC', [-.1, -.35, .45], [.34, .54, .02]); }
   if (kind === 'mute') for (const a of [r.armL!, r.armR!]) part(a, geo.cone, 'vC', [0, -.2, .6], [.04, .8, .01], [Math.PI / 2, 0, 0]);
+  if (kind === 'omen') { for (const [n, sx] of [['wingL', -1], ['wingR', 1]] as [string, number][]) { const wg = group(n, r.body!, [sx * .2, y + 1, -.25]); part(wg, geo.box, 'vD', [sx * .8, .3, -.25], [1.6, .9, .02], [0, 0, sx * .4]); } const orb = group('orb', r.body!, [0, y + .6, .55]); part(orb, geo.box, 'vD', [0, 0, 0], [.2, .2, .2]); }
   if (kind === 'choirmaster') for (let i = 0; i < 6; i++) part(r.body!, geo.cyl, 'vG', [(i - 2.5) * .12, 2.3, -.3], [.04, 1.3 - Math.abs(i - 2.5) * .18, .04]);
   return root;
 }
@@ -274,6 +284,63 @@ export const POSES: Record<VKind, Record<string, PoseFn>> = {
       if (r.body) add(r.body.position, 'y', -.3 * k);
     },
   },
+  ferry: {
+    rest1: (r, t, k, add) => { if (r.body) { add(r.body.position, 'y', S(t * 1.1) * .1 * k); add(r.body.rotation, 'z', S(t * .7) * .03 * k); } if (r.halo) add(r.halo.rotation, 'y', t * .5 * k); for (let i = 0; i < 6; i++) { const l = r['leaf' + i]; if (l) add(l.rotation, 'z', (i % 2 ? 1 : -1) * S(t * 1.3 + i) * .04 * k); } },
+    walk: (r, t, k, add) => { if (r.body) { add(r.body.rotation, 'x', .08 * k); add(r.body.position, 'y', S(t * 2) * .06 * k); } if (r.halo) add(r.halo.rotation, 'y', t * 1.4 * k); },
+    run: (r, t, k, add) => { if (r.body) { add(r.body.rotation, 'x', .16 * k); add(r.body.position, 'y', S(t * 3) * .05 * k); } if (r.halo) add(r.halo.rotation, 'y', t * 2.5 * k); for (let i = 0; i < 6; i++) { const l = r['leaf' + i]; if (l) add(l.rotation, 'z', (i % 2 ? -1 : 1) * .12 * k); } },
+    unfold: (r, t, k, add) => {                      // sinks to the ground and the six leaves swing out flat round it: a song field opens
+      const u = ease(Math.min(1, t * 1.4)) * k;
+      if (r.body) add(r.body.position, 'y', -1.1 * u);
+      for (let i = 0; i < 6; i++) { const l = r['leaf' + i], sx = i % 2 ? 1 : -1; if (l) { add(l.rotation, 'z', sx * 1.25 * u); add(l.rotation, 'y', sx * (Math.floor(i / 2) - 1) * -.35 * u); } }
+      if (r.halo) { add(r.halo.scale, 'x', 1.6 * u); add(r.halo.scale, 'z', 1.6 * u); add(r.halo.position, 'y', .9 * u); add(r.halo.rotation, 'y', t * .3 * k); }
+      if (r.head) add(r.head.rotation, 'x', .35 * u);
+    },
+  },
+  swift: {
+    rest1: (r, t, k, add) => { if (r.body) { add(r.body.position, 'y', S(t * 2.3) * .08 * k); add(r.body.rotation, 'z', S(t * 1.1) * .1 * k); } for (const [n, sx] of [['wingL', -1], ['wingR', 1]] as [string, number][]) if (r[n]) add(r[n]!.rotation, 'z', sx * S(t * 3) * .08 * k); if (r.halo) add(r.halo.rotation, 'z', t * 2 * k); },
+    walk: (r, t, k, add) => { if (r.body) { add(r.body.rotation, 'x', .1 * k); add(r.body.rotation, 'z', S(t * 1.6) * .25 * k); } for (const [n, sx] of [['wingL', -1], ['wingR', 1]] as [string, number][]) if (r[n]) add(r[n]!.rotation, 'y', sx * .15 * k); if (r.halo) add(r.halo.rotation, 'z', t * 6 * k); },
+    run: (r, t, k, add) => { if (r.body) { add(r.body.rotation, 'x', .2 * k); add(r.body.rotation, 'z', S(t * 2.2) * .45 * k); } for (const [n, sx] of [['wingL', -1], ['wingR', 1]] as [string, number][]) if (r[n]) add(r[n]!.rotation, 'y', sx * .4 * k); if (r.halo) { add(r.halo.rotation, 'z', t * 12 * k); add(r.halo.scale, 'x', .3 * k); add(r.halo.scale, 'y', .3 * k); } },
+    attack: (r, t, k, add) => { const [w, s2] = beats(t, .3, .5); if (r.body) { add(r.body.rotation, 'x', (-.2 * w + .35 * s2) * k); add(r.body.position, 'z', .5 * s2 * k); } for (const [n, sx] of [['wingL', -1], ['wingR', 1]] as [string, number][]) if (r[n]) add(r[n]!.rotation, 'y', sx * (.5 * w - .2 * s2) * k); },
+    lift: (r, t, k, add) => {                        // hangs nose down over its mark, wings spread wide and beating, the ring dropped below it
+      if (r.body) { add(r.body.rotation, 'x', .9 * k); add(r.body.position, 'y', .4 * k); }
+      for (const [n, sx] of [['wingL', -1], ['wingR', 1]] as [string, number][]) if (r[n]) { add(r[n]!.rotation, 'y', -sx * .3 * k); add(r[n]!.rotation, 'z', sx * S(t * 14) * .35 * k); }
+      if (r.halo) { add(r.halo.position, 'y', -.7 * k); add(r.halo.rotation, 'z', t * 8 * k); }
+    },
+  },
+  prism: {
+    rest1: (r, t, k, add) => { if (r.body) { add(r.body.position, 'y', S(t * .9) * .12 * k); add(r.body.rotation, 'z', S(t * .6) * .04 * k); } for (const [n, sx] of [['wingL', -1], ['wingR', 1]] as [string, number][]) if (r[n]) add(r[n]!.rotation, 'z', sx * S(t * 1.2) * .08 * k); if (r.halo) add(r.halo.rotation, 'z', t * .8 * k); },
+    walk: (r, t, k, add) => { if (r.body) add(r.body.rotation, 'x', .06 * k); for (const [n, sx] of [['wingL', -1], ['wingR', 1]] as [string, number][]) if (r[n]) add(r[n]!.rotation, 'y', sx * .2 * k); if (r.halo) add(r.halo.rotation, 'z', t * 2 * k); },
+    run: (r, t, k, add) => { if (r.body) add(r.body.rotation, 'x', .12 * k); for (const [n, sx] of [['wingL', -1], ['wingR', 1]] as [string, number][]) if (r[n]) add(r[n]!.rotation, 'y', sx * .45 * k); if (r.halo) add(r.halo.rotation, 'z', t * 4 * k); },
+    attack: (r, t, k, add) => { if (r.head) add(r.head.position, 'z', -.1 * S(t * 20) * k); if (r.halo) add(r.halo.rotation, 'z', t * 6 * k); if (r.body) add(r.body.rotation, 'x', .05 * k); },
+    burnbright: (r, t, k, add) => {                  // the sails fold up flat, the halo spins hard and the lens is pushed forward on its fork
+      for (const [n, sx] of [['wingL', -1], ['wingR', 1]] as [string, number][]) if (r[n]) add(r[n]!.rotation, 'z', -sx * .7 * k);
+      if (r.halo) { add(r.halo.rotation, 'z', t * 10 * k); add(r.halo.scale, 'x', .25 * k); add(r.halo.scale, 'y', .25 * k); }
+      if (r.head) add(r.head.position, 'z', .35 * k);
+    },
+  },
+  omen: {
+    rest1: (r, t, k, add) => { if (r.body) add(r.body.position, 'y', S(t * 1.3) * .08 * k); for (const [n, sx] of [['wingL', -1], ['wingR', 1]] as [string, number][]) if (r[n]) add(r[n]!.rotation, 'y', -sx * (.25 + S(t * 2.4) * .15) * k); if (r.head) add(r.head.rotation, 'y', S(t * .5) * .4 * k); },
+    rest2: (r, t, k, add) => {                       // folds its wings round itself like a cloak and turns the stone in its hands
+      for (const [n, sx] of [['wingL', -1], ['wingR', 1]] as [string, number][]) if (r[n]) add(r[n]!.rotation, 'y', sx * .9 * k);
+      if (r.orb) add(r.orb.rotation, 'y', t * 1.5 * k); if (r.head) add(r.head.rotation, 'x', .25 * k);
+    },
+    walk: (r, t, k, add) => { if (r.body) add(r.body.rotation, 'x', .25 * k); for (const [n, sx] of [['wingL', -1], ['wingR', 1]] as [string, number][]) if (r[n]) add(r[n]!.rotation, 'y', -sx * S(t * 6) * .45 * k); },
+    run: (r, t, k, add) => { if (r.body) add(r.body.rotation, 'x', .5 * k); for (const [n, sx] of [['wingL', -1], ['wingR', 1]] as [string, number][]) if (r[n]) add(r[n]!.rotation, 'y', -sx * S(t * 9) * .6 * k); },
+    attack: (r, t, k, add) => {                      // Shrill: the stone held out at arm's length and the hood thrown back
+      for (const a of [r.armL, r.armR]) if (a) add(a.rotation, 'x', -.6 * k);
+      if (r.orb) add(r.orb.position, 'z', .3 * k); if (r.head) add(r.head.rotation, 'x', -.3 * k);
+    },
+    reveal: (r, t, k, add) => {                      // wings thrown wide, the eye marks shown full on, arms flung out
+      for (const [n, sx] of [['wingL', -1], ['wingR', 1]] as [string, number][]) if (r[n]) { add(r[n]!.rotation, 'y', sx * .3 * k); add(r[n]!.rotation, 'z', sx * .25 * k); }
+      if (r.armL) add(r.armL.rotation, 'z', -.9 * k); if (r.armR) add(r.armR.rotation, 'z', .9 * k);
+    },
+    still: (r, t, k, add) => {                       // drops the stone: it falls away from its hands
+      const [w, s2] = beats(t, .35, .6);
+      if (r.orb) add(r.orb.position, 'y', -1.6 * s2 * k);
+      for (const a of [r.armL, r.armR]) if (a) add(a.rotation, 'x', (-.4 * w + .3 * s2) * k);
+      if (r.body) add(r.body.position, 'y', .2 * w * k);
+    },
+  },
 };
 
 /** Lays one pose on a rig and returns a function that takes it off again. For benches and the stance layer. */
@@ -381,5 +448,169 @@ export function settle(r = 13): Fx {
   const obj = new THREE.Group(), ring = new THREE.Mesh(FXG.ring, add('#3fe0d0', .6)); ring.rotation.x = Math.PI / 2; ring.position.y = .08; obj.add(ring);
   return { obj, tick: t => { const k = ease(Math.min(1, t * 1.5)); ring.scale.set(r * k, r * k, 3); fade(ring, .5 + .15 * S(t * 3)); return true; } };
 }
+/** Unfold: the Ferry's song field. A teal disc spreads 6.5 m across the ground from under it, its edge a bright ring with six
+ *  leaf-shaped marks round it (one under each opened leaf), and it breathes slowly for as long as the Ferry stays unfolded. */
+export function unfold(r = 6.5): Fx {
+  const obj = new THREE.Group(), disc = new THREE.Mesh(FXG.disc, add('#3fe0d0', .16)), edge = new THREE.Mesh(FXG.ring, add('#9ffff0', .85));
+  disc.rotation.x = edge.rotation.x = -Math.PI / 2; disc.position.y = .05; edge.position.y = .07; obj.add(disc, edge);
+  const marks = Array.from({ length: 6 }, (_, i) => { const m = new THREE.Mesh(FXG.shard, add('#ff4fd0', .7)); m.scale.set(.5, .03, .22); m.userData.a = i / 6 * Math.PI * 2; obj.add(m); return m; });
+  return { obj, tick: t => { const k = ease(Math.min(1, t / 1.2)), br = 1 + .03 * S(t * 1.6), rr = r * k * br; disc.scale.set(rr, rr, 1); edge.scale.set(rr, rr, 3); fade(disc, .16 + .05 * S(t * 1.6)); marks.forEach(m => { const a = m.userData.a + t * .1; m.position.set(Math.cos(a) * rr * .82, .08, Math.sin(a) * rr * .82); m.rotation.y = -a; fade(m, .7 * k); }); return true; } };
+}
+/** Lift: a pale violet column from the Swift down to the body it holds, rings climbing it, the held body's shadow a dark ring under it. */
+export function lift(h = 4, life = 8): Fx {
+  const obj = new THREE.Group(), col = new THREE.Mesh(FXG.line, add('#c9b6ff', .28)), shadow = new THREE.Mesh(FXG.ring, add('#5a3fa0', .7));
+  col.scale.set(.7, h, .7); col.position.y = h / 2; shadow.rotation.x = -Math.PI / 2; shadow.position.y = .06; shadow.scale.set(.8, .8, 4); obj.add(col, shadow);
+  const rings = [0, 1, 2, 3].map(() => { const m = new THREE.Mesh(FXG.ring, add('#efe6ff', .9)); m.rotation.x = Math.PI / 2; obj.add(m); return m; });
+  return { obj, tick: t => { const end = Math.min(1, (life - t) * 2, t * 4); fade(col, .28 * end); fade(shadow, .7 * end); rings.forEach((m, i) => { const q = (t * .8 + i / 4) % 1; m.position.y = q * h; m.scale.set(.75 - q * .2, .75 - q * .2, 1); fade(m, end * (1 - q)); }); return t < life; } };
+}
+/** Burn Bright: the Prism's beam, a white core in an amber sheath, growing thicker and hotter the longer it holds on plated bodies. */
+export function burnBright(len = 9, life = 4): Fx {
+  const obj = new THREE.Group(), core = new THREE.Mesh(FXG.line, add('#ffffff', 1)), sheath = new THREE.Mesh(FXG.line, add('#ffb23a', .45)), hit = new THREE.Mesh(FXG.sph, add('#ffd35a', .9));
+  for (const m of [core, sheath]) { m.rotation.x = Math.PI / 2; m.position.set(0, 2.4, len / 2); } hit.position.set(0, 2.4, len); obj.add(sheath, core, hit);
+  return { obj, tick: t => { const g = 1 + Math.min(1, t / life) * 2.5, fl = 1 + .15 * S(t * 40); core.scale.set(.04 * g * fl, len, .04 * g * fl); sheath.scale.set(.12 * g * fl, len, .12 * g * fl); hit.scale.setScalar(.25 * g * fl); fade(sheath, .3 + .15 * g / 3.5); return t < life; } };
+}
+/** Shrill: the Omen's beam, thin and jagged, red-white, with small white rings snapping off it where it meets soft bodies. */
+export function shrill(len = 7, life = 1.5): Fx {
+  const obj = new THREE.Group(), segs = Array.from({ length: 8 }, () => { const m = new THREE.Mesh(FXG.line, add('#ff6a6a', .9)); obj.add(m); return m; });
+  const rings = [0, 1, 2].map(() => { const m = new THREE.Mesh(FXG.ring, add('#ffffff', .9)); obj.add(m); return m; });
+  return { obj, tick: t => {
+    const pts = Array.from({ length: 9 }, (_, i) => new THREE.Vector3(i ? S(t * 50 + i * 7) * .12 : 0, 1.9 + (i ? S(t * 43 + i * 3) * .12 : 0) - i / 8 * 1.4, i / 8 * len));
+    segs.forEach((m, i) => { const a = pts[i], b = pts[i + 1], d = b.clone().sub(a); m.position.copy(a).addScaledVector(d, .5); m.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), d.clone().normalize()); m.scale.set(.03, d.length(), .03); fade(m, Math.min(1, (life - t) * 4)); });
+    rings.forEach((m, i) => { const q = (t * 3 + i / 3) % 1; m.position.copy(pts[8]); m.scale.setScalar(.15 + q * .6); fade(m, 1 - q); });
+    return t < life;
+  } };
+}
+/** Reveal: a ring of the Omen's eye marks spreads out over the ground 6 m across; anything unseen inside it is drawn in magenta outline. */
+export function reveal(r = 6, life = 20): Fx {
+  const obj = new THREE.Group(), edge = new THREE.Mesh(FXG.ring, add('#ff4fd0', .8)); edge.rotation.x = -Math.PI / 2; edge.position.y = .07; obj.add(edge);
+  const eyes = Array.from({ length: 8 }, (_, i) => { const e = new THREE.Mesh(FXG.sph, add(i % 2 ? '#3fe0d0' : '#ff4fd0', .9)); e.scale.set(.35, .02, .2); e.userData.a = i / 8 * Math.PI * 2; obj.add(e); return e; });
+  return { obj, tick: t => { const k = ease(Math.min(1, t / .8)), end = Math.min(1, life - t); edge.scale.set(r * k, r * k, 3); fade(edge, .8 * end); eyes.forEach(e => { const a = e.userData.a - t * .3; e.position.set(Math.cos(a) * r * k, .1, Math.sin(a) * r * k); e.rotation.y = -a; e.scale.z = .2 * (.3 + .7 * Math.abs(S(t * 2 + e.userData.a))); fade(e, .9 * end); }); return t < life; } };
+}
+/** Still Stone: the dark stone lies on the ground; when something steps near it a pale blue ring of frost snaps out 3 m and the bodies
+ *  in it are held still for 20 s, a slow frost ring breathing round them. */
+export function stillStone(r = 3, armT = 1.5, life = 20): Fx {
+  const obj = new THREE.Group(), stone = new THREE.Mesh(new THREE.BoxGeometry(.25, .25, .25), new THREE.MeshBasicMaterial({ color: '#1a1030' })), glint = new THREE.Mesh(FXG.ring, add('#3fe0d0', .8));
+  stone.position.y = .13; stone.rotation.set(.6, .6, .3); glint.rotation.x = -Math.PI / 2; glint.position.y = .05; glint.scale.set(.3, .3, 2); obj.add(stone, glint);
+  const frost = new THREE.Mesh(FXG.disc, add('#bfe8ff', .25)), rim = new THREE.Mesh(FXG.ring, add('#e8f8ff', .9)); frost.rotation.x = rim.rotation.x = -Math.PI / 2; frost.position.y = .06; rim.position.y = .08; obj.add(frost, rim);
+  const spikes = Array.from({ length: 10 }, (_, i) => { const m = new THREE.Mesh(FXG.shard, add('#d8f2ff', .8)); m.userData.a = i * 2.4; m.userData.d = .4 + (i * .37) % 1 * .55; obj.add(m); return m; });
+  return { obj, tick: t => {
+    const on = t > armT, k = on ? ease(Math.min(1, (t - armT) / .25)) : 0, end = Math.min(1, armT + life - t);
+    fade(glint, on ? 0 : .5 + .4 * S(t * 4)); frost.visible = rim.visible = on; frost.scale.set(r * k, r * k, 1); rim.scale.set(r * k * (1 + .02 * S(t * 2)), r * k, 3); fade(frost, .25 * end); fade(rim, .9 * end);
+    spikes.forEach(m => { m.visible = on; m.position.set(Math.cos(m.userData.a) * r * k * m.userData.d, .25 * k, Math.sin(m.userData.a) * r * k * m.userData.d); m.scale.set(.08, .45 * k, .08); fade(m, .8 * end); });
+    return t < armT + life;
+  } };
+}
 /** Every sketched effect, by ability name, for the bench. */
-export const FX_NAMES = ['glassWall', 'wardHum', 'falseVoice', 'stepThrough', 'shatterNote', 'drain', 'join', 'ringShell', 'toll', 'settle'] as const;
+export const FX_NAMES = ['glassWall', 'wardHum', 'falseVoice', 'stepThrough', 'shatterNote', 'drain', 'join', 'ringShell', 'toll', 'settle', 'unfold', 'lift', 'burnBright', 'shrill', 'reveal', 'stillStone', 'songField'] as const;
+
+// ------------------------------------------------------------------------------------------------------------------- first person
+// What a player sees driving one of these bodies: its own sculpted arms (and what they hold) copied out of the figure and hung in
+// front of the camera, coming up from the bottom of the screen. Camera space is x right, y up, -z ahead. Each arm is copied about its
+// shoulder pivot and mirrored front to back (so the figure's forward is the camera's). Then it is turned so the line from shoulder to
+// its far end points along `dir`, rolled `roll` about that line, sized by `s`, and its shoulder set at `at` (then moved up .24 and out .32).
+interface ArmVM { g: string; at: [number, number, number]; dir: [number, number, number]; roll?: number; s?: number }
+const L_ = (x: number, y: number, z: number): [number, number, number] => [x, y, z];
+export const VM: Record<string, Record<string, ArmVM[]>> = {
+  // the pane in the left hand at the lower left, the ward shard claw at the lower right; 'pane' lifts the glass up across the view
+  tuner: {
+    hands: [{ g: 'armL', at: L_(-.42, -.6, .05), dir: L_(.2, .45, -1), roll: .3, s: .55 }, { g: 'armR', at: L_(.4, -.62, .05), dir: L_(-.5, .5, -1), roll: -.9, s: .55 }],
+    pane: [{ g: 'armL', at: L_(-.36, -.5, 0), dir: L_(.55, .8, -1), roll: -.7, s: .55 }, { g: 'armR', at: L_(.42, -.64, .05), dir: L_(-.45, .4, -1), roll: -.9, s: .55 }],
+  },
+  // the hooked blades held up and forward like a mantis's; 'step' crosses them ahead, ready to cut on arrival
+  mute: {
+    hands: [{ g: 'armL', at: L_(-.34, -.56, .05), dir: L_(.3, .7, -1), roll: .4, s: .5 }, { g: 'armR', at: L_(.34, -.56, .05), dir: L_(-.3, .7, -1), roll: -.4, s: .5 }],
+    step: [{ g: 'armL', at: L_(-.38, -.55, 0), dir: L_(.6, .5, -1), roll: 1.2, s: .5 }, { g: 'armR', at: L_(.38, -.55, 0), dir: L_(-.6, .5, -1), roll: -1.2, s: .5 }],
+  },
+  // the open left hand and the baton in the right; 'cast' throws both up as the note is sung
+  choirmaster: {
+    hands: [{ g: 'armL', at: L_(-.44, -.62, .05), dir: L_(.2, .4, -1), roll: .3, s: .5 }, { g: 'armR', at: L_(.44, -.6, .05), dir: L_(-.2, .5, -1), roll: -.3, s: .5 }],
+    cast: [{ g: 'armL', at: L_(-.44, -.5, 0), dir: L_(-.1, 1.1, -1), roll: .2, s: .5 }, { g: 'armR', at: L_(.44, -.5, 0), dir: L_(.1, 1.2, -1), roll: -.2, s: .5 }],
+  },
+  // four arms: the near pair as the Choirmaster's, the other voice's pair further out and lower, all moving as one
+  chord: {
+    hands: [{ g: 'armL', at: L_(-.34, -.6, .05), dir: L_(.2, .45, -1), roll: .3, s: .45 }, { g: 'armR', at: L_(.34, -.6, .05), dir: L_(-.2, .45, -1), roll: -.3, s: .45 },
+      { g: 'armLB', at: L_(-.6, -.62, .05), dir: L_(.05, .6, -1), roll: .5, s: .45 }, { g: 'armRB', at: L_(.6, -.62, .05), dir: L_(-.05, .6, -1), roll: -.5, s: .45 }],
+    cast: [{ g: 'armL', at: L_(-.34, -.5, 0), dir: L_(-.05, 1.1, -1), roll: .2, s: .45 }, { g: 'armR', at: L_(.34, -.5, 0), dir: L_(.05, 1.1, -1), roll: -.2, s: .45 },
+      { g: 'armLB', at: L_(-.6, -.56, 0), dir: L_(-.15, .9, -1), roll: .4, s: .45 }, { g: 'armRB', at: L_(.6, -.56, 0), dir: L_(.15, .9, -1), roll: -.4, s: .45 }],
+  },
+  // the two clapper fists, low and heavy; 'ringshell' throws them up and out as the shell goes up
+  bell: {
+    hands: [{ g: 'armL', at: L_(-.5, -.66, .05), dir: L_(.25, .3, -1), roll: .2, s: .45 }, { g: 'armR', at: L_(.5, -.66, .05), dir: L_(-.25, .3, -1), roll: -.2, s: .45 }],
+    ringshell: [{ g: 'armL', at: L_(-.5, -.55, 0), dir: L_(-.5, 1, -.6), roll: .2, s: .45 }, { g: 'armR', at: L_(.5, -.55, 0), dir: L_(.5, 1, -.6), roll: -.2, s: .45 }],
+  },
+  // both hands under the orb, held low in the middle; 'toll' heaves it out ahead
+  knell: {
+    hands: [{ g: 'armL', at: L_(-.42, -.62, .05), dir: L_(.3, .2, -1), roll: .2, s: .5 }, { g: 'armR', at: L_(.42, -.62, .05), dir: L_(-.3, .2, -1), roll: -.2, s: .5 }, { g: 'orb', at: L_(0, -.62, -.25), dir: L_(0, 0, -1), s: .5 }],
+    toll: [{ g: 'armL', at: L_(-.42, -.55, 0), dir: L_(.25, .1, -1), roll: .2, s: .5 }, { g: 'armR', at: L_(.42, -.55, 0), dir: L_(-.25, .1, -1), roll: -.2, s: .5 }, { g: 'orb', at: L_(0, -.6, -.75), dir: L_(0, 0, -1), s: .5 }],
+  },
+  // from the lantern: the two front reed legs going down past either side of the view to the ground far below
+  reedwalker: { legs: [{ g: 'legL', at: L_(-.75, -.2, -.1), dir: L_(-.15, -1.3, -1), s: .3 }, { g: 'legR', at: L_(.75, -.2, -.1), dir: L_(.15, -1.3, -1), s: .3 }] },
+  // the glass wings beating at the edges of the view
+  listener: { wings: [{ g: 'wingL', at: L_(-.4, -.3, 0), dir: L_(-1, .15, -.5), s: .45 }, { g: 'wingR', at: L_(.4, -.3, 0), dir: L_(1, .15, -.5), s: .45 }] },
+  swift: { wings: [{ g: 'wingL', at: L_(-.3, -.42, 0), dir: L_(-1, -.05, -.25), s: .55 }, { g: 'wingR', at: L_(.3, -.42, 0), dir: L_(1, -.05, -.25), s: .55 }] },
+  prism: { sails: [{ g: 'wingL', at: L_(-.45, -.3, 0), dir: L_(-1, -.35, -.4), s: .4 }, { g: 'wingR', at: L_(.45, -.3, 0), dir: L_(1, -.35, -.4), s: .4 }] },
+  // the front pair of leaves, hanging down either side of the prow
+  ferry: { leaves: [{ g: 'leaf0', at: L_(-.6, -.25, -.1), dir: L_(-.5, -1, -.4), s: .45 }, { g: 'leaf1', at: L_(.6, -.25, -.1), dir: L_(.5, -1, -.4), s: .45 }] },
+  // the dark stone held between both hands; 'still' lets it drop
+  omen: {
+    hands: [{ g: 'armL', at: L_(-.4, -.6, .05), dir: L_(.35, .2, -1), roll: .2, s: .55 }, { g: 'armR', at: L_(.4, -.6, .05), dir: L_(-.35, .2, -1), roll: -.2, s: .55 }, { g: 'orb', at: L_(0, -.48, -.45), dir: L_(0, 0, -1), s: .6 }],
+    still: [{ g: 'armL', at: L_(-.4, -.6, .05), dir: L_(.3, -.1, -1), roll: .2, s: .55 }, { g: 'armR', at: L_(.4, -.6, .05), dir: L_(-.3, -.1, -1), roll: -.2, s: .55 }, { g: 'orb', at: L_(0, -.85, -.6), dir: L_(0, 0, -1), s: .6 }],
+  },
+};
+
+/** A first person view model for a new Veyl body in one of its modes (see VM), or null when the page has no sculpt or the kind has none.
+ *  Add it to the camera. Built fresh each call (it shares the figure's geometry and painted skin, so it is cheap). */
+export function viewModel(kind: string, mode = 'hands'): THREE.Group | null {
+  const set = VM[kind]?.[mode] || Object.values(VM[kind] || {})[0]; if (!set) return null;
+  const fig = figure(kind); if (!fig) return null;
+  fig.root.updateMatrixWorld(true);
+  const out = new THREE.Group(); out.name = 'vm:' + kind + ':' + mode;
+  for (const a of set) {
+    const g = fig.groups[a.g]; if (!g) continue;
+    // the arm's meshes in its own (shoulder) space, front to back mirrored
+    const inv = g.matrixWorld.clone().invert(), flip = new THREE.Group(); flip.scale.set(1, 1, -1);
+    g.traverse(o => { const m = o as THREE.Mesh; if (!m.isMesh || !m.visible) return; const c = m.clone(); new THREE.Matrix4().multiplyMatrices(inv, m.matrixWorld).decompose(c.position, c.quaternion, c.scale); flip.add(c); });
+    // its far end: the point of it furthest from the shoulder
+    flip.updateMatrixWorld(true); const tip = new THREE.Vector3(), v = new THREE.Vector3(); let best = 0;
+    flip.traverse(o => { const m = o as THREE.Mesh; if (!m.isMesh) return; const pos = m.geometry.getAttribute('position'); for (let i = 0; i < pos.count; i += 7) { v.fromBufferAttribute(pos, i).applyMatrix4(m.matrixWorld); const d = v.lengthSq(); if (d > best) { best = d; tip.copy(v); } } });
+    const want = new THREE.Vector3(...a.dir).normalize(), arm = new THREE.Group(); arm.name = a.g;
+    arm.quaternion.setFromUnitVectors(tip.clone().normalize(), want).premultiply(new THREE.Quaternion().setFromAxisAngle(want, a.roll || 0));
+    arm.position.set(a.at[0], a.at[1] + .24, a.at[2] - .32); arm.scale.setScalar(a.s || 1); arm.add(flip); out.add(arm);
+  }
+  out.userData.kind = kind; out.userData.mode = mode; return out;
+}
+
+// ------------------------------------------------------------------------------------------------- song fields and silent buildings
+// The Veyl's buildings only work inside a song field. A field is drawn on the ground as a soft teal pool with a bright rim, slow rings
+// running out from its middle and motes rising off it, so from first person you see where it ends and from above it reads as a lit
+// circle. A building outside any field goes silent: it is drawn ashen (a grey-violet wash multiplied over its own paint), its lit parts
+// dim, its floating rings sink to rest, and a broken grey ring hangs over it, so it reads as "not working" at a glance from any zoom.
+/** A song field `r` metres across its radius. tick(t) runs it; it never ends by itself (remove it when the field goes). */
+export function songField(r = 6.5): Fx {
+  const obj = new THREE.Group(), pool = new THREE.Mesh(FXG.disc, add('#3fe0d0', .1)), rim = new THREE.Mesh(FXG.ring, add('#b8fff4', .75)), rim2 = new THREE.Mesh(FXG.ring, add('#ff4fd0', .35));
+  for (const m of [pool, rim, rim2]) { m.rotation.x = -Math.PI / 2; obj.add(m); }
+  pool.position.y = .04; rim.position.y = .06; rim2.position.y = .05; pool.scale.set(r, r, 1); rim.scale.set(r, r, 4); rim2.scale.set(r * .97, r * .97, 2);
+  const waves = [0, 1, 2].map(() => { const m = new THREE.Mesh(FXG.ring, add('#3fe0d0', .5)); m.rotation.x = -Math.PI / 2; m.position.y = .05; obj.add(m); return m; });
+  const motes = Array.from({ length: 18 }, (_, i) => { const m = new THREE.Mesh(FXG.sph, add(i % 3 ? '#9ffff0' : '#ff8ae6', .9)); m.scale.setScalar(.05); m.userData.a = i * 2.39996; m.userData.d = Math.sqrt(((i * .618) % 1)) * r * .95; m.userData.o = (i * .37) % 1; obj.add(m); return m; });
+  return { obj, tick: t => {
+    fade(pool, .09 + .03 * S(t * .8)); fade(rim, .6 + .15 * S(t * 1.7));
+    waves.forEach((m, i) => { const q = (t * .12 + i / 3) % 1; m.scale.set(r * q, r * q, 2); fade(m, .45 * (1 - q) * Math.min(1, q * 6)); });
+    motes.forEach(m => { const q = (t * .25 + m.userData.o) % 1; m.position.set(Math.cos(m.userData.a) * m.userData.d, q * 2.2, Math.sin(m.userData.a) * m.userData.d); fade(m, .9 * S(q * Math.PI)); });
+    return true;
+  } };
+}
+const ASH = new THREE.MeshBasicMaterial({ color: '#8d8698', blending: THREE.MultiplyBlending, transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1 });
+const ASH_RING = new THREE.MeshBasicMaterial({ color: '#77707f' });
+/** Draws a building silent (on) or sung again (off). Silent: every mesh gets an ashen twin multiplied over it, glowing parts are dimmed
+ *  and a broken grey ring hangs over the roof. `top` is the building's height. Safe to call every frame: it only changes on a change. */
+export function silentLook(root: THREE.Object3D, on: boolean, top = 6) {
+  if (!!root.userData.silent === on) return; root.userData.silent = on;
+  if (on) {
+    const twins: THREE.Object3D[] = [];
+    root.traverse(o => { const m = o as THREE.Mesh; if (!m.isMesh || m.userData.ash) return; const c = new THREE.Mesh(m.geometry, ASH); c.userData.ash = true; c.renderOrder = 2; m.add(c); twins.push(c); });
+    const ring = new THREE.Mesh(new THREE.TorusGeometry(1.2, .07, 6, 28, Math.PI * 1.55), ASH_RING); ring.rotation.set(Math.PI / 2 + .35, 0, .8); ring.position.y = top + .8; ring.userData.ash = true; root.add(ring); twins.push(ring);
+    root.userData.ashTwins = twins;
+  } else { for (const c of (root.userData.ashTwins || []) as THREE.Object3D[]) c.removeFromParent(); root.userData.ashTwins = []; }
+}
+/** The new Veyl buildings (art/halls.py), each a sculpt with its own groups: rings, a bell, a drop, a note, a lens, pages. */
+export const VEYL_HALLS = ['siphonbell', 'mendingpool', 'duskhall', 'kiln', 'skyloft', 'tuningfork', 'quiethouse', 'songarchive', 'highbeacon'] as const;

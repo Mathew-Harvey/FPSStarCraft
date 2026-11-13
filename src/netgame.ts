@@ -14,7 +14,7 @@ import { sfx, babble } from './audio';
 
 const KINDS = Object.keys(UNIT) as Kind[], BKINDS = Object.keys(BLD) as BKind[], UPS: UpKey[] = UPGRADES.map(u => u.key), ORD = ['guard', 'amove', 'follow', 'raid'] as const;
 const r1 = (v: number) => Math.round(v * 10) / 10;
-const F_MOVE = 1, F_TGT = 2, F_WORK = 4, F_CARRY = 8, F_FIRE = 16, F_BRACE = 128;
+const F_MOVE = 1, F_TGT = 2, F_WORK = 4, F_CARRY = 8, F_FIRE = 16, F_BRACE = 128, /** in a player's own report: they are up in the command view */ F_ALOFT = 256;
 
 // ---------------------------------------------------------------- server: world to snapshot
 const unitRow = (x: Unit) => [x.id, KINDS.indexOf(x.kind), x.team, r1(x.pos.x), r1(x.pos.z), Math.round(x.yaw * 100), Math.ceil(x.hp), Math.ceil(x.maxHp), Math.floor(x.shield),
@@ -164,6 +164,11 @@ export function serverCmd(g: Game, pid: number, unit: Unit | null, c: any[]) {
   else if (k === 'pg') { const x = Math.max(-400, Math.min(400, num(1))), z = Math.max(-400, Math.min(400, num(2))); g.evq!.push(['pg', pid, x, z]); }
   else if (k === 'ch') { const t = String(c[1] || '').replace(/[<>&]/g, '').trim().slice(0, 120); if (t) g.evq!.push(['fd', g.names[pid] || 'Crew', t, 'ch']); }
   else if (k === 'pt') { if (unit && unit.kind === 'patch') useAbility(g, unit, 'pulse'); }
+  else if (k === 'uo') {
+    // Orders from the command view: which bodies, what to do, and where. Only this player's own side, and never a body somebody is driving.
+    const o = String(c[1]), ids = Array.isArray(c[5]) ? c[5].filter((v: any) => typeof v === 'number').slice(0, 80) : []; if (o.length !== 1 || !'maobr'.includes(o) || !ids.length) return;
+    g.dir.command(side, ids, o, Math.max(-900, Math.min(900, num(2))), Math.max(-900, Math.min(900, num(3))), Math.round(num(4)));
+  }
   else if (k === 'or') { const o = String(c[1]); if ('GVMXZCS'.includes(o) && o.length === 1 && (unit ? unit.team === side : side === SIDE.home)) g.dir.order(o, num(2), num(3), unit); }
 }
 /** The player's own body, as their browser last reported it. */
@@ -177,7 +182,7 @@ export function serverMove(g: Game, unit: Unit, m: any[]) {
   a.left = Math.min(top * 1.25, a.left + Math.max(0, g.time - a.t) * top); a.t = g.time; const reach = Math.min(d, a.left);
   if (d <= a.left) { unit.pos.x = x; unit.pos.z = z; a.left -= d; } else if (d < 40 && reach > 0) { unit.pos.x += (x - unit.pos.x) / d * reach; unit.pos.z += (z - unit.pos.z) / d * reach; a.left -= reach; }
   unit.yaw = +m[2] || 0; unit.pitch = Math.max(-1.5, Math.min(1.5, +m[3] || 0)); const f = m[4] | 0;
-  unit.moving = !!(f & F_MOVE); unit.brace = !!(f & F_BRACE); if (f & F_FIRE) { unit.swing = 1; unit.flashT = .08; } unit.target = null;
+  unit.moving = !!(f & F_MOVE); unit.brace = !!(f & F_BRACE); unit.aloft = !!(f & F_ALOFT); if (f & F_FIRE) { unit.swing = 1; unit.flashT = .08; } unit.target = null;
 }
 
 // ---------------------------------------------------------------- client: snapshot to world
@@ -271,7 +276,7 @@ export function netTick(g: Game, dt: number) {
   net.sendT -= dt;
   if (net.sendT <= 0) {
     net.sendT = .05;
-    net.flush(me && me.alive && g.staticT <= 0 ? [r1(me.pos.x), r1(me.pos.z), Math.round(g.yaw * 100) / 100, Math.round(g.pitch * 100) / 100, (me.moving ? F_MOVE : 0) | (g.fireCd > 0 && g.lmb ? F_FIRE : 0) | (g.brace ? F_BRACE : 0)] : null);
+    net.flush(me && me.alive && g.staticT <= 0 ? [r1(me.pos.x), r1(me.pos.z), Math.round(g.yaw * 100) / 100, Math.round(g.pitch * 100) / 100, (me.moving ? F_MOVE : 0) | (g.fireCd > 0 && g.lmb ? F_FIRE : 0) | (g.brace ? F_BRACE : 0) | (g.cmd.on ? F_ALOFT : 0)] : null);
   }
 }
 export { isSoldier, THREE };

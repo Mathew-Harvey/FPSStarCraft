@@ -76,7 +76,7 @@ export const UPGRADES: UpDef[] = [...I_UPGRADES, ...V_UPGRADES.map(u => ({ ...u,
 /** Research a side can buy. */
 export const upsOf = (team: number) => UPGRADES.filter(u => (u.team || 0) === fac(team));
 
-export interface Order { type: 'guard' | 'amove' | 'follow' | 'raid' | 'scout'; x: number; z: number; path?: number[][]; lead?: Unit; /** Seconds to stand and let the rest of the march catch up. */ waitT?: number; /** A scout: on its way home, walking round a find, and turned back hurt. */ back?: boolean; loop?: boolean; fled?: boolean }
+export interface Order { type: 'guard' | 'amove' | 'follow' | 'raid' | 'scout'; x: number; z: number; path?: number[][]; lead?: Unit; /** Seconds to stand and let the rest of the march catch up. */ waitT?: number; /** Given by a player from the command view: the side's own brain leaves this body alone until it is handed back. */ mine?: boolean; /** The one enemy body or building this body was told to attack. */ prey?: Unit | Building; /** A scout: on its way home, walking round a find, and turned back hurt. */ back?: boolean; loop?: boolean; fled?: boolean }
 export interface Unit {
   /** Set once a Veyl guard has broken off to regrow its shield, so it only does that once. */
   fled?: boolean; leashed?: boolean;
@@ -86,6 +86,10 @@ export interface Unit {
   obj: THREE.Group; rig: Rig; ring: THREE.Mesh; alive: boolean; speed: number; moving: boolean; phase: number; cd: number; think: number;
   target: Unit | Building | null; order: Order; lastHit: number; state: string; timer: number; carrying: number; node: OreNode | null; site: Building | null;
   dashCd: number; dashT: number; swing: number; slot: number; flashT: number; pop: number; wind: number; windX: number; windZ: number; kx: number; kz: number; pitch: number; brace: boolean; mend?: Unit | null;
+  /** A seam a worker was sent to from the command view: it keeps going back there while the seam has ore. */
+  pref?: OreNode | null;
+  /** Multiplayer: the player driving this body is up in the command view, so it leads nobody. */
+  aloft?: boolean;
   /** Multiplayer: which player is driving this body (0 for nobody), and where the server last said it was. */
   pilot: number; nx: number; nz: number;
   /** The vent a worker carries Flux from, and the Flux it is carrying (src/core/econ.ts). */

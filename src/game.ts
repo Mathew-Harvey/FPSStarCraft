@@ -663,7 +663,7 @@ export class Game {
     if (bud && !(b.buds! > 0)) { if (manual) { sfx.deny(); this.feed(v, 'No Bud is ripe on this Cap. Give it a moment, or grow another Mother Cap.', 'al', t); } return false; }
     const price = costOf(k); if (!canPay(this, t, price, n)) { if (manual) { sfx.deny(); this.feed(v, this.cash(t) < price[0] * n ? (fac(t) === 2 ? 'The Overgrowth is hungry. Send the Grazers to chew.' : fac(t) ? 'The Chorus is out of ore. Send the Tenders to the seams.' : 'Can\'t. We\'re broke. Go hit a rock.') : `Short of ${shortOf(this, t, price, n)}. Tap a vent.`, 'al', t); } return false; }
     if (this.supplyUsed(t) + st.supply * n > this.supplyCap(t)) { if (manual) { sfx.deny(); this.feed(v, fac(t) === 2 ? 'No room to grow. Root a Spore Sac first.' : fac(t) ? 'No room in the song. Grow a Hush Well first.' : 'No beds. Build a Depot first.', 'al', t); } return false; }
-    if (!bud && b.queue.length >= 5) { if (manual) sfx.deny(); return false; }
+    if (!bud && b.queue.filter(q => !bldRule(b.kind).buds || unitRule(q.kind).noBud).length >= 5) { if (manual) sfx.deny(); return false; }
     if (bud) b.buds!--; pay(this, t, price, n); for (let i = 0; i < n; i++) b.queue.push({ kind: k, t: st.time }); if (manual) sfx.blip(); return true;
   }
   buyUpgrade(key: UpKey, team = this.myTeam, manual = false) {
@@ -976,7 +976,7 @@ export class Game {
     let bs = 1e9;
     for (const o of this.units) {
       if (!o.alive || !isEnemy(o.team, u.team) || o.inside) continue; const dx = o.pos.x - u.pos.x, dz = o.pos.z - u.pos.z; if (dx > range || dx < -range || dz > range || dz < -range) continue; const d = Math.hypot(dx, dz); if (d >= range) continue;
-      if ((o.air || o.status || UNIT[o.kind].cloak) && (!canHit(u, o) || !seenBy(this, u.team, o))) continue;
+      if ((o.air || o.status || UNIT[o.kind].cloak || UNIT[u.kind].hits === 'air') && (!canHit(u, o) || !seenBy(this, u.team, o))) continue;
       const w = (unitRule(o.kind).threat ?? 1) * (o.hp < o.maxHp * .4 ? .75 : 1) * (o === u.target ? .85 : 1);
       const sc = (d + 4) * w; if (sc < bs) { bs = sc; bd = d; best = o; }
     }

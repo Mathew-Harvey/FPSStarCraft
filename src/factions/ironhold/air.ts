@@ -2,10 +2,10 @@
 // (detects; Stake Gun, Jam, Flare), the Claim Barge (Foreclosure, Relocate), the Gantry's flak mode, and the Longshot's Ghillie, Tranq and
 // Deep Charge. Fliers use the shared air layer (src/core/air.ts) and fly in first person with W, Space and Ctrl.
 import type * as THREE from 'three';
-import { V3, R, M, tracerMat, beamMat } from '../../gfx';
+import { V3, R, M, tracerMat } from '../../gfx';
 import { sfx } from '../../audio';
 import type { Game } from '../../game';
-import { TMP } from '../../game';
+import { TMP, beamMat } from '../../game';
 import { UNIT, Unit, Building, isUnit, fac } from '../../data';
 import { defineUnits, type Weapon, type Hit } from '../../core/registry';
 import { defineAbilities } from '../../core/ability';

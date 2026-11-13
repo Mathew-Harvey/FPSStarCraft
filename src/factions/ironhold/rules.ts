@@ -5,9 +5,16 @@ import { V3, R, M, ringMat, tracerMat } from '../../gfx';
 import { sfx } from '../../audio';
 import type { Game } from '../../game';
 import { TMP } from '../../game';
-import { UNIT, Unit, Building, isUnit, foeOf } from '../../data';
+import { UNIT, Unit, Building, isUnit, foeOf, fac } from '../../data';
+import { catOf } from '../../core/combat';
+import { I_TUNE as TUNE } from './numbers';
 import { defineUnits, defineBuildings, defineFaction, DEFAULTS, type Weapon, type Shot } from '../../core/registry';
 import { defineAbilities } from '../../core/ability';
+import { mulOf, tagBonus, boosted, abilityKeys } from './kit';
+import { fireRate, hobble, wrapHurt, tickCharges, tickDrones } from './ground';
+import { tickCasts, tickAir } from './air';
+import './bases';
+import './stand-in';
 
 export const GUNS: Record<string, Weapon> = { linesman: { name: 'Rifle', mag: 24, cd: .12, reload: 1.5 }, breacher: { name: 'Scattergun', mag: 6, cd: .78, reload: 2.1 }, gantry: { name: 'Autocannon', mag: 12, cd: .36, reload: 2.4 }, longshot: { name: 'Long Rifle', mag: 5, cd: 1.15, reload: 2.4 }, patch: { name: 'Rivet Pistol', mag: 14, cd: .2, reload: 1.3 } };
 /** Tuning for the aimed, single-bullet guns. */
@@ -30,7 +37,7 @@ export function updateGun(g: Game, dt: number, P: Set<string>, eye: THREE.Vector
   if (g.reloadT > 0) { g.reloadT -= dt; if (g.reloadT <= 0) g.ammo = gun.mag; return; }
   if ((P.has('KeyR') && g.ammo < gun.mag) || (g.ammo <= 0 && g.lmb)) { if (g.ammo <= 0) sfx.dry(); g.reloadT = gun.reload; sfx.reload(gun.reload); return; }
   if (g.lmb && g.fireCd <= 0 && g.ammo > 0 && !g.brace) {
-    g.fireCd = gun.cd; g.ammo--; flash.visible = true; flash.rotation.z = R(0, 3); const mul = g.gunMul(g.myTeam);
+    g.fireCd = gun.cd / fireRate(g, me); g.ammo--; flash.visible = true; flash.rotation.z = R(0, 3); const mul = mulOf(g, me);
     const muzzle = V3(); flash.getWorldPosition(muzzle);
     if (heavy) {
       g.recoil = 1; g.pitch = Math.min(1.45, g.pitch + .03); g.kick += .024; g.shake = Math.min(1, g.shake + .35); sfx.scatter(); const pay = g.payback; g.payback = 0; g.bloom = 1; if (pay > .3) { g.shake = 1; sfx.clang(); g.hud.damage(V3().copy(eye).addScaledVector(dir, 3), 'PAYBACK!', 'crit'); } let hits = 0, total = 0, last: Unit | Building | null = null, crit = false;
@@ -40,7 +47,7 @@ export function updateGun(g: Game, dt: number, P: Set<string>, eye: THREE.Vector
         let hit = g.ray(eye, d, 34, -1, me); if (hit && ((hit.unit && hit.unit.team === me.team) || (hit.b && hit.b.team === me.team && hit.dist < 3))) hit = g.ray(eye, d, 34, foeOf(me.team), me);
         const dist = hit ? hit.dist : 34, end = V3().copy(eye).addScaledVector(d, dist); if (i % 2 === 0) g.tracer(muzzle, end);
         const fall = dist < 10 ? 1 : Math.max(.3, 1 - (dist - 10) / 24), tgt = hit && (hit.unit && hit.unit.team === foeOf(me.team) ? hit.unit : hit.b && hit.b.team === foeOf(me.team) ? hit.b : null);
-        if (tgt) { const dm = (hit!.head ? 9 : 6) * fall * mul * (1 + pay * .8); total += dm; hits++; last = tgt; crit = crit || !!hit!.head; g.fx.aim(end, d); g.damage(tgt, dm, me); if (!isUnit(tgt) && i % 3 === 0) g.fx.surface(end, d, g.surfOf(tgt), .8); } else g.impact(eye, d, hit, end, 6 * fall * mul);
+        if (tgt) { const dm = (hit!.head ? 9 : 6) * fall * mul * (1 + pay * .8) + tagBonus(tgt, 'plated', 6 / 9) * mul; total += dm; hits++; last = tgt; crit = crit || !!hit!.head; g.fx.aim(end, d); g.damage(tgt, dm, me); hobble(g, me, tgt); if (!isUnit(tgt) && i % 3 === 0) g.fx.surface(end, d, g.surfOf(tgt), .8); } else g.impact(eye, d, hit, end, 6 * fall * mul);
       }
       g.quiet = false;
       if (last) { g.hud.hitmark(crit); sfx.hit(); g.hud.damage(V3(last.pos.x, (isUnit(last) ? UNIT[last.kind].headY : last.h * .6) + .4, last.pos.z), String(Math.round(total)), hits >= 7 ? 'crit' : ''); }
@@ -67,7 +74,7 @@ export function updateGun(g: Game, dt: number, P: Set<string>, eye: THREE.Vector
   }
 }
 export function updateCannon(g: Game, dt: number, P: Set<string>, eye: THREE.Vector3, dir: THREE.Vector3, gun: Weapon) {
-  const me = g.me!, vm = g.vm.cannon; vm.userData.flash.visible = vm.userData.flashL.visible = false;
+  const me = g.me!, vm = g.vm.cannon; abilityKeys(g, P, eye, dir, null); vm.userData.flash.visible = vm.userData.flashL.visible = false;
   if (P.has('KeyC')) { if (g.nadeCd <= 0) { g.nadeCd = g.upOf(me.team).servo ? 6 : 10; stomp(g, me); } else sfx.deny(); }
   if (P.has('Mouse2')) {
     // Right click: both barrels lob a shell that bursts where it lands.
@@ -78,7 +85,7 @@ export function updateCannon(g: Game, dt: number, P: Set<string>, eye: THREE.Vec
   if ((P.has('KeyR') && g.ammo < gun.mag) || (g.ammo <= 0 && g.lmb)) { if (g.ammo <= 0) sfx.dry(); g.reloadT = gun.reload; sfx.reload(gun.reload); return; }
   if (g.lmb && g.fireCd <= 0 && g.ammo > 0) {
     g.fireCd = gun.cd; g.ammo--; g.side = -g.side; const flash = g.side > 0 ? vm.userData.flash : vm.userData.flashL; flash.visible = true; flash.rotation.z = R(0, 3);
-    const mul = g.gunMul(g.myTeam), muzzle = V3(); flash.getWorldPosition(muzzle);
+    const mul = mulOf(g, me), muzzle = V3(); flash.getWorldPosition(muzzle);
     g.recoil = 1; g.pitch = Math.min(1.45, g.pitch + .012); g.kick += .01; g.shake = Math.min(1, g.shake + .22); g.bloom = Math.min(1, g.bloom + .3); sfx.cannon();
     const sp = .012, d = V3().copy(dir); d.x += R(-sp, sp); d.y += R(-sp, sp); d.z += R(-sp, sp); d.normalize();
     let hit = g.ray(eye, d, 140, -1, me); if (hit && ((hit.unit && hit.unit.team === me.team) || (hit.b && hit.b.team === me.team && hit.dist < 4))) hit = g.ray(eye, d, 140, foeOf(me.team), me);
@@ -116,9 +123,9 @@ export function aiSoldier(g: Game, u: Unit, dt: number) {
     const isB = !isUnit(t), d = isB ? g.distToBox(t as Building, u.pos.x, u.pos.z) : t.pos.distanceTo(u.pos), ty = g.aimAt(u, t, 1.1);
     if (d > range) g.moveTo(u, t.pos.x, t.pos.z, dt, 1, heavy ? 1.15 : 1);
     else if (u.cd <= 0) {
-      const mul = g.gunMul(u.team), a = V3(u.pos.x + Math.sin(u.yaw) * 1.1, 1.0, u.pos.z + Math.cos(u.yaw) * 1.1); u.swing = 1; u.flashT = .07;
+      const mul = mulOf(g, u), a = V3(u.pos.x + Math.sin(u.yaw) * 1.1, 1.0, u.pos.z + Math.cos(u.yaw) * 1.1); u.swing = 1; u.flashT = .07;
       if (big) { u.cd = .8 + R(0, .15); a.y = 2.3; const b = V3(t.pos.x + R(-.8, .8), isB ? ty : .3, t.pos.z + R(-.8, .8)); g.tracer(a, b, tracerMat, .16); sfx.blast(g.vol(u.pos) * .6); g.damage(t, (isB ? 16 : 12) * mul, u); g.burst(b, 12 * mul, 3.2, u, t); if (g.time > u.dashCd && !isB && d < 6) { u.dashCd = g.time + (up.servo ? 7 : 12); stomp(g, u); } }
-      else if (heavy) { u.cd = 1.05 + R(0, .2); let dm = 0; for (let i = 0; i < 5; i++) { const hit = isB || Math.random() < .7; if (hit) dm += isB ? 4 : 6; if (i % 2 === 0) g.tracer(a, V3(t.pos.x + R(-1, 1), ty + R(-.6, .6), t.pos.z + R(-1, 1))); } sfx.blast(g.vol(u.pos) * .5); g.damage(t, dm * mul, u); }
+      else if (heavy) { u.cd = 1.05 + R(0, .2); let dm = 0; for (let i = 0; i < 5; i++) { const hit = isB || Math.random() < .7; if (hit) dm += isB ? 4 : 6; if (i % 2 === 0) g.tracer(a, V3(t.pos.x + R(-1, 1), ty + R(-.6, .6), t.pos.z + R(-1, 1))); } sfx.blast(g.vol(u.pos) * .5); g.damage(t, (dm + tagBonus(t, 'plated', 6)) * mul, u); hobble(g, u, t); }
       else if (long) { u.cd = 1.7 + R(0, .3); const hit = isB || Math.random() < (d < 12 ? .4 : .85), b = V3(t.pos.x, ty + .3, t.pos.z); if (!hit) b.add(TMP.set(R(-1.5, 1.5), R(0, 1.5), R(-1.5, 1.5))); g.tracer(a, b, tracerMat, .13); sfx.blast(g.vol(u.pos) * .5); if (hit) g.damage(t, (isB ? 18 : 52) * mul * (glass ? 1.15 : 1), u); }
       else if (doc) { u.cd = .55 + R(0, .1); const hit = isB || Math.random() < .6, b = V3(t.pos.x, ty, t.pos.z); g.tracer(a, b); sfx.shot(g.vol(u.pos) * .35); if (hit) g.damage(t, 5 * mul, u); }
       else if (!isB && d > 9 && d < 24 && g.time > u.dashCd && g.units.filter(o => o.alive && o.team !== u.team && Math.abs(o.pos.x - t.pos.x) < 4.5 && Math.abs(o.pos.z - t.pos.z) < 4.5).length >= 3) {
@@ -126,6 +133,7 @@ export function aiSoldier(g: Game, u: Unit, dt: number) {
         u.dashCd = g.time + (up.frag ? 9 : 15); u.cd = .7; const hs = Math.max(8, Math.min(19, d * 1.05)), v = V3((t.pos.x - u.pos.x) / d * hs, 4.5, (t.pos.z - u.pos.z) / d * hs); g.shoot(V3(u.pos.x, 1.5, u.pos.z).addScaledVector(v, .04), v, u.team, 60, true, u); if (g.vol(u.pos) > .3) sfx.throw();
       }
       else { u.cd = .38 + R(0, .08); const hit = isB || Math.random() < .7, b = V3(t.pos.x, ty, t.pos.z); if (!hit) b.add(TMP.set(R(-1.5, 1.5), R(-.5, 1.5), R(-1.5, 1.5))); g.tracer(a, b); sfx.shot(g.vol(u.pos) * .5); if (hit) g.damage(t, (isB ? 5 : 8) * mul, u); }
+      if (boosted(g, u, 'ot')) u.cd /= fireRate(g, u);
     }
     return;
   }
@@ -151,7 +159,7 @@ defineUnits({
   patch: { gun: GUNS.patch, shot: SHOT.patch },
   gantry: { gun: GUNS.gantry, drive: (g, dt, P, eye, dir, _look, gun) => updateCannon(g, dt, P, eye, dir, gun!) },
 });
-const drive: NonNullable<typeof DEFAULTS.drive> = (g, dt, P, eye, dir, _look, gun) => { if (gun) updateGun(g, dt, P, eye, dir, gun); };
+const drive: NonNullable<typeof DEFAULTS.drive> = (g, dt, P, eye, dir, look, gun) => { if (fac(g.me!.team) === 0) abilityKeys(g, P, eye, dir, look, ['pulse']); if (gun) updateGun(g, dt, P, eye, dir, gun); };
 defineFaction(0, { ai: aiSoldier, drive });
 // A body whose kind and faction give no brain or controls fights as a plain gun soldier.
 DEFAULTS.ai = aiSoldier; DEFAULTS.drive = drive;
@@ -186,9 +194,16 @@ defineUnits({
 });
 defineBuildings({ depot: { mends: true }, headframe: { mends: true } });
 defineFaction(0, {
-  tab: ['linesman', 'longshot', 'patch', 'gantry', 'breacher', 'rigger'],
-  pace(g, u) { const up = g.upOf(u.team); return u.kind === 'gantry' ? (up.servo ? 1.2 : 1) : u.kind !== 'rigger' && up.pay ? 1.12 : 1; },
+  tab: ['linesman', 'longshot', 'patch', 'sapper', 'breacher', 'dustbike', 'piledriver', 'gantry', 'flakkite', 'gadfly', 'hopper', 'surveyor', 'claimbarge', 'rigger'],
+  pace(g, u) {
+    const up = g.upOf(u.team), k = u.kind; let m = k === 'gantry' || k === 'gantryflak' ? (up.servo ? 1.2 : 1) : (k === 'gadfly' || k === 'hopper') && up.rotors ? 1.2 : catOf(k) === 'inf' && k !== 'rigger' && up.pay ? 1.12 : 1;
+    if (boosted(g, u, 'ot')) m *= TUNE.overtime.pace; if (boosted(g, u, 'kick')) m *= TUNE.kick.pace; if (boosted(g, u, 'burn')) m *= TUNE.afterburn.pace; return m;
+  },
+  fx(g, dt) { if (g.net) return; tickCharges(g, dt); tickDrones(g); tickCasts(g); tickAir(g, dt); },
 });
 
 // Abilities the server checks for a player online. The Patch's pulse heals everyone near; the local game calls patchUp straight from the key.
 defineAbilities('patch', [{ key: 'pulse', name: 'Patch Pulse', hotkey: 'C', energy: 0, cd: 6.5, cast: 0, range: 0, target: 'self', blurb: 'Heals every friend close by.', effect: (g, u) => patchUp(g, u) }]);
+
+// Painkiller's armour goes on top of each kind's own defence (the Breacher's shield), so this runs after every `hurt` above.
+for (const k of ['rigger', 'linesman', 'breacher', 'patch', 'longshot', 'gantry', 'gantryflak', 'sapper', 'dustbike', 'piledriver', 'piledriverset', 'flakwalker', 'hopper', 'flakkite', 'gadfly', 'surveyor', 'claimbarge']) wrapHurt(k);

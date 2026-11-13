@@ -4,44 +4,19 @@ import * as THREE from 'three';
 import { V3, R, tracerMat } from '../../gfx';
 import { sfx } from '../../audio';
 import type { Game } from '../../game';
-import { UNIT, Unit, Building, isUnit, UPGRADES, fac } from '../../data';
-import { canHit, levelMul, hasTag, type Tag } from '../../core/combat';
+import { UNIT, Unit, Building, isUnit } from '../../data';
+import { canHit, hasTag, catOf, type Tag } from '../../core/combat';
 import { seenBy } from '../../core/sight';
 import { isEnemy } from '../../core/sides';
 import { altOf } from '../../core/air';
-import { I_CAT, I_TUNE, type ICat, type IKind } from './numbers';
+import { I_TUNE } from './numbers';
 
 export const TUNE = I_TUNE;
 export type Tgt = Unit | Building;
 
 // ---------------------------------------------------------------- research lines
-const LINE_KEYS: Record<string, string[]> = {};
-function keysOf(cat: ICat, line: 'atk' | 'arm') {
-  const k = cat + line; let c = LINE_KEYS[k];
-  if (!c) LINE_KEYS[k] = c = UPGRADES.filter(u => (u.team || 0) === 0 && (u as any).mline === line && ((u as any).cat === cat || (line === 'arm' && cat === 'ship' && (u as any).cat === 'mech'))).sort((a, b) => (a.lvl || 0) - (b.lvl || 0)).map(u => u.key);
-  return c;
-}
-const PCT = [1.25, 1.2, 1.15];
-/** The multiplier from machine or ship levels bought, in the same steps as infantry levels. */
-function ownLevels(g: Game, team: number, cat: ICat, line: 'atk' | 'arm') { const U = g.upOf(team); let m = 1; keysOf(cat, line).forEach((k, i) => { if (U[k]) m *= PCT[i]; }); return m; }
-export const catOf = (k: string): ICat => I_CAT[k as IKind] || 'inf';
-/** How hard this body's gun hits after research: infantry follow the Assay Office's levels (the shared gunMul), machines the Foundry's, ships the Mast's. */
-export function mulOf(g: Game, u: Unit) {
-  const base = g.gunMul(u.team), c = catOf(u.kind); if (c === 'inf' || fac(u.team) !== 0) return base;
-  return base / levelMul(g, u.team, 'atk') * ownLevels(g, u.team, c, 'atk');
-}
-/** The health a body of this kind should have after research: infantry plate for infantry, machine and ship plate for the rest, Kit Belts. */
-export function wantHp(g: Game, u: Unit) {
-  const c = catOf(u.kind), st = UNIT[u.kind]; let hp = st.hp * (c === 'inf' ? levelMul(g, u.team, 'arm') : ownLevels(g, u.team, c, 'arm'));
-  if ((u.kind === 'linesman' || u.kind === 'sapper') && g.upOf(u.team).kitbelt) hp += 15;
-  return hp;
-}
-/** Every half second (host): each Ironhold body's health ceiling is moved to what its line's research says, keeping its share of health. */
-let normT = 0;
-export function normalise(g: Game, dt: number) {
-  normT -= dt; if (normT > 0 || g.net) return; normT = .5;
-  for (const u of g.units) { if (!u.alive || fac(u.team) !== 0) continue; const w = wantHp(g, u); if (Math.abs(w - u.maxHp) > .5) { const k = u.hp / u.maxHp; u.maxHp = w; u.hp = Math.max(1, w * k); } }
-}
+/** How hard this body's gun hits after research: infantry follow the Assay Office's levels, machines the Foundry's, ships the Mast's (UnitDef.cat). */
+export const mulOf = (g: Game, u: Unit) => g.gunMul(u.team, catOf(u.kind));
 
 // ---------------------------------------------------------------- timed boosts
 /** Boosts a body carries for a while, by name, as the game time they end. Kept off the Unit record so nothing else has to know. */
@@ -128,10 +103,10 @@ const WHY: Record<string, string> = { energy: 'Not enough energy.', cooldown: 'N
 /** The key for an ability's hotkey letter: 'RMB' is the right mouse button, else a letter key. */
 export const keyOf = (h: string) => h === 'RMB' ? 'Mouse2' : 'Key' + h;
 /** The ability keys in first person: each ability on its own hotkey (C, T, Y, or the right mouse button on a body with no scope). */
-export function abilityKeys(g: Game, P: Set<string>, eye: THREE.Vector3, dir: THREE.Vector3, look: Hit | null) {
+export function abilityKeys(g: Game, P: Set<string>, eye: THREE.Vector3, dir: THREE.Vector3, look: Hit | null, skip: string[] = []) {
   const me = g.me!;
   for (const a of abilitiesOf(me.kind)) {
-    if (!a.hotkey || !P.has(keyOf(a.hotkey))) continue;
+    if (skip.includes(a.key) || !a.hotkey || !P.has(keyOf(a.hotkey))) continue;
     const t = a.target === 'self' ? { x: me.pos.x, z: me.pos.z } : aimTarget(g, eye, dir, look, Math.min(a.range, 30));
     const why = g.net ? '' : whyNot(g, me, a.key, t);
     if (why) { sfx.deny(); g.hud.damage(V3(me.pos.x + dir.x * 2.5, eye.y, me.pos.z + dir.z * 2.5), WHY[why] || 'Can\'t.', 'kobad'); continue; }

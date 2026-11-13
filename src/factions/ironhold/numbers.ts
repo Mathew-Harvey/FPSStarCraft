@@ -55,9 +55,9 @@ export const I_UNIT: Record<IKind, UnitDef> = {
   // Gantry in flak mode: the cannons swap to bursting shells that reach the air and nothing on the ground.
   gantryflak: { name: 'Gantry (flak)', team: 0, hp: 500, shield: 0, speed: 3.9, eye: 2.95, headY: 3.2, bodyY: 2.1, rad: 1.25, cost: 300, flux: 200, time: 30, supply: 6, tags: ['plated', 'machine', 'huge'], hits: 'air', quip: '', ack: ['Flak loaded.', 'Watching the sky.', 'Air guns up.'] },
   // A Sapper's mine: dug in, unseen, goes off at the first foe within 5 m. Not trained.
-  shaftmine: { name: 'Shaft Mine', team: 0, hp: 30, shield: 0, speed: 0, eye: .3, headY: .3, bodyY: .15, rad: .5, cost: 0, time: 0, supply: 0, cloak: true, tags: ['machine'], quip: '', ack: [''] },
+  shaftmine: { name: 'Shaft Mine', team: 0, hp: 30, shield: 0, speed: 0, eye: .3, headY: .3, bodyY: .15, rad: .5, cost: 0, time: 0, supply: 0, cloak: true, ward: true, tags: ['machine'], quip: '', ack: [''] },
   // A Surveyor's Stake Gun turret: 10 s of fire, then it falls over.
-  staketurret: { name: 'Stake Gun', team: 0, hp: 120, shield: 0, speed: 0, eye: 1.0, headY: 1.0, bodyY: .6, rad: .6, cost: 0, time: 0, supply: 0, tags: ['machine'], armour: 1, hits: 'ground', quip: '', ack: [''] },
+  staketurret: { name: 'Stake Gun', team: 0, hp: 120, shield: 0, speed: 0, eye: 1.0, headY: 1.0, bodyY: .6, rad: .6, cost: 0, time: 0, supply: 0, ward: true, tags: ['machine'], armour: 1, hits: 'ground', quip: '', ack: [''] },
 };
 
 export const I_BLD: Record<IBKind, BldDef> = {
@@ -97,11 +97,12 @@ export const HOSTS: IBKind[] = ['bunkhouse', 'machineshop', 'hangar'];
 export const ADDONS: IBKind[] = ['twinbay', 'labbay'];
 /** Buildings that pack onto skids and crawl to a new spot. */
 export const CRAWLERS: IBKind[] = ['headframe', 'surveyrig', 'bastion', 'bunkhouse', 'machineshop', 'hangar'];
-/** Bodies a Rigger can repair: everything with the machine tag. */
+// Every body carries its research line (UnitDef.cat).
+for (const k in I_CAT) (I_UNIT as any)[k].cat = I_CAT[k as IKind];
 
 /** Research. `at` is the building that sells it, and `needs` is the research that has to be bought first. `cat` is the line of bodies a level
  *  applies to (infantry, machines, ships). `lab` research is sold by a Lab Bay bolted onto that building. `req` buildings must stand too. */
-export const I_UPGRADES: { key: IUpKey; name: string; cost: number; blurb: string; at: IBKind; say: string; needs?: IUpKey; line?: 'atk' | 'arm' | 'shd'; /** A machine or ship level: kept off A's team-wide chains (which stay infantry) and applied by these rules. */ mline?: 'atk' | 'arm'; lvl?: number; pct?: number; flux?: number; cat?: ICat; lab?: boolean; req?: IBKind[] }[] = [
+export const I_UPGRADES: { key: IUpKey; name: string; cost: number; blurb: string; at: IBKind; say: string; needs?: IUpKey; line?: 'atk' | 'arm' | 'shd'; lvl?: number; pct?: number; flux?: number; cat?: string; lab?: boolean; req?: IBKind[] }[] = [
   // Infantry levels at the Assay Office. Levels 2 and 3 need the Signal Mast standing.
   { key: 'dmg', line: 'atk', lvl: 1, cat: 'inf', name: 'Infantry Guns 1', cost: 100, flux: 100, blurb: '+25% infantry gun damage', at: 'assay', say: 'Infantry Guns, level one. Hollow points for everyone.' },
   { key: 'armor', line: 'arm', lvl: 1, cat: 'inf', name: 'Infantry Plate 1', cost: 100, flux: 100, blurb: '+25% infantry health', at: 'assay', say: 'Infantry Plate, level one. Everyone walks heavier.' },
@@ -110,16 +111,16 @@ export const I_UPGRADES: { key: IUpKey; name: string; cost: number; blurb: strin
   { key: 'dmg3', line: 'atk', lvl: 3, cat: 'inf', name: 'Infantry Guns 3', cost: 250, flux: 250, blurb: '+15% infantry gun damage', at: 'assay', needs: 'dmg2', req: ['mast'], say: 'Infantry Guns, level three. Head office signed for these in person.' },
   { key: 'armor3', line: 'arm', lvl: 3, cat: 'inf', name: 'Infantry Plate 3', cost: 250, flux: 250, blurb: '+15% infantry health', at: 'assay', needs: 'armor2', req: ['mast'], say: 'Infantry Plate, level three. You are now worth more than the safe.' },
   // Machine guns and plate at the Foundry. Plate covers ships too.
-  { key: 'mdmg', mline: 'atk', lvl: 1, cat: 'mech', name: 'Machine Guns 1', cost: 100, flux: 100, blurb: '+25% damage for walkers, bikes and Pile Drivers', at: 'foundry', say: 'Machine Guns, level one. Bigger bores on everything with an engine.' },
-  { key: 'mdmg2', mline: 'atk', lvl: 2, cat: 'mech', name: 'Machine Guns 2', cost: 175, flux: 175, blurb: '+20% machine damage', at: 'foundry', needs: 'mdmg', say: 'Machine Guns, level two.' },
-  { key: 'mdmg3', mline: 'atk', lvl: 3, cat: 'mech', name: 'Machine Guns 3', cost: 250, flux: 250, blurb: '+15% machine damage', at: 'foundry', needs: 'mdmg2', say: 'Machine Guns, level three. The barrels glow now.' },
-  { key: 'marm', mline: 'arm', lvl: 1, cat: 'mech', name: 'Machine and Ship Plate 1', cost: 100, flux: 100, blurb: '+25% health for machines and ships', at: 'foundry', say: 'Machine and Ship Plate, level one. Thicker panels on everything that rolls or flies.' },
-  { key: 'marm2', mline: 'arm', lvl: 2, cat: 'mech', name: 'Machine and Ship Plate 2', cost: 175, flux: 175, blurb: '+20% machine and ship health', at: 'foundry', needs: 'marm', say: 'Machine and Ship Plate, level two.' },
-  { key: 'marm3', mline: 'arm', lvl: 3, cat: 'mech', name: 'Machine and Ship Plate 3', cost: 250, flux: 250, blurb: '+15% machine and ship health', at: 'foundry', needs: 'marm2', say: 'Machine and Ship Plate, level three. Even the paint is armoured.' },
+  { key: 'mdmg', line: 'atk', lvl: 1, cat: 'mech', name: 'Machine Guns 1', cost: 100, flux: 100, blurb: '+25% damage for walkers, bikes and Pile Drivers', at: 'foundry', say: 'Machine Guns, level one. Bigger bores on everything with an engine.' },
+  { key: 'mdmg2', line: 'atk', lvl: 2, cat: 'mech', name: 'Machine Guns 2', cost: 175, flux: 175, blurb: '+20% machine damage', at: 'foundry', needs: 'mdmg', say: 'Machine Guns, level two.' },
+  { key: 'mdmg3', line: 'atk', lvl: 3, cat: 'mech', name: 'Machine Guns 3', cost: 250, flux: 250, blurb: '+15% machine damage', at: 'foundry', needs: 'mdmg2', say: 'Machine Guns, level three. The barrels glow now.' },
+  { key: 'marm', line: 'arm', lvl: 1, cat: 'mech|ship', name: 'Machine and Ship Plate 1', cost: 100, flux: 100, blurb: '+25% health for machines and ships', at: 'foundry', say: 'Machine and Ship Plate, level one. Thicker panels on everything that rolls or flies.' },
+  { key: 'marm2', line: 'arm', lvl: 2, cat: 'mech|ship', name: 'Machine and Ship Plate 2', cost: 175, flux: 175, blurb: '+20% machine and ship health', at: 'foundry', needs: 'marm', say: 'Machine and Ship Plate, level two.' },
+  { key: 'marm3', line: 'arm', lvl: 3, cat: 'mech|ship', name: 'Machine and Ship Plate 3', cost: 250, flux: 250, blurb: '+15% machine and ship health', at: 'foundry', needs: 'marm2', say: 'Machine and Ship Plate, level three. Even the paint is armoured.' },
   // Ship guns at the Signal Mast.
-  { key: 'sdmg', mline: 'atk', lvl: 1, cat: 'ship', name: 'Ship Guns 1', cost: 100, flux: 100, blurb: '+25% damage for fliers', at: 'mast', say: 'Ship Guns, level one.' },
-  { key: 'sdmg2', mline: 'atk', lvl: 2, cat: 'ship', name: 'Ship Guns 2', cost: 175, flux: 175, blurb: '+20% flier damage', at: 'mast', needs: 'sdmg', say: 'Ship Guns, level two.' },
-  { key: 'sdmg3', mline: 'atk', lvl: 3, cat: 'ship', name: 'Ship Guns 3', cost: 250, flux: 250, blurb: '+15% flier damage', at: 'mast', needs: 'sdmg2', say: 'Ship Guns, level three.' },
+  { key: 'sdmg', line: 'atk', lvl: 1, cat: 'ship', name: 'Ship Guns 1', cost: 100, flux: 100, blurb: '+25% damage for fliers', at: 'mast', say: 'Ship Guns, level one.' },
+  { key: 'sdmg2', line: 'atk', lvl: 2, cat: 'ship', name: 'Ship Guns 2', cost: 175, flux: 175, blurb: '+20% flier damage', at: 'mast', needs: 'sdmg', say: 'Ship Guns, level two.' },
+  { key: 'sdmg3', line: 'atk', lvl: 3, cat: 'ship', name: 'Ship Guns 3', cost: 250, flux: 250, blurb: '+15% flier damage', at: 'mast', needs: 'sdmg2', say: 'Ship Guns, level three.' },
   // The Headframe.
   { key: 'drill', name: 'Diamond Bits', cost: 100, blurb: 'Riggers dig 30% faster', at: 'headframe', say: 'Diamond Bits fitted. The rock has filed a complaint.' },
   { key: 'buckets', name: 'Deep Buckets', cost: 150, flux: 50, blurb: 'Riggers carry 10 ore a trip', at: 'headframe', needs: 'drill', say: 'Deep Buckets. Same back, more rock.' },

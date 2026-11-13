@@ -170,7 +170,7 @@ const dmgOf = (b: Unit | Building) => b.maxHp - b.hp;
   check(v.pos.distanceTo(v0) > 3 && v.pos.x < v0.x, `Reel: the body is pulled toward the Hooksail (${v.pos.distanceTo(v0).toFixed(1)} m)`);
   v.alive = false; hk.energy = 200; hk.abCd = {};
   const hx = hk.pos.x, hz = hk.pos.z, sh = spawnAt(g, 'linesman' as Kind, O, hx + 8, hz + 4), mark = spawnAt(g, 'snapper', H, hx, hz + 4); mark.maxHp = mark.hp = 5000; mark.speed = 0; sh.speed = 0;
-  check(useAbility(g, hk, 'cloud', { x: sh.pos.x, z: sh.pos.z }), `Spore Cloud: cast (${whyNot(g, hk, 'cloud', { x: sh.pos.x, z: sh.pos.z })} ${hk.cast?.key})`); run(g, .6); const m0 = dmgOf(mark); run(g, 4); check(dmgOf(mark) - m0 === 0, `Spore Cloud: an enemy inside cannot hit from range (${(dmgOf(mark) - m0).toFixed(0)} damage once the cloud is up)`);
+  check(useAbility(g, hk, 'cloud', { x: sh.pos.x, z: sh.pos.z }), `Spore Cloud: cast (${whyNot(g, hk, 'cloud', { x: sh.pos.x, z: sh.pos.z })} ${hk.cast?.key})`); run(g, .6); const m0 = dmgOf(mark), sp = sh.pos.clone(); for (let i = 0; i < 40; i++) { sh.pos.copy(sp); run(g, .1); } /* held where it stands: a Linesman walks in to a step away, where the cloud lets it hit */ check(dmgOf(mark) - m0 === 0, `Spore Cloud: an enemy inside cannot hit from range (${(dmgOf(mark) - m0).toFixed(0)} damage once the cloud is up)`);
   sh.alive = false; mark.alive = false;
   hk.energy = 20; hk.abCd = {}; const sac = grow(g, 'sporesac', H, x + 2, z + 2); hk.pos.set(x + 2, 0, z + 5);
   const bh = sac.hp; check(useAbility(g, hk, 'drink', { x: sac.pos.x, z: sac.pos.z, id: sac.id }), 'Drink: cast on its own building'); run(g, 1.2);

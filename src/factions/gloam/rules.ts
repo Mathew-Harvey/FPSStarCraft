@@ -225,7 +225,7 @@ export function consume(g: Game, u: Unit) {
 /** A spare Grazer to root with, for the build menu: anyone but the body the player drives counts. */
 export function spareGrazers(g: Game, team = g.myTeam) { return g.units.filter(u => u.alive && u.team === team && u.kind === 'grazer' && !u.pilot && u !== g.me).length; }
 /** Where a Gloam building can grow: on its own Bloom, with the whole footprint covered. Mother Caps can seed bare ground. */
-export function onBloom(g: Game, k: GBKind, x: number, z: number, team: number) { return k === 'mothercap' || k === 'tunnelroot' || g.carpet.on(x, z, Math.max(BLD[k].hx, BLD[k].hz) * .6, team); }
+export function onBloom(g: Game, k: GBKind, x: number, z: number, team: number) { return k === 'mothercap' || k === 'tunnelroot' || k === 'ventbladder' || g.carpet.on(x, z, Math.max(BLD[k].hx, BLD[k].hz) * .6, team); }
 export { isWorker };
 
 defineFaction(2, { ai: aiGloam, drive: (g, dt, P, eye, dir) => playerGloam(g, dt, P, eye, dir), each: gloamBuilding, grows: true });

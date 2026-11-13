@@ -6,7 +6,7 @@ import { DOCTRINES } from '../../doctrine';
 import { sfx } from '../../audio';
 import { defineFaction } from '../../core/registry';
 import { costOf, canPay } from '../../core/econ';
-import { overgrowth2, budMix } from './brain2';
+import { overgrowth2, budMix, firstOf } from './brain2';
 const LOOKOUT = ['Lookout', 'Watcher', 'Rootwatch'];
 import { BLD, UNIT, UPGRADES, Kind, BKind, Building, MAP, veylPt, endPt, homeXZ, foeOf, fac } from '../../data';
 export const GHINTS: [number, string, string][] = [
@@ -49,6 +49,7 @@ export function overgrowth(D: Director, dt: number, V: Side = D.vs) {
   const hollow = own('tuskhollow'), hollowUp = up('tuskhollow')[0], old = own('oldgrowth'), oldUp = up('oldgrowth').length > 0, stingers = own('stinger').length;
   // A building costs a Grazer as well as ore. Never root the last few: the belly of the swarm comes first.
   const canRoot = grazers.length > 5;
+  let saving = true, hold = 80;
   const put = (k: BKind, line: string) => {
     if (!pays(costOf(k)) || !canRoot || !g.unlocked(k, T)) return false;
     for (const [lx, lz] of SLOT[k] || []) { const [x, z] = endPt(T, ...veylPt(lx, lz), false), at = D.freeSpot(k, Math.round(x), Math.round(z), T); if (at && g.place(k, at[0], at[1], false, T, null)) { D.say('Overgrowth', line, '', T); return true; } }
@@ -62,7 +63,6 @@ export function overgrowth(D: Director, dt: number, V: Side = D.vs) {
   const exp = expansion(D, T);
   // A new Cap goes ten metres from the seam on the side facing home, or a little further back if the ore is in the way there.
   const capSpot = ([sx, sz]: number[]) => { const dx = HX - sx, dz = HZ - sz, l = Math.hypot(dx, dz) || 1; return [10, 12, 14, 16, 18].map(r => [Math.round(sx + dx / l * r), Math.round(sz + dz / l * r)]).find(p => g.canPlace('mothercap', p[0], p[1], false, T)) || null; };
-  let saving = true, hold = 80;
   if (!warren.length) put('warren', 'A Warren first. The Snappers need somewhere to sleep.');
   else if (wantSac) put('sporesac', 'We are crowded. Rooting a Spore Sac.');
   else if (growing) saving = false;
@@ -95,18 +95,21 @@ export function overgrowth(D: Director, dt: number, V: Side = D.vs) {
   else if (spare(['gtongue', 'glegs', 'gquill', 'gspit1', 'gsap', 'gcharge', 'gbloom', 'ggut'])) saving = true;
   else saving = false;
   // Buds: every Mother Cap ripens what it can. Grazers first, until each Cap has its crew plus a few spare to root with.
-  const want = 8 + DOC.crew + 6 * (capsUp.length - 1) + (warren.length && !old.length ? 1 : 0);
+  // Plus the Grazers each tapped vent takes (two, three once the Elder stands; brain2.ts sends them).
+  const want = 8 + DOC.crew + 6 * (capsUp.length - 1) + (warren.length && !old.length ? 1 : 0) + g.vents.filter(v => v.tap?.alive && v.tap.built && v.tap.team === T).length * (up('eldercap' as BKind).length ? 3 : 2);
+  // After ten minutes the Buds hold back for the second half's tech every other half minute, so the army and the tech both grow.
   const sn = g.own('snapper', T).length, qb = g.own('quillback', T).length, bl = g.own('blister', T).length;
   for (const cap of capsUp) {
     while ((cap.buds || 0) > 0) {
       let k: Kind | null = null;
       if (grazers.length + count(capsUp, 'grazer') < want && free > 0) k = 'grazer';
       else if (!warrenUp) break;
+      else if ((k = firstOf(D, T))) { /* the first of each new body */ }
       else if (gardenUp && qb + count(capsUp, 'quillback') < Math.floor((sn + count(capsUp, 'snapper')) / 3) + 1 && army >= 2) k = 'quillback';
       else if (bedUp && bl + count(capsUp, 'blister') < Math.floor(army / 6) + 1) k = 'blister';
       else k = budMix(D, T) || 'snapper';
       const n = k === 'snapper' ? 2 : 1, c = costOf(k);
-      if (!canPay(g, T, [c[0] * n + (k === 'grazer' ? 0 : Math.max(saving ? hold : 0, (globalThis as any).process?.env?.G2HOLD === '1' ? want2 : 0)), c[1] * n]) || !g.train(cap, k)) break;
+      if (!canPay(g, T, [c[0] * n + (k === 'grazer' ? 0 : Math.max(saving ? hold : 0, want2 < 0 ? -want2 : g.time > 600 && Math.floor(g.time / 30) % 2 === 0 ? want2 : 0)), c[1] * n]) || !g.train(cap, k)) break;
     }
   }
 }

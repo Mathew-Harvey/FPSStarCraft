@@ -222,8 +222,8 @@ const dmgOf = (b: Unit | Building) => b.maxHp - b.hp;
 // ---------------------------------------------------------------- 7. the bots make every unit (ten seeded 40-minute matches)
 if (!quick) {
   const { spawn } = await import('node:child_process'), specs: any[] = [];
-  for (let i = 0; i < 10; i++) specs.push({ home: i % 2 ? 0 : 2, out: i % 2 ? 2 : 0, map: i % 3, seed: 100 + i, mins: 40, foe: i % 4 < 2 ? 0 : 1 });
-  for (const sp of specs) if (sp.foe === 1) { if (sp.home === 0) sp.home = 1; else sp.out = 1; }
+  // Two against the Ironhold, two against the Veyl, six mirrors (both Gloam sides counted), on all three maps.
+  for (const [i, [home, out]] of [[2, 0], [0, 2], [2, 1], [1, 2], [2, 2], [2, 2], [2, 2], [2, 2], [2, 2], [2, 2]].entries()) specs.push({ home, out, map: i % 3, seed: 100 + i, mins: 40 });
   const rows: any[] = []; let next = 0;
   const one = (sp: any) => new Promise<void>(res => { let out = ''; const p = spawn(process.execPath, [process.argv[1], 'one', JSON.stringify(sp)], { stdio: ['ignore', 'pipe', 'inherit'] }); p.stdout.on('data', d => out += d); p.on('close', code => { const line = out.trim().split('\n').pop() || '{}'; try { rows.push({ ...JSON.parse(line), code }); } catch { rows.push({ sp, code, bad: out.slice(-300) }); } res(); }); });
   await Promise.all([0, 1, 2, 3].map(async () => { while (next < specs.length) await one(specs[next++]); }));
@@ -232,7 +232,7 @@ if (!quick) {
   for (const k of Object.keys(G_UNIT)) check((made.get(k) || 0) > 0, `bots: made at least one ${UNIT[k as Kind].name} across ten matches (${made.get(k) || 0})`);
   console.log('\nShare of the Gloam\'s unit spend (ore plus Flux), ten matches:');
   for (const [k, v] of [...spend].sort((a, b) => b[1] - a[1])) console.log(`  ${UNIT[k as Kind].name.padEnd(13)} ${(v / total * 100).toFixed(1).padStart(5)}%  made ${made.get(k)}`);
-  console.log('Results: ' + rows.map(r => `${r.sp?.home}${r.sp?.out}:${r.res}`).join(' '));
+  console.log('Results: ' + rows.map(r => `${r.sp?.home}${r.sp?.out}:${r.res} ${Math.round((r.t ?? 0) / 60)}m`).join(' '));
 }
 console.log(fail.length ? `\n${fail.length} FAILED\n` + fail.join('\n') : '\nALL PASS');
 if (fail.length) process.exitCode = 1;
@@ -242,14 +242,14 @@ function oneMatch(sp: { home: number; out: number; map: number; seed: number; mi
   seed = sp.seed; setMap(sp.map); setSides(sp.home, sp.out);
   const g = new Game(noPipe(), noHud, DIFFS[1], sp.map, null, null, true); g.noRender = true; g.evq = []; g.me = null; g.phase = 'play'; g.human = g.human.map(() => false);
   for (const u of g.units) u.pilot = 0;
-  const T = sp.home === 2 ? SIDE.home : SIDE.out, seen = new Map<Unit, string>(), made: Record<string, number> = {}, spend: Record<string, number> = {};
+  const T = sp.home === 2 ? SIDE.home : SIDE.out, mine = (t: number) => t === T || (sp.home === 2 && sp.out === 2 && fac(t) === 2), seen = new Map<Unit, string>(), made: Record<string, number> = {}, spend: Record<string, number> = {};
   const note = (u: Unit, from?: string) => { const k = u.kind; made[k] = (made[k] || 0) + 1; const c = costOf(k as Kind), f = from ? costOf(from as Kind) : [0, 0]; spend[k] = (spend[k] || 0) + Math.max(0, c[0] - f[0]) + Math.max(0, c[1] - f[1]); };
-  for (const u of g.units) if (u.team === T) seen.set(u, u.kind);
+  for (const u of g.units) if (mine(u.team)) seen.set(u, u.kind);
   let res = 'draw', lastNew = 0, stall = '';
   for (let i = 0; i < sp.mins * 60 * 30; i++) {
     g.update(1 / 30); g.evq!.length = 0;
     if (i % 30 === 0) {
-      for (const u of g.units) if (u.alive && u.team === T && fac(u.team) === 2) { const was = seen.get(u); if (was === undefined) { note(u); lastNew = g.time; } else if (was !== u.kind) { note(u, was); lastNew = g.time; } seen.set(u, u.kind); }
+      for (const u of g.units) if (u.alive && mine(u.team) && fac(u.team) === 2) { const was = seen.get(u); if (was === undefined) { note(u); lastNew = g.time; } else if (was !== u.kind) { note(u, was); lastNew = g.time; } seen.set(u, u.kind); }
       if ((sp as any).log && i % (30 * 60) === 0) { const bk: Record<string, number> = {}; for (const b of g.buildings) if (b.alive && b.team === T) bk[b.kind] = (bk[b.kind] || 0) + 1; console.error(Math.round(g.time / 60) + 'm', 'ore', Math.round(g.cash(T)), 'flux', Math.round(g.flux(T)), 'army', g.army(T).length, 'foe', g.army(T === SIDE.home ? SIDE.out : SIDE.home).length, JSON.stringify(bk), Object.keys(g.upOf(T)).filter(k => g.upOf(T)[k as never]).join(',')); }
       if (g.time - lastNew > 300 && g.ownB(undefined, true, T).length && !stall) stall = `nothing new for 5 minutes at ${Math.round(g.time / 60)} min`;
     }

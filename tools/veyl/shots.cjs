@@ -78,6 +78,7 @@ const W = +(process.env.PX || 1280), H = Math.round(W * 9 / 16);
     await shoot('fx-cmd', { ortho: 14, at: [0, 150, 120], look: [0, 0, 0], span: 150 });
     await b.close(); return;
   }
+  await shoot('warmup', { at: [0, 3, 10], look: [0, 1, 0] });   // the first frame after the hold can come out black
   for (const kind of kinds) {
     const t0 = Date.now();
     const h = await p.evaluate(k => { const l = window.__veyl.veylLook(k); if (!l) return 0; const b = new (l.root.position.constructor)(); let top = 0; l.root.updateMatrixWorld(true); l.root.traverse(o => { if (o.isMesh) { o.geometry.computeBoundingBox(); const bb = o.geometry.boundingBox.clone().applyMatrix4(o.matrixWorld); top = Math.max(top, bb.max.y); } }); return top; }, kind);

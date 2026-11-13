@@ -114,7 +114,7 @@ export class Game {
     if (!(fac(SIDE.home) === 0 && fac(SIDE.out) === 1) || turnOf(mapI) > 0) this.eco = true;   // and on a hidden map nobody starts with a base already built
     // Two economies and no story job: the ore is laid out the same for both ends (see LAYOUT). A story job keeps the fields it was written round.
     this.fair = LAYOUT.fair = this.eco && !mission && !STORY.on;
-    setMap(mapI); this.sites = MAP.sites!; (M.ground as any).uniforms.uColor.value.setRGB(MAP.ground[0], MAP.ground[1], MAP.ground[2]); (M.mesa as any).uniforms.uColor.value.setRGB(MAP.mesa[0], MAP.mesa[1], MAP.mesa[2]); (M.rock as any).uniforms.uColor.value.setRGB(MAP.rock[0], MAP.rock[1], MAP.rock[2]); 
+    setMap(mapI); this.sites = MAP.sites!; this.made = { plan: T.MADE.plan, code: T.MADE.code };   // terrain (J): a made map, if one is in use (M.ground as any).uniforms.uColor.value.setRGB(MAP.ground[0], MAP.ground[1], MAP.ground[2]); (M.mesa as any).uniforms.uColor.value.setRGB(MAP.mesa[0], MAP.mesa[1], MAP.mesa[2]); (M.rock as any).uniforms.uColor.value.setRGB(MAP.rock[0], MAP.rock[1], MAP.rock[2]); 
     this.wxSalt = mapI + (net ? 0 : Date.now() % 50);   // the clock, not the dice: a draw here would move every bot match that follows
     const s = this.scene; s.add(makeSky()); MD.buildWorld(s, this.props, this.anim); this.spires = this.props.filter(p => p.solid); s.add(this.cam);
     this.vm = { drill: MD.vmDrill(), rifle: MD.vmRifle(), scatter: MD.vmScatter(), shield: MD.vmShield(), cannon: MD.vmCannon(), long: MD.vmLong(), pistol: MD.vmPistol(), veyl: MD.vmVeyl() };
@@ -250,7 +250,9 @@ export class Game {
   fair = false; sites: number[][] = [];
   /** The map, the sides and the layout are shared by every Game in the process. A server that runs several matches sets the map and sides before it
    *  touches one, and this puts back the layout that match was built with. */
-  pin() { LAYOUT.fair = this.fair; MAP.sites = this.sites; T.layoutTerrain(); }
+  pin() { LAYOUT.fair = this.fair; MAP.sites = this.sites; T.MADE.plan = this.made.plan; T.MADE.code = this.made.code; T.layoutTerrain(); }
+  /** The made map this match is on (terrain (J)), so a server running several matches lays the right ground for each. */
+  made: { plan: T.Plan | null; code: string } = { plan: null, code: '' };
   /** How far out a Choir Stone takes a Tender's ore (see CHOIR_REACH: a dial for balance tables, 0 in play). */
   bankReach(hq: Building) { return hq.kind === 'choir' ? CHOIR_REACH.m : 0; }
   otSaid = false;

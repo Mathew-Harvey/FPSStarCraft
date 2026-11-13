@@ -8,6 +8,8 @@ import { initHeadless } from '../src/gfx';
 import { DIFFS, MAP, MAPS, SIZES, VHOME, setMap, setSides, swapEnd, LAYOUT } from '../src/data';
 import { TER, STEP, BEACON, h, zone, sees, flat, segD } from '../src/terrain';
 import { TEAM_LAYOUTS, turn } from '../src/teammaps';
+import { starterPlan, planCode, parsePlan, checkPlan, usePlan, planMap } from '../src/mapcode';
+import { PK, MADE, reachable } from '../src/terrain';
 
 initHeadless();
 const fail: string[] = []; const check = (ok: boolean, what: string) => { console.log((ok ? 'PASS ' : 'FAIL ') + what); if (!ok) fail.push(what); };
@@ -168,6 +170,32 @@ const near = (a: number[], b: number[], tol = .3) => Math.hypot(a[0] - b[0], a[1
   // Every field on a team map can be walked to from start 0.
   { const g = match(26); g.spires = []; const missed: number[] = []; (MAP.sites || []).forEach(([x, z], i) => { const r = g.spawn('rigger', 0, 3, 3); let ok = false; for (let t = 0; t < 150 * 30; t++) { g.time += 1 / 30; g.poseUnits(0); g.moveTo(r, x, z, 1 / 30, 3); if (Math.hypot(r.pos.x - x, r.pos.z - z) < 6) { ok = true; break; } } if (!ok) missed.push(i); r.alive = false; });
     check(!missed.length, `Crossing Large: a Rigger walks from the yard to every field${missed.length ? ' (not ' + missed.join(', ') + ')' : ''}`); }
+}
+
+// 10. The map maker. Every new map passes the check and comes back the same from its code; a field nobody can walk to, a far base on top of the
+//     yard and high ground on a base are turned away; a made map plays; and putting it away gives the map back as it was.
+{
+  setSides(0, 2); LAYOUT.fair = true; setMap(1); const plain = JSON.stringify(TER.ridges.map(r => [r.ax, r.az]));
+  let bad: string[] = [], longest = 0;
+  for (let b = 0; b < 3; b++) for (let s = 0; s < 3; s++) { const P = starterPlan(b, s), c = planCode(P), Q = parsePlan(c); longest = Math.max(longest, c.length);
+    if (!Q || JSON.stringify(Q) !== JSON.stringify(P)) bad.push(`${b}/${s} code`); const v = checkPlan(Q!); if (!v.ok) bad.push(`${b}/${s}: ${v.problems.join(' ')}`);
+    if (TER.ridges.length !== 2 || TER.beacons.length !== 1 || TER.vents.length !== 2 || (MAP.sites || []).length !== 4) bad.push(`${b}/${s} pieces`); }
+  check(!bad.length && longest < 120, `a new made map on every map and size passes the check, and its code (at most ${longest} letters) gives the same map back${bad.length ? ' (' + bad.slice(0, 3).join('; ') + ')' : ''}`);
+  // A field ringed by ridges with no way up or round.
+  const P = starterPlan(2, 0), [fx, fz] = [P.items[0][1], P.items[0][2]], ring: number[][] = [];
+  for (let i = 0; i < 8; i++) { const a0 = i / 8 * 6.2832, a1 = (i + 1) / 8 * 6.2832; ring.push([PK.ridge, fx + Math.cos(a0) * 22, fz + Math.sin(a0) * 22, fx + Math.cos(a1) * 22, fz + Math.sin(a1) * 22]); }
+  const shut = checkPlan({ ...P, items: [...P.items, ...ring] });
+  const near0 = checkPlan({ ...P, out: [40, 20] }), onBase = checkPlan({ ...P, items: [...P.items, [PK.ledge, 10, 10, 20, 10, 8]] });
+  check(!shut.ok && shut.problems.some(p => p.includes('cannot be walked to')), 'a field shut in by ridges with no ramp is turned away');
+  check(!near0.ok && !onBase.ok && onBase.problems.some(p => p.includes('High ground')), 'a far base on top of the yard, and high ground on a base, are turned away');
+  // With a rock wall across the only way in, the field still counts as reachable: the wall can be broken.
+  const walled = checkPlan({ ...P, items: [...P.items, ...ring.slice(1), [PK.wall, fx + Math.cos(.3927) * 20.3, fz + Math.sin(.3927) * 20.3, Math.round(.3927 * 180 / Math.PI), 12]] });
+  check(walled.problems.every(p => !p.includes('cannot be walked to')) && !reachable(0, 0, fx, fz) && TER.walls.length === 2, 'a field behind a rock wall counts as reachable, since the wall can be broken (and the wall does block the way while it stands)');
+  // A made map plays: the ground is the plan's, the match runs, and the ground stays with the match when another map is laid in between (as a server does).
+  const v = checkPlan(P), code = MADE.code; const g = match(planMap(P)); const madeKey = TER.key; run(g, 60);
+  usePlan(null); setMap(1); usePlan(code); setMap(planMap(P)); g.pin();
+  check(v.ok && g.phase === 'play' && TER.key === madeKey && TER.ridges.length === 2 && g.made.code === code, `a made map plays, and its match lays its own ground again after another map (phase ${g.phase}, ${TER.ridges.length} ridges)`);
+  usePlan(null); setMap(1); check(JSON.stringify(TER.ridges.map(r => [r.ax, r.az])) === plain, 'putting the made map away gives the map back as it was');
 }
 
 void VHOME;

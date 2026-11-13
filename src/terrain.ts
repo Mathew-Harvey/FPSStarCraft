@@ -30,9 +30,23 @@ export const STEP = 1.2;
 /** How high the ground stands. A ledge is a climb you can see over from a Gantry's cab, a natural's ridge a bit more, an island well above both. */
 const LEDGE_H = 3.6, RIDGE_H = 4.2, ISLAND_H = 5.2, /** Half the width of a natural's ridge: wide enough to stand a squad on. */ RIDGE_R = 4.4;
 
-export interface Terrain { ridges: Ridge[]; vents: [number, number][]; beacons: Beacon[]; walls: Wall[]; fields: Field[]; /** Indexes into MAP.sites of the bright fields. */ bright: number[]; key: string }
-export const TER: Terrain = { ridges: [], vents: [], beacons: [], walls: [], fields: [], bright: [], key: '' };
-const none = (): Terrain => ({ ridges: [], vents: [], beacons: [], walls: [], fields: [], bright: [], key: '' });
+/** A patch of painted ground: [x, z, reach, kind] (see PAINTS). Only a made map has any. */
+export type Paint = [number, number, number, number];
+export interface Terrain { ridges: Ridge[]; vents: [number, number][]; beacons: Beacon[]; walls: Wall[]; fields: Field[]; /** Indexes into MAP.sites of the bright fields. */ bright: number[]; paint: Paint[]; key: string }
+export const TER: Terrain = { ridges: [], vents: [], beacons: [], walls: [], fields: [], bright: [], paint: [], key: '' };
+const none = (): Terrain => ({ ridges: [], vents: [], beacons: [], walls: [], fields: [], bright: [], paint: [], key: '' });
+/** The kinds of ground a map maker can paint. */
+export const PAINTS = ['Sand', 'Scorch', 'Stone', 'Paving'];
+
+/** A map someone made (see mapmaker.ts): the map and size it is built on, where the far base stands, and its pieces for one end. Every piece is laid
+ *  twice, once as placed and once turned round the middle of the map, so both ends always get the same. Pieces are [kind, ...numbers]:
+ *  ledge [x, z, x2, z2, reach], ridge [x, z, x2, z2], island [x, z, reach], ramp [x, z] (onto the nearest high ground), vent [x, z], beacon [x, z],
+ *  rock wall [x, z, turn in degrees, length], field [x, z, bright 0 or 1], paint [x, z, reach, kind]. */
+export interface Plan { b: number; s: number; out: [number, number]; items: number[][] }
+export const PK = { ledge: 0, ridge: 1, island: 2, ramp: 3, vent: 4, beacon: 5, wall: 6, field: 7, paint: 8 } as const;
+/** The made map in use, if any. It applies only while the map picked is the one it was made on (same map, same size, not turned). */
+export const MADE: { plan: Plan | null; code: string } = { plan: null, code: '' };
+export const madeHere = () => !!MADE.plan && MAP.base === MADE.plan.b && MAP.size === MADE.plan.s && !MAP.turn && !MAP.ring && !MAP.set;
 
 // ------------------------------------------------------------ geometry
 const segT = (x: number, z: number, ax: number, az: number, bx: number, bz: number) => { const dx = bx - ax, dz = bz - az, l = dx * dx + dz * dz; return l < 1e-9 ? 0 : Math.max(0, Math.min(1, ((x - ax) * dx + (z - az) * dz) / l)); };
@@ -220,7 +234,7 @@ function paths() {
 export function layoutTerrain() {
   // Story jobs keep the flat ground they were written on. So does a map that turned off its ground (a classic raid map has none either way).
   if (MAP.set || MAP.code === undefined || !TERRAIN.on) { Object.assign(TER, none()); MAP.vents = []; settle(); return; }
-  const key = MAP.code + ':' + (MAP.sites || []).map(s => s.join(',')).join(';'); if (TER.key === key) return;
+  const key = MAP.code + ':' + (madeHere() ? MADE.code + ':' : '') + (MAP.sites || []).map(s => s.join(',')).join(';'); if (TER.key === key) return;
   const had = CACHE.get(key); if (had) { Object.assign(TER, had, { beacons: had.beacons.map(b => ({ ...b, held: 0, alive: true })) }); MAP.vents = TER.vents; settle(); return; }
   const T = none(); T.key = key; const k = MAP.k || 1, D = dice(MAP.code * 131 + 17), sites = MAP.sites || [], hx = VHOME.x, hz = VHOME.z;
   const [mx, mz] = MAP.mid || [OUTPOST.x / 2, OUTPOST.z / 2], rad = MAP.rad || 200 * k, segs = paths(), cx = hx / 2, cz = hz / 2;
@@ -235,6 +249,7 @@ export function layoutTerrain() {
     return true;
   };
   const both = (R: Ridge) => { T.ridges.push(R, twin(R)); };
+  if (madeHere()) { planGround(T, MADE.plan!); for (const R of T.ridges) box(R); T.ridges.forEach((R, i) => R.id = i); CACHE.set(key, T); Object.assign(TER, T); MAP.vents = T.vents; settle(); return; }
   if (MAP.starts) { ringGround(T, D, room); for (const R of T.ridges) box(R); T.ridges.forEach((R, i) => R.id = i); CACHE.set(key, T); Object.assign(TER, T); MAP.vents = T.vents; settle(); return; }
 
   // 1. Ledges beside the road: high ground with one ramp down to the road, so whoever holds it shoots down on anyone passing.
@@ -367,4 +382,47 @@ function ringGround(T: Terrain, D: (a?: number, b?: number) => number, room0: (x
   T.beacons.push({ x: cx, z: cz, held: 0, alive: true });
   let lit = false; for (const f of [.42, .36, .5, .3, .56, .25, .64]) for (const da of [0, .15, -.15, .3, -.3]) { if (lit) break; const x = cx + Math.cos(ab + da) * R * f, z = cz + Math.sin(ab + da) * R * f; if (!room(x, z, 3, 5, 12)) continue; for (const [px, pz] of all(x, z)) T.beacons.push({ x: px, z: pz, held: 0, alive: true }); lit = true; }
   void D;
+}
+
+/** The ground of a made map: each piece as placed, and again turned round the middle (unless it sits on the middle, where it is its own twin). */
+function planGround(T: Terrain, P: Plan) {
+  const mid = (x: number, z: number) => { const [sx, sz] = swapEnd(x, z); return Math.hypot(sx - x, sz - z) < 1.5; };
+  const half: Ridge[] = [];
+  for (const it of P.items) { const [k, x, z, a = 0, b = 0, c = 0] = it;
+    if (k === PK.ledge) half.push(ridge(x, z, a, b, Math.max(4, Math.min(16, c || 8)), LEDGE_H, 'ledge'));
+    else if (k === PK.ridge) half.push(ridge(x, z, a, b, RIDGE_R, RIDGE_H, 'ridge'));
+    else if (k === PK.island) { const r = Math.max(9, Math.min(20, a || 14)); half.push(ridge(x, z, x, z, r, ISLAND_H, 'island')); }
+  }
+  // Ramps go onto the nearest high ground that is not an island, pointing out from it toward where they were placed.
+  for (const it of P.items) { if (it[0] !== PK.ramp) continue; const [, x, z] = it; let best: Ridge | null = null, bd = 1e9;
+    for (const R of half) { if (R.island) continue; const d = segD(x, z, R.ax, R.az, R.bx, R.bz) - R.r; if (d < bd) { bd = d; best = R; } }
+    if (!best || bd > 20) continue; const R = best, t = segT(x, z, R.ax, R.az, R.bx, R.bz), qx = R.ax + (R.bx - R.ax) * t, qz = R.az + (R.bz - R.az) * t, l = Math.hypot(x - qx, z - qz) || 1;
+    ramp(R, x, z, (x - qx) / l, (z - qz) / l, R.kind === 'ledge' ? 10 : 9, R.kind === 'ledge' ? 5.2 : 4.8); }
+  for (const R of half) { T.ridges.push(R); const W = twin(R); if (!(near2(W.ax, W.az, R.ax, R.az) && near2(W.bx, W.bz, R.bx, R.bz)) && !(near2(W.ax, W.az, R.bx, R.bz) && near2(W.bx, W.bz, R.ax, R.az))) T.ridges.push(W); }
+  for (const R of T.ridges) if (R.island) T.fields.push({ x: R.ax, z: R.az, seams: [[-5, -3, 9, 1.3], [4, -5, 8, 1.2], [6, 3, 9, 1.3], [-3, 6, 8, 1.2], [-7, 3, 7, 1.1]].map(q => isTwinSide(R.ax, R.az) ? [-q[0], -q[1], q[2], q[3]] : q), amount: 1200, rich: 1, island: true });
+  const both = (x: number, z: number, put: (x: number, z: number) => void) => { put(x, z); if (!mid(x, z)) { const [sx, sz] = swapEnd(x, z); put(sx, sz); } };
+  for (const it of P.items) { const [k, x, z, a = 0, b = 0, c = 0] = it;
+    if (k === PK.vent) both(x, z, (px, pz) => T.vents.push([Math.round(px * 10) / 10, Math.round(pz * 10) / 10]));
+    else if (k === PK.beacon) both(x, z, (px, pz) => T.beacons.push({ x: px, z: pz, held: 0, alive: true }));
+    else if (k === PK.wall) { const yaw = a * Math.PI / 180, len = Math.max(6, Math.min(30, b || 12)); T.walls.push([x, z, yaw, len]); if (!mid(x, z)) { const [sx, sz] = swapEnd(x, z); T.walls.push([sx, sz, yaw + Math.PI, len]); } }
+    else if (k === PK.paint) { const r = Math.max(4, Math.min(40, a || 12)), kind = Math.max(0, Math.min(PAINTS.length - 1, b | 0)); both(x, z, (px, pz) => T.paint.push([px, pz, r, kind])); }
+    void c; }
+  // Bright fields: the made map's own fields (MAP.sites, laid by data.ts from the plan) marked bright come in twin pairs.
+  (MAP.sites || []).forEach((st, i) => { if (st[3] === 1) T.bright.push(i); });
+}
+const near2 = (ax: number, az: number, bx: number, bz: number) => Math.hypot(ax - bx, az - bz) < 1.5;
+/** True for a point nearer the far base than the yard: its island seams are the twin's, turned round. */
+const isTwinSide = (x: number, z: number) => Math.hypot(x, z) > Math.hypot(x - VHOME.x, z - VHOME.z);
+
+/** True when a body on the ground below can walk from a to b: straight, or round the cliffs by the route finder. Up a ramp counts. With walls false, rock walls count as already broken. */
+export function reachable(ax: number, az: number, bx: number, bz: number, walls = true): boolean {
+  const zb = zone(bx, bz);
+  if (zb >= 0) { const ms = GROUPS[zb] || []; return ms.some(m => reachable(ax, az, m.fx + m.ux * 3, m.fz + m.uz * 3, walls)); }
+  if (clear(ax, az, bx, bz, walls)) return true; const G = graph(), n = G.x.length; if (!n) return false;
+  const dist = new Float64Array(n).fill(1e9), done = new Uint8Array(n);
+  for (let i = 0; i < n; i++) if (clear(G.x[i], G.z[i], bx, bz, walls)) dist[i] = 0;
+  for (;;) { let u = -1, bd = 1e9; for (let i = 0; i < n; i++) if (!done[i] && dist[i] < bd) { bd = dist[i]; u = i; } if (u < 0) break; done[u] = 1;
+    const A = G.adj[u]; for (let k = 0; k < A.length; k++) { const v = A[k]; if (done[v] || (walls && G.walls[u][k].some(w => WALL_UP[w]))) continue; if (bd + G.len[u][k] < dist[v]) dist[v] = bd + G.len[u][k]; } }
+  for (let i = 0; i < n; i++) if (dist[i] < 1e9 && clear(ax, az, G.x[i], G.z[i], walls)) return true;
+  return false;
 }

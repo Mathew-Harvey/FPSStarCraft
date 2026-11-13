@@ -1,5 +1,5 @@
 // Shared types, stat tables and map constants.
-import { layoutTerrain } from './terrain';
+import { layoutTerrain, MADE, PK, madeHere } from './terrain';
 import { startsOf, ringSites } from './teammaps';
 import type * as THREE from 'three';
 import type { Rig } from './models';
@@ -249,8 +249,11 @@ export function setMap(code: number) {
   const starts = B0.ring ? startsOf(B0, k) : undefined;
   if (starts) { const n = starts.length, [hx, hz] = starts[n / 2], l = Math.hypot(hx, hz), cx = hx / 2, cz = hz / 2, [fx, fz] = starts[n / 2 - 1], toC = Math.atan2(cz, cx);
     B = { ...B0, out: [(hx - hx / l * 8) / k, (hz - hz / l * 8) / k], flank: [[(cx + (fx - cx) * .55) / k, (cz + (fz - cz) * .55) / k]], exp: [Math.cos(toC + .95) * 62, Math.sin(toC + .95) * 62] }; }
+  // A made map (mapmaker.ts) puts the far base where its maker did, runs the flank out to one side of the middle, and has no wreck of its own.
+  const MP = MADE.plan && MADE.plan.b === base && MADE.plan.s === size && !turn && !B0.ring && !B0.set ? MADE.plan : null;
+  if (MP) { const [ox, oz] = MP.out, l = Math.hypot(ox, oz) || 1, f = MP.items.find(i => i[0] === PK.field); B = { ...B, out: [ox / k, oz / k], flank: [[(ox / 2 - oz / l * l * .3) / k, (oz / 2 + ox / l * l * .3) / k]], exp: f ? [f[1] / k, f[2] / k] : B.exp, wreck: null }; }
   MAP = { ...B, base, size, k, out: sc(B.out) as [number, number], flank: B.flank.map(sc), exp: sc(B.exp) as [number, number], arch: turn ? 0 : Math.round(B.arch * k) /* a rock arch over one road would mark it as the real one */, wreck: B.wreck ? sc(B.wreck) as [number, number] : null, rocks: Math.round(B.rocks * k * k), buttes: Math.round(B.buttes * k), crystals: B.crystals };
-  const ne = (B.like ?? base) === 0 && !turn; if (ne) MAP.out[1] = 13;
+  const ne = (B.like ?? base) === 0 && !turn && !MP; if (ne) MAP.out[1] = 13;
   const [ox, oz] = MAP.out;
   const ol = Math.hypot(ox, oz), px = -oz / ol, pz = ox / ol;
   if (ne) { ROAD.x = 0; ROAD.z = 14; } else { ROAD.x = px * 12; ROAD.z = pz * 12; }
@@ -295,7 +298,9 @@ const SITES = new Map<string, number[][]>();
  *  pairing the outpost gets the same seam turned round, so neither end has the nearer first field. */
 function layoutSites() {
   if (!MAP || MAP.code === undefined) return;   // the ground (terrain.ts) is laid out at every way out of here, once the fields are down
-  const fair = LAYOUT.fair && !MAP.hid, even = fair || !(fac(SIDE.home) === 0 && fac(SIDE.out) !== 0) || !!MAP.hid, key = MAP.code + (fair ? 'f' : even ? 'e' : 'c'), had = MAP.ring ? null : SITES.get(key); if (had) { MAP.sites = had; layoutRoads(); layoutTerrain(); return; }
+  const fair = LAYOUT.fair && !MAP.hid, even = fair || !(fac(SIDE.home) === 0 && fac(SIDE.out) !== 0) || !!MAP.hid, key = MAP.code + (fair ? 'f' : even ? 'e' : 'c'), had = MAP.ring || madeHere() ? null : SITES.get(key); if (had) { MAP.sites = had; layoutRoads(); layoutTerrain(); return; }
+  if (madeHere()) { const sites: number[][] = []; for (const it of MADE.plan!.items) { if (it[0] !== PK.field) continue; const [, x, z, br = 0] = it, [sx, sz] = swapEnd(x, z); sites.push([x, z, 0, br ? 1 : 0]); if (Math.hypot(sx - x, sz - z) > 1.5) sites.push([Math.round(sx * 10) / 10, Math.round(sz * 10) / 10, 1, br ? 1 : 0]); }
+    MAP.sites = sites; layoutRoads(); layoutTerrain(); return; }   // a made map's fields, each with its twin at the other end
   if (MAP.ring) { const mains: number[] = [], sites = ringSites(MAP, mains); MAP.mains = mains; MAP.sites = sites; SITES.set(key, sites); layoutRoads(); layoutTerrain(); return; }   // a team map lays its own fields, one copy per start
   const k = MAP.k, S = SIZES[MAP.size], [ox, oz] = MAP.out;
   const sites: number[][] = [[MAP.exp[0], MAP.exp[1]]], cx = ox / 2, cz = oz / 2, end = roadPt(ROAD.len + 6);

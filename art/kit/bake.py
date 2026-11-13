@@ -366,6 +366,8 @@ def cells(p, seed=0.0):
 
 def kind_of(mat, sk):
     """What a skin is made of, as far as the brush cares."""
+    if mat == 'gS':
+        return 'sac'
     if sk.get('emis', 0) > .3:
         return 'glow'
     if mat.startswith(('fab', 'vest', 'cloth')):
@@ -386,10 +388,11 @@ BRUSH = {
     'plate': dict(ink=1.0, tone=.5, hatch=.7, wear=.9, chip=.95, scratch=.55, stain=.0, dust=.5, bare=(.72, .74, .8)),
     'cloth': dict(ink=.95, tone=.62, hatch=1.0, wear=.35, chip=.0, scratch=0, stain=1.0, dust=.85, bare=None),
     'hide': dict(ink=1.0, tone=.58, hatch=.9, wear=.6, chip=.5, scratch=.3, stain=.6, dust=.95, bare=None),
-    'flesh': dict(ink=.8, tone=.42, hatch=.5, wear=0, chip=0, scratch=0, stain=0, dust=.2, bare=None),
+    'flesh': dict(ink=.8, tone=.36, hatch=.15, wear=0, chip=0, scratch=0, stain=0, dust=0, bare=None),
     'shell': dict(ink=1.0, tone=.6, hatch=.75, wear=.8, chip=.4, scratch=.3, stain=0, dust=.3, bare=None, craze=1.0),
     'growth': dict(ink=1.0, tone=.6, hatch=.8, wear=.45, chip=0, scratch=0, stain=.5, dust=.3, bare=None, mottle=1.0),
     'glow': dict(ink=.3, tone=.12, hatch=0, wear=0, chip=0, scratch=0, stain=0, dust=0, bare=None),
+    'sac': dict(ink=.85, tone=.36, hatch=.3, wear=0, chip=0, scratch=0, stain=0, dust=0, bare=None, veins=1.0),
 }
 
 
@@ -462,7 +465,7 @@ def paint(fig, meshes, res=1024, log=print, unit=1.0):
             edge.append(np.clip(1 + near(P - n * h) / (h * steep), 0, 1))
         wob = S.noise(P, 38 / unit, 5.1) * .6 + S.noise(P, 110 / unit, 1.7) * .4            # a hand that presses harder here than there
         big = S.noise(P, 7 / unit, 3.3)
-        glow = br is BRUSH['glow']
+        glow = br is BRUSH['glow'] or bool(br.get('veins'))
         # the colour itself: knocked back a little, never quite the same twice across a surface
         if not glow:
             grey = base @ np.array([.3, .59, .11], F)
@@ -475,6 +478,14 @@ def paint(fig, meshes, res=1024, log=print, unit=1.0):
             base = base * (1 - hair[:, None] * .7)
             mend = (1 - smooth(.02, .085, wall)) * smooth(.5, .62, S.noise(P, 3.2 / unit, 9.7) + (cid - .5) * .25) * br['craze']
             base = base * (1 - mend[:, None]) + np.array([.86, .63, .2], F) * mend[:, None]
+        if br.get('veins'):                          # a Gloam sac: a taut skin over something bright, each cell its own strength, veined dark where the skin is thick
+            f1, f2, cid = cells(P / (.07 * unit), 3.9)
+            wall = f2 - f1
+            base = np.minimum(base * (.78 + cid[:, None] * .34) * (1 + (1 - smooth(.0, .45, f1))[:, None] * .22), 1)
+            vein = (1 - smooth(.025, .1, wall + (wob - .5) * .05)) * br['veins']
+            twig = (1 - smooth(.0, .03, np.abs(S.noise(P, 26 / unit, 6.1) - .5))) * smooth(.1, .3, wall) * .55 * br['veins']      # hair veins wandering across the cells
+            vein = np.maximum(vein, twig)
+            base = base * (1 - vein[:, None] * .84) + np.array([.06, .2, .05], F) * vein[:, None] * .84
         if br.get('mottle') and part.mat[:2] in ('gH', 'gD'):                         # the Gloam: hide blotched darker in patches and dotted with pale warts
             f1, f2, cid = cells(P / (.045 * unit), 7.7)
             blot = smooth(.48, .66, S.noise(P, 8 / unit, 4.4)) * br['mottle']

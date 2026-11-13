@@ -23,7 +23,7 @@ function unpack(c: { head: any; geos: THREE.BufferGeometry[] }, u8: Uint8Array, 
   for (const m of c.head.meshes) {
     const n = m.nv, q = new Uint16Array(u8.buffer, base + m.pos, n * 3), nq = new Int8Array(u8.buffer, base + m.nrm, n * 4), uq = new Uint16Array(u8.buffer, base + m.uv, n * 2), ix = new Uint16Array(u8.buffer, base + m.idx, m.ni);
     const pos = new Float32Array(n * 3), nrm = new Float32Array(n * 3), uv = new Float32Array(n * 2), em = new Float32Array(n);
-    const skin = (M[m.mat] || M.nS).uniforms, glow = Math.min(1, skin.uEmis.value) + 2 * Math.round(skin.uShine.value * 10);
+    const skin = (M[m.mat] || M.nS).uniforms, glow = Math.min(1, m.glow ?? skin.uEmis.value) + 2 * Math.round(skin.uShine.value * 10);
     for (let i = 0; i < n; i++) {
       for (let k = 0; k < 3; k++) { pos[i * 3 + k] = (m.lo[k] + q[i * 3 + k] / 65535 * (m.hi[k] - m.lo[k])) * S; nrm[i * 3 + k] = nq[i * 4 + k] / 127; }
       uv[i * 2] = uq[i * 2] / 65535; uv[i * 2 + 1] = uq[i * 2 + 1] / 65535; em[i] = own ? glow : 32 * (nq[i * 4 + 3] + 16);   // the crease rides in the high part of aEm (see TOON_VS)

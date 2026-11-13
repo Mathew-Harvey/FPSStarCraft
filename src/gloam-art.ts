@@ -4,7 +4,7 @@ import { figure } from './meshes';
 import * as THREE from 'three';
 import { INK, R, rnd, M, TX, EXTRA, paint, tone, T, mk, G, setLayer, L_FX } from './gfx';
 import type { Ctx } from './gfx';
-import { pen, hatch, brush, frame, sky, nicks } from './skins';
+import { pen, hatch, brush, frame, sky, nicks, cellular, sstep } from './skins';
 import { lathe, hard, spl, rbox, blob, tube, plate, ring, shard, warp, crescent, capsule } from './sculpt';
 import { grp, put } from './units';
 
@@ -23,12 +23,21 @@ function lichen(g: Ctx, s: number, n: number, dark: string, lite: string) {
 function wrinkles(g: Ctx, s: number, n: number, col = INK) {
   for (let i = 0; i < n; i++) { const x = R(.05, .95) * s, y = R(.05, .95) * s, l = R(16, 44), a = R(-.4, .4) + (rnd() < .3 ? H : 0); pen(g, [[x, y], [x + Math.cos(a) * l * .5, y + Math.sin(a) * l * .5 + R(4, 10)], [x + Math.cos(a) * l, y + Math.sin(a) * l]], R(2, 4), col); }
 }
+/** Hide blotched darker in patches and dotted with pale warts, each in a dark ring: the same marks the painted bodies carry. */
+function mottle(g: Ctx, s: number, seed: number) {
+  cellular(g, s, 9, seed, (c, o, _wall, mid, id, _other, drift) => {
+    const blot = sstep(.42, .62, drift), on = id > .45 && mid < .38;
+    const ring = on ? 1 - sstep(.19, .25, mid) * (1 - sstep(.3, .38, mid)) * .6 : 1, wart = on ? (1 - sstep(.15, .23, mid)) * .8 : 0;
+    const r = c[o] * (1 - blot * .42) * ring, gr = c[o + 1] * (1 - blot * .3) * ring, b = c[o + 2] * (1 - blot * .46) * ring;
+    if (wart) { c[o] = r * (1 - wart) + Math.min(255, r * 1.5 + 40) * wart; c[o + 1] = gr * (1 - wart) + Math.min(255, gr * 1.5 + 40) * wart; c[o + 2] = b * (1 - wart) + Math.min(255, b * 1.5 + 40) * wart; } else { c[o] = r; c[o + 1] = gr; c[o + 2] = b; }
+  });
+}
 /** Growth lines across chitin, like the rings on a shell. */
 function growth(g: Ctx, s: number, n: number) {
   for (let i = 0; i < n; i++) { const y = (i + R(.3, .7)) / n * s; pen(g, [[0, y], [s * .3, y + R(-6, 6)], [s * .7, y + R(-6, 6)], [s, y]], R(2, 3.5), '#6a5636', .4); g.globalAlpha = .6; pen(g, [[0, y - 6], [s * .5, y - 6 + R(-3, 3)], [s, y - 6]], 2, '#fffbe8', .5); g.globalAlpha = 1; }
 }
 const hide = (base: string, kind: 'box' | 'band' | 'none' | 'cap') => paint(base, (g, s) => {
-  brush(g, s, base, 30, 1.3); sky(g, s, 1.1); lichen(g, s, 46, tone(base, .55), tone(base, 1.45)); wrinkles(g, s, 16);
+  brush(g, s, base, 30, 1.3); sky(g, s, 1.1); lichen(g, s, 46, tone(base, .55), tone(base, 1.45)); wrinkles(g, s, 16); mottle(g, s, base === MOSS ? 3 : 8);
   for (let i = 0; i < 4; i++) hatch(g, R(.05, .65) * s, s * R(.55, .8), s * R(.16, .3), -1.0, 6, s * .022, s * .008);
   nicks(g, s, 10, tone(base, 1.7), 40, 3);
   if (kind !== 'none') frame(g, s, base, kind, 7);

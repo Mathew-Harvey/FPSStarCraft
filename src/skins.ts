@@ -106,6 +106,44 @@ export function nicks(g: Ctx, s: number, n: number, col: string, len = 40, w = 2
   for (let i = 0; i < n; i++) { g.globalAlpha = R(.45, .95); const x = R(.05, .95) * s, y = R(.05, .95) * s, a = R(-.5, .5) + (rnd() < .5 ? 0 : 1.57), l = R(8, len); pen(g, [[x, y], [x + Math.cos(a) * l * .5 + R(-2, 2), y + Math.sin(a) * l * .5], [x + Math.cos(a) * l, y + Math.sin(a) * l]], R(1.2, w), col); }
   g.globalAlpha = 1;
 }
+/** The model bake reads the skins as flat colour and lays cracks, mends and warts on itself, so `tools/dump-skins.cjs` asks for them without (`?plainskins`). */
+export const PLAIN = typeof location !== 'undefined' && location.search.includes('plainskins');
+const h3 = (i: number, j: number, k: number) => { const v = Math.sin(i * 127.1 + j * 311.7 + k * 74.7) * 43758.5453; return v - Math.floor(v); };
+/** A pass over a finished skin, cell by cell. `fn` is told how far a dot is from its cell's wall (0 on it), how far from the cell's middle, which cell,
+ *  which cell lies over the wall and a slow drift 0..1, and changes the dot's colour in place. It wraps, so the skin still tiles, and it rolls no dice. */
+export function cellular(g: Ctx, s: number, n: number, seed: number, fn: (c: Uint8ClampedArray, o: number, wall: number, mid: number, id: number, other: number, drift: number) => void) {
+  if (PLAIN) return;
+  const im = g.getImageData(0, 0, s, s), d = im.data; if (!(d instanceof Uint8ClampedArray)) return;      // no picture to work on where nothing is drawn (the match server)
+  const px = new Float32Array(n * n), py = new Float32Array(n * n), pid = new Float32Array(n * n), w = (i: number) => ((i % n) + n) % n;
+  for (let j = 0; j < n; j++) for (let i = 0; i < n; i++) { const k = j * n + i; px[k] = i + .15 + h3(i, j, seed) * .7; py[k] = j + .15 + h3(i, j, seed + 9) * .7; pid[k] = h3(i, j, seed + 31); }
+  const N = 4, lat = new Float32Array((N + 1) * (N + 1)); for (let j = 0; j <= N; j++) for (let i = 0; i <= N; i++) lat[j * (N + 1) + i] = h3(i % N, j % N, seed + 57);
+  const ease = (t: number) => t * t * (3 - 2 * t);
+  for (let y = 0; y < s; y++) {
+    const v = y / s * n, cj = Math.floor(v), fv = y / s * N, j0 = Math.floor(fv), ty = ease(fv - j0);
+    for (let x = 0; x < s; x++) {
+      const u = x / s * n, ci = Math.floor(u); let a = 99, b = 99, ia = 0, ib = 0;
+      for (let dj = -1; dj <= 1; dj++) { const jj = cj + dj, wj = w(jj), oy = jj - wj - v;
+        for (let di = -1; di <= 1; di++) { const ii = ci + di, wi = w(ii), k = wj * n + wi, ex = px[k] + ii - wi - u, ey = py[k] + oy, e = ex * ex + ey * ey; if (e < a) { b = a; ib = ia; a = e; ia = k; } else if (e < b) { b = e; ib = k; } } }
+      a = Math.sqrt(a); b = Math.sqrt(b);
+      const fu = x / s * N, i0 = Math.floor(fu), tx = ease(fu - i0), q = j0 * (N + 1) + i0;
+      fn(d, (y * s + x) * 4, b - a, a, pid[ia], pid[ib], (lat[q] * (1 - tx) + lat[q + 1] * tx) * (1 - ty) + (lat[q + N + 1] * (1 - tx) + lat[q + N + 2] * tx) * ty);
+    }
+  }
+  g.putImageData(im, 0, 0);
+}
+export const sstep = (a: number, b: number, x: number) => { const t = Math.min(1, Math.max(0, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
+/** Old lacquer: crazed into plates, each a touch its own shade, and the widest cracks mended with gold. The Veyl throw nothing away. */
+export function craze(g: Ctx, s: number, n = 6, seed = 1, gold = .42) {
+  const GR = 222, GG = 164, GB = 54;
+  cellular(g, s, n, seed, (c, o, wall, _mid, id, other) => {
+    const k = 1 + (id - .5) * .34;
+    if (wall > .16) { c[o] *= k; c[o + 1] *= k; c[o + 2] *= k; return; }
+    if ((id + other) % 1 < gold) {
+      const m = 1 - sstep(.08, .11, wall), f = k * (1 - (1 - sstep(.11, .16, wall)) * (1 - m) * .62), hi = (1 - sstep(.0, .035, wall)) * .5;
+      c[o] = c[o] * f * (1 - m) + (GR + hi * 33) * m; c[o + 1] = c[o + 1] * f * (1 - m) + (GG + hi * 70) * m; c[o + 2] = c[o + 2] * f * (1 - m) + (GB + hi * 120) * m;
+    } else { const f = k * (1 - (1 - sstep(.01, .07, wall)) * .66); c[o] *= f; c[o + 1] *= f; c[o + 2] *= f; }
+  });
+}
 export interface SkinOpts extends ToonOpts { kind?: 'box' | 'band' | 'none' | 'cap'; wear?: number; metal?: string; rivets?: number; hatch?: number; ink?: number; dir?: number; pre?: (g: Ctx, s: number) => void; post?: (g: Ctx, s: number) => void }
 /** A painted hard surface. */
 export function skin(base: string, o: SkinOpts = {}) {
@@ -307,11 +345,12 @@ EXTRA.push(() => {
     brush(g, s, base, 30, 1.4); sky(g, s, 1.2); vein(g, s, veins, '#35e0c8');
     for (let i = 0; i < 4; i++) hatch(g, R(.1, .7) * s, s * R(.55, .8), s * R(.14, .26), -1.0, 6, s * .022, s * .0075);
     for (let i = 0; i < 3; i++) { const y = R(.1, .9) * s; pen(g, [[0, y], [s * .3, y + R(-16, 16)], [s * .7, y + R(-16, 16)], [s, y]], R(2.5, 4), INK, .7); }
+    craze(g, s, kind === 'box' ? 5 : 6, veins * 7 + (kind === 'box' ? 3 : 0));
     nicks(g, s, 8, tone(base, 1.7), 60, 4);
     frame(g, s, base, kind, 7);
   }, { blot: 40 });
   S('vI', shell('#6a55e6', 'band', 5)); S('vIp', shell('#6a55e6', 'box', 3)); S('vD', shell('#4636b4', 'band', 3)); S('vDp', shell('#4636b4', 'box', 2));
-  S('vL', paint('#d9d2f4', (g, s) => { brush(g, s, '#d9d2f4', 24, 1.4); sky(g, s, 1.3); for (let i = 0; i < 9; i++) { let x = R(0, s), y = R(0, s); const pts = [[x, y]]; for (let k = 0; k < 4; k++) { x += R(-40, 40); y += R(10, 50); pts.push([x, y]); } pen(g, pts, R(2, 4), '#3a2f6a'); } for (let i = 0; i < 4; i++) hatch(g, R(.1, .7) * s, s * R(.55, .8), s * .2, -1.0, 6, s * .022, s * .007, '#3a2f6a'); frame(g, s, '#d9d2f4', 'band', 7); }, { blot: 30 }));
+  S('vL', paint('#d9d2f4', (g, s) => { brush(g, s, '#d9d2f4', 24, 1.4); sky(g, s, 1.3); for (let i = 0; i < 9; i++) { let x = R(0, s), y = R(0, s); const pts = [[x, y]]; for (let k = 0; k < 4; k++) { x += R(-40, 40); y += R(10, 50); pts.push([x, y]); } pen(g, pts, R(2, 4), '#3a2f6a'); } for (let i = 0; i < 4; i++) hatch(g, R(.1, .7) * s, s * R(.55, .8), s * .2, -1.0, 6, s * .022, s * .007, '#3a2f6a'); craze(g, s, 6, 23, .4); frame(g, s, '#d9d2f4', 'band', 7); }, { blot: 30 }));
   S('vG', paint('#f2c14a', (g, s) => { brush(g, s, '#f2c14a', 20, 0); sky(g, s, 1.2); for (let i = 0; i < 7; i++) seam(g, s, (i + .5) / 7, 5); for (let i = 0; i < 12; i++) { const x = R(0, s), y = R(0, s); g.strokeStyle = INK; g.lineWidth = 3; g.beginPath(); g.arc(x, y, R(8, 20), R(0, 3), R(3, 6)); g.stroke(); } nicks(g, s, 18, '#fff4c8', 30); frame(g, s, '#f2c14a', 'box', 6); }, { blot: 20 }), { emis: .25 });
   S('vC', paint('#7ff0e4', (g, s) => { const gr = g.createLinearGradient(0, 0, s, s); gr.addColorStop(0, '#eafffb'); gr.addColorStop(.5, '#62e6d8'); gr.addColorStop(1, '#2a9cc4'); g.fillStyle = gr; g.fillRect(0, 0, s, s); for (let i = 0; i < 9; i++) { const x = R(0, s); g.globalAlpha = R(.3, .7); g.fillStyle = rnd() < .5 ? '#ffffff' : '#2a8fc0'; g.beginPath(); g.moveTo(x, 0); g.lineTo(x + R(20, 70), 0); g.lineTo(x + R(-60, 60), s); g.fill(); g.globalAlpha = 1; pen(g, [[x, 0], [x + R(-30, 30), s * .5], [x + R(-60, 60), s]], R(2.5, 5), '#12506a', .5); } frame(g, s, '#7ff0e4', 'box', 6); }, { blot: 0 }), { emis: .5 });
   S('vM', paint('#ff4f9a', (g, s) => { const gr = g.createRadialGradient(s * .42, s * .4, 8, s * .5, s * .5, s * .62); gr.addColorStop(0, '#fff0f6'); gr.addColorStop(.4, '#ff5fa6'); gr.addColorStop(1, '#a01c6a'); g.fillStyle = gr; g.fillRect(0, 0, s, s); pen(g, [[s * .22, s * .66], [s * .4, s * .3], [s * .7, s * .2]], 22, 'rgba(255,255,255,.8)'); }, { blot: 0 }), { emis: .78 });

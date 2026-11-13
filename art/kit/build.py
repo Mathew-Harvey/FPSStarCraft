@@ -29,7 +29,7 @@ TINT = {'fabT': '#a8744a', 'fab': '#4d577c', 'fabG': '#6f7a55', 'fabR': '#b3362b
 
 
 class Part:
-    def __init__(self, name, group, mat, fn, tris, voxel=.003, uv=('cyl',), sharp=42.0, lo=None, hi=None, planar=0.0, cull=True, detail=None, texel=1.0, twin=None, marks=()):
+    def __init__(self, name, group, mat, fn, tris, voxel=.003, uv=('cyl',), sharp=42.0, lo=None, hi=None, planar=0.0, cull=True, detail=None, texel=1.0, twin=None, marks=(), glow=None):
         """planar (degrees) is for flat-sided things: faces that lie within that angle of each other are merged first, so plate stays plate.
         cull=False keeps the faces a neighbour buries: a pipe cut into open lengths under its own collars falls apart when it is thinned."""
         self.name, self.group, self.mat, self.fn, self.tris, self.voxel, self.uv, self.sharp, self.lo, self.hi, self.planar, self.cull = name, group, mat, fn, tris, voxel, uv, sharp, lo, hi, planar, cull
@@ -38,6 +38,7 @@ class Part:
         self.true = fn if detail is None else sdf.bump(fn, detail)
         self.texel = texel
         self.marks = marks                     # paint laid on the part for the picture: [(where(p) -> 0..1, (r, g, b)), ...], worn like the rest
+        self.glow = glow                       # how strongly this part glows, where that is not its skin's own strength (a big sac at full strength bleaches to white)
         self.twin = twin                       # the name of the part this one is the mirror image of (a left leg of a right one): it takes that part's mesh and its place in the picture
 
 
@@ -417,6 +418,8 @@ class Figure:
             cq = np.clip(np.round(rec[:, 8:9] * 15), -15, 15).astype(np.int8)
             uq = np.round(np.clip(rec[:, 6:8], 0, 1) * 65535).astype(np.uint16)
             m = {'part': part.name, 'group': part.group, 'mat': part.mat, 'nv': int(len(rec)), 'ni': int(len(idx)), 'lo': [float(x) for x in lo], 'hi': [float(x) for x in hi]}
+            if part.glow is not None:
+                m['glow'] = float(part.glow)
             for k, arr in (('pos', q), ('nrm', np.concatenate([nq, cq], 1)), ('uv', uq), ('idx', idx.astype(np.uint16))):
                 while len(blob) % 4:
                     blob.append(0)

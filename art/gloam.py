@@ -154,7 +154,7 @@ def build_blister():
     C = V(0, .64, -.06)
     sac = S.ellipsoid(C, (.38, .35, .4))
     sac = S.bump(sac, lambda p: .02 * np.sin(p[..., 0] * 9) + .03 * (S.noise(p, 5, 3.3) - .5) + .025 * np.clip((S.noise(p, 9, 7.7) - .62) * 5, 0, 1))   # stretched tight and lumpy
-    fig.add('sac', 'halo', 'gS', sac, 1300, voxel=.0045, uv=('cyl', C))
+    fig.add('sac', 'halo', 'gS', sac, 1300, voxel=.0045, uv=('cyl', C), glow=.46)
     veins = []
     for i in range(5):                                                                                             # dark veins holding it down
         a = i / 5 * 2 * PI + .3

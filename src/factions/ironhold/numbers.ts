@@ -160,7 +160,7 @@ export const I_TUNE = {
   // Painkiller: energy, flat armour added to every hit and seconds.
   painkiller: { energy: 50, armour: 2, t: 8, range: 9 },
   // Shaft Mine: seconds to dig in, how close a foe sets it off, blast damage and radius, mines one Sapper keeps, cooldown.
-  mine: { dig: 2.5, digQuick: 1, trip: 5, dmg: 90, r: 4, keep: 3, keepDrill: 4, cd: 6 },
+  mine: { dig: 2.5, digQuick: 1, trip: 3, dmg: 90, r: 4, keep: 3, keepDrill: 4, cd: 6 },
   // Satchel: fuse seconds, damage to the building, cooldown, reach.
   satchel: { fuse: 2.5, dmg: 160, cd: 22, range: 3 },
   // Dustbike flame: reach, cone half-width, seconds between puffs, damage a puff. Kick Start: seconds, speed, cooldown.

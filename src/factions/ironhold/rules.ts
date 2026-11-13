@@ -8,7 +8,7 @@ import { TMP } from '../../game';
 import { UNIT, Unit, Building, isUnit, foeOf, fac } from '../../data';
 import { catOf } from '../../core/combat';
 import { I_TUNE as TUNE } from './numbers';
-import { defineUnits, defineBuildings, defineFaction, DEFAULTS, type Weapon, type Shot } from '../../core/registry';
+import { defineUnits, defineBuildings, defineFaction, factionRule, DEFAULTS, type Weapon, type Shot } from '../../core/registry';
 import { defineAbilities } from '../../core/ability';
 import { mulOf, tagBonus, boosted, abilityKeys } from './kit';
 import { fireRate, hobble, wrapHurt, tickCharges, tickDrones } from './ground';
@@ -199,8 +199,13 @@ defineFaction(0, {
     const up = g.upOf(u.team), k = u.kind; let m = k === 'gantry' || k === 'gantryflak' ? (up.servo ? 1.2 : 1) : (k === 'gadfly' || k === 'hopper') && up.rotors ? 1.2 : catOf(k) === 'inf' && k !== 'rigger' && up.pay ? 1.12 : 1;
     if (boosted(g, u, 'ot')) m *= TUNE.overtime.pace; if (boosted(g, u, 'kick')) m *= TUNE.kick.pace; if (boosted(g, u, 'burn')) m *= TUNE.afterburn.pace; return m;
   },
-  fx(g, dt) { if (g.net) return; tickCharges(g, dt); tickDrones(g); tickCasts(g); tickAir(g, dt); },
+  fx(g, dt) { ironTick(g, dt); },
 });
+// The faction's own systems once a frame (charges, drones, casts, cloaks). The engine's per-frame `fx` hook is not called yet, so the
+// per-building `each` hook runs them too, once a frame whichever building comes first; the time check keeps it to once if both run.
+let tickedAt = -1;
+function ironTick(g: Game, dt: number) { if (g.net || g.time === tickedAt) return; tickedAt = g.time; tickCharges(g, dt); tickDrones(g); tickCasts(g); tickAir(g, dt); }
+{ const was = factionRule(0).each; defineFaction(0, { each(g, b, dt) { ironTick(g, dt); was?.(g, b, dt); } }); }
 
 // Abilities the server checks for a player online. The Patch's pulse heals everyone near; the local game calls patchUp straight from the key.
 defineAbilities('patch', [{ key: 'pulse', name: 'Patch Pulse', hotkey: 'C', energy: 0, cd: 6.5, cast: 0, range: 0, target: 'self', blurb: 'Heals every friend close by.', effect: (g, u) => patchUp(g, u) }]);

@@ -41,8 +41,8 @@ defineAbilities('hopper', [{
   ai: (g, u) => g.time - u.lastHit < 1 && u.hp < u.maxHp * .6 ? { x: u.pos.x, z: u.pos.z } : null,
 }, {
   key: 'doors', name: 'Load or unload', hotkey: 'RMB', energy: 0, cd: 1, cast: 0, range: 0, target: 'self',
-  blurb: 'Takes in every friend on foot within 4 m, up to 8 beds; with anyone aboard and the Hopper low, lets them all out.',
-  can: (g, u) => (u.cargo?.length ? (u.alt || 0) < 4 || !u.air : g.units.some(o => o.alive && o.team === u.team && !o.air && !o.inside && o !== u && dist(o, u) < 5 + UNIT.hopper.rad)),
+  blurb: 'Takes in every friend on foot within 4 m, up to 8 beds; with anyone aboard, lets them all down on ropes.',
+  can: (g, u) => (u.cargo?.length ? true : g.units.some(o => o.alive && o.team === u.team && !o.air && !o.inside && o !== u && dist(o, u) < 5 + UNIT.hopper.rad)),
   effect(g, u) { if (u.cargo?.length) { unload(g, u); sfx.blip(); return; } for (const o of g.units.filter(o => o.alive && o.team === u.team && !o.air && !o.inside && o !== u && o !== g.me && !hasTag(o, 'huge')).sort((a, b) => dist(a, u) - dist(b, u))) { u.alt = Math.min(u.alt || 0, 2); load(g, u, o); } sfx.blip(); },
 }]);
 /** A bot Hopper flies a drop: it loads soldiers at the rally, flies to the push's goal, and lets them out short of it. */

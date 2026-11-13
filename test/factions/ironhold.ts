@@ -23,7 +23,7 @@ let seed = 11; Math.random = () => { seed = (seed * 16807) % 2147483647; return 
 function world() {
   setMap(0); setSides(0, 1);
   const g = new Game(noPipe(), noHud, DIFFS[1], 0, null, null, true); g.noRender = true; g.evq = []; g.me = null; g.phase = 'play'; g.human = g.human.map(() => false);
-  for (const u of g.units) u.pilot = 0; g.dir.auto = false; g.dir.vs.auto = false; (g.dir as any).plan = null; (g.dir as any).nextPlan = 1e9; (g.dir.vs as any).nextPlan = 1e9;
+  for (const u of g.units) u.pilot = 0; g.dir.auto = false; g.dir.vs.auto = false; g.dir.qmT = 1e9; g.dir.vs.qmT = 1e9; (g.dir as any).plan = null; (g.dir as any).nextPlan = 1e9; (g.dir.vs as any).nextPlan = 1e9;
   g.purse[SIDE.home] = 1e5; g.fluxPurse[SIDE.home] = 1e5;
   for (let i = 0; i < 12; i++) g.addBuilding('depot', SIDE.home, -70 + (i % 6) * 7, -70 - Math.floor(i / 6) * 7, true);   // beds for everything
   return g;
@@ -86,8 +86,8 @@ const bolt = (g: Game, host: Building, k: 'labbay' | 'twinbay') => { const ok = 
   for (let pass = 0; pass < 4; pass++) for (const u of I_UPGRADES) { if (U[u.key]) continue; for (const b of g.buildings) b.queue.length = 0; if (g.buyUpgrade(u.key as UpKey, T)) { U[u.key] = true; bought++; } }
   for (const u of I_UPGRADES) if (!U[u.key]) missing.push(u.key);
   check(!missing.length, `every piece of research can be bought in order (${bought} bought${missing.length ? ', refused: ' + missing.join(',') : ''})`);
-  const lv = (line: string) => I_UPGRADES.filter(u => u.line === line).map(u => u.lvl).sort().join('');
-  check(['atk', 'arm'].every(l => lv(l).includes('123')), 'infantry guns and plate each run levels 1 to 3');
+  const lv = (line: string, cat: string) => I_UPGRADES.filter(u => u.line === line && u.cat === cat).map(u => u.lvl).sort().join('');
+  check(lv('atk', 'inf') === '123' && lv('arm', 'inf') === '123' && lv('atk', 'mech') === '123' && lv('arm', 'mech|ship') === '123' && lv('atk', 'ship') === '123', 'infantry, machine and ship guns and plate each run levels 1 to 3');
 }
 
 // ---------------------------------------------------------------- 3. Abilities: each one works when it should, and is refused when it should
@@ -107,13 +107,13 @@ const bolt = (g: Game, host: Building, k: 'labbay' | 'twinbay') => { const ok = 
   lin.hp = 5; check(!!why(lin, 'overtime'), 'Overtime is refused when it would kill');
   // Painkiller
   const pat = at('patch', 32, 30); pat.energy = 200; const pal = at('linesman', 33, 30); check(useAbility(g, pat, 'painkiller', { x: pal.pos.x, z: pal.pos.z, id: pal.id }), 'a Patch gives a Painkiller to a Linesman');
-  run(g, .2); const h0 = pal.hp; g.damage(pal, 10, null); check(h0 - pal.hp <= 10 - TUNE.painkiller.armour + .01, `a Painkiller takes ${TUNE.painkiller.armour} off each hit`);
+  run(g, .2); const shooter = at('lancer' as Kind, 60, 60, F), h0 = pal.hp; g.damage(pal, 10, shooter); check(h0 - pal.hp <= 10 - TUNE.painkiller.armour + .01, `a Painkiller takes ${TUNE.painkiller.armour} off each hit`);
   pat.energy = 0; const pal2 = at('linesman', 33, 31); check(!!why(pat, 'painkiller', { x: pal2.pos.x, z: pal2.pos.z, id: pal2.id }), 'a Painkiller is refused with no energy');
   // Shaft Mines
   const sap = at('sapper', 40, 40); check(useAbility(g, sap, 'mine', { x: 41, z: 40 }), 'a Sapper starts digging a Shaft Mine');
   run(g, TUNE.mine.dig + .5); const mine = g.units.find(u => u.alive && u.kind === 'shaftmine' && u.team === T);
   check(!!mine && isHidden(mine), 'the Shaft Mine is dug in and unseen');
-  const foe = at('lancer' as Kind, 46, 40, F); foe.order = { type: 'move', x: 41, z: 40 } as any; const fhp = foe.hp;
+  const foe = at('lancer' as Kind, 44, 40, F); foe.order = { type: 'move', x: 41, z: 40 } as any; const fhp = foe.hp;
   run(g, 4, () => !mine!.alive); check(!mine!.alive && (foe.hp < fhp || !foe.alive), 'a foe walking onto it sets it off and is hurt');
   for (let i = 0; i < TUNE.mine.keep; i++) { const m = g.spawn('shaftmine' as Kind, T, 50 + i * 2, 50); (m as any).owner = sap; const { mem } = require('../../src/factions/ironhold/kit'); mem(m).owner = sap; }
   sap.abCd = {}; check(!!why(sap, 'mine', { x: 41, z: 42 }), `a Sapper keeps no more than ${TUNE.mine.keep} mines`);
@@ -150,8 +150,8 @@ const bolt = (g: Game, host: Building, k: 'labbay' | 'twinbay') => { const ok = 
   sur.energy = 200; useAbility(g, sur, 'flare', { x: soft.pos.x, z: soft.pos.z }); run(g, 1.5); check(hasStatus(soft, 'blind') && hasStatus(soft, 'revealed'), 'a Flare blinds and shows what it lands on');
   sur.energy = 0; check(!!why(sur, 'flare', { x: 54, z: 82 }), 'a Flare is refused with no energy');
   // Claim Barge
-  const barge = at('claimbarge', 20, 90); barge.energy = 200; check(!!why(barge, 'foreclose', { x: 25, z: 90 }) && !!why(barge, 'relocate', { x: 10, z: 10 }), 'Foreclosure and Relocate are refused before their research');
-  U.foreclose = true; U.relocate = true; check(!why(barge, 'foreclose', { x: 25, z: 90 }), 'with the research Foreclosure can be cast');
+  const barge = at('claimbarge', 20, 90); barge.energy = 200; check(!!why(barge, 'foreclose', { x: 26, z: 90, id: 0 }) && !!why(barge, 'relocate', { x: 10, z: 10 }), 'Foreclosure and Relocate are refused before their research');
+  const prey = at('piledriver', 26, 90, F); U.foreclose = true; U.relocate = true; check(!why(barge, 'foreclose', { x: prey.pos.x, z: prey.pos.z, id: prey.id }), 'with the research Foreclosure can be cast');
   check(useAbility(g, barge, 'relocate', { x: 10, z: 10 }), 'a Claim Barge relocates to ground its side can see'); run(g, TUNE.relocate.cast + 1); check(Math.hypot(barge.pos.x - 10, barge.pos.z - 10) < 4, 'and arrives there');
   // Gantry flak
   const gan = at('gantry', 30, 10); useAbility(g, gan, 'flak'); run(g, TUNE.flakSwitch + 1); check(gan.kind === 'gantryflak', 'a Gantry switches to flak mode'); useAbility(g, gan, 'ground'); run(g, TUNE.flakSwitch + 1); check(gan.kind === 'gantry', 'and back to its cannon');
@@ -172,7 +172,7 @@ const bolt = (g: Game, host: Building, k: 'labbay' | 'twinbay') => { const ok = 
   check(!g.train(bunk, 'linesman') || !!(require('../../src/factions/ironhold/kit').mem(bunk).crawl) === false, 'it does not train while crawling');
   const hq = g.hqs(T)[0]; g.purse[T] = 1e5; g.fluxPurse[T] = 1e5; hq.queue.length = 0;
   check(g.buildingAction(hq, 'surveyrig'), 'the Headframe starts refitting into a Survey Rig'); run(g, BLD.surveyrig.time + 2); check(hq.kind === 'surveyrig' && g.isHQ(hq), 'and becomes one, still a home building');
-  run(g, 40); const e = energyOf(hq), drones = g.own('hauldrone' as Kind, T).length; check(g.buildingAction(hq, 'drone') && g.own('hauldrone' as Kind, T).length > drones && energyOf(hq) < e, 'the Survey Rig calls down a Haul Drone for energy');
+  run(g, 40); const e = energyOf(hq) || 0, drones = g.own('hauldrone' as Kind, T).length, called = g.buildingAction(hq, 'drone'); check(called && g.own('hauldrone' as Kind, T).length > drones && energyOf(hq) < e, `the Survey Rig calls down a Haul Drone for energy (${called}, ${drones} to ${g.own('hauldrone' as Kind, T).length}, energy ${Math.round(e)} to ${Math.round(energyOf(hq))})`);
   run(g, 2); check(g.own('hauldrone' as Kind, T).some(u => u.state !== 'idle'), 'the Haul Drone goes to work');
   const hf2 = g.addBuilding('headframe', T, -40, 40, true); check(g.buildingAction(hf2, 'bastion'), 'a Headframe can refit into a Bastion'); run(g, BLD.bastion.time + 2); check(hf2.kind === 'bastion' && hf2.maxHp >= 3000, 'and becomes a heavy Bastion');
   const foe = g.spawn('lancer' as Kind, O(), -40, 52); foe.order = { type: 'guard', x: -40, z: 52 }; const fh = foe.hp; run(g, 4); check(foe.hp < fh || !foe.alive, 'the Bastion shoots a foe in reach');

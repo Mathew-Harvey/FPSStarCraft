@@ -79,7 +79,7 @@ export function quartermaster(D: Director, dt: number, S: Side = D) {
   const exp = D.expansion(g.hqs(T, false), T), homeLeft = g.ores.filter(n => Math.hypot(n.pos.x - HX, n.pos.z - HZ) < 40).reduce((a, n) => [a[0] + n.amount, a[1] + n.max], [0, 0]);
   const wantHF = Math.min((MAP.sites || []).length + 1, 1 + (g.time > DOC.expT || homeLeft[0] < homeLeft[1] * .5 ? 1 : 0) + (g.time > 960 ? 1 : 0) + (g.time > 1440 ? 1 : 0));
   const jacks = own('pumpjack'), vent = g.vents.filter(v => !(v.tap && v.tap.alive) && v.amount > 0 && hqs.some(h => Math.hypot(h.pos.x - v.pos.x, h.pos.z - v.pos.z) < 40) && g.canPlace('pumpjack', v.pos.x, v.pos.z, false, T)).sort((a, b) => Math.hypot(a.pos.x - HX, a.pos.z - HZ) - Math.hypot(b.pos.x - HX, b.pos.z - HZ))[0];
-  const wantJacks = Math.min(2 * hqs.length, (bunk.length ? 1 : 0) + (g.time > 420 ? 1 : 0) + (g.time > 720 ? 1 : 0) + (g.time > 1000 ? 1 : 0));
+  const wantJacks = Math.min(2 * hqs.length, (bunk.length ? 1 : 0) + (g.time > 600 ? 1 : 0) + (g.time > 840 ? 1 : 0) + (g.time > 1000 ? 1 : 0));
   const shop = own('machineshop'), shopUp = up('machineshop'), lab = own('assay'), labUp = up('assay'), fdy = own('foundry'), fdyUp = up('foundry'), hang = own('hangar'), hangUp = up('hangar'), mast = own('mast'), mastUp = up('mast'), annex = own('annex');
   const hostNoAddon = (bs: Building[]) => bs.find(b => b.built && !addonOf(b) && !mem(b).crawl);
   const air = lean === 'air', mech = lean === 'mech', foeAir = g.units.some(o => o.alive && o.air && isEnemy(T, o.team) && seenBy(g, T, o));
@@ -89,14 +89,15 @@ export function quartermaster(D: Director, dt: number, S: Side = D) {
   if (!bunk.length) put('bunkhouse', 15, 8, 'Staking out a Bunkhouse. Then we get rich.');
   else if (free <= 3 && !sites.some(b => b.kind === 'depot') && own('depot').length < 24 && g.supplyCap(T) < 200) spot('depot', DEPOT_SLOTS, 'Running out of beds. Stacking another Depot.');
   else if (building && sites.length >= 2) saving = false;
-  else if (vent && jacks.length < wantJacks && g.own('rigger', T).length >= 8 + jacks.length * 2) { hold = costOf('pumpjack'); if (pays(hold)) { g.place('pumpjack', vent.pos.x, vent.pos.z, false, T); D.say('Quartermaster', LINES.pumpjack!, '', T); } }
+  else if (vent && jacks.length < wantJacks && g.own('rigger', T).length >= 10 + jacks.length * 2 && (army >= 6 || g.time > 420)) { hold = costOf('pumpjack'); if (pays(hold)) { g.place('pumpjack', vent.pos.x, vent.pos.z, false, T); D.say('Quartermaster', LINES.pumpjack!, '', T); } }
   // A side playing for ore stakes its second Headframe before anything else.
   else if (DOC.key === 'boom' && bunkUp.length && exp.site && hqs.length < Math.min(2, wantHF)) { hold = costOf('headframe'); const [sx, sz] = exp.site, dx = sx - HX, dz = sz - HZ, l = Math.hypot(dx, dz) || 1; put('headframe', Math.round(sx - dx / l * 11), Math.round(sz - dz / l * 11), 'Staking a second Headframe early. Ore first, soldiers later.', true); }
   else if (bunkUp.length && posts < Math.min(1, wantPosts)) spot('watchpost', postSlots(g.intel.knows(T)), g.intel.knows(T) ? `Putting a Watchpost on the ${MAP.road}. For my nerves.` : 'Putting a Watchpost up. I do not know which way to point it, so it points at everything.');
-  else if (bunkUp.length && hq && hq.kind === 'headframe' && hq.built && !hq.queue.length && !mem(hq).form && g.time > 150 && pays(costOf(DOC.key === 'fort' ? 'bastion' : 'surveyrig'), 50)) g.buildingAction(hq, DOC.key === 'fort' ? 'bastion' : 'surveyrig');
-  else if (bunkUp.length && army >= 4 && jacks.some(j => j.built) && !bunkUp.some(hasLab) && hostNoAddon(bunkUp)) { hold = costOf('labbay'); bolt(hostNoAddon(bunkUp), 'labbay'); }
-  else if (bunkUp.length && !lab.length && army >= 4 + DOC_T) spot('assay', [[-15, 6], [15, -17], [-16, 18], [14, 22]], LINES.assay!);
-  else if (bunkUp.length && !shop.length && army >= 5 + DOC_T - (mech ? 2 : 0)) { hold = costOf('machineshop'); put('machineshop', 0, -15, LINES.machineshop!); }
+  else if (bunkUp.length && hq && hq.kind === 'headframe' && hq.built && !hq.queue.length && !mem(hq).form && g.time > 480 && army >= 8 && pays(costOf(DOC.key === 'fort' ? 'bastion' : 'surveyrig'), 50)) g.buildingAction(hq, DOC.key === 'fort' ? 'bastion' : 'surveyrig');
+  else if (bunkUp.length && army >= 7 && jacks.some(j => j.built) && !bunkUp.some(hasLab) && hostNoAddon(bunkUp)) { hold = costOf('labbay'); bolt(hostNoAddon(bunkUp), 'labbay'); }
+  else if (bunkUp.length === 1 && bunk.length === 1 && g.time > DOC.prodT) put('bunkhouse', 4, 23, 'Second Bunkhouse. Twice the complaints.');
+  else if (bunkUp.length && !lab.length && army >= 6 + DOC_T) spot('assay', [[-15, 6], [15, -17], [-16, 18], [14, 22]], LINES.assay!);
+  else if (bunkUp.length && !shop.length && army >= 8 + DOC_T - (mech ? 2 : 0)) { hold = costOf('machineshop'); put('machineshop', 0, -15, LINES.machineshop!); }
   else if (bunkUp.length && posts < wantPosts) spot('watchpost', postSlots(g.intel.knows(T)), 'Another Watchpost. I sleep better with crossfire.');
   else if (labUp.length && flak < wantFlak) spot('flaktower', [[8, -10], [-10, 10], [12, 12], [-12, -12]], LINES.flaktower!);
   else if (labUp.length && !U.dmg && army >= 5) { hold = costOf('dmg'); buy('dmg'); }
@@ -109,7 +110,6 @@ export function quartermaster(D: Director, dt: number, S: Side = D) {
   else if (labUp.length && !U.armor && army >= 6) { hold = costOf('armor'); buy('armor'); }
   else if (hangUp.length && !hangUp.some(hasLab) && hostNoAddon(hangUp) && army >= 8) { hold = costOf('labbay'); bolt(hostNoAddon(hangUp), 'labbay'); }
   else if (labUp.length && !mast.length && army >= 9 + DOC_T && allow('mast')) { hold = costOf('mast'); spot('mast', [[15, -17], [-4, -28], [-16, 18], [-24, -4], [14, 22]], LINES.mast!); }
-  else if (bunkUp.length === 1 && bunk.length === 1 && g.time > DOC.prodT) put('bunkhouse', 4, 23, 'Second Bunkhouse. Twice the complaints.');
   else if (bunkUp.length >= 2 && hostNoAddon(bunkUp) && army >= 8) { hold = costOf('twinbay'); bolt(hostNoAddon(bunkUp), 'twinbay'); }
   else if (fdyUp.length && !U.mdmg && army >= 9) { hold = costOf('mdmg'); buy('mdmg'); }
   else if (fdyUp.length && !U.marm && army >= 10) { hold = costOf('marm'); buy('marm'); }
@@ -124,7 +124,7 @@ export function quartermaster(D: Director, dt: number, S: Side = D) {
   if (hold[1] > g.flux(T) && !own('pumpjack').some(j => j.built)) saving = false;
   // Riggers: eight for the home yard and six more for each new base, three more for each Pump Jack, trained at whichever home building is shortest of hands.
   const rigs = g.own('rigger', T), tapped = jacks.filter(j => j.built);
-  if (rigs.length < Math.min(40, 9 + DOC.crew + 5 * (hqs.length - 1) + 3 * tapped.length) && free > 0 && pays(costOf('rigger')) && (bunk.length || rigs.length < 6)) {
+  if (rigs.length < Math.min(34, 9 + DOC.crew + 5 * (hqs.length - 1) + 3 * tapped.length) && free > 0 && pays(costOf('rigger')) && (bunk.length || rigs.length < 6)) {
     const crew = (h: Building) => rigs.filter(u => g.nearHQ((u.node || u).pos.x, (u.node || u).pos.z, T) === h).length + h.queue.length;
     const h = hqs.filter(b => !b.queue.length && !mem(b).form && crew(b) < (b === hq ? 9 + DOC.crew : 6) + 3 * tapped.filter(j => g.nearHQ(j.pos.x, j.pos.z, T) === b).length).sort((a, b) => crew(a) - crew(b))[0]; if (h) g.train(h, 'rigger');
   }
@@ -133,7 +133,7 @@ export function quartermaster(D: Director, dt: number, S: Side = D) {
   const crewN = g.flux(T) > 900 ? 1 : g.flux(T) > 500 ? 2 : 3;
   for (const j of tapped) { const v = g.vents.find(x => x.tap === j); if (!v || v.amount <= 0) continue; const on = rigs.filter(u => u.vent === v); if (on.length > crewN) sendToVent(g, on[0], null); if (on.length < crewN) { const r = rigs.filter(u => !u.vent && u.state !== 'build' && !u.site && !u.pilot && u !== g.me && u.carrying === 0).sort((a, b) => a.pos.distanceTo(j.pos) - b.pos.distanceTo(j.pos))[0]; if (r) sendToVent(g, r, v); } }
   // Survey Rigs: Haul Drones whenever there is energy to spare, a scan on anything unseen bothering us.
-  for (const r of up('surveyrig')) { const e = mem(r).energy ?? 0; if (hidden && e >= TUNE.rig.scan && !g.units.some(o => o.alive && o.team === T && UNIT[o.kind].detect && Math.hypot(o.pos.x - hidden.pos.x, o.pos.z - hidden.pos.z) < 12)) { g.buildingAction(r, 'scan'); scan(g, r, hidden.pos.x, hidden.pos.z); mem(r).energy += 0; } else if (e >= TUNE.rig.drone + (mem(S).hidT && g.time - mem(S).hidT < 60 ? TUNE.rig.scan : 0)) g.buildingAction(r, 'drone'); }
+  for (const r of up('surveyrig')) { const e = mem(r).energy ?? 0; if (hidden && e >= TUNE.rig.scan && !g.units.some(o => o.alive && o.team === T && UNIT[o.kind].detect && Math.hypot(o.pos.x - hidden.pos.x, o.pos.z - hidden.pos.z) < 12)) { g.buildingAction(r, 'scan'); scan(g, r, hidden.pos.x, hidden.pos.z); mem(r).energy += 0; } else if (e >= TUNE.rig.drone + TUNE.rig.scan && g.own('hauldrone' as Kind, T).length < hqs.length) g.buildingAction(r, 'drone'); }
   // Dugouts fill up when the enemy comes close.
   for (const d of up('dugout')) if (g.units.some(o => o.alive && isEnemy(T, o.team) && !o.air && g.distToBox(d, o.pos.x, o.pos.z) < 24)) fillDugout(g, d, 16);
   // A spare Bunkhouse crawls out to a new base that has none, once.
@@ -160,6 +160,40 @@ export function quartermaster(D: Director, dt: number, S: Side = D) {
     if (!done) break;
   }
 }
+/** The first of each kind says who it is and which keys it uses. */
+const FIRST: Partial<Record<string, [string, string]>> = {
+  linesman: ['Quartermaster', 'First Linesman on the payroll. Look at them and press F to jump in, or hold Tab.'],
+  breacher: ['Breacher', 'Shield is heavy. Hold right-click to hide behind it, click to fire. Good against anything with plate.'],
+  patch: ['Patch', 'Patch on shift. I mend whoever is closest to dying. As me, C tops everyone up and T numbs one friend.'],
+  sapper: ['Sapper', 'Sapper here. C digs in a mine where you look. T sticks a satchel on a building. Stand well back.'],
+  longshot: ['Longshot', 'Longshot reporting. Right-click for the scope. C to hide in the grass, T to put one to sleep, Y to call in a Deep Charge.'],
+  dustbike: ['Dustbike', 'Dustbike fuelled. Click to spray fire, T to kick it into a sprint. Bad against plate, great against everyone else.'],
+  piledriver: ['Pile Driver', 'Pile Driver rolling. C drives the stakes in and the big gun reaches far. C again to pull them out.'],
+  gantry: ['Gantry', 'Walker online. Click fires the cannons, C stomps, T swaps to flak for fliers. Jump in, the seat is warm.'],
+  hopper: ['Hopper', 'Hopper fuelled. Right-click opens the doors: friends close by climb in, and right-click again lets them out. C burns hard.'],
+  flakkite: ['Flak Kite', 'Flak Kite up. Kills fliers. C lands it on legs to shoot things on the ground.'],
+  gadfly: ['Gadfly', 'Gadfly up. Shoots the ground from the air. With Smoke Cloak, C hides it while the battery lasts.'],
+  surveyor: ['Surveyor', 'Surveyor up. It sees hidden things. C drops a gun turret, T jams a machine, Y fires a flare that blinds.'],
+  claimbarge: ['Claim Barge', 'Claim Barge on station. Slow and very heavy. C fires one huge shell, T moves the whole barge somewhere we can see.'],
+  hauldrone: ['Quartermaster', 'Haul Drone landed. It digs twice as fast, then goes home in about a minute.'],
+};
+/** The first of each building says what it is for. */
+const OPENED: Partial<Record<string, string>> = {
+  machineshop: 'Machine Shop is open. Dustbikes now. Bolt a Lab Bay on for Pile Drivers.',
+  pumpjack: 'Pump Jack is pumping. Three Riggers on it carry Flux home.',
+  labbay: 'Lab Bay is bolted on. That building trains the better kinds now, and does its research.',
+  twinbay: 'Twin Bay is bolted on. That building trains two at once now.',
+  assay: 'Assay Office is open. Infantry guns and plate. Patches can train now.',
+  flaktower: 'Flak Tower is up. It shoots fliers and sees hidden things near it.',
+  foundry: 'Foundry is open. Gantry walkers, and guns and plate for the machines.',
+  hangar: 'Hangar is open. Hoppers and Flak Kites now. Bolt a Lab Bay on for the rest.',
+  mast: 'Signal Mast is up. Longshots can train, and it builds Deep Charges.',
+  annex: 'Head Office Annex is open. Claim Barges, and the research that makes them mean.',
+  dugout: 'Dugout is dug. Four Linesmen fit inside and shoot out. It sells back if we move on.',
+  surveyrig: 'The Headframe is a Survey Rig now. It calls Haul Drones and scans for hidden things.',
+  bastion: 'The Headframe is a Bastion now. Thick walls and a big gun on the roof.',
+};
+
 /** What the Ironhold say about the Gloam. */
 export const IKILL_G = ['Bug down!', 'Squashed one.', 'That one is fertiliser.', 'Put it on my tab. Legs and all.', 'Got one. Smells awful.'];
 export const ICHATTER_G = ['Anyone else itchy? Just me?', 'Those mushrooms are looking at me.', 'I stepped in the green stuff again.', 'How many legs is too many legs? I say four.', 'Quartermaster says the carpet is not contagious. Quartermaster is a liar.'];
@@ -169,16 +203,12 @@ defineFaction(0, {
   chatter: foe => foe === 2 && Math.random() < .5 ? ICHATTER_G : CHATTER,
   lines: (kind, foe) => kind === 'kill' ? (foe === 2 ? IKILL_G : KILL) : DOWN,
   trained(D, u) {
-    if (u.kind === 'linesman' && !D.flags.line) { D.flags.line = true; D.say('Quartermaster', 'First Linesman on the payroll. Look at them and press F to jump in, or hold Tab.', 'in', u.team); sfx.callout(); }
-    if (u.kind === 'longshot' && !D.flags.long) { D.flags.long = true; D.say('Longshot', 'Longshot reporting. Hold right-click for the scope. One shot, then find a new hill.', 'in', u.team); sfx.callout(); }
-    if (u.kind === 'patch' && !D.flags.patch) { D.flags.patch = true; D.say('Patch', 'Patch on shift. I mend whoever is closest to dying. As me, press C to top everyone up.', 'in', u.team); sfx.callout(); }
-    if (u.kind === 'gantry' && !D.flags.gantry) { D.flags.gantry = true; D.say('Gantry', 'Walker online. Click fires the cannons, C stomps. Jump in, the seat is warm.', 'in', u.team); sfx.callout(); }
-    if (u.kind === 'breacher' && !D.flags.breach) { D.flags.breach = true; D.say('Breacher', 'Shield\'s heavy. Hold right-click to hide behind it, click to bash.', 'in', u.team); sfx.callout(); }
+    const f = FIRST[u.kind]; if (!f || D.flags['first_' + u.kind]) return; D.flags['first_' + u.kind] = true; D.say(f[0], f[1], 'in', u.team); sfx.callout();
   },
   built(D, b) {
-    if (b.kind === 'bunkhouse' && !D.flags.bunk) { D.flags.bunk = true; D.say('Quartermaster', 'Bunkhouse is up. Look at the door and press E for a Linesman.', 'in', b.team); }
-    else if (b.kind === 'machineshop') D.say('Quartermaster', 'Machine Shop\'s open. Breachers at the Bunkhouse, upgrades at the bench.', 'in', b.team);
-    else if (b.kind === 'watchpost') D.say('Lookout', 'Watchpost manned. By a gun. The gun is the man.', '', b.team);
+    if (b.kind === 'bunkhouse' && !D.flags.bunk) { D.flags.bunk = true; D.say('Quartermaster', 'Bunkhouse is up. Look at the door and press E for a Linesman.', 'in', b.team); return; }
+    if (b.kind === 'watchpost') { D.say('Lookout', 'Watchpost manned. By a gun. The gun is the man.', '', b.team); return; }
+    const l = OPENED[b.kind]; if (l && !D.flags['built_' + b.kind]) { D.flags['built_' + b.kind] = true; D.say('Quartermaster', l, 'in', b.team); }
   },
   lost(D, b, left) {
     const g = D.g;

@@ -28,7 +28,7 @@ export const I_FACTION: Faction = { name: 'Ironhold Charter', short: 'Ironhold',
 export const I_TRAINS: Partial<Record<IBKind, IKind[]>> = { headframe: ['rigger'], bunkhouse: ['linesman', 'breacher', 'patch', 'longshot'], foundry: ['gantry'] };
 export const I_NEEDS: Partial<Record<IKind, IBKind>> = { breacher: 'machineshop', patch: 'machineshop', longshot: 'assay' };
 /** Research. `at` is the building that sells it, and `needs` is the research that has to be bought first. */
-export const I_UPGRADES: { key: IUpKey; name: string; cost: number; blurb: string; at: IBKind; say: string; needs?: IUpKey; line?: 'atk' | 'arm' | 'shd'; lvl?: number; pct?: number; flux?: number }[] = [
+export const I_UPGRADES: { key: IUpKey; name: string; cost: number; blurb: string; at: IBKind; say: string; needs?: IUpKey; line?: 'atk' | 'arm' | 'shd'; lvl?: number; pct?: number; flux?: number; cat?: string }[] = [
   { key: 'dmg', line: 'atk', lvl: 1, name: 'Hollow Points', cost: 150, blurb: '+25% gun damage', at: 'machineshop', say: 'Hollow Points issued. Try to hit something with them.' },
   { key: 'armor', line: 'arm', lvl: 1, name: 'Plating', cost: 150, blurb: '+25% health', at: 'machineshop', say: 'Plating bolted on. Everyone walk heavier.' },
   { key: 'dmg2', line: 'atk', lvl: 2, name: 'Tungsten Core', cost: 200, blurb: '+20% gun damage', at: 'foundry', needs: 'dmg', say: 'Tungsten Core rounds. Each one costs more than you do.' },

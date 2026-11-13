@@ -4,6 +4,7 @@ import * as MD from '../../../models';
 import { defineUnits, defineBuildings, defineFaction } from '../../../core/registry';
 import { SICK } from '../../../core/lamps';
 import { G_TUNE, type GBKind } from '../numbers';
+import { lookPose, LOOK_KINDS, GLOAM_BUILDINGS2 } from './cast2';
 
 defineBuildings(Object.fromEntries(Object.keys(G_TUNE.bloomR).map(k => [k, { model: (a: ((t: number) => void)[]) => MD.gloamB(k as GBKind, a) }])));
 defineUnits({ blister: { lamp: [.9, 0, 5, SICK, .7] }, mulcher: { lamp: [3.4, 0, 7, SICK, .5] } });
@@ -14,3 +15,7 @@ defineUnits({ blister: { pose(g, u, _dt, _s, _ease, sc) { const k = 1 + Math.sin
 defineFaction(2, { view(g, pose) { const me = g.me!, vm = g.vm; if (!vm['g_' + me.kind]) return; const v = vm['g_' + me.kind], j = Math.max(g.jaw, g.vWind > 0 && me.kind !== 'snapper' ? .6 : 0), L = v.userData.L, Rr = v.userData.R; pose(v, 0, g.recoil * .05 - g.bashT * .6 + (g.chargeT > 0 ? -.08 : 0), g.tool === 2 && me.kind === 'grazer' ? .12 : g.vWind > 0 && me.kind === 'mulcher' ? -.1 : 0); if (L) L.rotation.y = .35 - j * .55; if (Rr) Rr.rotation.y = -.35 + j * .55; } });
 // The Mulcher breathes slowly and falls like a felled beast; a Blister always bursts.
 defineUnits({ mulcher: { stance: { breath: 1.3, bulk: true } }, blister: { stance: { burst: true } } });
+
+// The second brood (stream G, look/cast2.ts): dig in and out, ability poses and flight, laid over the shared walk.
+defineUnits(Object.fromEntries(LOOK_KINDS.map(k => [k, { pose(g: any, u: any, dt: number, _s: number, ease: number) { lookPose(g, u, dt, ease); } }])));
+defineBuildings(Object.fromEntries(Object.keys(GLOAM_BUILDINGS2).map(k => [k, { model: (a: ((t: number) => void)[]) => MD.gloamB(k as GBKind, a) }])));

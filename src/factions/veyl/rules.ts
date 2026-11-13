@@ -6,6 +6,7 @@ import { sfx } from '../../audio';
 import type { Game } from '../../game';
 import { TMP, r1, beamMat } from '../../game';
 import { UNIT, BLD, Unit, Building, isUnit, foeOf, fac, SIDE, CLEAVE, type BKind } from '../../data';
+import { isEnemy } from '../../core/sides';
 import { defineUnits, defineBuildings, defineFaction } from '../../core/registry';
 import { defineAbilities } from '../../core/ability';
 import { canHit } from '../../core/combat';
@@ -84,7 +85,7 @@ export function aiCantor(g: Game, u: Unit, dt: number) {
     else { u.yaw = Math.atan2(t.pos.x - u.pos.x, t.pos.z - u.pos.z); if (u.cd <= 0) { u.cd = V_TUNE.cantor.cd; u.swing = 1; sfx.slash(g.vol(u.pos)); const d = (isB ? V_TUNE.cantor.cut * .77 : V_TUNE.cantor.cut + ((u as any).rushHit ? V_TUNE.cantor.rushHit : 0)) * hitK(g, u); (u as any).rushHit = 0; g.damage(t, d, u);
       // The sweep carries on through whatever is pressed up against the target: half the cut to two more bodies inside the arc. Against a spread
       // rifle line it finds nobody; against a swarm at its ankles it is the only thing that keeps a Cantor worth its ore.
-      if (!isB) { let n = 0; for (const o of g.units) { if (n >= CLEAVE.n) break; if (o === t || !o.alive || o.team === u.team || Math.hypot(o.pos.x - t.pos.x, o.pos.z - t.pos.z) > 1.9 || Math.hypot(o.pos.x - u.pos.x, o.pos.z - u.pos.z) > 3.4) continue; n++; g.damage(o, d * .5, u); } } } }
+      if (!isB) { let n = 0; for (const o of g.units) { if (n >= CLEAVE.n) break; if (o === t || !o.alive || !isEnemy(o.team, u.team) || Math.hypot(o.pos.x - t.pos.x, o.pos.z - t.pos.z) > 1.9 || Math.hypot(o.pos.x - u.pos.x, o.pos.z - u.pos.z) > 3.4) continue; n++; g.damage(o, d * .5, u); } } } }
     return;
   }
   g.vIdle(u, dt, u.order.type === 'raid' ? 3 : 1.5, u.order.type !== 'guard' || g.dir.alarmT > 0 ? 1 : .6);
@@ -139,11 +140,11 @@ defineBuildings(Object.fromEntries((['choir', 'broodpit', 'reedgate', 'kiln', 's
 defineBuildings({
   thornspire: { tick(g, b, dt) {
     // Hits ground and air bodies, and sees unseen ones within 11 m (BldDef.detect). game.ts skips this tick while the Spire is silent.
-    b.cd -= dt; if (b.cd <= 0) { const S = V_TUNE.spire; b.cd = S.cd; let tgt: Unit | null = null, bd = S.range; for (const o of g.units) { if (!o.alive || o.team === b.team || o.inside || !canHit(b, o) || !seenBy(g, b.team, o)) continue; const d = Math.hypot(o.pos.x - b.pos.x, o.pos.z - b.pos.z); if (d < bd) { bd = d; tgt = o; } }
+    b.cd -= dt; if (b.cd <= 0) { const S = V_TUNE.spire; b.cd = S.cd; let tgt: Unit | null = null, bd = S.range; for (const o of g.units) { if (!o.alive || !isEnemy(o.team, b.team) || o.inside || !canHit(b, o) || !seenBy(g, b.team, o)) continue; const d = Math.hypot(o.pos.x - b.pos.x, o.pos.z - b.pos.z); if (d < bd) { bd = d; tgt = o; } }
       if (tgt) { g.tracer(V3(b.pos.x, 6.9, b.pos.z), V3(tgt.pos.x, (tgt.alt || 0) + UNIT[tgt.kind].bodyY, tgt.pos.z), beamMat, .2); sfx.zap(g.vol(b.pos) * .7); g.damage(tgt, S.dmg * g.vMul(b.team), b); g.puff(TMP.copy(tgt.pos).setY((tgt.alt || 0) + 1), 2, .5, M.mag, .5); } else b.cd = .3; }
   } },
   choir: { tick(g, b, dt) {
-    b.cd -= dt; if (b.cd <= 0) { b.cd = 1.15; let tgt: Unit | null = null, bd = 21; for (const o of g.units) { if (!o.alive || o.team === b.team) continue; const d = o.pos.distanceTo(b.pos); if (d < bd) { bd = d; tgt = o; } }
+    b.cd -= dt; if (b.cd <= 0) { b.cd = 1.15; let tgt: Unit | null = null, bd = 21; for (const o of g.units) { if (!o.alive || !isEnemy(o.team, b.team)) continue; const d = o.pos.distanceTo(b.pos); if (d < bd) { bd = d; tgt = o; } }
       if (tgt) { g.tracer(V3(b.pos.x, 9.6, b.pos.z), V3(tgt.pos.x, 1.1, tgt.pos.z), beamMat, .16); sfx.zap(g.vol(b.pos) * .8); g.damage(tgt, 6 * g.vMul(b.team), b); g.puff(TMP.copy(tgt.pos).setY(1), 2, .5, M.teal, .5); } }
   } },
 });

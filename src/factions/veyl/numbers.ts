@@ -131,7 +131,7 @@ export const V_TUNE = {
   shell: [.1, .1, .1],
 };
 
-type VUp = { key: VUpKey; name: string; cost: number; flux?: number; blurb: string; at: VBKind; say: string; needs?: VUpKey; line?: 'atk' | 'arm' | 'shd'; lvl?: number; pct?: number };
+type VUp = { key: VUpKey; name: string; cost: number; flux?: number; blurb: string; at: VBKind; say: string; needs?: VUpKey; line?: 'atk' | 'arm' | 'shd'; lvl?: number; pct?: number; cat?: string };
 const LV = (base: VUpKey, line: 'atk' | 'arm' | 'shd' | undefined, names: string[], at: VBKind, what: string, pcts: string[], ore = [100, 150, 200]): VUp[] =>
   names.map((name, i) => ({ key: (i ? base + (i + 1) : base) as VUpKey, line, lvl: line ? i + 1 : undefined, name, cost: ore[i], flux: ore[i], at, needs: i ? (i > 1 ? base + i : base) as VUpKey : undefined,
     blurb: `${what} ${pcts[i]}`, say: `${name} learned. ${what} ${pcts[i]}.` }));

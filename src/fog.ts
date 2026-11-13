@@ -2,6 +2,7 @@
 // It is worked out on each player's own screen from the bodies it can see, so the server never needs it.
 import type { Game } from './game';
 import { MAP } from './data';
+import { isFriend } from './core/sides';
 
 const CELL = 4;
 /** How far each kind of body or building sees, in metres. */
@@ -27,7 +28,7 @@ export class Fog {
   update(g: Game, dt: number, force = false) {
     this.t -= dt; if (this.t > 0 && !force) return; this.t = .25; const c = this.cells, team = g.myTeam;
     for (let i = 0; i < c.length; i++) if (c[i] === 2) c[i] = 1;
-    for (const u of g.units) if (u.alive && u.team === team) this.stamp(u.pos.x, u.pos.z, SIGHT[u.kind] || 30);
-    for (const b of g.buildings) if (b.alive && b.team === team) this.stamp(b.pos.x, b.pos.z, SIGHT[b.kind] || (b.built ? 26 : 14));
+    for (const u of g.units) if (u.alive && (u.team === team || isFriend(u.team, team))) this.stamp(u.pos.x, u.pos.z, SIGHT[u.kind] || 30);
+    for (const b of g.buildings) if (b.alive && (b.team === team || isFriend(b.team, team))) this.stamp(b.pos.x, b.pos.z, SIGHT[b.kind] || (b.built ? 26 : 14));
   }
 }

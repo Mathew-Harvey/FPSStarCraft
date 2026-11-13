@@ -4,7 +4,13 @@
 import * as THREE from 'three';
 import { inflateSync } from 'fflate';
 import { artBin, artTex } from './artfiles';
-import { M, toonMaterial } from './gfx';
+import { M, toonMaterial, PRE_DRAW, SHADOW_SWAP, farInkOf, L_FX } from './gfx';
+import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
+import * as FX from './fx/kit';
+import { airShadows } from './fx/air';
+/** The effect kit (src/fx/kit.ts), re-exported so it is in the bundle and tests can reach it as __oreFx. */
+export { FX };
+(globalThis as any).__oreFx = { ...FX, airShadows };
 
 export const hasFigure = (kind: string) => !!artBin(kind);
 // A figure with its own painted picture wears that one picture on every part, so each joint is a single mesh. The glow and shine each
@@ -13,7 +19,7 @@ const PAINTED: Record<string, THREE.ShaderMaterial> = {};
 function painted(kind: string) {
   let m = PAINTED[kind]; if (m) return m;
   const img = new Image(), tex = new THREE.Texture(img); tex.anisotropy = 4; img.onload = () => { tex.needsUpdate = true; }; img.src = artTex(kind + '.tex') || '';
-  m = PAINTED[kind] = toonMaterial(tex); m.uniforms.uShine.value = 0; return m;
+  m = PAINTED[kind] = toonMaterial(tex); m.uniforms.uShine.value = 0; m.userData.fig = kind; return m;   // the tag survives the copies a mirror match tints (game.ts tintMirror)
 }
 // A building keeps the game's tiled skins and lays its own picture of wear over them (art/kit/bake.py `coat`): rust runs, bleached roofs,
 // dust up the foot of the walls. Each skin a building uses gets one copy of its material that reads that building's picture.
@@ -56,5 +62,155 @@ export function figure(kind: string): { root: THREE.Group; groups: Record<string
   head.meshes.forEach((m: any, i: number) => { const skin = (M[m.mat] || M.nS) as THREE.ShaderMaterial, mesh = new THREE.Mesh(c!.geos[i], head.tex ? painted(kind) : head.wear && m.uv2 !== undefined && artTex(kind + '.wear.tex') ? worn(kind, skin) : skin); mesh.name = m.part; (groups[m.group] || root).add(mesh); });
   const points: Record<string, { group: THREE.Group; at: [number, number, number] }> = {};   // named spots the game hangs things on (a muzzle flash, say), in their group's own space
   for (const k in head.points || {}) { const q = head.points[k]; points[k] = { group: groups[q.group] || root, at: [q.at[0] * S, q.at[1] * S, q.at[2] * S] }; }
+  markLevels(kind, root, head); root.userData.lodH = HEIGHT_OF(head);
   return { root, groups, points };
 }
+/** How tall the near model stands, from its records' bounds (metres). */
+const HEIGHT_OF = (head: any) => { let hi = 0; for (const m of head.meshes) hi = Math.max(hi, m.hi[1] + (head.groups.find((g: any) => g.name === m.group)?.pivot[1] || 0)); return Math.max(.5, hi * (head.scale || 1)); };
+
+// ---------------------------------------------------------------- levels of detail
+// A kind can bring a middle and a far model (<kind>.mid.bin, <kind>.far.bin, see art/README.md): the same groups and pivots and the same
+// picture, with fewer triangles. They hang under the same group nodes as the near model, so whatever poses a body poses every level.
+// Before each draw, each body shows the one level that fits how tall it stands on screen (lodPass). A body whose kind has no other level
+// keeps its near model at every distance.
+/** Which levels each kind has: index 1 middle, 2 far. */
+const LEVELS: Record<string, (({ head: any; geos: THREE.BufferGeometry[] }) | null)[]> = {};
+function levelData(kind: string, lv: number) {
+  let L = LEVELS[kind]; if (!L) L = LEVELS[kind] = [null, undefined as any, undefined as any];
+  if (L[lv] === undefined) {
+    const z8 = artBin(kind + (lv === 1 ? '.mid' : '.far')); L[lv] = null;
+    if (z8) { const u8 = inflateSync(z8).slice(), hl = new DataView(u8.buffer).getUint32(0, true), c = { head: JSON.parse(new TextDecoder().decode(u8.subarray(4, 4 + hl))), geos: [] as THREE.BufferGeometry[] }; unpack(c, u8, 4 + hl); L[lv] = c; }
+  }
+  return L[lv];
+}
+const matFor = (kind: string, head: any, m: any) => { const skin = (M[m.mat] || M.nS) as THREE.ShaderMaterial; return head.tex ? painted(kind) : head.wear && m.uv2 !== undefined && artTex(kind + '.wear.tex') ? worn(kind, skin) : skin; };
+/** Per kind and level: one merged geometry per group and material, made once and shared by every body of that kind. */
+const MERGED: Record<string, { group: string; mat: THREE.Material; geo: THREE.BufferGeometry }[]> = {};
+function mergedLevel(kind: string, lv: number) {
+  const key = kind + '/' + lv; let out = MERGED[key]; if (out) return out;
+  const c = levelData(kind, lv)!, by = new Map<string, { group: string; mat: THREE.Material; g: THREE.BufferGeometry[] }>(), S: number = c.head.scale || 1;
+  const piv: Record<string, number[]> = {}; for (const g of c.head.groups) piv[g.name] = g.pivot;
+  c.head.meshes.forEach((m: any, i: number) => { const mat = matFor(kind, c.head, m), k = m.group + '|' + mat.uuid; let e = by.get(k); if (!e) by.set(k, e = { group: m.group, mat, g: [] }); e.g.push(c.geos[i]); });
+  out = MERGED[key] = [...by.values()].map(e => ({ group: e.group, mat: e.mat, geo: e.g.length > 1 ? mergeGeometries(e.g, false)! : e.g[0] }));
+  return out;
+}
+/** Marks a freshly built figure as having levels, when its kind has any. Called by figure(). Only painted figures (bodies) switch:
+ *  their near meshes are known by their material's tag, while a building's skins are shared with the extras its maker adds. */
+function markLevels(kind: string, root: THREE.Group, head: any) {
+  if (head.tex && (levelData(kind, 1) || levelData(kind, 2))) root.userData.lod = kind;
+}
+type LodState = { lv: number; meshes: THREE.Mesh[][]; crowd?: boolean };
+const STATE = new WeakMap<THREE.Object3D, LodState>();
+function lodState(root: THREE.Object3D, kind: string): LodState {
+  let s = STATE.get(root); if (s) return s;
+  const near: THREE.Mesh[] = [];
+  root.traverse(o => { const m = o as THREE.Mesh; if (m.isMesh && !o.userData.lv && (m.material as THREE.Material).userData?.fig === kind) near.push(m); });
+  const wear = near[0] ? near[0].material as THREE.Material : null;   // the body's own copy (tinted in a mirror match), worn by every level
+  const groups: Record<string, THREE.Object3D> = {}; root.traverse(o => { if (o.name && !groups[o.name] && !(o as THREE.Mesh).isMesh) groups[o.name] = o; });
+  const levels: THREE.Mesh[][] = [near];
+  for (const lv of [1, 2]) {
+    if (!levelData(kind, lv)) { levels.push(levels[lv - 1]); continue; }     // missing level: show the next finer one
+    levels.push(mergedLevel(kind, lv).map(e => { const m = new THREE.Mesh(e.geo, wear || e.mat); m.userData.lv = lv; m.visible = false; m.layers.mask = near[0] ? near[0].layers.mask : 1; (groups[e.group] || root).add(m); return m; }));
+  }
+  s = { lv: 0, meshes: levels }; STATE.set(root, s); return s;
+}
+/** Screen height, in pixels, a body would have to stand to keep each level: above NEAR_PX the near model, above MID_PX the middle one. */
+export const LOD = { nearPx: 260, midPx: 70, on: true, force: -1, counts: [0, 0, 0],
+  /** Side marks from above: the side the viewer plays (bodies and buildings carry theirs as userData.team), and colour-blind colours. */
+  myTeam: 0, cb: false, marks: true,
+  /** The coarsest level a body's shadow is drawn from (0 keeps the level it is drawn with). */
+  shadowLv: 1,
+  /** Far bodies of a kind are drawn together in one call (instanced), in their standing pose. */
+  crowd: true };
+(globalThis as any).__oreLOD = LOD;
+const WP = new THREE.Vector3(), CP = new THREE.Vector3();
+/** Picks a level for every body with levels in the scene's top layer, from how tall it stands on screen. `h` is the picture height in pixels. */
+const SEEN: LodState[] = [];
+// ---- the far crowd: every far body of one kind and one paint is drawn in a single call (an instanced mesh), in its standing pose.
+// At that size a body is a few dozen pixels and its limbs are not followed; a hundred and fifty bodies cost fifteen-odd draw calls a
+// pass instead of a thousand.
+const CROWD_GEO: Record<string, THREE.BufferGeometry | null> = {};
+function crowdGeo(kind: string) {
+  if (kind in CROWD_GEO) return CROWD_GEO[kind];
+  const c = levelData(kind, 2); if (!c) return CROWD_GEO[kind] = null;
+  const root = new THREE.Group(), groups: Record<string, THREE.Object3D> = {}, piv: Record<string, number[]> = {}, S: number = c.head.scale || 1;
+  for (const g of c.head.groups) { groups[g.name] = new THREE.Group(); piv[g.name] = g.pivot; }
+  for (const g of c.head.groups) { const o = groups[g.name], q = g.parent ? piv[g.parent] : [0, 0, 0]; o.position.set((g.pivot[0] - q[0]) * S, (g.pivot[1] - q[1]) * S, (g.pivot[2] - q[2]) * S); if (g.scale && g.scale !== 1) o.scale.setScalar(g.scale); (g.parent ? groups[g.parent] : root).add(o); }
+  root.updateMatrixWorld(true);
+  const parts = c.head.meshes.map((m: any, i: number) => { const g = c.geos[i].clone(); g.deleteAttribute('aWear'); g.applyMatrix4((groups[m.group] || root).matrixWorld); return g; });
+  return CROWD_GEO[kind] = mergeGeometries(parts, false);
+}
+type Crowd = { mesh: THREE.InstancedMesh; n: number };
+const CROWDS = new Map<THREE.Scene, Map<string, Crowd>>();
+function crowdOf(scene: THREE.Scene, kind: string, mat: THREE.Material): Crowd | null {
+  let byKey = CROWDS.get(scene); if (!byKey) CROWDS.set(scene, byKey = new Map());
+  const key = kind + '|' + mat.uuid; let cr = byKey.get(key);
+  if (!cr) { const geo = crowdGeo(kind); if (!geo) return null; const mesh = new THREE.InstancedMesh(geo, mat, 32); mesh.count = 0; mesh.frustumCulled = false; mesh.name = 'crowd:' + kind; scene.add(mesh); byKey.set(key, cr = { mesh, n: 0 }); }
+  if (cr.n >= cr.mesh.instanceMatrix.count) {   // full: a bigger one in its place
+    const old = cr.mesh, mesh = new THREE.InstancedMesh(old.geometry, old.material, old.instanceMatrix.count * 2); (mesh.instanceMatrix.array as Float32Array).set(old.instanceMatrix.array as Float32Array); mesh.frustumCulled = false; mesh.name = old.name; scene.remove(old); old.dispose(); scene.add(mesh); cr.mesh = mesh; }
+  return cr;
+}
+export function lodPass(scene: THREE.Scene, cam: THREE.Camera, h: number) {
+  const c = LOD.counts; c[0] = c[1] = c[2] = 0; SEEN.length = 0;
+  const crowds = CROWDS.get(scene); if (crowds) for (const cr of crowds.values()) cr.n = 0;
+  const ortho = (cam as any).isOrthographicCamera, pe = cam.projectionMatrix.elements; cam.getWorldPosition(CP);
+  for (const o of scene.children) {
+    const kind = o.userData.lod; if (!kind || !o.visible) continue;
+    const s = lodState(o, kind), size = (o.userData.lodH || 2) * o.scale.y;
+    let px: number;
+    if (ortho) px = size * pe[5] * h * .5;
+    else { o.getWorldPosition(WP); px = size * pe[5] * h * .5 / Math.max(.1, WP.distanceTo(CP)); }
+    // a little give either way, so a body at the line does not flick between levels
+    let lv = s.lv; const up = lv === 0 ? LOD.nearPx * .9 : LOD.midPx * (lv === 1 ? .9 : 1.1), dn = lv === 2 ? LOD.midPx * 1.1 : LOD.nearPx * 1.1;
+    if (!LOD.on) lv = 0; else if (LOD.force >= 0) lv = LOD.force; else if (lv === 0 && px < up) lv = px < LOD.midPx ? 2 : 1; else if (lv === 1) { if (px > dn) lv = 0; else if (px < up) lv = 2; } else if (lv === 2 && px > dn) lv = px > LOD.nearPx ? 0 : 1;
+    if (lv !== s.lv) { const was = s.meshes[s.lv], now = s.meshes[lv]; if (was !== now) { for (const m of was) m.visible = false; for (const m of now) m.visible = true; } s.lv = lv; }
+    c[lv]++; SEEN.push(s);
+    if (lv === 2 && LOD.crowd && s.meshes[2] !== s.meshes[1] && s.meshes[2][0]) {
+      const cr = crowdOf(scene, kind, s.meshes[2][0].material as THREE.Material);
+      if (cr) { for (const m of s.meshes[2]) m.visible = false; s.crowd = true; o.updateMatrix(); cr.mesh.setMatrixAt(cr.n++, o.matrix); continue; }
+    }
+    if (s.crowd) { s.crowd = false; if (s.lv === 2) for (const m of s.meshes[2]) m.visible = true; }
+  }
+  if (crowds) for (const cr of crowds.values()) { cr.mesh.count = cr.n; cr.mesh.visible = cr.n > 0; cr.mesh.instanceMatrix.needsUpdate = true; }
+}
+/** Shadows are a soft dark shape on the ground at the shadow map's few pixels a metre, so a body casts from its middle model: the
+ *  near sculpt's 18k triangles drawn a second time for the shadow bought nothing visible. */
+SHADOW_SWAP.push(on => {
+  if (!LOD.on || !LOD.shadowLv) return;
+  for (const s of SEEN) { const lv = Math.max(s.lv, LOD.shadowLv); if (lv === s.lv) continue; const a = s.meshes[on ? s.lv : lv], b = s.meshes[on ? lv : s.lv]; if (a === b) continue; for (const m of a) m.visible = false; for (const m of b) m.visible = true; }
+});
+PRE_DRAW.push(lodPass);
+
+// ---------------------------------------------------------------- side marks
+// From high up a body is a few pixels across and its paint cannot say whose it is. Each body and building that carries its side
+// (userData.team) gets a flat disc on the ground in the side's colour, the same colours as the map: yours pale, workers green,
+// the enemy pink (orange for colour-blind players). The disc never shrinks below a few pixels, and it fades in only as the view
+// climbs, so first person never sees it.
+const MARK_GEO = (() => { const g = new THREE.RingGeometry(.86, 1, 40, 1); const d = new THREE.CircleGeometry(.86, 40); const m = mergeGeometries([g, d].map(x => { x.deleteAttribute('uv'); x.deleteAttribute('normal'); const n = x.attributes.position.count, a = new Float32Array(n).fill(x === d ? .26 : 1); x.setAttribute('aA', new THREE.BufferAttribute(a, 1)); return x; }))!; m.rotateX(-Math.PI / 2); return m; })();
+const markMat = (hex: string) => new THREE.ShaderMaterial({ transparent: true, depthWrite: false, uniforms: { uC: { value: new THREE.Color(hex) }, uK: { value: 1 }, uFill: { value: 1 } },
+  vertexShader: 'attribute float aA; varying float vA; void main(){ vA=aA; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.); }',
+  fragmentShader: 'uniform vec3 uC; uniform float uK,uFill; varying float vA; void main(){ gl_FragColor=vec4(uC,(vA<.99?vA*uFill:.75)*uK); }' });
+const MARKS = { mine: markMat('#f4ead2'), work: markMat('#8be04e'), foe: markMat('#ff4f9a'), foeCb: markMat('#ff9d1a'), workCb: markMat('#4da3ff'),
+  /** buildings get the rim only: a filled disc that size reads as a floor */ mineB: markMat('#f4ead2'), foeB: markMat('#ff4f9a'), foeBCb: markMat('#ff9d1a') };
+for (const k of ['mineB', 'foeB', 'foeBCb'] as const) MARKS[k].uniforms.uFill.value = 0;
+const MARKED = new WeakMap<THREE.Object3D, THREE.Mesh>();
+const MP = new THREE.Vector3();
+function markPass(scene: THREE.Scene, cam: THREE.Camera, h: number) {
+  const k = LOD.marks ? Math.min(1, Math.max(0, (farInkOf(cam) - .1) / .5)) : 0;
+  for (const m of Object.values(MARKS)) m.uniforms.uK.value = k * .85;
+  const pe = cam.projectionMatrix.elements, ortho = (cam as any).isOrthographicCamera; cam.getWorldPosition(CP);
+  for (const o of scene.children) {
+    const team = o.userData.team; if (team === undefined) continue;
+    let mk = MARKED.get(o);
+    if (!k) { if (mk) mk.visible = false; continue; }
+    if (!mk) { mk = new THREE.Mesh(MARK_GEO, MARKS.mine); mk.layers.set(L_FX); mk.renderOrder = 2; mk.frustumCulled = false; mk.name = 'sideMark'; o.add(mk); MARKED.set(o, mk); }
+    const foe = team !== LOD.myTeam, work = !foe && !!o.userData.worker, bld = !!o.userData.markR;
+    mk.material = bld ? (foe ? (LOD.cb ? MARKS.foeBCb : MARKS.foeB) : MARKS.mineB) : foe ? (LOD.cb ? MARKS.foeCb : MARKS.foe) : work ? (LOD.cb ? MARKS.workCb : MARKS.work) : MARKS.mine;
+    mk.visible = o.visible;
+    // at least 7 pixels across, else the footprint the body was given (userData.markR) or its height
+    o.getWorldPosition(MP); const perPx = ortho ? 2 / (pe[5] * h) : 2 * MP.distanceTo(CP) / (pe[5] * h);
+    const r = Math.max(o.userData.markR || (o.userData.lodH || 2) * .45, 3.5 * perPx);
+    mk.scale.set(r / (o.scale.x || 1), 1, r / (o.scale.z || 1)); mk.position.set(0, .06 / (o.scale.y || 1), 0);
+  }
+}
+PRE_DRAW.push(markPass);

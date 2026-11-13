@@ -15,7 +15,7 @@ export interface UnitDef { name: string; team: number; hp: number; shield: numbe
   /** Flies (src/core/air.ts): over cliffs and buildings, hit only by weapons that reach the air. */ air?: boolean; /** Energy for abilities, up to this. */ energy?: number;
   /** Unseen until detected (always, not just when an ability says so), and how far it sees unseen bodies. */ cloak?: boolean; detect?: number;
   /** Cargo slots it carries, and the slots it takes up inside one. */ cargo?: number; slots?: number;
-  /** Mines and builds like a Rigger (the Haul Drone). */ worker?: boolean; /** Walks up cliffs (the Reedwalker; read by the terrain). */ climb?: boolean;
+  /** Mines and builds like a Rigger (the Haul Drone). */ worker?: boolean; /** Left behind (a mine, a turret): not a fighter, never enlisted or ordered. */ ward?: boolean; /** Walks up cliffs (the Reedwalker; read by the terrain). */ climb?: boolean;
   /** A driven body's attack, for the server's checks (stream K's net-arms): reach in metres, most damage one hit can do, hits a second. */ reach?: number; hit?: number; rate?: number }
 export interface UnitDef extends FightDef {}
 export const UNIT: Record<Kind, UnitDef> = { ...I_UNIT, ...V_UNIT, ...(G_UNIT as Record<GKind, UnitDef>) };
@@ -37,22 +37,33 @@ export const VOICE_SIDE: Record<string, number> = { 'Held Fifth': 1,  Conductor:
 /** Who holds each end of the map this match, as teams: `home` the yard at the origin, `out` the outpost at the far end of the road.
  *  Any faction can hold either end. A mirror match puts the same faction at both ends, the outpost side as team faction + 3. Set before a Game is made. */
 export const SIDE = { home: 0, out: 1 };
-/** Sets who holds each end from the two factions, and returns the two teams. */
-export const setSides = (homeFac: number, outFac: number) => { SIDE.home = homeFac; SIDE.out = outFac === homeFac ? outFac + MIRROR : outFac; layoutSites(); return [SIDE.home, SIDE.out]; };
+/** Sets who holds each end from the two factions, and returns the two teams. It also ends any team game setup (see setTeamGame). */
+export const setSides = (homeFac: number, outFac: number) => { clearMatch(); SIDE.home = homeFac; SIDE.out = outFac === homeFac ? outFac + MIRROR : outFac; layoutSites(); return [SIDE.home, SIDE.out]; };
 /** A match code for the lobby and the menus: home faction times 3 plus outpost faction. The old codes 1 and 2 (Ironhold against the Veyl or the Gloam) still mean the same. */
 export const sidesCode = () => fac(SIDE.home) * 3 + fac(SIDE.out);
+/** Sets up a team game or free-for-all from a plan (see planTeams), or with null goes back to a plain one-on-one. Returns the plan's
+ *  teams, or null when the plan does not hold (and then it is a one-on-one). A plan with only two sides is a one-on-one. Set before a Game is made. */
+export function setTeamGame(p: TeamPlan | null) {
+  const t = p ? planTeams(p) : null; if (!t) { clearMatch(); return null; }
+  setSides(fac(t.home), fac(t.out)); if (t.teams.length > 2) setMatch(t.teams, t.at, p!.n, t.groups); else clearMatch(); return t;
+}
 export const setSidesCode = (code: number) => { const c = Number.isInteger(code) && code >= 0 && code < 9 ? code : 1; return setSides(Math.floor(c / 3), c % 3); };
-/** The side two sides fight: every match has two. */
-export const foeOf = (team: number) => team === SIDE.home ? SIDE.out : SIDE.home;
+/** The side a side fights. A one-on-one has two; with more sides it is the enemy this side is going after now (MATCH.foe, set by the Director). */
+export const foeOf = (team: number) => multi() ? MATCH.foe[team] ?? enemiesOf(team)[0] ?? team : team === SIDE.home ? SIDE.out : SIDE.home;
 /** True for the side that holds the yard. */
 export const atHome = (team: number) => team === SIDE.home;
 /** Turns a point in one end's frame into the same spot at the other end: a half turn about the middle of the two bases.
  *  Each brain is written for its own end (the Quartermaster for the yard, the Conductor and the Overgrowth for the outpost); this moves it. */
 /** Where a team's home base stands: the yard for the side at home, the outpost for the side at the far end. */
-export const homeXZ = (team: number): [number, number] => atHome(team) ? [0, 0] : [VHOME.x, VHOME.z];
+export const homeXZ = (team: number): [number, number] => multi() ? startXZ(startOf(team)) : atHome(team) ? [0, 0] : [VHOME.x, VHOME.z];
+/** With more than two sides, the start spots stand round the middle of the two ends, each the yard turned by the same step: start 0 is the yard,
+ *  start n/2 the far base. `turnPt` turns a point from start 0's frame to start i's. (On a ring map MAP.starts is the same list.) */
+export const turnPt = (i: number, x: number, z: number): [number, number] => { if (!i) return [x, z]; const cx = VHOME.x / 2, cz = VHOME.z / 2, a = i * 2 * Math.PI / ((MAP_ as any).ring || MATCH.n), c = Math.cos(a), sn = Math.sin(a), dx = x - cx, dz = z - cz; return [cx + dx * c - dz * sn, cz + dx * sn + dz * c]; };
+/** Where start spot i stands. */
+export const startXZ = (i: number): [number, number] => { const s: number[] | undefined = (MAP_ as any).starts?.[i]; return s ? [s[0], s[1]] : turnPt(i, 0, 0); };
 export const swapEnd = (x: number, z: number): [number, number] => [VHOME.x - x, VHOME.z - z];
 /** A point written for the yard (`yard` true) or the outpost, moved to wherever this team actually stands. */
-export const endPt = (team: number, x: number, z: number, yard: boolean): [number, number] => atHome(team) === yard ? [x, z] : swapEnd(x, z);
+export const endPt = (team: number, x: number, z: number, yard: boolean): [number, number] => { if (multi()) { const [yx, yz] = yard ? [x, z] : swapEnd(x, z); return turnPt(startOf(team), yx, yz); } return atHome(team) === yard ? [x, z] : swapEnd(x, z); };
 export const isWorker = (k: Kind) => k === 'rigger' || k === 'tender' || k === 'grazer' || !!UNIT[k]?.worker;
 export const isGloam = (k: Kind) => fac(UNIT[k]?.team ?? 0) === 2;
 /** What each building trains, and the extra building a unit needs standing before it can be trained. */
@@ -60,7 +71,7 @@ export const TRAINS: Partial<Record<BKind, Kind[]>> = { ...I_TRAINS, ...V_TRAINS
 export const UNIT_NEEDS: Partial<Record<Kind, BKind>> = { ...I_NEEDS, ...V_NEEDS, ...Object.fromEntries(Object.entries(G_UNLOCK).filter(([k]) => k !== 'grazer')) };
 export type UpKey = IUpKey | VUpKey | GUpKey;
 /** Research. `at` is the building that sells it, and `needs` is the research that has to be bought first. */
-export interface UpDef { key: UpKey; /** A research level: its line (attack, armour, shields) and level 1 to 3 (src/core/combat.ts). */ line?: Line; lvl?: number; /** Percent mode: what this level multiplies by (default 25%, 20%, 15%). */ pct?: number; name: string; cost: number; /** Flux on top of the ore cost. */ flux?: number; blurb: string; at: BKind; say: string; needs?: UpKey; /** The side that can buy it. Ironhold when left out. */ team?: number }
+export interface UpDef { key: UpKey; /** A research level for one category of body only (see UnitDef.cat). */ cat?: string; /** A research level: its line (attack, armour, shields) and level 1 to 3 (src/core/combat.ts). */ line?: Line; lvl?: number; /** Percent mode: what this level multiplies by (default 25%, 20%, 15%). */ pct?: number; name: string; cost: number; /** Flux on top of the ore cost. */ flux?: number; blurb: string; at: BKind; say: string; needs?: UpKey; /** The side that can buy it. Ironhold when left out. */ team?: number }
 export const UPGRADES: UpDef[] = [...I_UPGRADES, ...V_UPGRADES.map(u => ({ ...u, team: 1 })), ...G_UPGRADES.map(u => ({ ...u, team: 2 }))];
 /** Research a side can buy. */
 export const upsOf = (team: number) => UPGRADES.filter(u => (u.team || 0) === fac(team));
@@ -87,7 +98,7 @@ export interface Unit {
 }
 /** One effect on a body: its key, seconds left, a strength (a slow's fraction, a shield's points, burning's damage a second) and who put it there. */
 export interface Status { k: StatusKey; t: number; n?: number; from?: number }
-export type StatusKey = 'slow' | 'stun' | 'root' | 'unseen' | 'revealed' | 'dug' | 'lifted' | 'shielded' | 'burning' | 'borrowed';
+export type StatusKey = 'slow' | 'stun' | 'root' | 'unseen' | 'revealed' | 'dug' | 'lifted' | 'shielded' | 'burning' | 'borrowed' | 'blind';
 export interface Building {
   id: number; kind: BKind; team: number; pos: THREE.Vector3; hx: number; hz: number; h: number; hp: number; maxHp: number; obj: THREE.Group; holo: THREE.Group | null;
   built: boolean; progress: number; /** progress already paid out as health, so damage to a site sticks */ pdone: number; queue: { kind: Kind; t: number }[]; alive: boolean; cd: number; builder: Unit | null; lastHit: number; rot: boolean; smokeT: number; stage: number;
@@ -115,7 +126,8 @@ export const DIFFS: Difficulty[] = [
 // The maps live in src/maps.ts; they are passed on from here so everything can keep importing them from data.
 export { GATE, MAP, MAPS, NORTH_PATH, OUTPOST, RALLY, RALLY_N, ROAD, SIZES, TURNS, VAST, VHOME, VRALLY, VRALLY_N, baseOf, compass, mapCode, roadPt, rollMap, setMap, sizeOf, turnOf, validMap, veylPt } from './maps';
 export type { MapDef } from './maps';
-import { VHOME, layoutSites } from './maps';
+import { VHOME, MAP as MAP_, layoutSites } from './maps';
+import { MATCH, multi, startOf, enemiesOf, planTeams, setMatch, clearMatch, type TeamPlan } from './core/sides';
 /** Story state the engine reads while a campaign job is running. Set before a Game is made, cleared for everything else. */
 export const STORY = {
   /** The Ironhold team that is Charter Security on this job (they wear company grey), or -1. */
@@ -143,4 +155,4 @@ export const OVERTIME = { start: 0, perMin: .1 };
 export const isUnit = (t: any): t is Unit => !!t && t.rig !== undefined;
 export const isSoldier = (u: Unit) => u.kind === 'linesman' || u.kind === 'breacher' || u.kind === 'gantry' || u.kind === 'longshot' || u.kind === 'patch';
 /** A fighting body on either side: anything that is not a worker. */
-export const isFighter = (u: Unit) => !isWorker(u.kind);
+export const isFighter = (u: Unit) => !isWorker(u.kind) && !UNIT[u.kind]?.ward;

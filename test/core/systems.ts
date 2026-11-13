@@ -6,7 +6,7 @@ import { noHud, noPipe } from '../../server/shim';
 import { Game } from '../../src/game';
 import { initHeadless } from '../../src/gfx';
 import { DIFFS, UNIT, BLD, FACTION, UPGRADES, setMap, setSides, Kind, BKind, Unit, SIDE, VHOME, swapEnd, fac } from '../../src/data';
-import { defineBuildings, defineFaction, defineUnits } from '../../src/core/registry';
+import { defineBuildings, defineFaction, defineUnits, addHitFilter, HIT_FILTERS, bldRule } from '../../src/core/registry';
 import { ECON, costOf, canPay, sendToVent, seamRate, ventSpots } from '../../src/core/econ';
 import { LEVELS, level, levelMul, canHit } from '../../src/core/combat';
 import { addStatus, hasStatus, statusPace, canAct } from '../../src/core/status';
@@ -45,7 +45,10 @@ const run = (g: Game, secs: number, each?: () => boolean | void) => { for (let i
 // ---------------------------------------------------------------- 1. Flux, vents, prices
 {
   check(costOf('xflux' as Kind)[0] === 50 && costOf('xflux' as Kind)[1] === 25 && costOf('xplain' as Kind)[1] === 0 && costOf(UPGRADES[0].key)[0] === UPGRADES[0].cost, 'prices: a kind with Flux costs [ore, Flux]; one without costs no Flux; research reads the same way');
-  const g0 = world(); setSides(0, 1); check(world(0, 1).vents.length === 0 && g0.vents.length === 0, 'vents: with no tap in either roster none are laid, so a match without Flux plays as before');
+  // The factions' own rosters may have a tap by now, so take every tap away for this check and give them back after.
+  { const taps = Object.keys(BLD).filter(k => bldRule(k as BKind).tap); defineBuildings(Object.fromEntries(taps.map(k => [k, { tap: undefined }])));
+    const g0 = world(); setSides(0, 1); check(world(0, 1).vents.length === 0 && g0.vents.length === 0, 'vents: with no tap in either roster none are laid, so a match without Flux plays as before');
+    defineBuildings(Object.fromEntries(taps.map(k => [k, { tap: true }]))); }
   ECON.vents = 'on'; const g = world(0, 0); const H = SIDE.home, O = SIDE.out;
   check(g.vents.length >= 4, `vents: laid when switched on (${g.vents.length})`);
   const d = (v: { pos: { x: number; z: number } }, x: number, z: number) => Math.hypot(v.pos.x - x, v.pos.z - z);
@@ -89,12 +92,16 @@ const run = (g: Game, secs: number, each?: () => boolean | void) => { for (let i
   check(hit(fly, gun, 10) === 0 && !canHit(gun, fly) && canHit(aa, fly) && hit(fly, aa, 10) === 10, 'a ground weapon cannot hurt a flier; one that reaches the air can');
   gun.order = { type: 'guard', x: 50, z: 60 }; aa.order = { type: 'guard', x: 54, z: 60 };
   check(g.acquire(gun, 30, 0) !== fly && g.acquire(aa, 30, 0) !== null, 'a ground-only body never picks a flier as its target');
-  const U = g.upOf(H); U.dmg = true; U.dmg2 = true;
+  // Scratch research, so the checks do not lean on a faction's real numbers (which carry categories now).
+  const sx = (key: string, line: string, lvl: number) => ({ key, name: 'Scratch ' + key, cost: 1, blurb: '', at: FACTION[H].barracks, say: '', team: fac(H), line, lvl });
+  const real = UPGRADES.filter(u => (u.team || 0) === fac(H) && (u.line === 'atk' || u.line === 'arm')), keep = real.map(u => [u, u.line] as const); for (const u of real) (u as any).line = undefined;
+  (UPGRADES as any).push(sx('xatk1', 'atk', 1), sx('xatk2', 'atk', 2), sx('xarm1', 'arm', 1));
+  const U = g.upOf(H) as any, UO = g.upOf(O) as any; U.xatk1 = true; U.xatk2 = true;
   check(level(g, H, 'atk') === 2 && near(levelMul(g, H, 'atk'), 1.25 * 1.2), 'research levels: two attack levels bought is level 2, worth what the old two upgrades were');
   check(near(g.gunMul(H), 1.25 * 1.2 * g.foeK(H)) && near(g.armorMul(O), 1), 'the shared multipliers read the levels');
   LEVELS.mode = 'flat'; check(hit(plain, gun, 10) === 12 && near(g.gunMul(H), g.foeK(H)), 'flat mode: each attack level adds to the hit instead');
-  g.upOf(O).armor = true; check(hit(plain, gun, 10) === 11, 'flat mode: each armour level takes 1 off');
-  LEVELS.mode = 'percent'; U.dmg = U.dmg2 = false; g.upOf(O).armor = false;
+  UO.xarm1 = true; check(hit(plain, gun, 10) === 11, 'flat mode: each armour level takes 1 off');
+  LEVELS.mode = 'percent'; U.xatk1 = U.xatk2 = false; UO.xarm1 = false; (UPGRADES as any).splice(-3, 3); for (const [u, l] of keep) (u as any).line = l;
 }
 
 // ---------------------------------------------------------------- 3. Effects
@@ -222,6 +229,17 @@ const run = (g: Game, secs: number, each?: () => boolean | void) => { for (let i
   check(canHit(sky, tall) && !canHit(sky, short), 'an air-only weapon can hit a tall walker but not a short one');
   const depot = g.addBuilding(FACTION[H].supply, H, 20, 60, true); defineBuildings({ [FACTION[H].supply]: { hq: true } });
   check(g.isHQ(depot) && g.hqs(H).includes(depot) && g.nearHQ(20, 62, H) === depot, 'a building whose rules say hq counts as a home building'); defineBuildings({ [FACTION[H].supply]: { hq: undefined } });
+  defineBuildings({ xbunker: { counts: [FACTION[H].supply] } }); g.addBuilding('xbunker' as BKind, H, 80, 60, true); check(g.ownB(FACTION[H].supply, true, H).some(b => b.kind === ('xbunker' as BKind)), 'a kind that counts as another is found as that kind');
+  const flt = (gg: any, t: any, amt: number) => t === short ? 0 : amt + (t === tall ? 2 : 0); addHitFilter(flt); const h0 = short.hp, h1 = tall.hp; g.damage(short, 10, null); g.damage(tall, 10, null);
+  check(short.hp === h0 && h1 - tall.hp === 12, 'hit filters can stop a hit or add to it'); HIT_FILTERS.splice(HIT_FILTERS.indexOf(flt), 1);
+  add('xmine', { ward: true }); const mine = g.spawn('xmine' as Kind, H, 90, 60); check(!g.army(H).includes(mine), 'a body left behind (ward) is not a fighter and joins no army');
+  const bl = g.spawn('xplain' as Kind, H, 100, 60), tgt = g.spawn('xplain' as Kind, O, 108, 60); check(g.acquire(bl, 20, 0) === tgt, 'a body sees a foe 8 m off'); addStatus(bl, 'blind', 8); check(g.acquire(bl, 20, 0) === null, 'blinded, it only finds targets within 4 m');
+  add('xtrooper', { cat: 'inf' }); (UPGRADES as any).push({ key: 'xinf1', name: 'Scratch Infantry Plate', cost: 1, blurb: '', at: FACTION[H].barracks, say: '', team: fac(H), line: 'arm', lvl: 1, cat: 'inf' });
+  g.upOf(H)['xinf1' as any] = true; check(near(g.armorMul(H, 'inf'), 1.25) && near(g.armorMul(H), 1) && near(g.armorMul(H, 'mach'), 1), 'a level with a category counts only for bodies of that category'); (UPGRADES as any).pop();
+  (UPGRADES as any).push({ key: 'xmech1', name: 'Scratch Machine and Ship Plate', cost: 1, blurb: '', at: FACTION[H].barracks, say: '', team: fac(H), line: 'arm', lvl: 1, cat: 'xmech|xship' });
+  g.upOf(H)['xmech1' as any] = true; check(near(g.armorMul(H, 'xmech'), 1.25) && near(g.armorMul(H, 'xship'), 1.25) && near(g.armorMul(H, 'inf'), 1) && near(g.armorMul(H), 1), 'one level can name several categories'); (UPGRADES as any).pop();
+  { const k = FACTION[H].supply, sx = 0, sz = -150, was = g.canPlace(k, sx, sz, false, H); defineBuildings({ [k]: { far: true } }); const now = g.canPlace(k, sx, sz, false, H); defineBuildings({ [k]: { far: undefined } });
+    check(!was && now, `a far building goes up away from home (${was} then ${now})`); }
   const id = depot.id; check(g.rebuild(depot, FACTION[H].barracks) && depot.id === id && depot.kind === FACTION[H].barracks, 'a building can change kind in place');
 }
 
@@ -229,7 +247,7 @@ const run = (g: Game, secs: number, each?: () => boolean | void) => { for (let i
 {
   const g = world(), H = SIDE.home, O = SIDE.out; const ghost = g.spawn('xcloak' as Kind, O, 40, 140), pal = g.spawn('xcaster' as Kind, H, 40, 120);
   g.evq!.push(['test']); const snaps = buildSnaps(g, [H, O]), sh = JSON.parse(snaps.get(H)!), so = JSON.parse(snaps.get(O)!);
-  check(!sh.u.some((r: any[]) => r[0] === ghost.id) && !JSON.stringify(sh).includes(String(ghost.id) + ',') && so.u.some((r: any[]) => r[0] === ghost.id), 'online: a hidden body is left out of the enemy\'s snapshot entirely and sent to its own side');
+  check(!sh.u.some((r: any[]) => r[0] === ghost.id) && !JSON.stringify(sh).includes(`[${ghost.id},`) && so.u.some((r: any[]) => r[0] === ghost.id), 'online: a hidden body is left out of the enemy\'s snapshot entirely (fog on the wire, test/online) and sent to its own side');
   check(sh.e.length === 1 && so.e.length === 1 && g.evq!.length === 0, 'online: both sides\' snapshots carry the tick\'s events once');
   const one = buildSnap(g); check(one.u.some((r: any[]) => r[0] === ghost.id) && one.ux.some((r: any[]) => r[0] === pal.id && r[1] === Math.floor(pal.energy!)) && Array.isArray(one.fl), 'online: the full snapshot carries energy, Flux and every body');
 }

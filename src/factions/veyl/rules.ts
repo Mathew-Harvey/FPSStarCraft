@@ -137,3 +137,14 @@ defineBuildings({
 defineUnits({
   warden: { steady: true, koWord: 'KRAKA-THOOM!', koStop: .25, downed(g, _u, v) { if (fac(SIDE.home) !== 0) return false; g.shake = Math.max(g.shake, v); g.feed('Alpha', 'Warden down! Did everybody see that? I did that.', '', SIDE.home); return true; } },
 });
+
+defineUnits({
+  warden: { heavy: true, threat: 1.1 }, lancer: { threat: .8 },
+  tender: { task: (_g, u) => u.state === 'build' || u.state === 'toSite' ? 'Singing a building up' : 'Humming ore' },
+});
+defineBuildings({ wardpylon: { ward: 34 } });
+defineFaction(1, {
+  tab: ['cantor', 'lancer', 'warden', 'tender'],
+  pace(g, u) { return g.upOf(u.team).vstep && u.kind !== 'tender' ? 1.12 : 1; },
+  task: (_g, u) => u.order.type === 'raid' || u.order.type === 'amove' ? 'Marching on the yard' : u.order.type === 'follow' ? 'Following you' : 'Guarding the Stones',
+});

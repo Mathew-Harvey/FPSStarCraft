@@ -4,7 +4,7 @@
 import type * as THREE from 'three';
 import type { Game } from '../game';
 import type { Director, Side } from '../director';
-import type { Unit, Building, OreNode, Prop } from '../data';
+import type { Unit, Building, OreNode, Prop, Kind } from '../data';
 
 /** A ray hit, as Game.ray returns it. */
 export type Hit = { unit?: Unit; b?: Building; ore?: OreNode; prop?: Prop; dist: number; head?: boolean };
@@ -35,8 +35,22 @@ export interface UnitRules {
   steady?: boolean;
   /** How hard this body's hits shove a target back when a player drives it (default from the damage). */
   shove?: number;
-  /** Speed multiplier from research and ground, on top of UnitDef.speed. */
-  pace?(g: Game, u: Unit): number;
+  /** A big body: shrugs off blasts and shoves, pushes smaller bodies aside, keeps a wider place in a march, and a player is never respawned into it. */
+  heavy?: boolean;
+  /** A player is never respawned into this body (it is too slow or too precious to hand out). */
+  skipRespawn?: boolean;
+  /** Holding aim raises a front shield (see the `hurt` hook). */
+  brace?: boolean;
+  /** Footsteps in first person: 0 soft, 1 boots (default), 2 a walker that shakes the camera. */
+  step?: number;
+  /** Speed of the first-person dash, metres a second (default 19). */
+  hop?: number;
+  /** Walk cycle speed (default the faction's, else 11), and how much bigger than its model the body is drawn. */
+  stride?: number; scale?: number;
+  /** How much the bots want to shoot this body, against 1 for an ordinary one. */
+  threat?: number;
+  /** Two bodies hatch for the listed cost (the Gloam's Snappers). */
+  pair?: boolean;
   /** The first-person gun, if this body has one. */
   gun?: Weapon;
   /** Tuning when the gun fires single aimed bullets. */
@@ -63,6 +77,14 @@ export interface BldRules {
   hatch?(g: Game, b: Building, dt: number): void;
   /** New bodies walk out of the long side instead of the front. */
   sideDoor?: boolean;
+  /** Trains from ripe Buds instead of a queue of five (see `hatch`). */
+  buds?: boolean;
+  /** A line for the building's prompt in first person, in place of the queue count. */
+  note?(b: Building): string;
+  /** Shields its side's other buildings within this many metres: they take 70% of each hit. */
+  ward?: number;
+  /** Its side's hurt bodies within 16 m heal 5 a second once out of a fight. */
+  mends?: boolean;
   /** Lamps hung on the building, in its own space: x, y, z and reach. */
   lamps?: [number, number, number, number][];
 }
@@ -81,6 +103,14 @@ export interface FactionRules {
   each?(g: Game, b: Building, dt: number): void;
   /** A building of this faction was just put down. */
   added?(g: Game, b: Building, built: boolean): void;
+  /** Speed multiplier from research and ground for a body of this faction, on top of UnitDef.speed. */
+  pace?(g: Game, u: Unit): number;
+  /** Walk cycle speed for this faction's bodies (default 11). */
+  stride?: number;
+  /** The kinds listed in the Tab list, in order. */
+  tab?: Kind[];
+  /** One line for the Tab list: what a body of this faction is doing (default: the squad's task). */
+  task?(g: Game, u: Unit): string | null;
 }
 
 const UNITS: Record<string, UnitRules> = {}, BLDS: Record<string, BldRules> = {}, FACTIONS: Record<number, FactionRules> = {};

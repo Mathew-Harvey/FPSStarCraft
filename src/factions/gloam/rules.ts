@@ -6,7 +6,7 @@ import { sfx } from '../../audio';
 import type { Game } from '../../game';
 import { UNIT, BLD, Unit, Building, isUnit, isWorker } from '../../data';
 import { G_TUNE, GBKind } from './numbers';
-import { defineBuildings, defineFaction } from '../../core/registry';
+import { defineUnits, defineBuildings, defineFaction } from '../../core/registry';
 
 const TMP = V3();
 export const quillMat = new THREE.MeshBasicMaterial({ color: 0xe9dab2 });
@@ -222,4 +222,14 @@ defineFaction(2, { ai: aiGloam, drive: (g, dt, P, eye, dir) => playerGloam(g, dt
 defineBuildings({
   // A Mother Cap ripens every Bud at once; everything else trains one at a time.
   mothercap: { hatch(g, b, dt) { for (let i = b.queue.length - 1; i >= 0; i--) { const q = b.queue[i]; q.t -= dt; if (q.t > 0) continue; b.queue.splice(i, 1); const a = R(0, 6.283), u = g.spawn(q.kind, b.team, b.pos.x + Math.cos(a) * (b.hx + 1.2), b.pos.z + Math.sin(a) * (b.hz + 1.2)); g.puff(TMP.copy(u.pos).setY(1), 4, .8, M.gS); if (g.vol(b.pos) > .2) sfx.blip(); g.dir.trained(u); } }, done(_g, b) { b.buds = 1; } },
+});
+defineUnits({ snapper: { pair: true }, mulcher: { skipRespawn: true, stride: 6 }, grazer: { task: () => 'Chewing ore' } });
+defineBuildings({
+  mothercap: { buds: true, added(_g, b, built) { b.buds = built ? G_TUNE.buds : 0; b.budT = 0; }, note: b => `${b.buds || 0} Bud${b.buds === 1 ? '' : 's'} ripe${b.queue.length ? ` · ${b.queue.length} ripening` : ''}` },
+});
+defineFaction(2, {
+  tab: ['snapper', 'quillback', 'blister', 'mulcher', 'grazer'], stride: 15,
+  added(g, b, built) { g.carpet.add(b, b.kind as GBKind, b.pos.x, b.pos.z, built); },
+  pace(g, u) { const up = g.upOf(u.team); return (u.kind !== 'grazer' && g.carpet.on(u.pos.x, u.pos.z, 0, u.team) ? G_TUNE.bloomSpeed : 1) * (up.glegs && (u.kind === 'snapper' || u.kind === 'blister') ? 1.15 : 1); },
+  task: (_g, u) => u.order.type === 'raid' || u.order.type === 'amove' ? 'Swarming the yard' : u.order.type === 'follow' ? 'At your heels' : 'Lurking in the Bloom',
 });

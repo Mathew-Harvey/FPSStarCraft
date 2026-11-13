@@ -176,3 +176,15 @@ defineUnits({
   rigger: { shove: 14 },
   longshot: { killStop: .12 },
 });
+
+defineUnits({
+  linesman: { step: 0 }, rigger: { step: 0, threat: 1.15, task: (_g, u) => u.state === 'build' || u.state === 'toSite' ? 'Building' : 'Mining ore' },
+  breacher: { brace: true, hop: 15, stride: 9, scale: 1.14, threat: 1.25 },
+  gantry: { step: 2, hop: 11, stride: 6.5 },
+  patch: { threat: .6, task: () => 'Keeping people alive' }, longshot: { threat: .7 },
+});
+defineBuildings({ depot: { mends: true }, headframe: { mends: true } });
+defineFaction(0, {
+  tab: ['linesman', 'longshot', 'patch', 'gantry', 'breacher', 'rigger'],
+  pace(g, u) { const up = g.upOf(u.team); return u.kind === 'gantry' ? (up.servo ? 1.2 : 1) : u.kind !== 'rigger' && up.pay ? 1.12 : 1; },
+});

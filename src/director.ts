@@ -4,7 +4,7 @@ import * as THREE from 'three';
 import { V3, R, M } from './gfx';
 import { sfx } from './audio';
 import type { Game } from './game';
-import { Kind, BKind, UNIT, BLD, UPGRADES, Unit, Building, Callout, OUTPOST, GATE, RALLY, RALLY_N, VRALLY, VRALLY_N, VHOME, NORTH_PATH, MAP, MAPS, ROAD, FACTION, SIDE, veylPt, roadPt, isSoldier, foeOf, fac, atHome, endPt, swapEnd, homeXZ, compass } from './data';
+import { Kind, BKind, UNIT, BLD, UPGRADES, Unit, Building, Callout, OUTPOST, GATE, RALLY, RALLY_N, VRALLY, VRALLY_N, VHOME, NORTH_PATH, MAP, MAPS, ROAD, FACTION, SIDE, veylPt, roadPt, isSoldier, isWorker, foeOf, fac, atHome, endPt, swapEnd, homeXZ, compass } from './data';
 import { Doctrine, DOCTRINES } from './doctrine';
 import { factionRule } from './core/registry';
 import { MATCH, multi, enemiesOf } from './core/sides';
@@ -104,7 +104,7 @@ export class Director implements Side {
     if (this.following(s)) u.order = { type: 'follow', x: 0, z: 0, lead: army.find(x => x.order.type === 'follow')?.order.lead };
     else { const p = this.rallyAt(u.slot, s.raidLive && (s === this && !this.g.eco ? this.raidDir === 'north' : !!s.inNorth), s); u.order = { type: 'guard', x: p.x, z: p.z }; }
   }
-  regroup(north = false, s: Side = this) { this.g.army(s.team).filter(u => u !== this.g.me && !u.pilot && u.order.type !== 'follow' && u.order.type !== 'scout').forEach((u, i) => { u.slot = i; const p = this.rallyAt(i, north, s); u.order = { type: 'guard', x: p.x, z: p.z }; }); }
+  regroup(north = false, s: Side = this) { this.g.army(s.team).filter(u => u !== this.g.me && !u.pilot && u.order.type !== 'follow' && u.order.type !== 'scout' && !u.order.mine).forEach((u, i) => { u.slot = i; const p = this.rallyAt(i, north, s); u.order = { type: 'guard', x: p.x, z: p.z }; }); }
   squadTask(s: Side = this) { return s.plan?.phase === 'go' ? this.books(s)[s.plan.book].name + ' under way' : this.following(s) ? 'Following you' : s.raidLive ? (fac(s.team) ? 'Holding off the push' : 'Holding off the raid') : fac(s.team) === 2 ? 'Lurking in the Bloom' : fac(s.team) ? 'Guarding the Stones' : 'Holding the yard'; }
   say(who: string, msg: string, cls = '', team = -1) { this.g.feed(who, msg, cls, team); }
   bark(u: Unit, kind: 'kill' | 'down') { if (this.g.net || this.g.time < this.barkT) return; this.barkT = this.g.time + 7; const l = factionRule(u.team).lines?.(kind, fac(foeOf(u.team))) || []; if (!l.length) return; this.say(UNIT[u.kind].name, l[Math.floor(Math.random() * l.length)], kind === 'down' ? 'al' : ''); }
@@ -130,6 +130,29 @@ export class Director implements Side {
       const k = P.has('KeyX') ? 'X' : P.has('KeyZ') ? 'Z' : P.has('KeyC') && p.book < 2 ? 'C' : '';
       if (k) { if (k === 'C') P.delete('KeyC'); g.obj.answered = true; if (net) { net.cmd('or', k); sfx.blip(); } else this.order(k); }
     }
+  }
+  /** An order from the command view, for the bodies named. `k` is 'm' go there and fight whatever is on the way, 'a' attack one enemy body or
+   *  building, 'o' work an ore seam, 'b' build or mend one of your own buildings, 'r' go back to the squad or back to work. Bodies ordered this
+   *  way are left alone by the side's own brain until they are handed back, or until a squad order from first person takes them. */
+  command(team: number, ids: number[], k: string, x = 0, z = 0, tid = 0) {
+    const g = this.g, want = new Set(ids.slice(0, 80)), us = g.units.filter(u => u.alive && u.team === team && !u.pilot && want.has(u.id)); if (!us.length) return 0;
+    const fighters = us.filter(u => !isWorker(u.kind)), workers = us.filter(u => isWorker(u.kind));
+    // Bodies sent to one spot stand in a block round it rather than all pushing for the same square metre.
+    const spots = (n: number, gap: number) => { const cols = Math.max(1, Math.ceil(Math.sqrt(n))), out: number[][] = []; for (let i = 0; i < n; i++) out.push([x + ((i % cols) - (cols - 1) / 2) * gap, z + (Math.floor(i / cols) - (Math.ceil(n / cols) - 1) / 2) * gap]); return out; };
+    const walk = (u: Unit, px: number, pz: number) => { if (u.site) { u.site.builder = null; u.site = null; } u.node = null; u.pref = null; u.windX = px; u.windZ = pz; u.state = 'walk'; };
+    const go = (list: Unit[], tgt: Unit | Building | null) => { const sp = spots(list.length, 2.4); list.forEach((u, i) => { u.order = { type: 'amove', x: sp[i][0], z: sp[i][1], mine: true, prey: tgt || undefined }; u.target = tgt; u.leashed = false; }); };
+    if (k === 'r') { for (const u of fighters) this.enlist(u); for (const u of workers) { u.pref = null; u.node = null; if (u.site) { u.site.builder = null; u.site = null; } u.state = u.carrying > 0 ? 'toHQ' : 'idle'; } return us.length; }
+    if (k === 'a') { const t = g.units.find(o => o.alive && o.id === tid && o.team !== team) || g.buildings.find(o => o.alive && o.id === tid && o.team !== team) || null; if (!t) return 0; x = t.pos.x; z = t.pos.z; go(fighters, t); return fighters.length; }
+    if (k === 'o') { const n = g.ores[tid]; if (!n || n.amount <= 0) return 0; x = n.pos.x; z = n.pos.z; for (const u of workers) { if (u.site) { u.site.builder = null; u.site = null; } u.pref = n; u.node = n; u.state = u.carrying > 0 ? 'toHQ' : 'toOre'; } if (fighters.length) { z += 5; go(fighters, null); } return us.length; }
+    if (k === 'b') {
+      const b = g.buildings.find(o => o.alive && o.id === tid && o.team === team); if (!b) return 0; x = b.pos.x; z = b.pos.z + b.hz + 4;
+      // One worker to a building, the way the crew does it on its own: the nearest of the ones picked takes it.
+      const w = workers.slice().sort((p, q) => Math.hypot(p.pos.x - b.pos.x, p.pos.z - b.pos.z) - Math.hypot(q.pos.x - b.pos.x, q.pos.z - b.pos.z))[0];
+      if (w && (!b.built || b.hp < b.maxHp)) { if (b.builder && b.builder !== w) b.builder.site = null; if (w.site && w.site !== b) w.site.builder = null; w.site = b; b.builder = w; w.state = 'idle'; }
+      if (fighters.length) go(fighters, null); return (w ? 1 : 0) + fighters.length;
+    }
+    if (k !== 'm') return 0;
+    go(fighters, null); const sp = spots(workers.length, 2); workers.forEach((u, i) => walk(u, sp[i][0], sp[i][1])); return us.length;
   }
   /** One squad or base order. In multiplayer the server runs this for whichever player sent it, with lead set to their body. */
   order(k: string, x = 0, z = 0, lead: Unit | null = this.g.me) {
@@ -250,7 +273,7 @@ export class Director implements Side {
   alarm(from: Unit) { if (from.team !== 0) return; if (this.alarmT <= 0) this.alarmCd = Math.min(this.alarmCd, 2); this.alarmT = 14; this.alarmX = from.pos.x; this.alarmZ = from.pos.z; }
 
   squad(dt: number, s: Side = this) {
-    const g = this.g, now = g.time, f = fac(s.team), v = f !== 0, all = g.army(s.team), idle = all.filter(u => u.order.type === 'guard' && u !== g.me && !u.pilot), B = this.books(s);
+    const g = this.g, now = g.time, f = fac(s.team), v = f !== 0, all = g.army(s.team), idle = all.filter(u => u.order.type === 'guard' && !u.order.mine && u !== g.me && !u.pilot), B = this.books(s);
     // What the enemy has standing: every building against a side that builds, the Choir Stones in the classic match.
     const foe = foeOf(s.team), foeAll = g.ownB(undefined, false, foe), foeHQ = g.ownB(FACTION[foe].hq, false, foe), foes = MAP.hid ? g.intel.known(s.team) : g.eco ? foeAll : g.stones();
     if (g.eco && s.raidLive && !g.army(foeOf(s.team)).some(u => u.order.type === 'amove')) s.raidLive = false;
@@ -277,7 +300,7 @@ export class Director implements Side {
     else if (p.phase === 'count') {
       if (p.t <= 0) {
         p.phase = 'go'; p.goT = now; p.target = this.targetFor(p.book, s); s.pushes++; s.retarget = 2;
-        if (p.target) { let i = 0; for (const u of all) if (u !== g.me && !u.pilot && u.order.type === 'guard') { u.order = { type: 'amove', x: p.target.pos.x + R(-3, 3), z: p.target.pos.z + R(-3, 3), path: this.pathFor(p.book, i++, s) }; }  p.n0 = i; }
+        if (p.target) { let i = 0; for (const u of all) if (u !== g.me && !u.pilot && u.order.type === 'guard' && !u.order.mine) { u.order = { type: 'amove', x: p.target.pos.x + R(-3, 3), z: p.target.pos.z + R(-3, 3), path: this.pathFor(p.book, i++, s) }; }  p.n0 = i; }
         this.say(v ? VG(s.team, 'Chorus Lead', 'Swarm Lead') : 'Alpha', B[p.book].go, ''); sfx.callout();
         if (g.eco) this.incoming(s, p.book);
       }

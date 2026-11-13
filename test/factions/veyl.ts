@@ -165,6 +165,8 @@ const spawnI = (g: Game, k: Kind, x: number, z: number) => { const u = g.spawn(k
   const lone = foeAt('linesman', 14, -4); cm.abCd = {}; check(whyNot(g, cm, 'drain', { x: lone.pos.x, z: lone.pos.z, id: lone.id }) === 'refused', 'Drain is refused on a body with no energy');
   const cm2 = spawnV(g, 'choirmaster', 12, 2); g.truce = true; check(useAbility(g, cm, 'join'), 'Join starts with a second Choirmaster close by'); run(g, V_TUNE.choirmaster.joinT + 1);
   check(cm.kind === 'chord' && cm.alive && !cm2.alive, 'ten seconds later the two are one Chord, keeping the first one\'s id'); g.truce = false;
+  for (const u of g.units) if (u.alive && u.team === T && u.target) u.target = null;   // nobody keeps a target from the checks above
+  g.killUnit(tu, null);
   // Knell
   const kn = spawnV(g, 'knell', -10, 0), ring = [foeAt('linesman', -16, 0), foeAt('linesman', -16.5, .5)], buddy = spawnV(g, 'choirmaster', -16, -1); const bh = buddy.hp + buddy.shield;
   check(!!whyNot(g, kn, 'toll', { x: hx - 40, z: hz }), 'Toll is refused out of range'); 

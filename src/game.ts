@@ -108,7 +108,7 @@ export class Game {
     // anyone else at home always run a real economy on both sides.
     if (!(fac(SIDE.home) === 0 && fac(SIDE.out) === 1)) this.eco = true;
     setMap(mapI); (M.ground as any).uniforms.uColor.value.setRGB(MAP.ground[0], MAP.ground[1], MAP.ground[2]); (M.mesa as any).uniforms.uColor.value.setRGB(MAP.mesa[0], MAP.mesa[1], MAP.mesa[2]); (M.rock as any).uniforms.uColor.value.setRGB(MAP.rock[0], MAP.rock[1], MAP.rock[2]); 
-    this.wxSalt = mapI + (net ? 0 : Math.floor(Math.random() * 50));
+    this.wxSalt = mapI + (net ? 0 : Date.now() % 50);   // the clock, not the dice: a draw here would move every bot match that follows
     const s = this.scene; s.add(makeSky()); MD.buildWorld(s, this.props, this.anim); this.spires = this.props.filter(p => p.solid); s.add(this.cam);
     this.vm = { drill: MD.vmDrill(), rifle: MD.vmRifle(), scatter: MD.vmScatter(), shield: MD.vmShield(), cannon: MD.vmCannon(), long: MD.vmLong(), pistol: MD.vmPistol(), veyl: MD.vmVeyl() };
     if (fac(SIDE.home) === 2 || fac(SIDE.out) === 2) for (const k of ['grazer', 'snapper', 'quillback', 'blister', 'mulcher']) this.vm['g_' + k] = MD.vmG(k);

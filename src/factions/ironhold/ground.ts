@@ -181,7 +181,7 @@ function drivePileSet(g: Game, dt: number, P: Set<string>, eye: THREE.Vector3, d
 }
 defineUnits({
   sapper: { gun: W.sapper, ai: aiSapper, drive: (g, dt, P, e, d, l, w) => driveGun(g, dt, P, e, d, l, w, SAPPER, { spread: .016 }), task: (g, u) => `Mines laid: ${minesOf(g, u).length}` },
-  shaftmine: { ai: (g, u) => aiMine(g, u), skipRespawn: true, threat: .2, koWord: 'POP', drive: () => {} },
+  shaftmine: { gun: { name: 'Mine', mag: 0, cd: 1, reload: 1 }, ai: (g, u) => aiMine(g, u), skipRespawn: true, threat: .2, koWord: 'POP', drive: () => {} },
   dustbike: {
     gun: W.dustbike, ai: aiDustbike, threat: 1.1, step: 0, hop: 22, shove: 10,
     drive(g, dt, P, eye, dir, look, w) {

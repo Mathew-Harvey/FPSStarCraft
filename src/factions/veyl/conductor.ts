@@ -58,7 +58,7 @@ export function conductor(D: Director, dt: number, V0: Side = D.vs) {
   const ore = () => g.cash(T), flux = () => g.flux(T);
   // Away from the enemy: new buildings go behind the Stone.
   const [fx0, fz0] = homeXZ(foe), away = Math.atan2(HZ - fz0, HX - fx0), behind: [number, number] = [HX + Math.cos(away) * 12, HZ + Math.sin(away) * 12];
-  let saving = 0; const say = (line: string) => D.say('Conductor', line, '', T);
+  let saving = 0, opening = false; const say = (line: string) => D.say('Conductor', line, '', T);
   const put = (k: VBKind, line: string): boolean => {
     if (g.paper(T) && !g.paper(T)!.allow.includes(k)) return false; if (!g.unlocked(k, T)) return false;
     const c = costOf(k); if (!canPay(g, T, c)) { saving = Math.max(saving, c[0]); return true; }
@@ -79,7 +79,7 @@ export function conductor(D: Director, dt: number, V0: Side = D.vs) {
 
   // ---- the build order: one step a second
   const pits = own('broodpit'), wells = own('hushwell'), bells = own('siphonbell');
-  const wantWell = (wells.length === 0 && now > 6) || (free <= 4 + 2 * (pits.length + own('kiln').length + own('skyloft').length) && !growing('hushwell') && wells.length < 14 && g.supplyCap(T) < 200);
+  const wantWell = now > 15 && (wells.length === 0 || free <= 4 + 2 * (pits.length + own('kiln').length + own('skyloft').length) && !growing('hushwell') && wells.length < 14 && g.supplyCap(T) < 200);
   const exp = D.vExpansion(stones, T), homeLeft = g.ores.filter(n => Math.hypot(n.pos.x - HX, n.pos.z - HZ) < 40).reduce((a, n) => [a[0] + n.amount, a[1] + n.max], [0, 0]);
   const wantStones = Math.min((MAP.sites || []).length + 1, 1 + (now > DOC.expT || homeLeft[0] < homeLeft[1] * .5 ? 1 : 0) + (now > 960 ? 1 : 0) + (now > 1440 ? 1 : 0));
   const freeVent = () => g.vents.filter(v => !v.tap && v.amount > 0 && stones.some(s => s.built && Math.hypot(s.pos.x - v.pos.x, s.pos.z - v.pos.z) < 34) && g.canPlace('siphonbell', Math.round(v.pos.x), Math.round(v.pos.z), false, T)).sort((a, b) => Math.hypot(a.pos.x - HX, a.pos.z - HZ) - Math.hypot(b.pos.x - HX, b.pos.z - HZ))[0];
@@ -104,10 +104,20 @@ export function conductor(D: Director, dt: number, V0: Side = D.vs) {
     if (wantWell && put('hushwell', wells.length ? 'The song is crowded. Growing a Hush Well.' : 'A Hush Well first: its song field is where the other buildings can stand.')) return;
     if (!wells.some(w => w.built) && !pits.length && stones.every(s => s.built)) { if (!pits.length && wells.length) return; }
     if (!pits.length) { put('broodpit', 'A Brood Pit, inside the Hush Well\'s field. The voices need somewhere to wake.'); return; }
+    // the doctrine's opening (a hidden map leans each side one way): a second Pit early, Spires early, or a second Stone early
+    // (each holds its price back from the Tender line and the Pits until it is paid: `opening`)
+    if (DOC.key === 'rush' && pits.length === 1 && now > DOC.prodT) { opening = true; put('broodpit', 'A second Brood Pit already. We go at them early.'); return; }
+    if (DOC.key === 'fort' && now > 90 && now < 420 && (!any('wardpylon') || own('thornspire').length < 2)) {
+      opening = true;
+      if (!any('wardpylon')) { put('wardpylon', 'A Ward Pylon early. We dig in behind Thorn Spires.'); return; }
+      if (has('wardpylon')) { put('thornspire', 'A Thorn Spire. We dig in and grow the deep songs.'); return; }
+      opening = false;
+    }
+    if (DOC.key === 'boom' && stones.length < 2 && now > DOC.expT && now < 420) opening = true;
     if (bells.length < wantBells) { const v = freeVent(), c = costOf('siphonbell'); if (v) { if (canPay(g, T, c)) { g.place('siphonbell', Math.round(v.pos.x), Math.round(v.pos.z), false, T); say('A Siphon Bell on the vent. Tenders will carry Flux from it.'); return; } saving = Math.max(saving, c[0]); } }
     if (sites.length >= 2) return;
     // second base before the deep tech, the way the old Conductor did it
-    if (has('broodpit') && army.length >= Math.max(1, 4 + DOC.expArmy) && now > Math.min(420, DOC.expT) && (army.length >= 8 || now > 600) && now > (V.stoneT ?? 0) && exp.site && stones.length < wantStones) {
+    if (has('broodpit') && army.length >= Math.max(1, 4 + DOC.expArmy) && now > Math.min(420, DOC.expT) && (army.length >= 8 || now > 600 || DOC.key === 'boom') && now > (V.stoneT ?? 0) && exp.site && stones.length < wantStones) {
       // a spot between the seam and home, or round the seam: if none is open the step goes on (it used to wait here for good)
       const [sx, sz] = exp.site, dx = HX - sx, dz = HZ - sz, l = Math.hypot(dx, dz) || 1, a0 = Math.atan2(dz, dx);
       const at = [[4, 0], [5, 0], [6, 0], [7, 0], [9, 0], [7, .6], [7, -.6], [9, 1.2], [9, -1.2], [11, .3], [11, -.3]].map(([r, da]) => [Math.round(sx + Math.cos(a0 + da) * r), Math.round(sz + Math.sin(a0 + da) * r)]).find(p => g.canPlace('choir', p[0], p[1], false, T));
@@ -161,7 +171,7 @@ export function conductor(D: Director, dt: number, V0: Side = D.vs) {
   // the enemy already fields a crowd before seven minutes (a swarm, a rush): fewer Tenders for now, more Cantors
   const early = now < 420 && foes.filter(o => !o.air).length >= Math.max(6, army.length * 2);
   const wantTend = early ? Math.min(9, 12 + DOC.crew) : 12 + DOC.crew + 7 * (hqs.length - 1) + tapsUp.length * 3;
-  if (tend.length < wantTend && free > 0 && canPay(g, T, costOf('tender')) && (pits.length || tend.length < 6)) {
+  if (tend.length < wantTend && free > 0 && canPay(g, T, costOf('tender')) && !(opening && ore() < saving + costOf('tender')[0] && tend.length >= 8) && (pits.length || tend.length < 6)) {
     const crew = (h: Building) => tend.filter(u => !u.vent && g.nearHQ((u.node || u).pos.x, (u.node || u).pos.z, T) === h).length + h.queue.filter(q => q.kind === 'tender').length;
     const h = hqs.filter(b => !b.queue.length && crew(b) < (b === home ? 12 + DOC.crew : 7)).sort((a, b) => crew(a) - crew(b))[0] || (tend.length < wantTend ? hqs.find(b => !b.queue.length) : undefined); if (h) g.train(h, 'tender');
   }
@@ -189,7 +199,7 @@ export function conductor(D: Director, dt: number, V0: Side = D.vs) {
   };
   const RANK: Partial<Record<BKind, number>> = { skyloft: 0, kiln: 1, reedgate: 2, choir: 3, broodpit: 4 };
   // the share of ore a building may spend this second, so the Tender line and the next building are never starved for long
-  const keep = saving > 0 && army.length >= 6 + Math.max(0, DOC.tech) ? Math.min(saving, army.length >= 8 ? 400 : 150) : 0;
+  const keep = opening ? saving : saving > 0 && army.length >= 6 + Math.max(0, DOC.tech) ? Math.min(saving, army.length >= 8 ? 400 : 150) : 0;
   // a deeper building short of the price of the body it wants holds that much back from the Brood Pits, once there is an army to stand on
   let hold: [number, number] = [0, 0];
   const tryTrain = (b: Building, k: Kind) => { const nb = V_NEEDS[k as VKind]; if (nb && !has(nb)) return false; const c = costOf(k), deep = (RANK[b.kind] ?? 5) <= 2;

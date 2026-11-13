@@ -3,7 +3,7 @@
 import { noHud, noPipe } from '../server/shim';
 import { Game } from '../src/game';
 import { initHeadless } from '../src/gfx';
-import { DIFFS, SIDE, FACTION, MAP, MAPS, SIZES, VHOME, VAST, TURNS, ROAD, RALLY, setMap, setSides, validMap, rollMap, mapCode, baseOf, sizeOf, turnOf, BKind } from '../src/data';
+import { DIFFS, SIDE, FACTION, MAP, MAPS, SIZES, VHOME, VAST, TURNS, ROAD, RALLY, setMap, setSides, validMap, rollMap, mapCode, baseOf, sizeOf, turnOf, BKind, foeOf } from '../src/data';
 import { DOCTRINES } from '../src/doctrine';
 import { docOf } from '../src/director';
 
@@ -72,7 +72,8 @@ for (const [map, home, out] of [[mapCode(0, VAST) + 500, 0, 1], [mapCode(2, VAST
   check(Math.hypot(r0.x, r0.z) < 30 && Math.hypot(r1.x - VHOME.x, r1.z - VHOME.z) < 30 && Math.hypot(r0.x - RALLY.x, r0.z - RALLY.z) > 6, `${name}: before the enemy is found a squad waits by its own base, not on the road to theirs`);
   check(Math.abs(g.yaw - 2.2) < 1e-6, `${name}: the first view faces the same way whatever the layout`);
   let early = '', scouts = 0, maxOut = 0; const ids = new Set<number>();
-  run(g, 560, () => { for (const s of [g.dir, g.dir.vs]) if (s.plan && !I.known(s.team).length && !early) early = `${FACTION[s.team].short} planned a push at ${Math.round(g.time)} s knowing nothing`;
+  // A side whose enemy has no buildings left knows nothing because there is nothing left to know: that is not a blind push.
+  run(g, 560, () => { for (const s of [g.dir, g.dir.vs]) if (s.plan && !I.known(s.team).length && g.ownB(undefined, false, foeOf(s.team)).length && !early) early = `${FACTION[s.team].short} planned a push at ${Math.round(g.time)} s knowing nothing`;
     let now = 0; for (const u of g.units) if (u.alive && u.order.type === 'scout') { now++; if (!ids.has(u.id)) { ids.add(u.id); scouts++; } } maxOut = Math.max(maxOut, now); });
   check(!early, `${name}: no push is planned before its side has found something to push at${early ? ' (' + early + ')' : ''}`);
   check(scouts >= 2 && maxOut <= 6, `${name}: both sides send scouts (${scouts} sent, at most ${maxOut} out at once)`);

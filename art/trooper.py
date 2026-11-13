@@ -10,17 +10,17 @@ sys.path.insert(0, __file__.rsplit('/', 1)[0])
 from kit import sdf as S, build as B, human as Hu
 from kit.sdf import V, rot
 
-ROLE = next((a for a in sys.argv[1:] if a in ('linesman', 'breacher', 'longshot', 'patch')), 'linesman')
-heavy, long_, patch = ROLE == 'breacher', ROLE == 'longshot', ROLE == 'patch'
-pl = 'pO' if heavy else 'pW' if patch else 'pD' if long_ else 'pY'            # painted plate
-bl = 'bO' if heavy else 'bW' if patch else 'bD' if long_ else 'bY'            # the same colour, battered
+ROLE = next((a for a in sys.argv[1:] if a in ('linesman', 'breacher', 'longshot', 'patch', 'sapper')), 'linesman')
+heavy, long_, patch, sap = ROLE == 'breacher', ROLE == 'longshot', ROLE == 'patch', ROLE == 'sapper'
+pl = 'pO' if heavy or sap else 'pW' if patch else 'pD' if long_ else 'pY'            # painted plate
+bl = 'bO' if heavy or sap else 'bW' if patch else 'bD' if long_ else 'bY'            # the same colour, battered
 hel = 'helmO' if heavy else 'helmR' if patch else 'helmD' if long_ else 'helm'
 chestm = 'chestO' if heavy else 'chestR' if patch else 'pD' if long_ else 'chest'
 capm = 'hazC' if heavy else 'cW' if patch else 'cD' if long_ else 'cY'
-pants = 'fabG' if long_ else 'fab'
+pants = 'fabG' if long_ else 'fabT' if sap else 'fab'
 steel = 'bD' if heavy else 'bS'
 
-fig = B.Figure(ROLE, scale=1.2 if heavy else 1.08, detail=.8, paint=1024)
+fig = B.Figure(ROLE, scale=1.2 if heavy else 1.05 if sap else 1.08, detail=.8, paint=1024)
 HIP = .93
 fig.group('body', (0, 0, 0))
 fig.group('legL', (-.105, HIP, 0))
@@ -332,12 +332,133 @@ if patch:
     fig.add('grille', 'head', 'rib', hang(gr), 110, voxel=.002, uv=('front',))
     fig.add('maskstrap', 'head', 'leaB', S.torus((0, 1.475, -.0), .068, .011, rot(.3, 0, 0), squash=1.6), 140, voxel=.0025, uv=('cyl', V(0, 1.47, 0)))
 
+# ---------------------------------------------------------------- the Sapper: a padded blast apron, charges on the chest, a reel of firing cord on the back
+# The yard's blaster. No plate: plate turns into shrapnel next to a charge, so he wears a quilted apron as thick as a mattress, split up
+# the front so he can kneel, and a leather crash cap with the goggles pushed up. He carries the charges where he can count them.
+if sap:
+    drop = ('cuirass', 'chestplate', 'chestbolts', 'rigband', 'rigpouches', 'strapL', 'strapR', 'bedroll', 'rollstraps', 'packplate', 'hose', 'pouchR', 'wrap',
+            'helmet', 'hood', 'mask', 'visor', 'visorframe', 'respirator', 'grille', 'filters', 'earcups', 'eardiscs', 'antenna', 'antennatip', 'lamp', 'lampglass')
+    fig.parts = [q for q in fig.parts if q.name not in drop]
+    quilt = lambda p: .008 * np.sqrt(np.abs(np.sin(p[..., 1] * 50))) + .004 * np.sqrt(np.abs(np.sin(np.arctan2(p[..., 0], p[..., 2]) * 7)))   # pillows of padding
+    vest = S.cut(S.grow(torso, .045), S.below(1.0))
+    vest = S.cut(vest, S.sphere((-.275, 1.4, -.005), .11), S.sphere((.275, 1.4, -.005), .11))
+    skirt = S.both(S.cut(S.ecyl((0, .87, .015), .245, .19, .16, .03), S.ecyl((0, .87, .015), .2, .148, .4, 0)), S.plane((0, 0, .0), (0, 0, -1)))
+    skirt = S.cut(skirt, S.slab((0, 0, 0), (1, 0, 0), .014), S.below(.7))                                       # split up the front so the knees can work
+    skirt = S.cut(skirt, lambda p: p[..., 1] - (.71 + .012 * np.sin(p[..., 0] * 60)))
+    apron = S.union(S.bump(vest, quilt), S.bump(skirt, quilt), k=.03)
+    apron = S.bump(apron, lambda p: (S.noise(p, 18, 4.4) - .5) * .008)
+    fig.add('apron', 'body', 'fab', apron, 1400, voxel=.0035, uv=('cyl', V(0, 1.1, 0)),
+            detail=S.fine(S.only(S.slit((0, 1.3, 0), (1, 0, 0), .004, .004), lambda p: p[..., 2] > .0), S.stitch((0, 1.02, 0), (0, 1, 0), .016, .004, .003, along=(1, 0, 0))),
+            marks=[(S.chevrons((0, .75, 0), (1, 0, .0), .07, lambda p: (p[..., 1] < .79) * (p[..., 2] > .0)), (.1, .09, .08))])
+    collar = S.union(S.torus((0, 1.49, -.012), .118, .052, squash=1.15), S.torus((0, 1.535, -.03), .1, .04, rot(.18, 0, 0)), k=.03)
+    collar = S.bump(collar, lambda p: .008 * np.sqrt(np.abs(np.sin(np.arctan2(p[..., 0], p[..., 2]) * 6))))
+    fig.add('collar', 'body', 'fab', collar, 700, voxel=.0032, uv=('cyl', V(0, 1.5, 0)))
+    # three charges on a sash from the left shoulder to the right hip, each taped and tagged
+    sash = S.chain([S.skin(apron, (x, y, -.02), (x * .8, 0, 1), out=.006) for x, y in ((-.2, 1.47), (-.12, 1.37), (-.04, 1.28), (.05, 1.18), (.13, 1.1), (.2, 1.03))], .024)
+    sash = S.squash(sash, (1, 1, .55), (0, 1.25, .25))
+    fig.add('sash', 'body', 'leaB', sash, 260, voxel=.003, uv=('front',), detail=S.weave(500, .0012, (1, 1, 0)))
+    bricks, tape = [], []
+    for x, y in ((-.1, 1.36), (-.02, 1.27), (.065, 1.18)):
+        c = S.skin(apron, (x, y, -.02), (x * .8, 0, 1), out=.032)
+        R = rot(0, x * 1.5, .75)
+        bricks.append(S.box(c, (.062, .036, .028), .008, R))
+        tape += [S.box(c + R @ V(dx, 0, 0), (.009, .039, .031), .003, R) for dx in (-.034, .034)]
+    fig.add('charges', 'body', 'tank', S.union(*bricks), 380, voxel=.0026, uv=('front',), sharp=35)
+    fig.add('chargetape', 'body', 'haz', S.union(*tape), 200, voxel=.0024, uv=('front',))
+    # the firing box on his right hip: a squat case with a T-handle plunger, cord running back to the reel
+    dc = V(.16, .97, .15)
+    det = S.cut(S.box(dc, (.05, .055, .04), .012), S.box(dc + V(0, .058, 0), (.035, .01, .025), .004))
+    fig.add('detonator', 'body', 'pY', det, 260, voxel=.0025, uv=('front',), sharp=35, marks=[(S.band(dc + V(0, -.02, 0), (0, 1, 0), .01), (.1, .09, .08))])
+    plg = S.union(S.cyl(dc + V(0, .05, 0), dc + V(0, .13, 0), .008, .002), S.rcone(dc + V(-.045, .13, 0), dc + V(.045, .13, 0), .012), k=.004)
+    fig.add('plunger', 'body', 'gunm', plg, 120, voxel=.002, uv=('side',))
+    # the reel of firing cord on top of the pack, with a spade strapped across the back
+    RC = V(0, 1.585, -.255)
+    reel = S.bump(S.cyl(RC - V(.13, 0, 0), RC + V(.13, 0, 0), .074, .01), lambda p: .006 * np.abs(np.sin((p[..., 0] * 1.0 + np.arctan2(p[..., 1] - RC[1], p[..., 2] - RC[2]) * .0) * 210)))
+    fig.add('cordreel', 'body', 'rubber', reel, 320, voxel=.003, uv=('side',))
+    fl = S.union(*[S.cut(S.cyl(RC + V(sx * .13, 0, 0), RC + V(sx * .152, 0, 0), .102, .006), *[S.sphere(RC + V(sx * .14, np.sin(a) * .06, np.cos(a) * .06), .018) for a in np.linspace(0, 6.28, 6)[:-1]]) for sx in (-1, 1)])
+    fl = S.union(fl, S.cyl(RC - V(.18, 0, 0), RC + V(.18, 0, 0), .016, .004), k=.004)
+    fig.add('reelflanges', 'body', 'pY', fl, 420, voxel=.0028, uv=('side',), sharp=40)
+    frame = S.union(*[S.chain([RC + V(sx * .17, 0, 0), RC + V(sx * .17, -.1, -.02), RC + V(sx * .17, -.15, .06)], .012) for sx in (-1, 1)])
+    fig.add('reelframe', 'body', 'gunm', frame, 140, voxel=.0025)
+    cord = S.chain([RC + V(.06, -.07, .03), V(.2, 1.42, -.2), V(.27, 1.2, -.08), V(.25, 1.04, .06), dc + V(.04, .0, -.02)], .009)
+    fig.add('firecord', 'body', 'red', cord, 160, voxel=.0022, glow=.25)
+    # a bundle of red charges standing up behind the left shoulder: with the spade blade over the right one, it is the shape that says
+    # Sapper from across the yard and from straight above (the Rigger beside him has neither)
+    BC = V(-.17, 1.5, -.37)
+    sticks = [S.rcone(BC + V(dx, 0, dz), BC + V(dx * 1.2, .4 + .03 * (i % 2), dz * 1.2), .034, .031) for i, (dx, dz) in enumerate(((-.04, -.02), (.035, -.03), (0, .03), (-.05, .045), (.045, .035)))]
+    fig.add('bundle', 'body', 'tank', S.union(*sticks, k=.006), 500, voxel=.003, uv=('cyl', BC), sharp=35)
+    fig.add('bundletape', 'body', 'haz', S.union(*[S.cyl(BC + V(0, y - .022, .005), BC + V(0, y + .022, .005), .098, .006) for y in (.1, .3)]), 220, voxel=.0028, uv=('cyl', BC))
+    fig.add('bundlefuse', 'body', 'red', S.chain([BC + V(0, .42, .0), BC + V(.03, .5, .03), BC + V(-.02, .55, .06), BC + V(.04, .58, .04)], .008), 80, voxel=.002, glow=.4)
+    sa, sb = V(.21, 2.02, -.42), V(-.16, 1.2, -.46)
+    sax = (sb - sa) / np.linalg.norm(sb - sa)
+    shaft = S.union(S.rcone(sa + sax * .18, sb, .017), S.rcone(sb - V(.06, 0, 0) * 1, sb + V(.06, .0, 0), .015), k=.006)
+    fig.add('spadeshaft', 'body', 'wood', shaft, 200, voxel=.0025, uv=('side',))
+    Rb = S.basis(-sax, (0, 0, -1))
+    blade = S.box(sa + sax * .08, (.085, .012, .11), .008, Rb)
+    blade = S.cut(blade, S.box(sa + sax * -.07, (.2, .03, .05), 0, rot(0, 0, .0) @ Rb if False else Rb))
+    blade = S.union(blade, S.rcone(sa + sax * .12, sa + sax * .2, .026, .02), k=.01)
+    blade = S.bump(blade, lambda p: -.004 * np.clip(1 - np.abs(S.noise(p, 30, 2.7) - .5) * 6, 0, 1))
+    fig.add('spadeblade', 'body', 'bD', blade, 260, voxel=.0025, uv=('front',), sharp=40)
+    sst = S.union(*[S.torus(sa + sax * t, .03, .008, S.basis(sax, (0, 0, 1)), squash=1.3) for t in (.3, .62)])
+    fig.add('spadestraps', 'body', 'leaB', sst, 120, voxel=.0025)
+    # a bare face under a leather crash cap: ear flaps down, goggles up on the brow, a moustache he is proud of
+    FS, FC = 1.18, HC + V(0, -.05, .004)
+    Fp = lambda x, y, z: FC + V(x, y, z) * FS
+    fc, skl = Hu.face(FC, FS, jaw=1.12, long=.0, cheek=1.0, nose=(1.2, 1.15, .4), brow=1.05, lip=.9, lines=1.3, sockets=(-1, 1), ears=False)
+    stub = lambda p: np.clip((FC[1] - .07 * FS - p[..., 1]) * 45, 0, 1) * np.clip((p[..., 2] - FC[2]) * 40, 0, 1) * np.clip((p[..., 1] - FC[1] + .2 * FS) * 40, 0, 1) * .45
+    fig.add('face', 'head', 'skinF', fc, 2400, voxel=.0023, uv=('cyl', FC), marks=[(stub, (.48, .4, .36))])
+    eyes = S.union(*[S.sphere(Fp(sx * .04, .0, .1), .021 * FS) for sx in (-1, 1)])                               # goggles up, so his eyes show: narrowed, under heavy lids
+    fig.add('eyes', 'head', 'nW', eyes, 160, voxel=.0018, uv=('front',))
+    fig.add('pupils', 'head', 'gunm', S.union(*[S.ellipsoid(Fp(sx * .037, -.003, .121), (.009 * FS, .01 * FS, .004)) for sx in (-1, 1)]), 80, voxel=.0012, uv=('front',))
+    lids = S.union(*[S.both(S.sphere(Fp(sx * .04, .0, .1), .025 * FS), S.plane(Fp(0, .009, 0), (0, -1, -.15))) for sx in (-1, 1)])
+    fig.add('lids', 'head', 'skinF', lids, 200, voxel=.0018, uv=('front',))
+    cap = S.both(S.grow(skl, .018), S.plane(FC + V(0, .006, 0), (0, -1, .5)))
+    cap = S.union(cap, S.both(S.cut(S.grow(skl, .03), S.grow(skl, .012)), S.slab(FC + V(0, .02, 0), (0, 1, -.5), .012)), k=.006)       # a padded roll round the rim
+    for sx in (-1, 1):
+        cap = S.union(cap, S.both(S.box(Fp(sx * .1, -.06, -.02), (.03, .07, .055), .025), S.cut(S.grow(skl, .03), S.grow(skl, -.03))), k=.012)     # the ear flaps
+    cap = S.bump(cap, lambda p: .004 * np.sqrt(np.abs(np.sin((p[..., 0] - FC[0]) * 70))) + (S.noise(p, 24, 5.5) - .5) * .005)
+    fig.add('crashcap', 'head', 'fabR', cap, 1200, voxel=.0028, uv=('cyl', FC), texel=1.1,
+            detail=S.fine(S.slit(FC, (1, 0, 0), .004, .004), S.studs([Fp(sx * .118, -.1, .0) for sx in (-1, 1)], .009, .004)))
+    gup, gls = [], []
+    for sx in (-1, 1):
+        d = V(sx * .22, .55, 1)
+        d = d / np.linalg.norm(d)
+        c = Fp(sx * .046, .098, .094)
+        gup += [S.cyl(c, c + d * .04, .036, .007), S.torus(c + d * .038, .033, .007, S.basis((0, 1, 0), d))]
+        gls.append(S.both(S.sphere(c + d * .022, .037), S.cyl(c + d * .028, c + d * .05, .028)))
+    gup.append(S.rcone(Fp(-.012, .1, .108), Fp(.012, .1, .108), .006))
+    fig.add('goggles', 'head', 'gunB', S.union(*gup), 420, voxel=.0022, uv=('front',), sharp=50)
+    fig.add('goggleglass', 'head', 'lens', S.union(*gls), 110, voxel=.002, uv=('front',))
+    gst = S.both(S.cut(S.grow(skl, .03), S.grow(skl, .016)), S.slab(Fp(0, .085, 0), (0, 1, .4), .011))
+    fig.add('gogglestrap', 'head', 'leaB', gst, 200, voxel=.0025, uv=('cyl', FC))
+    st = S.union(*[S.ellipsoid(Fp(sx * .03, -.062, .118), (.034, .013, .016), rot(0, sx * .35, sx * .3)) for sx in (-1, 1)], S.ellipsoid(Fp(0, -.058, .122), (.016, .012, .012)), k=.01)
+    st = S.union(st, *[S.rcone(Fp(sx * .058, -.07, .108), Fp(sx * .072, -.1, .1), .009, .004) for sx in (-1, 1)], k=.008)          # the ends waxed down past the lip
+    fig.add('moustache', 'head', 'stache', S.bump(st, lambda p: (S.noise(p, 150, 3.1) - .5) * .004), 260, voxel=.0018, uv=('front',))
+
 # ---------------------------------------------------------------- arms and the weapon
 GX, GY = (.2 if heavy else .135), 1.2                                              # the bore line: low on the right side, level, pointing ahead
 
 
 def gun_parts():
     out = []
+    if sap:        # a cut-down carbine with a drum: short enough to carry crawling, a drum because he will not stop to reload under a wall
+        rec = S.box((GX, GY, .14), (.042, .066, .17), .014)
+        rec = S.cut(rec, S.box((GX + .045, GY + .012, .15), (.012, .022, .05), .005))
+        out.append(('receiver', 'gunm', rec, 380, dict(voxel=.003, uv=('side',), sharp=35)))
+        out.append(('barrel', 'gunB', S.cyl((GX, GY + .022, .28), (GX, GY + .022, .62), .03, .003), 150, dict(voxel=.0025, uv=('side',), sharp=50)))
+        sh = S.cyl((GX, GY + .022, .3), (GX, GY + .022, .52), .046, .01)
+        for i in range(3):
+            for a in (0, 1.57, 3.14, 4.71):
+                sh = S.cut(sh, S.sphere((GX + np.sin(a) * .048, GY + .022 + np.cos(a) * .048, .34 + i * .06), .014))
+        out.append(('shroud', 'pO', sh, 380, dict(voxel=.0026, uv=('side',), sharp=40)))
+        out.append(('brake', 'bS', S.cyl((GX, GY + .022, .6), (GX, GY + .022, .66), .04, .008), 120, dict(voxel=.0022, uv=('side',), sharp=40)))
+        drum = S.union(S.cyl((GX - .045, GY - .1, .22), (GX + .045, GY - .1, .22), .082, .012), S.cyl((GX - .05, GY - .1, .22), (GX + .05, GY - .1, .22), .02, .004), k=.004)
+        out.append(('drum', 'pS', drum, 320, dict(voxel=.0026, uv=('side',), sharp=40)))
+        out.append(('grip', 'lea', S.box((GX, GY - .115, .07), (.028, .07, .034), .015, rot(.3, 0, 0)), 130, dict(voxel=.003, uv=('side',))))
+        wire = S.union(S.chain([V(GX - .02, GY + .01, .0), V(GX - .02, GY - .02, -.22), V(GX + .02, GY - .02, -.22), V(GX + .02, GY + .01, .0)], .009), S.box((GX, GY - .03, -.235), (.034, .06, .012), .006), k=.004)
+        out.append(('stock', 'gunm', wire, 200, dict(voxel=.0025, uv=('side',))))
+        out.append(('sights', 'pS', S.union(S.box((GX, GY + .08, .12), (.012, .014, .02), .004), S.box((GX, GY + .075, .5), (.006, .03, .01), .003)), 90, dict(voxel=.0022, uv=('side',), sharp=30)))
+        return out, V(GX, GY + .022, .68), .9
     if heavy:      # a twin-barrelled scatter gun, short and fat
         rec = S.box((GX, GY, .16), (.06, .075, .2), .02)
         rec = S.cut(rec, S.box((GX + .062, GY + .01, .14), (.012, .03, .07), .006))
@@ -463,6 +584,11 @@ if heavy:   # the off arm carries a slab of a shield
     fig.add('shieldbrace', 'armL', 'gunm', S.chain([sc + SR @ V(-.2, .12, -.04), sc + SR @ V(-.07, .04, -.12), sc + SR @ V(.1, .12, -.04)], .016), 90, voxel=.004)
 else:       # the off hand under the fore-end
     for sx, pd, det, marks, big in pauls:
+        if sap:     # quilted rolls on the shoulders, the same padding as the apron
+            c = (ShR if sx > 0 else V(-.24, 1.42, -.01)) + V(sx * .03, .035, -.005)
+            roll = S.bump(S.ellipsoid(c, (.1, .075, .115), rot(0, 0, -sx * .45)), lambda p: .008 * np.sqrt(np.abs(np.sin(p[..., 2] * 48))))
+            fig.add('pauldron' + ('R' if sx > 0 else 'L'), 'arms', 'fab', roll, 600, voxel=.003, uv=('top',))
+            continue
         fig.add('pauldron' + ('R' if sx > 0 else 'L'), 'arms', PM(big), pd, 900 if big else 620, voxel=.0026, uv=('top',), sharp=36, detail=det, marks=marks)
     ShL, ElL = V(-.24, 1.42, -.01), V(-.16, 1.2, .17)
     RhL = S.basis((1, .12, 0), (0, -1, .1))

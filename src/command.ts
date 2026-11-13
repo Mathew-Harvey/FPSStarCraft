@@ -384,6 +384,8 @@ export class Command {
       const k = this.aim.b; let gh = this.ghosts[k]; if (!gh && g.ghost[k]) { gh = this.ghosts[k] = [g.ghost[k].clone(), g.ghostBad[k].clone()]; g.scene.add(gh[0], gh[1]); }
       if (gh) { const o = gh[this.fits ? 0 : 1]; o.visible = true; o.position.copy(this.stakeAt); o.rotation.y = this.rot ? Math.PI / 2 : 0; }
     }
+    // Nothing is made until the view is first opened: a new three.js object draws a random id, and bot-only runs replay a seeded dice.
+    if (!this.lines && !on) return;
     if (!this.lines) {
       const geo = new THREE.BufferGeometry(); geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(3 * 2400), 3)); geo.setAttribute('color', new THREE.BufferAttribute(new Float32Array(3 * 2400), 3));
       const m = this.lines = new THREE.LineSegments(geo, new THREE.LineBasicMaterial({ vertexColors: true, depthTest: false, depthWrite: false, transparent: true, fog: false, toneMapped: false })); m.frustumCulled = false; m.renderOrder = 41; m.layers.set(L_FX); g.scene.add(m);

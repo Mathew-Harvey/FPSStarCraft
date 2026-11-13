@@ -7,9 +7,10 @@ import { artBin, artTex } from './artfiles';
 import { M, toonMaterial, PRE_DRAW, SHADOW_SWAP, farInkOf, L_FX } from './gfx';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import * as FX from './fx/kit';
+import { airShadows } from './fx/air';
 /** The effect kit (src/fx/kit.ts), re-exported so it is in the bundle and tests can reach it as __oreFx. */
 export { FX };
-(globalThis as any).__oreFx = FX;
+(globalThis as any).__oreFx = { ...FX, airShadows };
 
 export const hasFigure = (kind: string) => !!artBin(kind);
 // A figure with its own painted picture wears that one picture on every part, so each joint is a single mesh. The glow and shine each

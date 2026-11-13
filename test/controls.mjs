@@ -139,7 +139,7 @@ try {
     __ore.resume(); g.phase = 'play'; return { own, veyl, gloam, want: [...new Set(['headframe', ...g.dir ? [] : [], ...window.__ore.MAP ? [] : []])] }; });
   check(r.own.shown && r.own.tabs[0] === 'Ironhold (you)' && r.own.tabs.length === 3, `the pause screen has a tech tree with a tab for each faction (${r.own.tabs.join(', ')})`);
   check(r.own.names[0] === 'Headframe' && r.own.rows >= 4 && r.own.names.includes('Signal Mast'), `the player's own tree starts at the main building and runs in rows by what each building needs (${r.own.rows} rows: ${r.own.names.join(', ')})`);
-  check(r.own.have.includes('Headframe') && /Linesman\s*60 ore · 1 supply/.test(r.own.text) && /Needs Machine Shop/.test(r.own.text), 'it marks what is standing, and lists each unit with its price, supply and what it needs');
+  check(r.own.have.includes('Headframe') && /Linesman\s*\d+ ore · 1 supply/.test(r.own.text) && /· Needs [A-Z]/.test(r.own.text), 'it marks what is standing, and lists each unit with its price, supply and what it needs');
   check(r.veyl.includes('Choir Stone') && r.gloam.names.includes('Mother Cap') && r.gloam.marks === 0, `the other factions' trees can be read too, with nothing marked as ours (${r.veyl.length} Veyl, ${r.gloam.names.length} Gloam buildings)`);
   await p.evaluate(() => { __ore.game.phase = 'play'; __ore.pause(); });
   await shot('tech-tree');

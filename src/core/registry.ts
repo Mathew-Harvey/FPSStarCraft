@@ -146,7 +146,7 @@ export interface BldRules {
   far?: boolean;
 }
 /** A command on a building (BldRules.actions). `ok` returns '' or the plain reason it cannot run now. */
-export interface BldAction { key: string; name: string; hotkey: string; cost?: [number, number]; blurb?: string; ok?(g: Game, b: Building): string; run(g: Game, b: Building): void }
+export interface BldAction { key: string; name: string; hotkey: string; cost?: [number, number]; blurb?: string; ok?(g: Game, b: Building): string; /** `aim` is where the player was looking when they pressed it (sent with the ask online), if anywhere. */ run(g: Game, b: Building, aim?: { x: number; z: number }): void }
 
 /** What a whole faction does that is not tied to one kind. */
 export interface FactionRules {

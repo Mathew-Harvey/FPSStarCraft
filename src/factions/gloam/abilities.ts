@@ -3,6 +3,7 @@
 import * as THREE from 'three';
 import { V3, R, M } from '../../gfx';
 import { sfx } from '../../audio';
+import { isEnemy } from '../../core/sides';
 import type { Game } from '../../game';
 import { UNIT, BLD, Unit, Building, Kind, isUnit, fac } from '../../data';
 import { defineAbilities, bodyOf, type AbilityDef, type Target } from '../../core/ability';
@@ -38,12 +39,12 @@ const fuse = (g: Game, u: Unit, t: Target, kind: Fuse['kind'], secs: number, r: 
 // ---------------------------------------------------------------- bots: where to aim
 /** The enemy spot within `range` of `u` with the most enemy bodies inside `r` of it (at least `min`), as a target. */
 function clump(g: Game, u: Unit, range: number, r: number, min: number, test?: (o: Unit) => boolean): Target | null {
-  const near = g.units.filter(o => o.alive && o.team !== u.team && !o.inside && !o.air && dist(o, u) < range + r && (!test || test(o)) && !isDug(o));
+  const near = g.units.filter(o => o.alive && isEnemy(o.team, u.team) && !o.inside && !o.air && dist(o, u) < range + r && (!test || test(o)) && !isDug(o));
   let best: Target | null = null, bn = min - 1;
   for (const o of near) { let n = 0, sx = 0, sz = 0; for (const p of near) if (Math.hypot(p.pos.x - o.pos.x, p.pos.z - o.pos.z) < r) { n++; sx += p.pos.x; sz += p.pos.z; } if (n > bn) { const cx = sx / n, cz = sz / n; if (Math.hypot(cx - u.pos.x, cz - u.pos.z) <= range) { bn = n; best = { x: cx, z: cz }; } } }
   return best;
 }
-const foeBody = (g: Game, u: Unit, range: number, test: (o: Unit) => boolean): Unit | null => { let best: Unit | null = null, bs = -1; for (const o of g.units) { if (!o.alive || o.team === u.team || o.inside || isDug(o) || dist(o, u) > range || !test(o)) continue; const s = UNIT[o.kind].cost + (UNIT[o.kind].flux || 0); if (s > bs) { bs = s; best = o; } } return best; };
+const foeBody = (g: Game, u: Unit, range: number, test: (o: Unit) => boolean): Unit | null => { let best: Unit | null = null, bs = -1; for (const o of g.units) { if (!o.alive || !isEnemy(o.team, u.team) || o.inside || isDug(o) || dist(o, u) > range || !test(o)) continue; const s = UNIT[o.kind].cost + (UNIT[o.kind].flux || 0); if (s > bs) { bs = s; best = o; } } return best; };
 const busyFight = (g: Game, u: Unit, r = 20) => !!nearestFoeAt(g, u.team, u.pos.x, u.pos.z, r);
 
 // ---------------------------------------------------------------- the abilities
@@ -94,9 +95,9 @@ const bileLob: AbilityDef = {
   ai: (g, u) => {
     const L = G2.lobber.lob; let best: Target | null = null, bs = 0;
     // A body that cannot move (set up, rooted, digging) or a building is the surest hit; otherwise a knot of at least two.
-    for (const o of g.units) { if (!o.alive || o.team === u.team || o.air || o.inside || isDug(o) || dist(o, u) > L.range) continue; const still = o.speed === 0 || o.status?.some(s => s.k === 'root' || s.k === 'stun') ? 3 : 0; if (still > bs) { bs = still; best = { x: o.pos.x, z: o.pos.z }; } }
+    for (const o of g.units) { if (!o.alive || !isEnemy(o.team, u.team) || o.air || o.inside || isDug(o) || dist(o, u) > L.range) continue; const still = o.speed === 0 || o.status?.some(s => s.k === 'root' || s.k === 'stun') ? 3 : 0; if (still > bs) { bs = still; best = { x: o.pos.x, z: o.pos.z }; } }
     if (best) return best;
-    return clump(g, u, L.range, L.r, 2) || (() => { const b = g.buildings.find(b => b.alive && b.team !== u.team && g.distToBox(b, u.pos.x, u.pos.z) < L.range - 1); return b ? { x: b.pos.x, z: b.pos.z } : null; })();
+    return clump(g, u, L.range, L.r, 2) || (() => { const b = g.buildings.find(b => b.alive && isEnemy(b.team, u.team) && g.distToBox(b, u.pos.x, u.pos.z) < L.range - 1); return b ? { x: b.pos.x, z: b.pos.z } : null; })();
   },
 };
 /** Choke Spores: a cloud bursts on a spot after 1 s (a mark shows where): everything there is rooted for 4 s and takes 30 over 3 s. */

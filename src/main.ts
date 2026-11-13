@@ -1,4 +1,7 @@
 // Boot, input, the frame loop, and the menu screens.
+import { TER, MADE } from './terrain';
+import { openMaker } from './mapmaker';
+import { usePlan, planMap } from './mapcode';
 import * as THREE from 'three';
 import { Pipeline, ViewPipe, V3, makeSky, TX, M } from './gfx';
 import { LAMP_ON } from './light';
@@ -8,10 +11,17 @@ import { Game } from './game';
 import { Hud } from './hud';
 import { initAudio, setVolume, setMusic, audioSeat, hush, soundsReady, sfx } from './audio';
 import { LocalMatch, SplitMode } from './split';
-import { UNIT, BLD, UPGRADES, TRAINS, UNIT_NEEDS, DIFFS, Kind, BKind, mapCode, validMap, rollMap, baseOf, sizeOf, MAP, FACTION, SIDE, STORY, setSides, setSidesCode, sidesCode, fac, isWorker } from './data';
+import { MAPS, UNIT, BLD, UPGRADES, TRAINS, UNIT_NEEDS, DIFFS, Kind, BKind, mapCode, validMap, rollMap, baseOf, sizeOf, MAP, FACTION, SIDE, STORY, setSides, setSidesCode, setTeamGame, sidesCode, fac, isWorker } from './data';
 import { MISSIONS, STORY_JOBS, ACTS, missionSides, charterTeam, Mission } from './campaign';
 import { CUTS, CutPlayer } from './cutscene';
 import { Net, Lobby } from './net';
+import { watchInit, watchFrame } from './watch';
+import { treeHtml, treeTabs } from './tree';
+import { TEAM_LAYOUTS } from './teammaps';
+import { isFriend, planTeams, type TeamPlan } from './core/sides';
+import { defineBuildings } from './core/registry';
+import { defineAbilities } from './core/ability';
+import { artGate, artSoon } from './artgate';
 import { TouchPad, TouchPref, touchDevice, touchWords } from './touch';
 
 THREE.ColorManagement.enabled = false;
@@ -69,7 +79,7 @@ let camp = 0, sideDone = 0, mpOpen = true, mode = 'camp', jobI = 0, pname = '', 
 const MP_AFTER = 8;
 let net: Net | null = null;
 /** Rebindable actions: [what the game code listens for, label]. A player's choice is stored as action code to physical key. */
-const ACTIONS: [string, string][] = [['KeyW', 'Forward'], ['KeyS', 'Back'], ['KeyA', 'Left'], ['KeyD', 'Right'], ['ShiftLeft', 'Sprint'], ['Space', 'Dash'], ['Tab', 'Jump wheel'], ['KeyF', 'Jump to target'], ['KeyQ', 'Last body'], ['KeyE', 'Use or train'], ['KeyR', 'Reload or rotate'], ['KeyC', 'Grenade or ability'], ['Digit1', 'Drill'], ['Digit2', 'Build'], ['KeyG', 'Quartermaster or raid'], ['KeyZ', 'Yes to the squad'], ['KeyX', 'Hold'], ['KeyV', 'Follow me'], ['KeyH', 'Send a scout'], ['KeyB', 'Ping'], ['Enter', 'Chat']];
+const ACTIONS: [string, string][] = [['KeyW', 'Forward'], ['KeyS', 'Back'], ['KeyA', 'Left'], ['KeyD', 'Right'], ['ShiftLeft', 'Sprint'], ['Space', 'Dash'], ['Tab', 'Jump wheel'], ['KeyF', 'Jump to target'], ['KeyQ', 'Last body'], ['KeyE', 'Use or train'], ['KeyR', 'Reload or rotate'], ['KeyC', 'Grenade or ability'], ['Digit1', 'Drill'], ['Digit2', 'Build'], ['KeyG', 'Quartermaster or raid'], ['KeyZ', 'Yes to the squad'], ['KeyX', 'Hold'], ['KeyV', 'Follow me'], ['KeyH', 'Send a scout'], ['KeyB', 'Ping'], ['KeyN', 'Command view'], ['KeyM', 'Map'], ['Enter', 'Chat']];
 let binds: Record<string, string> = {}, gfxI = 0, cbOn = false, optsOpen = false, fpsOn = false, fpsN = 0, fpsT = 0, fpsWorst = 0;
 const keyOf = (action: string) => binds[action] || action;
 const keyText = (code: string) => code.replace(/^Key|^Digit/, '').replace('ShiftLeft', 'Shift').replace('ShiftRight', 'R Shift').replace('ControlLeft', 'Ctrl').replace('AltLeft', 'Alt').replace(/^Arrow/, '').replace(/^Numpad/, 'Num ');
@@ -87,7 +97,24 @@ const FOE_FAC = [1, 2, 0];
  *  takes the yard. Split screen versus puts player one at the yard. Campaign jobs are always Ironhold against the Veyl. */
 const sidesWanted = (versus = false): [number, number] => mode !== 'skirm' ? missionSides(MISSIONS[jobI]) : versus ? [sideI, FOE_FAC[foeI]] : sideI === 0 ? [0, FOE_FAC[foeI]] : [FOE_FAC[foeI], sideI];
 const wantCode = () => { const [h, o] = sidesWanted(); return h * 3 + o; };
-const want = () => { setSides(...sidesWanted()); STORY.charter = mode === 'skirm' ? -1 : charterTeam(MISSIONS[jobI]); return want0(); };
+/** The kind of game on a map with more than two starts (Crossing, Wheel): an index into TEAM_LAYOUTS for its start count, 0 for one on one. */
+let teamI = 0;
+const startsHere = () => MAPS[baseOf(mapI)]?.ring || 0;
+/** The team game the menu asks for, or null for a plain one on one. The player holds start 0 as Ironhold and the far start otherwise
+ *  (as in a one on one); allies play the player's faction; the other side plays the faction picked under "Against", and in a free for all
+ *  the other starts take turns between that faction and the third. */
+function teamPlan(): TeamPlan | null {
+  const n = startsHere(), L = mode === 'skirm' && n ? TEAM_LAYOUTS[n]?.[teamI] : null; if (!L || teamI <= 0) return null;
+  const me = sideI === 0 ? 0 : n / 2, foe = FOE_FAC[foeI], others = [foe, [0, 1, 2].find(f => f !== foe && f !== sideI) ?? [0, 1, 2].find(f => f !== foe)!], facs: number[] = Array(n).fill(-1); let e = 0;
+  for (const grp of L.teams) { const mine = grp.includes(me); for (const s of grp) facs[s] = mine ? sideI : L.teams.length === 2 ? foe : others[e++ % 2]; }
+  return { n, groups: L.teams.map(t => t.slice()), facs };
+}
+const teamKey = () => JSON.stringify(teamPlan());
+/** Every faction in the match the menu would start: two in a one-on-one, up to three in a team game. Their art comes before it starts. */
+const matchFacs = () => { const tp = teamPlan(); return tp ? [...new Set(tp.facs)] : sidesWanted(); };
+let builtTeam = 'null';
+const setWanted = () => { const tp = teamPlan(); if (!tp || !setTeamGame(tp)) setSides(...sidesWanted()); builtTeam = teamKey(); };
+const want = () => { setWanted(); STORY.charter = mode === 'skirm' ? -1 : charterTeam(MISSIONS[jobI]); return want0(); };
 /** The skirmish map with its turn: a Vast map is turned a new way for every new match (see rollMap). `__ore.turn` pins it, for tests and pictures. */
 let playMap = 0; const reroll = () => playMap = rollMap(mapI, (window as any).__ore?.turn | 0);
 const want0 = () => mode !== 'skirm' ? { d: DIFFS[MISSIONS[jobI].diff], map: MISSIONS[jobI].map, m: MISSIONS[jobI] } : { d: DIFFS[diffI], map: playMap, m: null };
@@ -110,13 +137,15 @@ addEventListener('keydown', e => {
   if (cutP.on) { e.preventDefault(); if (e.code === 'Escape') skipCuts(); else if (!e.repeat && (e.code === 'Space' || e.code === 'Enter' || e.code === 'ArrowRight')) cutP.next(); return; }
   if (split && game2 && !padTwo && logical(e.code) === e.code && P2KEYS[e.code]) { if (live()) { e.preventDefault(); const k = P2KEYS[e.code]; if (k === 'Tool') { if (!e.repeat) game2.pressed.add(game2.tool === 2 ? 'Digit1' : 'Digit2'); } else if (k === 'Wheel-' || k === 'Wheel+') { if (!e.repeat) game2.wheel = k === 'Wheel+' ? 1 : -1; } else if (k === 'Mouse0' || k === 'Mouse2') { if (!e.repeat) game2.pressed.add(k); if (k === 'Mouse0') game2.lmb = true; else game2.rmb = true; } else if (k.startsWith('Look')) look2.add(k); else { if (!e.repeat) game2.pressed.add(k); game2.keys.add(k); } p2Seen = true; } return; }
   if (game.net && !split && game.phase === 'play' && code === 'Enter') { e.preventDefault(); game.keys.clear(); chat.hidden = false; chat.focus(); return; }
-  if (live()) { if (!e.ctrlKey && !e.metaKey && e.code !== 'Escape' && !/^F\d/.test(e.code)) e.preventDefault(); if (!e.repeat) game.pressed.add(code); game.keys.add(code); }
+  // Ctrl and a number keeps a control group, Ctrl+A picks the army, F1 and F2 pick idle workers and the army: the browser's own uses of those keys are held back during play.
+  const rts = (e.ctrlKey && (/^Digit\d$/.test(e.code) || e.code === 'KeyA')) || e.code === 'F1' || e.code === 'F2';
+  if (live()) { if ((!e.ctrlKey && !e.metaKey && e.code !== 'Escape' && !/^F\d/.test(e.code)) || rts) e.preventDefault(); if (!e.repeat) game.pressed.add(code); game.keys.add(code); }
   if (e.code === 'Escape' && freeMouse) { if (game.phase === 'play' || game.phase === 'card') pause(); else if (game.phase === 'paused') resume(); }
 });
 addEventListener('keyup', e => { const k = split && game2 && logical(e.code) === e.code ? P2KEYS[e.code] : ''; if (k && game2) { if (k === 'Mouse0') game2.lmb = false; else if (k === 'Mouse2') game2.rmb = false; else if (k.startsWith('Look')) look2.delete(k); else game2.keys.delete(k); if (!padTwo) return; } game.keys.delete(logical(e.code)); });
-addEventListener('blur', () => { game.keys.clear(); game.lmb = game.rmb = false; if (game2) { game2.keys.clear(); game2.lmb = game2.rmb = false; } look2.clear(); });
-canvas.addEventListener('mousedown', e => { if (!live()) return; e.preventDefault(); game.pressed.add('Mouse' + e.button); if (e.button === 0) game.lmb = true; if (e.button === 2) game.rmb = true; if (!locked() && !freeMouse) lock(); });
-addEventListener('mouseup', e => { if (e.button === 0) game.lmb = false; if (e.button === 2) game.rmb = false; });
+addEventListener('blur', () => { game.keys.clear(); game.lmb = game.rmb = game.mmb = false; if (game2) { game2.keys.clear(); game2.lmb = game2.rmb = false; } look2.clear(); });
+canvas.addEventListener('mousedown', e => { if (!live()) return; e.preventDefault(); game.pressed.add('Mouse' + e.button); if (e.button === 0) game.lmb = true; if (e.button === 2) game.rmb = true; if (e.button === 1) game.mmb = true; if (!locked() && !freeMouse) lock(); });
+addEventListener('mouseup', e => { if (e.button === 0) game.lmb = false; if (e.button === 2) game.rmb = false; if (e.button === 1) game.mmb = false; });
 addEventListener('mousemove', e => { curX = e.clientX / innerWidth; if (e.movementX || e.movementY) moved = true; if (live() && (locked() || freeMouse)) { game.mdx += e.movementX || 0; game.mdy += e.movementY || 0; } });
 addEventListener('wheel', e => { if (live()) { game.wheel = Math.sign(e.deltaY); e.preventDefault(); } }, { passive: false });
 addEventListener('contextmenu', e => e.preventDefault());
@@ -143,27 +172,28 @@ document.addEventListener('visibilitychange', () => { if (document.hidden) { pad
 document.addEventListener('pointerlockerror', () => { freeMouse = true; });
 document.addEventListener('pointerlockchange', () => { if (!locked() && live() && !freeMouse) pause(); });
 
-function fresh() { endSplit(); hush(); hud.reset(); reroll(); const w = want(); game.dispose(); game = new Game(pipe, hud, w.d, w.map, w.m); game.sens = sens; ended = false; (window as any).__ore.game = game; }
-function start() { if (mode === 'skirm' && sideI) { startVeyl(); return; } if (mode !== 'skirm' && MISSIONS[jobI].out) { startStory(MISSIONS[jobI]); return; } if (sidesCode() !== wantCode()) fresh(); initAudio(); setVolume(vol); setMusic(mus); { const w = want(); if (game.diff !== w.d || game.mapI !== w.map || game.mission !== w.m || game.time > 0) fresh(); } $('menu').hidden = true; $('pause').hidden = true; $('end').hidden = true; hud.show(true); game.phase = 'play'; game.introT = 1.8; lock(); }
+function fresh() { endSplit(); hush(); hud.reset(); reroll(); const w = want(); game.dispose(); game = new Game(pipe, hud, w.d, w.map, w.m); game.sens = sens; ended = false; (window as any).__ore.game = game;
+  artSoon(matchFacs(), () => { if (!$('menu').hidden && game.phase !== 'play' && !game.net && !split) fresh(); }); }   // the art for sides picked in the menu comes while the player looks
+function start() { if (!artGate(matchFacs(), () => { fresh(); start(); })) return; if (mode === 'skirm' && sideI) { startVeyl(); return; } if (mode !== 'skirm' && MISSIONS[jobI].out) { startStory(MISSIONS[jobI]); return; } if (sidesCode() !== wantCode() || builtTeam !== teamKey()) fresh(); initAudio(); setVolume(vol); setMusic(mus); { const w = want(); if (game.diff !== w.d || game.mapI !== w.map || game.mission !== w.m || game.time > 0) fresh(); } $('menu').hidden = true; $('pause').hidden = true; $('end').hidden = true; hud.show(true); game.phase = 'play'; game.introT = 1.8; lock(); }
 /** The pause screen shows the whole tech tree: what is standing, what can be built next and what each building sells. */
+let treeF = -1;
 function showTree() {
-  const g = game, t = g.myTeam, tiers: BKind[][] = fac(t) === 2 ? [['mothercap'], ['sporesac', 'warren'], ['stinger', 'quillgarden', 'blisterbed'], ['tuskhollow'], ['oldgrowth']] : t ? [['choir'], ['hushwell', 'broodpit'], ['thornspire', 'wardpylon'], ['reedgate']] : [['headframe'], ['bunkhouse', 'depot'], ['watchpost', 'machineshop', 'assay'], ['foundry'], ['mast']], hq = FACTION[t].hq;
-  $('tree').innerHTML = tiers.map(row => `<div class="tier">${row.map(k => {
-    const have = g.ownB(k, true, t).length > 0, miss = g.missing(k, t), off = !!g.paper(t) && k !== FACTION[t].hq && !g.paper(t)!.allow.includes(k);
-    const units = (TRAINS[k] || []).map(u => { const nb = UNIT_NEEDS[u], ok = have && (!nb || g.ownB(nb, true, t).length > 0); return `<li class="${ok ? 'ok' : ''}"><b>${UNIT[u].name}</b><small>${nb ? 'Needs ' + BLD[nb].name : 'Unit'} · ${UNIT[u].cost}</small></li>`; }).join('');
-    const ups = UPGRADES.filter(u => u.at === k).map(u => { const nu = u.needs ? UPGRADES.find(x => x.key === u.needs)! : null; return `<li class="${g.upOf(t)[u.key] ? 'dn' : have && (!nu || g.upOf(t)[nu.key]) ? 'ok' : ''}"><b>${u.name}</b><small>${g.upOf(t)[u.key] ? 'Bought' : u.blurb + ' · ' + u.cost}${nu && !g.upOf(t)[u.key] ? ' · after ' + nu.name : ''}</small></li>`; }).join('');
-    return `<div class="node ${have ? 'have' : off || miss.length ? 'lock' : 'can'}"><h4>${BLD[k].name}</h4><p>${have ? 'Standing' : off ? 'Not on this job' : miss.length ? 'Needs ' + miss.map(n => BLD[n].name).join(' and ') : k === hq ? '' : 'Ready to build · ' + BLD[k].cost}</p>${units || ups ? `<ul>${units}${ups}</ul>` : `<ul><li class="${have ? 'ok' : ''}"><small>${BLD[k].blurb}</small></li></ul>`}</div>`;
-  }).join('')}</div>`).join('');
+  const g = game, t = g.myTeam, mine = fac(t); if (treeF < 0) treeF = mine;
+  $('ttabs').innerHTML = treeTabs(mine, treeF);
+  $('tree').innerHTML = treeF === mine ? treeHtml(mine, g, t) : treeHtml(treeF);
   // What the scouts have seen of the other side: the buildings, how long ago, and what that says about their plan. Not shown on story jobs.
   const I = g.intel, show = !g.mission; $('intel').hidden = !show; if (!show) return;
   const tl = I.tally(t), rd = I.read(t), recs = [...I.seen[I.ix(t)].values()], ago = recs.length ? Math.max(0, Math.round(g.time - Math.max(...recs.map(r => r.t)))) : 0, when = ago < 8 ? 'in sight now' : ago < 90 ? ago + ' seconds ago' : Math.round(ago / 60) + ' minutes ago';
   $('intelBody').innerHTML = !tl.length ? `<p><b>Not found yet.</b> ${MAP.hid ? 'One of the roads out of your base ends at theirs. Press H to send a scout down one, or walk it yourself.' : 'Nobody has looked at their base. Press H to send a scout.'}</p>`
     : `<p><b>${rd.short}.</b> ${rd.line}</p><ul>${tl.map(([k, n]) => `<li>${n > 1 ? n + ' × ' : ''}${BLD[k].name}</li>`).join('')}</ul><p><small>Last seen ${when}. Press H to send a scout for another look.</small></p>`;
 }
-function pause() { if (game.phase !== 'play' && game.phase !== 'card') return; hush(); showTree(); for (const g of [game, game2]) if (g && g.phase === 'card') g.hud.titleCard('', '', ''); if (game2) { game2.phase = 'paused'; game2.keys.clear(); game2.lmb = game2.rmb = false; look2.clear(); } if (game.net) { game.phase = 'paused'; game.keys.clear(); game.lmb = game.rmb = false; $('pause').hidden = false; return; } game.phase = 'paused'; game.keys.clear(); game.lmb = game.rmb = false; $('pause').hidden = false; }
+let pausedAt = 0;
+function pause() { if (game.phase !== 'play' && game.phase !== 'card') return; pausedAt = performance.now(); hush(); treeF = -1; showTree(); for (const g of [game, game2]) if (g && g.phase === 'card') g.hud.titleCard('', '', ''); if (game2) { game2.phase = 'paused'; game2.keys.clear(); game2.lmb = game2.rmb = false; look2.clear(); } if (game.net) { game.phase = 'paused'; game.keys.clear(); game.lmb = game.rmb = false; $('pause').hidden = false; return; } game.phase = 'paused'; game.keys.clear(); game.lmb = game.rmb = false; $('pause').hidden = false; }
 function resume(byPad = false) { if (game.phase !== 'paused') return; initAudio(); $('pause').hidden = true; game.phase = 'play'; if (game2) game2.phase = 'play'; if (!byPad) lock(); }
 $('start').addEventListener('click', start);
-$('resume').addEventListener('click', () => resume());
+// A tap on the touch pause button is followed by the browser's own click where the finger was, which can land on this button as the
+// pause screen opens: clicks in the first 400 ms are not taken as a press.
+$('resume').addEventListener('click', () => { if (performance.now() - pausedAt > 400) resume(); });
 $('again').addEventListener('click', () => {
   const st = game.story; if (st && mode !== 'skirm') { const i = MISSIONS.indexOf(st); if (game.won && i < STORY_JOBS - 1) { jobI = i + 1; const nx = MISSIONS[jobI]; playCuts([...(st.cutOut || []), ...(nx.cutIn || [])], () => { fresh(); start(); }); } else if (game.won && i === STORY_JOBS - 1) playCuts(st.cutOut || [], () => { mode = 'camp'; toMenu(); }); else { fresh(); start(); } return; }
   if (split && !game2) { startVeyl(); return; } if (split) { startSplit(splitMode); return; } if (game.net) { toMenu(); return; } fresh(); start(); });
@@ -181,6 +211,7 @@ const KBDKEYS: Record<string, string> = { E: 'H', R: 'N', C: 'M', F: ';', Tab: "
 const look2 = new Set<string>();
 /** True once player two has a controller. Until then the keyboard fallback is live. */
 let padTwo = false, padBlocked = false, p2Seen = false, p2Hint = 0;
+const padViewT = [0, 0], padViewDone = [false, false];
 const padHeld: Set<string>[] = [new Set(), new Set()], padWas: boolean[][] = [[], []], padRun = [false, false], padFire = [[false, false], [false, false]];
 function pads(): Gamepad[] { try { return Array.from(navigator.getGamepads ? navigator.getGamepads() : []).filter(p => !!p && p.connected && p.buttons.length >= 10) as Gamepad[]; } catch (e) { padBlocked = true; return []; } }
 /** Turns one controller into the keys and mouse movement the game already understands. */
@@ -189,14 +220,32 @@ function padDrive(g: Game, p: Gamepad, slot: number, dt: number) {
   const was = padWas[slot], down = (i: number) => !!p.buttons[i] && (p.buttons[i].pressed || p.buttons[i].value > .35), hit = (i: number) => down(i) && !was[i];
   const mine = padHeld[slot], hold = (code: string, on: boolean) => { if (on) { if (!mine.has(code)) { mine.add(code); g.keys.add(code); g.pressed.add(code); } } else if (mine.has(code)) { mine.delete(code); g.keys.delete(code); } };
   const tap = (i: number, code: string) => { if (hit(i)) g.pressed.add(code); };
-  if (game.phase === 'play' || game.phase === 'card') {
+  // Holding View (button 8) for under half a second is the squad's follow order, as before; holding it longer lifts the player into the
+  // command view, and a tap there drops back down.
+  // Counted in game time, not the clock: a slow frame must not turn a tap into a hold.
+  if (down(8)) padViewT[slot] = was[8] ? padViewT[slot] + dt : 0;
+  const viewTap = !down(8) && was[8] && padViewT[slot] < .4, viewHeld = down(8) && padViewT[slot] >= .4 && !padViewDone[slot];
+  if (!down(8)) padViewDone[slot] = false;
+  if ((game.phase === 'play' || game.phase === 'card') && g.cmd.on) {
+    // From above: left stick slides the view (W A S D), right stick moves the cursor, RT picks or presses the card under the cursor,
+    // LT gives an order, D-pad up and down zoom, left and right step through the card and A presses it, X idle worker, Y whole army.
+    const lx = ax(0), ly = ax(1), rx = ax(2), ry = ax(3), C = g.cmd;
+    hold('KeyW', ly < -.3); hold('KeyS', ly > .3); hold('KeyA', lx < -.3); hold('KeyD', lx > .3); hold('ShiftLeft', false); hold('Tab', false);
+    g.mdx += rx * (.35 + .65 * Math.abs(rx)) * 1100 * dt; g.mdy += ry * (.35 + .65 * Math.abs(ry)) * 1100 * dt;
+    const f = padFire[slot], rt = down(7), lt = down(6);
+    if (rt !== f[0]) { f[0] = rt; g.lmb = rt; if (rt) g.pressed.add('Mouse0'); } if (lt !== f[1]) { f[1] = lt; g.rmb = lt; if (lt) g.pressed.add('Mouse2'); }
+    if (hit(12)) g.wheel = -1; if (hit(13)) g.wheel = 1; if (hit(14)) C.padStep(-1); if (hit(15)) C.padStep(1);
+    if (hit(0)) C.padPress(); tap(2, 'F1'); tap(3, 'F2'); if (viewTap) g.pressed.add('KeyN');
+    if (hit(9)) pause();
+  } else if (game.phase === 'play' || game.phase === 'card') {
+    if (viewHeld) { padViewDone[slot] = true; g.keys.delete('KeyV'); g.pressed.add('KeyN'); }
     const lx = ax(0), ly = ax(1), rx = ax(2), ry = ax(3);
     hold('KeyW', ly < -.3); hold('KeyS', ly > .3); hold('KeyA', lx < -.3); hold('KeyD', lx > .3);
     if (hit(10)) padRun[slot] = true; if (ly > -.5) padRun[slot] = false; hold('ShiftLeft', padRun[slot]);
     g.mdx += rx * (.35 + .65 * Math.abs(rx)) * 1500 * dt; g.mdy += ry * (.35 + .65 * Math.abs(ry)) * 1000 * dt;
     const f = padFire[slot], rt = down(7), lt = down(6);
     if (rt !== f[0]) { f[0] = rt; g.lmb = rt; if (rt) g.pressed.add('Mouse0'); } if (lt !== f[1]) { f[1] = lt; g.rmb = lt; if (lt) g.pressed.add('Mouse2'); }
-    tap(0, 'Space'); tap(1, 'KeyC'); tap(2, 'KeyR'); tap(3, 'KeyE'); tap(5, 'KeyF'); tap(8, 'KeyV'); tap(11, 'Mouse1'); if (g.net && hit(11)) g.pressed.add('KeyB');
+    tap(0, 'Space'); tap(1, 'KeyC'); tap(2, 'KeyR'); tap(3, 'KeyE'); tap(5, 'KeyF'); if (viewTap) g.pressed.add('KeyV'); tap(11, 'Mouse1'); if (g.net && hit(11)) g.pressed.add('KeyB');
     hold('Tab', down(4));
     // the D-pad does whatever the screen is offering
     const pr = g.prompt || '', train = /<b>[TYU]<\/b>/.test(pr), picking = g.tab || (g.tool === 2 && !!g.me && isWorker(g.me.kind)), call = !!g.dir.side(g.myTeam).callout;
@@ -207,7 +256,9 @@ function padDrive(g: Game, p: Gamepad, slot: number, dt: number) {
   for (let i = 0; i < p.buttons.length; i++) was[i] = down(i);
 }
 function padPoll(dt: number) {
-  if (!game2) return; const ps = pads();
+  // Playing alone, the first controller drives player one (keyboard and mouse keep working too).
+  if (!game2) { const p = pads()[0]; if (p) padDrive(game, p, 0, dt); return; }
+  const ps = pads();
   // One controller belongs to player two. With two, player one may use the first and keep the keyboard as well.
   const two = ps.length > 1 ? ps[1] : ps[0], one = ps.length > 1 ? ps[0] : null;
   if (!!two !== padTwo) { padTwo = !!two; look2.clear(); game2.keys.clear(); game2.lmb = game2.rmb = false; padHeld[1].clear(); p2Labels(); }
@@ -225,16 +276,17 @@ function p2Labels() {
 /** The match a split screen or a solo Veyl run is playing: co-op, versus, or the Veyl side. */
 let splitMode: SplitMode = 'coop';
 function startSplit(how: SplitMode | boolean = splitMode) {
+  { const sm = how === true ? 'versus' : how === false ? 'coop' : how; if (!artGate(sidesWanted(sm === 'versus'), () => startSplit(how))) return; }
   splitMode = how === true ? 'versus' : how === false ? 'coop' : how; splitVs = splitMode === 'versus'; setSides(...sidesWanted(splitVs)); STORY.charter = -1; initAudio(); setVolume(vol); setMusic(mus); mode = 'skirm'; hud.reset(); hud2.reset();
   reroll(); const prev = split, m = split = new LocalMatch(playMap, diffI, 2, splitMode), mk = (i: number) => { const g = new Game(i ? view2 : view1, i ? hud2 : hud, DIFFS[diffI], playMap, null, m.seats[i], m.host.eco); g.sens = i ? 1 : sens; g.names = m.names; g.teams = m.teams; g.myTeam = m.teams[i + 1] ?? SIDE.home; g.phase = 'play'; g.introT = 1.8; return g; };
-  const old = [game, game2, prev?.host]; game = mk(0); game2 = mk(1); for (const g of old) if (g && g !== game) g.dispose(); view1.time = view2.time = pipe.time; ended = false; (window as any).__ore.game = game;
+  const old = [game, game2, prev?.host]; game = mk(0); game2 = mk(1); game2.cmd.locked = true; for (const g of old) if (g && g !== game) g.dispose(); view1.time = view2.time = pipe.time; ended = false; (window as any).__ore.game = game;
   padTwo = pads().length > 0; p2Seen = false; p2Hint = 0; padHeld[0].clear(); padHeld[1].clear(); look2.clear(); p2Labels();
   $('game').classList.add('split'); $('game').classList.toggle('stack', !splitSide);
   $('menu').hidden = true; $('pause').hidden = true; $('end').hidden = true; hud.show(true); hud2.show(true); resize(); lock();
 }
 /** A skirmish as the Veyl: the Ironhold bots run on a local host, and this screen is its only seat. */
 function startVeyl() {
-  endSplit(); splitMode = 'veyl'; splitVs = false; setSides(...sidesWanted()); STORY.charter = -1; initAudio(); setVolume(vol); setMusic(mus); hush(); hud.reset();
+  endSplit(); splitMode = 'veyl'; splitVs = false; setWanted(); STORY.charter = -1; initAudio(); setVolume(vol); setMusic(mus); hush(); hud.reset();
   reroll(); const m = split = new LocalMatch(playMap, diffI, 1, 'veyl'), old = game;
   game = new Game(pipe, hud, DIFFS[diffI], playMap, null, m.seats[0], true); game.sens = sens; game.names = m.names; game.teams = m.teams; game.myTeam = SIDE.out; game.phase = 'play'; game.introT = 1.8; old.dispose(); ended = false; (window as any).__ore.game = game;
   $('menu').hidden = true; $('pause').hidden = true; $('end').hidden = true; hud.show(true); resize(); lock();
@@ -256,7 +308,7 @@ function playCuts(ids: string[], then: () => void) {
 }
 function nextCut() {
   const id = cutQ.shift(); if (!id) { const t = cutThen; cutThen = null; t?.(); return; }
-  const c = CUTS[id]; endSplit(); hush(); hud.reset(); setSides(...c.sides); STORY.charter = c.charter === 'home' ? SIDE.home : c.charter === 'out' ? SIDE.out : -1;
+  const c = CUTS[id]; if (!artGate(c.sides, () => { cutQ.unshift(id); nextCut(); })) return; endSplit(); hush(); hud.reset(); setSides(...c.sides); STORY.charter = c.charter === 'home' ? SIDE.home : c.charter === 'out' ? SIDE.out : -1;
   game.dispose(); STORY.on = true; game = new Game(pipe, hud, DIFFS[1], c.map, null); STORY.on = false; game.duskFix = c.dusk; game.sens = sens; ended = false; (window as any).__ore.game = game;
   $('menu').hidden = true; $('pause').hidden = true; $('end').hidden = true; hud.show(false); if (document.pointerLockElement) document.exitPointerLock();
   cutP.start(c, game, nextCut);
@@ -266,6 +318,7 @@ $('cut').addEventListener('click', e => { e.preventDefault(); if ((e.target as H
 /** Starts the selected job, with its opening scenes the first time through. */
 function startJob() { const m = MISSIONS[jobI]; if (mode !== 'skirm' && m.cutIn && !jobDone(jobI)) playCuts(m.cutIn, () => { fresh(); start(); }); else start(); }
 function endSplit() { if (!split && !game2) return; split?.host.dispose(); game2?.dispose(); split = null; game2 = null; hud2.show(false); $('game').classList.remove('split', 'stack'); pipe.w = 0; resize(); }
+$('ttabs').addEventListener('click', e => { const b = (e.target as HTMLElement).closest('[data-f]') as HTMLElement | null; if (!b) return; treeF = +b.dataset.f!; showTree(); });
 $('startSplit').addEventListener('click', () => startSplit(sideI ? 'veyl' : 'coop')); $('startSplitVs').addEventListener('click', () => startSplit(true));
 const splitBtns = Array.from($('splitDir').querySelectorAll('button')) as HTMLButtonElement[];
 const showSplit = () => splitBtns.forEach((b, i) => { const on = (i === 0) === splitSide; b.classList.toggle('on', on); b.setAttribute('aria-pressed', String(on)); });
@@ -274,8 +327,8 @@ splitBtns.forEach((b, i) => b.addEventListener('click', () => { splitSide = i ==
 const sideBtns = Array.from($('sides').querySelectorAll('button')) as HTMLButtonElement[];
 const foeBtns = Array.from($('foes').querySelectorAll('button')) as HTMLButtonElement[];
 const showSide = () => { sideBtns.forEach((b, i) => { const on = i === sideI; b.classList.toggle('on', on); b.setAttribute('aria-pressed', String(on)); }); foeBtns.forEach((b, i) => { const on = i === foeI; b.classList.toggle('on', on); b.setAttribute('aria-pressed', String(on)); }); $('foes').hidden = false; $('start').textContent = sideI === 2 ? 'Start growing' : sideI ? 'Start singing' : 'Clock in'; $('startSplit').textContent = sideI === 2 ? 'Split screen co-op as the Gloam' : sideI ? 'Split screen co-op as the Veyl' : 'Split screen co-op'; };
-sideBtns.forEach((b, i) => b.addEventListener('click', () => { if (i !== sideI) foeI = i ? 2 : 0; sideI = i; showSide(); save(); if (mode === 'skirm' && sidesCode() !== wantCode()) fresh(); }));
-foeBtns.forEach((b, i) => b.addEventListener('click', () => { foeI = i; showSide(); save(); if (mode === 'skirm' && sidesCode() !== wantCode()) fresh(); })); showSide();
+sideBtns.forEach((b, i) => b.addEventListener('click', () => { if (i !== sideI) foeI = i ? 2 : 0; sideI = i; showSide(); save(); if (mode === 'skirm' && (sidesCode() !== wantCode() || builtTeam !== teamKey())) fresh(); }));
+foeBtns.forEach((b, i) => b.addEventListener('click', () => { foeI = i; showSide(); save(); if (mode === 'skirm' && (sidesCode() !== wantCode() || builtTeam !== teamKey())) fresh(); })); showSide();
 // ---- campaign and mode tabs
 let ended = false;
 const modeBtns = Array.from($('modes').querySelectorAll('button')) as HTMLButtonElement[];
@@ -311,26 +364,42 @@ function showLobby(l: Lobby) {
   $('mCodeShow').textContent = l.code; $('mHint').textContent = host ? 'Read the code out to your crew. You pick the map and start the shift when everyone is ready.' : 'Waiting for the host to start. Hit Ready when you are.';
   // The lobby's match code says who holds each end: yard faction * 3 + outpost faction (1 and 2 are the classic Ironhold matches).
   const code = l.out ?? 1, lh = Math.floor(code / 3), lf = code % 3, outT = lf === lh ? lf + 3 : lf, onOut = (p: { team: number }) => p.team === outT, FN = ['Ironhold', 'Veyl Chorus', 'The Gloam'];
-  $('mPlayers').innerHTML = l.players.map(p => `<button type="button" disabled class="${p.ready || p.id === l.host ? 'dn' : ''}${onOut(p) ? ' v' : ''}">${onOut(p) ? FN[lf] + (lf === lh ? ' (outpost)' : '') : lh ? FN[lh] + (lf === lh ? ' (yard)' : '') : p.id === l.host ? 'Host' : 'Crew'}<b>${p.name.replace(/[<>&]/g, '')}</b><small>${p.id === l.host ? 'Runs the shift' : p.ready ? 'Ready' : 'Not ready'}</small></button>`).join('');
-  mDiffB.forEach((b, i) => { b.classList.toggle('on', i === l.diff); b.disabled = !host; }); lobMap = l.map; mMapB.forEach((b, i) => { b.classList.toggle('on', i === baseOf(l.map)); b.disabled = !host; }); mSizeB.forEach(b => { b.classList.toggle('on', +(b.dataset.s || 0) === sizeOf(l.map)); b.disabled = !host; });
+  $('mPlayers').innerHTML = l.players.map(p => `<button type="button" disabled class="${p.ready || p.id === l.host || p.team < 0 ? 'dn' : ''}${onOut(p) ? ' v' : ''}">${p.team < 0 ? 'Watching' : onOut(p) ? FN[lf] + (lf === lh ? ' (outpost)' : '') : lh ? FN[lh] + (lf === lh ? ' (yard)' : '') : p.id === l.host ? 'Host' : 'Crew'}<b>${p.name.replace(/[<>&]/g, '')}</b><small>${p.id === l.host ? 'Runs the shift' : p.ready ? 'Ready' : 'Not ready'}</small></button>`).join('');
+  mDiffB.forEach((b, i) => { b.classList.toggle('on', i === l.diff); b.disabled = !host; }); lobMap = l.map; { const mb = $('mMade') as HTMLButtonElement; mb.classList.toggle('on', !!l.plan); mb.disabled = !host || (!MADE.code && !l.plan); } mMapB.forEach((b, i) => { b.classList.toggle('on', !l.plan && +(b.dataset.b ?? i) === baseOf(l.map)); b.disabled = !host; }); mSizeB.forEach(b => { b.classList.toggle('on', +(b.dataset.s || 0) === sizeOf(l.map)); b.disabled = !host; });
   const nm = ['Ironhold', 'the Veyl', 'the Gloam'], foeName = nm[lf] + (lf === lh ? ' at the outpost' : ''), homeName = nm[lh] + (lf === lh ? ' at the yard' : '');
   mFoeB.forEach((b, i) => { b.classList.toggle('on', FOE_FAC[i] === lf); b.disabled = !host; }); mHomeB.forEach((b, i) => { b.classList.toggle('on', i === lh); b.disabled = !host; });
   $('mSide').textContent = me && onOut(me) ? 'Play as ' + homeName : 'Play as ' + foeName; { const v = l.players.filter(onOut).length, c = l.players.length - v; if (v) $('mHint').textContent = (c ? 'Versus shift. Both sides dig, build and train, and any side with nobody on it is run by bots. ' : `Everyone is on ${foeName}. ${homeName[0].toUpperCase() + homeName.slice(1)} will be bots. `) + (host ? 'You start it when everyone is ready.' : 'Hit Ready when you are.'); }
-  $('mStart').hidden = !host; $('mReady').hidden = host; $('mReady').textContent = me && me.ready ? 'Not ready' : 'Ready'; ($('mStart') as HTMLButtonElement).disabled = !l.players.every(p => p.ready || p.id === l.host);
+  // A team game on a map with more than two starts: the host picks the kind of game, and everyone picks a start.
+  { const n = MAPS[baseOf(l.map)]?.ring || 0, L = n && !l.plan ? TEAM_LAYOUTS[n] || [] : [], cur = l.mt ? L.findIndex(x => JSON.stringify(x.teams) === JSON.stringify(l.mt!.groups)) : 0;
+    $('mTeamRow').hidden = L.length < 2;
+    if (L.length >= 2) {
+      $('mTeams').innerHTML = L.map((x, i) => `<button type="button" data-t="${i}" class="${i === cur ? 'on' : ''}"${host ? '' : ' disabled'}>${x.name}</button>`).join('');
+      const t = l.mt ? planTeams(l.mt) : null, FN = ['Ironhold', 'Veyl', 'Gloam'];
+      $('mStarts').hidden = !t;
+      if (t) $('mStarts').innerHTML = t.at.map((s, j) => [s, j]).sort((x, y) => x[0] - y[0]).map(([s, j]) => { const team = t.teams[j], side = l.mt!.groups.findIndex(gr => gr.includes(s)) + 1, who = l.players.filter(p => p.team === team).map(p => p.name.replace(/[<>&]/g, '')).join(', ');
+        return `<button type="button" data-s="${s}" class="${me && me.team === team ? 'on' : ''}">Start ${s + 1} · ${FN[fac(team)]}<small>Team ${side}${who ? ' · ' + who : ' · bots'}</small></button>`; }).join('');
+      $('mSide').hidden = !!t;
+    } else $('mSide').hidden = false; }
+  $('mStart').hidden = !host; $('mReady').hidden = host; $('mReady').textContent = me && me.ready ? 'Not ready' : 'Ready'; ($('mStart') as HTMLButtonElement).disabled = !l.players.every(p => p.ready || p.id === l.host || p.team < 0);
 }
+/** A match starts on the server (or a replay starts in the page): the page's game becomes a copy of it. */
+function netBegin(n: Net, m: any) {
+    endSplit(); mode = 'multi'; hud.reset(); game.dispose(); usePlan(m.plan || null); setSidesCode(m.out ?? 1); setTeamGame(m.mt || null); STORY.charter = -1; game = new Game(pipe, hud, DIFFS[m.diff], m.map, null, n, !!m.eco); game.sens = sens; game.names = m.names; game.myTeam = (m.team ?? 0) >= 0 ? m.team ?? SIDE.home : SIDE.home; game.teams = m.teams || {}; if (m.ph) { game.applying = true; for (const r of m.ph) { const q = game.props[r[0]]; if (q && q.alive && q.hp > r[1]) game.damageProp(q, q.hp - r[1], null); } game.applying = false; } ended = false; (window as any).__ore.game = game;
+    initAudio(); setVolume(vol); setMusic(mus); $('menu').hidden = true; $('pause').hidden = true; $('end').hidden = true; hud.show(true); game.phase = 'play'; game.introT = 1.8; if (!m.watch) lock(); /* a watcher keeps the mouse for the watching bar */}
 async function mpConnect(then: (n: Net) => void) {
+  artSoon([0, 1, 2]);   // any side may be picked in a lobby: fetch every faction's art while the players gather
   pname = mName.value.trim().slice(0, 14) || 'Rigger'; srv = mServer.value.trim(); save(); mErr('');
   if (!srv) { mErr('This copy of the game is not on a game server, so there is nobody to connect to. Open the game from its server address, or paste a server address above.'); return; }
   if (net && net.open) { then(net); return; }
   mErr('Connecting...'); const n = new Net();
   n.onLobby = l => { showLobby(l); if (l.code) { mErr(''); lastCode = l.code; } }; n.onError = m => mErr(m);
   n.onClose = () => { net = null; if (game.net === n) { game.net = null; toMenu(); } showMode(); if (lastCode) { mCode.value = lastCode; mErr('Lost the connection. Press Join to get back into lobby ' + lastCode + '.'); } else mErr('Lost the connection to the server.'); };
-  n.onBegin = m => {
-    endSplit(); mode = 'multi'; hud.reset(); game.dispose(); setSidesCode(m.out ?? 1); STORY.charter = -1; game = new Game(pipe, hud, DIFFS[m.diff], m.map, null, n, !!m.eco); game.sens = sens; game.names = m.names; game.myTeam = m.team ?? SIDE.home; game.teams = m.teams || {}; if (m.ph) { game.applying = true; for (const r of m.ph) { const q = game.props[r[0]]; if (q && q.alive && q.hp > r[1]) game.damageProp(q, q.hp - r[1], null); } game.applying = false; } ended = false; (window as any).__ore.game = game;
-    initAudio(); setVolume(vol); setMusic(mus); $('menu').hidden = true; $('pause').hidden = true; $('end').hidden = true; hud.show(true); game.phase = 'play'; game.introT = 1.8; lock();
-  };
+  // A match from the server waits for every side's art (its world pictures queue up in the Net meanwhile).
+  n.onBegin = m => { const f = m.mt?.facs ? [...new Set(m.mt.facs as number[])] : [Math.floor((m.out ?? 1) / 3), (m.out ?? 1) % 3]; if (artGate(f, () => netBegin(n, m))) netBegin(n, m); };
+
   try { await n.connect(srv); net = n; mErr(''); then(n); } catch (e) { mErr(String((e as Error).message || e) + ' Check the server address.'); }
 }
+watchInit({ begin: netBegin, connect: mpConnect, server: () => mServer.value.trim() || defaultServer(), name: () => mName.value.trim().slice(0, 14) || 'Rigger', code: () => mCode.value, net: () => net, err: mErr });
 $('mCreate').addEventListener('click', () => mpConnect(n => n.send({ t: 'create', name: pname })));
 $('mJoinBtn').addEventListener('click', () => { const c = mCode.value.trim().toUpperCase(); if (c.length !== 5) { mErr('Lobby codes are five letters.'); return; } mpConnect(n => n.send({ t: 'join', code: c, name: pname })); });
 mCode.addEventListener('keydown', e => { if (e.key === 'Enter') $('mJoinBtn').click(); });
@@ -338,19 +407,41 @@ $('mLeave').addEventListener('click', () => { net?.send({ t: 'leave' }); });
 $('mSide').addEventListener('click', () => { const l = net?.lobby, me = l?.players.find(p => p.id === l.you), c = l?.out ?? 1, outT = c % 3 === Math.floor(c / 3) ? c % 3 + 3 : c % 3; net?.send({ t: 'team', v: me && me.team === outT ? 0 : 1 }); });
 $('mReady').addEventListener('click', () => { const l = net?.lobby, me = l?.players.find(p => p.id === l.you); net?.send({ t: 'ready', v: !(me && me.ready) }); });
 $('mStart').addEventListener('click', () => net?.send({ t: 'start' }));
-mDiffB.forEach((b, i) => b.addEventListener('click', () => net?.send({ t: 'set', diff: i }))); mFoeB.forEach((b, i) => b.addEventListener('click', () => { const c = net?.lobby?.out ?? 1; net?.send({ t: 'set', out: Math.floor(c / 3) * 3 + FOE_FAC[i] }); })); mHomeB.forEach((b, i) => b.addEventListener('click', () => { const c = net?.lobby?.out ?? 1; net?.send({ t: 'set', out: i * 3 + c % 3 }); })); mMapB.forEach((b, i) => b.addEventListener('click', () => net?.send({ t: 'set', map: mapCode(i, sizeOf(lobMap)) }))); mSizeB.forEach(b => b.addEventListener('click', () => net?.send({ t: 'set', map: mapCode(baseOf(lobMap), +(b.dataset.s || 0)) })));
+$('mMade').addEventListener('click', () => { if (MADE.code) net?.send({ t: 'set', plan: MADE.code }); });
+mDiffB.forEach((b, i) => b.addEventListener('click', () => net?.send({ t: 'set', diff: i })));
+// The host's kind of game: the yard's faction holds the yard's team, the outpost's the other; in a free for all the starts take turns.
+$('mTeams').addEventListener('click', e => { const b = (e.target as HTMLElement).closest('[data-t]') as HTMLButtonElement | null, l = net?.lobby; if (!b || !l || b.disabled) return;
+  const n = MAPS[baseOf(l.map)]?.ring || 0, L = TEAM_LAYOUTS[n]?.[+b.dataset.t!]; if (!L) return; if (+b.dataset.t! === 0) { net?.send({ t: 'set', mt: null }); return; }
+  const code = l.out ?? 1, lh = Math.floor(code / 3), lf = code % 3, cyc = [lh, lf, ...[0, 1, 2].filter(f => f !== lh && f !== lf)], facs: number[] = Array(n).fill(-1);
+  L.teams.forEach((grp, gi) => { for (const s of grp) facs[s] = L.teams.length === 2 ? (gi === 0 ? lh : lf) : cyc[gi % cyc.length]; });
+  net?.send({ t: 'set', mt: { n, groups: L.teams.map(x => x.slice()), facs } }); });
+$('mStarts').addEventListener('click', e => { const b = (e.target as HTMLElement).closest('[data-s]') as HTMLElement | null; if (b) net?.send({ t: 'team', s: +b.dataset.s! }); }); mFoeB.forEach((b, i) => b.addEventListener('click', () => { const c = net?.lobby?.out ?? 1; net?.send({ t: 'set', out: Math.floor(c / 3) * 3 + FOE_FAC[i] }); })); mHomeB.forEach((b, i) => b.addEventListener('click', () => { const c = net?.lobby?.out ?? 1; net?.send({ t: 'set', out: i * 3 + c % 3 }); })); mMapB.forEach((b, i) => b.addEventListener('click', () => net?.send({ t: 'set', map: mapCode(+(b.dataset.b ?? i), sizeOf(lobMap)) }))); mSizeB.forEach(b => b.addEventListener('click', () => net?.send({ t: 'set', map: mapCode(baseOf(lobMap), +(b.dataset.s || 0)) })));
 showMode();
 const diffBtns = Array.from($('diff').querySelectorAll('button')) as HTMLButtonElement[];
 const showDiff = () => diffBtns.forEach((b, i) => { b.classList.toggle('on', i === diffI); b.setAttribute('aria-pressed', String(i === diffI)); });
 diffBtns.forEach((b, i) => b.addEventListener('click', () => { diffI = i; showDiff(); save(); })); showDiff();
 const mapBtns = Array.from($('maps').querySelectorAll('button')) as HTMLButtonElement[];
 const sizeBtns = Array.from($('sizes').querySelectorAll('button')) as HTMLButtonElement[];
-const showMap = () => { mapBtns.forEach((b, i) => { b.classList.toggle('on', i === baseOf(mapI)); b.setAttribute('aria-pressed', String(i === baseOf(mapI))); }); sizeBtns.forEach(b => { const on = +(b.dataset.s || 0) === sizeOf(mapI); b.classList.toggle('on', on); b.setAttribute('aria-pressed', String(on)); }); };
+const teamRow = $('teams');
+/** The kind-of-game buttons, for a map with more than two starts only. */
+const showTeams = () => {
+  const n = startsHere(), L = n ? TEAM_LAYOUTS[n] || [] : []; teamRow.hidden = L.length < 2; if (teamI >= L.length) teamI = 0;
+  const say: Record<string, string> = { '1v1': 'One on one, the rest of the starts left empty', '2v2': 'You and one ally against two', '3v3': 'You and two allies against three', '4v4': 'You and three allies against four', 'Free for all': 'Every start for itself' };
+  teamRow.innerHTML = L.map((l, i) => `<button type="button" data-t="${i}" class="${i === teamI ? 'on' : ''}" aria-pressed="${i === teamI}">${l.name}<small>${say[l.name] || ''}</small></button>`).join('');
+};
+teamRow.addEventListener('click', e => { const b = (e.target as HTMLElement).closest('[data-t]') as HTMLElement | null; if (!b) return; teamI = +b.dataset.t!; showTeams(); if (mode === 'skirm' && builtTeam !== teamKey()) fresh(); });
+const showMap = () => { showTeams(); mapBtns.forEach((b, i) => { const on = +(b.dataset.b ?? i) === baseOf(mapI); b.classList.toggle('on', on); b.setAttribute('aria-pressed', String(on)); }); sizeBtns.forEach(b => { const on = +(b.dataset.s || 0) === sizeOf(mapI); b.classList.toggle('on', on); b.setAttribute('aria-pressed', String(on)); }); };
 /** Picks a map, keeping the size; a number of 10 or more is a whole map code with its size. */
 const useMap = (code: number) => { mode = 'skirm'; mapI = code % 100; showMap(); showMode(); save(); if (game.mapI % 100 !== mapI || game.mission) fresh(); };
-const pickMap = (i: number) => useMap(i >= 10 ? i : mapCode(i, sizeOf(mapI)));
-const pickSize = (s: number) => useMap(mapCode(baseOf(mapI), s));
-mapBtns.forEach((b, i) => b.addEventListener('click', () => pickMap(i))); sizeBtns.forEach(b => b.addEventListener('click', () => pickSize(+(b.dataset.s || 0)))); showMap();
+// Picking a map from the list puts any made map away; the map maker's Play button puts it back in use.
+const pickMap = (i: number) => { usePlan(null); showMade(); useMap(i >= 10 ? i : mapCode(i, sizeOf(mapI))); };
+const pickSize = (s: number) => { usePlan(null); showMade(); useMap(mapCode(baseOf(mapI), s)); };
+const showMade = () => { const n = $('makerNote'); if (n) n.textContent = MADE.plan ? 'Your made map is in use. Pick any map above to put it away.' : 'Lay out your own map and share it as a code'; };
+const playMade = (code: number) => { mapI = code % 100; mode = 'skirm'; showMap(); showMode(); showMade(); fresh(); start(); };
+$('makerBtn').addEventListener('click', () => openMaker(playMade));
+// A made map's code after #map= in the address loads it, once the page is up.
+queueMicrotask(() => { const hm = location.hash.match(/map=(M[\w-]+)/); const P = hm ? usePlan(hm[1]) : null; if (P) { mapI = planMap(P) % 100; mode = 'skirm'; showMap(); showMode(); showMade(); fresh(); } });
+mapBtns.forEach((b, i) => b.addEventListener('click', () => pickMap(+(b.dataset.b ?? i)))); sizeBtns.forEach(b => b.addEventListener('click', () => pickSize(+(b.dataset.s || 0)))); showMap();
 const sensEl = $('sens') as HTMLInputElement, volEl = $('vol') as HTMLInputElement; sensEl.value = String(sens); volEl.value = String(vol);
 sensEl.addEventListener('input', () => { sens = +sensEl.value; game.sens = sens; pad.sens = sens; save(); });
 volEl.addEventListener('input', () => { vol = +volEl.value; setVolume(vol); save(); });
@@ -390,7 +481,7 @@ let last = performance.now(), freeShown = false;
 /** Tests that only care about the rules hold the picture still: no game on this page draws until they let go. */
 let still = false;
 function frame(now: number) {
-  const dt = (now - last) / 1000; last = now; if (still) { game.noRender = true; if (game2) game2.noRender = true; }
+  const dt = (now - last) / 1000; last = now; watchFrame(game, dt); if (still) { game.noRender = true; if (game2) game2.noRender = true; }
   // Without mouse capture, holding the cursor near a screen edge turns the view.
   pad.frame(); if (touchOn) document.body.classList.toggle('playing', live());
   if (freeMouse && !touchOn && moved && live() && !game.tab) { const ex = curX < .1 ? (curX - .1) / .1 : curX > .9 ? (curX - .9) / .1 : 0; game.mdx += ex * 900 * dt; }
@@ -399,7 +490,7 @@ function frame(now: number) {
     if (game.phase !== 'paused') split.frame(dt);
     padPoll(dt);
     audioSeat(.65, 0); game.update(dt); audioSeat(.65, 1); game2.update(dt); audioSeat(1, 0);
-  } else { if (split && game.phase !== 'paused') split.frame(dt); if (cutP.on) cutP.frame(dt); game.update(dt); }
+  } else { if (split && game.phase !== 'paused') split.frame(dt); if (cutP.on) cutP.frame(dt); if (!still) padPoll(dt); game.update(dt); }
   if (fpsOn) { fpsN++; fpsT += dt; fpsWorst = Math.max(fpsWorst, dt); if (fpsT >= .5) { const info = pipe.renderer.info.render; $('fps').textContent = `${Math.round(fpsN / fpsT)} fps · worst ${Math.round(fpsWorst * 1000)} ms · ${pipe.w | 0}×${pipe.h | 0} · ${game.units.length} units`; fpsN = 0; fpsT = 0; fpsWorst = 0; void info; } }
   const GL = SIDE.out === 2, classic = fac(SIDE.home) === 0 && fac(SIDE.out) !== 0, hqN = (t: number) => BLD[FACTION[t].hq].name;
   if (game.story) { /* a story job writes its own end screen */ }
@@ -422,5 +513,5 @@ function frame(now: number) {
   if (fast > 900 && quality < 1) { quality = Math.min(1, quality / .85); fast = 0; pipe.aa = aaFor(); pipe.ao = aoFor(); pipe.glow = pipe.shafts = glowFor(); LAMP_ON.value = (gfxI as number) !== 1; resize(); }
   requestAnimationFrame(frame);
 }
-(window as any).__ore = { MAP: () => MAP, models: MD, tx: TX, mats: M, gloamB: GLOAM_BUILDINGS, gloamBloom: bloomPatch, sounds: { ready: soundsReady, sfx }, quit, atlasUsed: MD.atlasUsed, game, start, pipe, hud, hud2, startSplit, startVeyl, split: () => split, game2: () => game2, setFree: (v: boolean) => { freeMouse = v; }, hold: (v: boolean) => { still = v; }, pickMap, pickSize, pickSide: (s: number, f = 0) => { mode = "skirm"; sideI = s; foeI = s ? s - 1 : f; showSide(); fresh(); }, unlock: () => { camp = STORY_JOBS; mpOpen = true; mode = 'multi'; showMode(); }, net: () => net, pickJob: (i: number) => { mode = 'camp'; camp = Math.max(camp, Math.min(i, STORY_JOBS)); jobI = i; showMode(); fresh(); }, playCuts, cuts: CUTS, cutP, startStory: (i: number) => { mode = 'camp'; jobI = i; camp = Math.max(camp, Math.min(i, STORY_JOBS)); start(); } };
+(window as any).__ore = { MAP: () => MAP, ter: () => TER, models: MD, tx: TX, mats: M, gloamB: GLOAM_BUILDINGS, gloamBloom: bloomPatch, sounds: { ready: soundsReady, sfx }, quit, atlasUsed: MD.atlasUsed, game, start, pipe, hud, hud2, startSplit, startVeyl, pause, resume, touch: pad, setTouch, reg: { defineAbilities, defineBuildings, UNIT, BLD, isFriend }, padDrive: (p: Gamepad, dt = 1 / 30) => padDrive(game, p, 0, dt), split: () => split, game2: () => game2, setFree: (v: boolean) => { freeMouse = v; }, hold: (v: boolean) => { still = v; }, pickMap, pickSize, pickSide: (s: number, f = 0) => { mode = "skirm"; sideI = s; foeI = s ? s - 1 : f; showSide(); fresh(); }, unlock: () => { camp = STORY_JOBS; mpOpen = true; mode = 'multi'; showMode(); }, net: () => net, pickJob: (i: number) => { mode = 'camp'; camp = Math.max(camp, Math.min(i, STORY_JOBS)); jobI = i; showMode(); fresh(); }, playCuts, cuts: CUTS, cutP, startStory: (i: number) => { mode = 'camp'; jobI = i; camp = Math.max(camp, Math.min(i, STORY_JOBS)); start(); } };
 requestAnimationFrame(frame);

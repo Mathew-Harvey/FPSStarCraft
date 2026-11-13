@@ -20,3 +20,4 @@ defineUnits({
 
 // The first-person view model: the Veyl hand and blade, how it kicks and works.
 defineFaction(1, { view(g, pose) { const me = g.me!, vm = g.vm; pose(vm.veyl, 0, g.recoil * (me.kind === 'cantor' ? -.3 : .1) + (me.kind === 'tender' ? (g.lmb && g.tool === 1 ? -.02 + R(-.004, .004) : 0) - g.bashT * .8 : 0), g.vWind > 0 ? -.12 : me.kind === 'tender' && g.tool === 2 ? .12 : 0); } });
+import './wire';

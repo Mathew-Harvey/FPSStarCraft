@@ -50,7 +50,7 @@ export function spitAt(g: Game, u: Unit, t: Unit | Building, dmg: number, mat: T
 /** The nearest live enemy body to a spot, inside `r`, that `by` may hit (seen, and on a layer it can reach). */
 export function nearestFoeAt(g: Game, team: number, x: number, z: number, r: number, test?: (o: Unit) => boolean) {
   let best: Unit | null = null, bd = r;
-  for (const o of g.units) { if (!o.alive || o.team === team || o.inside || (test && !test(o)) || ((o.status || UNIT[o.kind].cloak) && !seenBy(g, team, o))) continue; const d = Math.hypot(o.pos.x - x, o.pos.z - z); if (d < bd) { bd = d; best = o; } }
+  for (const o of g.units) { if (!o.alive || !isEnemy(o.team, team) || o.inside || (test && !test(o)) || ((o.status || UNIT[o.kind].cloak) && !seenBy(g, team, o))) continue; const d = Math.hypot(o.pos.x - x, o.pos.z - z); if (d < bd) { bd = d; best = o; } }
   return best;
 }
 

@@ -3,6 +3,7 @@
 import type { Game } from '../game';
 import type { Unit, Building } from '../data';
 import { UNIT } from '../data';
+import { isEnemy } from './sides';
 import { canAct } from './status';
 import { unitRule } from './registry';
 const dugOK = (u: Unit, a: AbilityDef | null) => !!a?.dug || !!unitRule(u.kind).dugFight;
@@ -48,7 +49,7 @@ export function whyNot(g: Game, u: Unit, key: string, t: Target): string {
   if (!u.alive) return 'dead'; if (u.inside) return 'inside'; if (!canAct(u, dugOK(u, a))) return 'cannot act';
   if ((u.energy ?? 0) < a.energy) return 'energy'; if ((u.abCd?.[key] ?? 0) > 0) return 'cooldown'; if (u.cast) return 'busy';
   if (a.target !== 'self') { if (!isFinite(t.x) || !isFinite(t.z)) return 'aim'; if (Math.hypot(t.x - u.pos.x, t.z - u.pos.z) > a.range + 1) return 'range'; }
-  if (a.target === 'body') { const o = bodyOf(g, t.id); if (!o || !o.alive) return 'target'; const ally = o.team === u.team; if ((a.who ?? 'foe') === 'ally' ? !ally : (a.who ?? 'foe') === 'foe' ? ally : false) return 'target'; if (Math.hypot(o.pos.x - u.pos.x, o.pos.z - u.pos.z) > a.range + 1) return 'range'; }
+  if (a.target === 'body') { const o = bodyOf(g, t.id); if (!o || !o.alive) return 'target'; const ally = !isEnemy(o.team, u.team); if ((a.who ?? 'foe') === 'ally' ? !ally : (a.who ?? 'foe') === 'foe' ? ally : false) return 'target'; if (Math.hypot(o.pos.x - u.pos.x, o.pos.z - u.pos.z) > a.range + 1) return 'range'; }
   if (a.can && !a.can(g, u, t)) return 'refused';
   return '';
 }
@@ -71,9 +72,10 @@ function fire(g: Game, u: Unit, a: AbilityDef, t: Target) {
 }
 
 /** Every frame: energy grows back, cooldowns count down, wind-ups go off, and bot bodies use what their hooks pick. */
-let aiT = 0;
+/** Each game's own think timer: a server runs many matches, and a replay must start the clock where the match did (K). */
+const AIT = new WeakMap<Game, number>();
 export function tickAbilities(g: Game, dt: number) {
-  aiT -= dt; const think = aiT <= 0; if (think) aiT = .5;
+  let aiT = (AIT.get(g) ?? 0) - dt; const think = aiT <= 0; if (think) aiT = .5; AIT.set(g, aiT);
   for (const u of g.units) {
     if (!u.alive) continue;
     if (u.maxEnergy) u.energy = Math.min(u.maxEnergy, (u.energy ?? 0) + ENERGY.regen * dt);

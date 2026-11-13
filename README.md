@@ -44,6 +44,7 @@ One skirmish as the Ironhold Charter against a Veyl outpost. Smash the three Cho
 - **Jump**: hold `Tab` for the slowed-down overview and pick a body, press `F` on a unit you are looking at, or `Q` to go back to your last body. If your body dies you drop into the nearest one.
 - **Quartermaster**: an AI that runs the economy for you (build order, supply, upgrades, training). `G` turns it off if you want to do it yourself.
 - **Squad plans**: Alpha squad pitches a plan when it has the numbers: Yard Push down the road, Back Door round the north ridge, or Last Shift when one Stone is left. `Z` agrees, `C` picks the other route, `X` holds, `V` makes them follow you, middle click sends them somewhere. A push that breaks nothing makes the squad wait for two more bodies before it pitches the next one, up to six more, so the army builds up instead of trickling into the outpost.
+- **Command view and map**: scroll the wheel out and the camera lifts off your body into an angled view of the yard. Click or drag a box to pick bodies, right click to send them somewhere, at an enemy, to a seam or to a building site. Click a building and press `E` `T` `Y` `U` to order from it. Hold the middle button to slide the camera. Scroll further out, or press `M`, for the whole map. Scroll all the way in to drop into the picked body. See [Command view](#command-view).
 - **Raids**: the Veyl hit your base in growing waves from the east road or the north ridge, with a fifteen second warning.
 - Three difficulty levels, an adaptive synthesised soundtrack, and mouse and volume settings on the pause screen.
 
@@ -58,6 +59,8 @@ One skirmish as the Ironhold Charter against a Veyl outpost. Smash the three Cho
 | `Tab` `F` `Q` | Jump |
 | `Z` `C` `X` `V`, middle click | Squad plans and orders |
 | `G` | Quartermaster on or off |
+| Wheel out, or `N` | Command view (wheel all the way in to jump into a body) |
+| `M` | The full map |
 | `Esc` | Pause and settings |
 
 ![Jump overview](docs/screenshots/jump.jpg)
@@ -96,6 +99,33 @@ TypeScript and three.js, bundled by esbuild into one HTML file. No art assets: m
 - `src/director.ts`: the strategy layer every side shares: squad playbooks, rallies, pushes, orders from the player, callouts and chatter. Each faction's own bot brain is in its `brain.ts`.
 - `src/hud.ts`, `src/style.css`, `src/page.html`: the HUD and menus.
 - `src/audio.ts`: sound effects (sampled, with the old synthesised set as a fallback), voices and the step-sequenced music.
+
+## Command view
+
+The command view is for giving orders. First person is where fights are won. These rules keep it that way, and the numbers are in `LEAD` and `ZOOM` in `src/command.ts`:
+
+- **Leading in person.** Fighters the game is driving, within 30 m of a body one of their own side's players is driving, deal 25% more damage and take 15% less. A player in the command view leads nobody.
+- **The match does not wait.** Time runs at full speed (the `Tab` jump picker still slows it). The body you left carries on as ordinary crew offline, and stands where it is online.
+- **Some jobs stay on the ground.** Staking out a new building needs a worker body or the Quartermaster. Hand drilling and hand welding are first person only.
+- **You see what your crew sees.** From above, enemy bodies show only inside your crew's sight, enemy buildings only once somebody has laid eyes on them, and ground nobody has walked is dark.
+- Bodies ordered from above are left alone by the squad's own plans until you press `R` (back to the squad), or give a squad order from first person (`V`, middle click).
+
+| In the command view | |
+| --- | --- |
+| Click, drag a box, `Shift` | Pick bodies (a box with fighters in it leaves the workers out). Double click picks every body of that kind on screen |
+| Right click | Go there, attack that enemy, work that seam, build or mend that building |
+| Click a building, then `E` `T` `Y` `U` | Train and research |
+| Hold middle button, `WASD`, screen edge | Slide the camera |
+| Wheel | Zoom. All the way in drops you into the picked body, or the nearest one to the middle of the screen. All the way out is the map |
+| `F` | Jump into the picked body |
+| `R` | Hand the picked bodies back to the squad, or the workers back to their own choice of seam |
+| `Space` | Centre on your body |
+| `N` | Back to the body you left |
+| `M` | Map. On the map, click to look there and right click to send the picked bodies |
+
+Not done yet: touch screens and the second player's controller have no way into the command view, and buildings cannot be staked out from above.
+
+`node test/command.mjs` checks the zoom, picking, every order, the bonus, what is hidden, and the same orders through a split screen match.
 
 ## Design
 

@@ -4,6 +4,7 @@
 import * as THREE from 'three';
 import { V3, R, M } from '../../gfx';
 import { sfx } from '../../audio';
+import { isEnemy } from '../../core/sides';
 import type { Game } from '../../game';
 import { UNIT, BLD, Unit, Building, Kind, isUnit, fac } from '../../data';
 import { defineUnits, defineBuildings, defineFaction, addHitFilter, type Hit } from '../../core/registry';
@@ -148,7 +149,7 @@ function aiNeedler(g: Game, u: Unit, dt: number) {
 /** Spines out of the ground along a line: every enemy body and building on it is hit once. */
 export function spineLine(g: Game, u: Unit, yaw: number, len: number, by: Unit | null = u) {
   const N = G2.needler, fx = Math.sin(yaw), fz = Math.cos(yaw), dmg = N.dmg * gMul(g, u.team, 'needler'); let n = 0;
-  for (const o of g.units) { if (!o.alive || o.team === u.team || o.air || o.inside) continue; const dx = o.pos.x - u.pos.x, dz = o.pos.z - u.pos.z, along = dx * fx + dz * fz, side = Math.abs(dx * fz - dz * fx); if (along < 0 || along > len + UNIT[o.kind].rad || side > N.width + UNIT[o.kind].rad * .6) continue; g.damage(o, dmg + (UNIT[o.kind].tags?.includes('plated') ? N.plated : 0), by); n++; }
+  for (const o of g.units) { if (!o.alive || !isEnemy(o.team, u.team) || o.air || o.inside) continue; const dx = o.pos.x - u.pos.x, dz = o.pos.z - u.pos.z, along = dx * fx + dz * fz, side = Math.abs(dx * fz - dz * fx); if (along < 0 || along > len + UNIT[o.kind].rad || side > N.width + UNIT[o.kind].rad * .6) continue; g.damage(o, dmg + (UNIT[o.kind].tags?.includes('plated') ? N.plated : 0), by); n++; }
   for (const b of g.buildings) { if (!b.alive || b.team === u.team) continue; for (let s = 1; s <= len; s += 1.5) if (g.distToBox(b, u.pos.x + fx * s, u.pos.z + fz * s) < .6) { g.damage(b, dmg, by); n++; break; } }
   if (!g.noRender) for (let s = 1.2; s <= len; s += 1.4) g.puff(TMP.set(u.pos.x + fx * s, .3, u.pos.z + fz * s), 1, .5, M.dust, 1.4, .4, .35);
   g.tracer(V3(u.pos.x + fx, .2, u.pos.z + fz), V3(u.pos.x + fx * len, .5, u.pos.z + fz * len), spineMat, .16); if (g.vol(u.pos) > .1) sfx.slash(g.vol(u.pos)); u.swing = 1;
@@ -193,7 +194,7 @@ export function gnatBite(g: Game, u: Unit, t: Unit | Building, by: Unit | null =
   const N = G2.gnatwing, base = N.bite * gMul(g, u.team, 'gnatwing'), hit = new Set<Unit | Building>([t]); let cur: Unit | Building = t;
   spitAt(g, u, t, base, acidMat, 0);
   for (const k of N.jump) {
-    let next: Unit | null = null, bd = N.jumpR; for (const o of g.units) { if (!o.alive || o.team === u.team || hit.has(o) || o.inside) continue; const d = Math.hypot(o.pos.x - cur.pos.x, o.pos.z - cur.pos.z); if (d < bd) { bd = d; next = o; } }
+    let next: Unit | null = null, bd = N.jumpR; for (const o of g.units) { if (!o.alive || !isEnemy(o.team, u.team) || hit.has(o) || o.inside) continue; const d = Math.hypot(o.pos.x - cur.pos.x, o.pos.z - cur.pos.z); if (d < bd) { bd = d; next = o; } }
     if (!next) break; hit.add(next); g.tracer(V3(cur.pos.x, 1, cur.pos.z), V3(next.pos.x, UNIT[next.kind].bodyY + (next.alt || 0), next.pos.z), acidMat, .08); g.damage(next, base * k, by); cur = next;
   }
   if (g.vol(u.pos) > .1) sfx.hit();

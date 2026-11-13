@@ -7,6 +7,7 @@ import type { Game } from '../../game';
 import { UNIT, BLD, Unit, Building, isUnit, isWorker } from '../../data';
 import { G_TUNE, GBKind, BLOOM2, G2 } from './numbers';
 import { DEFAULTS, factionRule } from '../../core/registry';
+import { isEnemy } from '../../core/sides';
 import { defineUnits, defineBuildings, defineFaction } from '../../core/registry';
 import { defineAbilities } from '../../core/ability';
 

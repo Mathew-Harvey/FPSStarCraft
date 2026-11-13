@@ -1,14 +1,16 @@
 // The simulation and the player: entities, combat, effects, the first-person bodies,
 // and jumping between them. Strategy (economy AI, raids, squad plans) lives in director.ts.
 import * as THREE from 'three';
-import { Pipeline, ViewPipe, V3, M, G, R, mk, setLayer, L_FX, L_SELF, holoOK, holoBad, ringMat, tracerMat, makeSky, heldMaterial, makeCone, CONEU } from './gfx';
+import { Pipeline, ViewPipe, V3, M, G, R, mk, setLayer, L_FX, L_SELF, holoOK, holoBad, ringMat, tracerMat, makeSky, heldMaterial, makeCone, CONEU, SHARED } from './gfx';
 import * as MD from './models';
 import { sfx, drillSound, setMood, babble } from './audio';
 import type { Hud } from './hud';
-import { Fog } from './fog';
+import { Fog, SIGHT } from './fog';
+import * as T from './terrain';
+import { seamsFor } from './teammaps';
 import { LOD } from './meshes';
 import { Intel } from './scout';
-import { Kind, BKind, UNIT, BLD, BUILDABLE, UPGRADES, TRAINS, UNIT_NEEDS, UpKey, Unit, Building, Prop, OreNode, Difficulty, DIFFS, OUTPOST, GATE, MAP, MAPS, ROAD, VHOME, FACTION, SIDE, setMap, veylPt, isUnit, isSoldier, isWorker, isFighter, foeOf, fac, MIRROR, atHome, endPt, swapEnd , STORY, turnOf, LAYOUT, OVERTIME, CHOIR_REACH, CLEAVE } from './data';
+import { Kind, BKind, UNIT, BLD, BUILDABLE, UPGRADES, TRAINS, UNIT_NEEDS, UpKey, Unit, Building, Prop, OreNode, Difficulty, DIFFS, OUTPOST, GATE, MAP, MAPS, ROAD, VHOME, FACTION, SIDE, setMap, veylPt, isUnit, isSoldier, isWorker, isFighter, foeOf, fac, MIRROR, atHome, endPt, swapEnd , STORY, turnOf, LAYOUT, OVERTIME, CHOIR_REACH, CLEAVE, turnPt, startXZ } from './data';
 import { Director } from './director';
 import { ENV, hourOf, matchHour, matchWeather, lampsBegin, lamp, flashLamp, lampsCommit, flicker, LAMP_ON } from './light';
 import type { Mission } from './campaign';
@@ -18,6 +20,7 @@ import { unitRule, bldRule, factionRule, DEFAULTS, HIT_FILTERS, type Hit } from 
 import './factions';
 import { plainBody } from './core/plain';
 import { Stance } from './stance';
+import { Command, LEAD, ZOOM } from './command';
 import { levelMul, armourHit, canHit, LEVELS, catOf, inCat } from './core/combat';
 import { tickStatus, statusPace, canAct, soak, hasStatus } from './core/status';
 import { initEnergy, tickAbilities, useAbility, type Target } from './core/ability';
@@ -25,7 +28,7 @@ import { initAir, tickAir, airCollide, sameLayer, flyKeys } from './core/air';
 import { seenBy, drawShimmer } from './core/sight';
 import { tickCargo, spill, fightsInside } from './core/cargo';
 import { tickMorph } from './core/morph';
-import { isEnemy, TEAM_SLOTS, MATCH } from './core/sides';
+import { isEnemy, isFriend, TEAM_SLOTS, MATCH, multi } from './core/sides';
 import { type Vent, layVents, costOf, canPay, pay, refund, shortOf, ventWork, ventAt, seamRate, seamFull, capSupply } from './core/econ';
 import { applySnap, netTick } from './netgame';
 import { G_TUNE, GBKind } from './factions/gloam/numbers';
@@ -55,6 +58,8 @@ import { WARM, HEAD, FLOOD, FIRE, TEAL, ROSE, SICK, ORE, MUZZLE } from './core/l
 const bubbleMat = new THREE.MeshBasicMaterial({ color: 0x6dfff0, transparent: true, opacity: .4, depthWrite: false, blending: THREE.AdditiveBlending });
 const warnMat = new THREE.MeshBasicMaterial({ color: 0xff4f9a, transparent: true, opacity: .9, depthWrite: false, side: THREE.DoubleSide });
 let nextId = 1;
+/** The next body or building id, read and set per match by the match runner (src/match.ts), so two matches on one server and a replay give out the same ids. */
+export const ids = { get next() { return nextId; }, set next(v: number) { nextId = v; } };
 interface Proj { obj: THREE.Object3D; pos: THREE.Vector3; vel: THREE.Vector3; team: number; dmg: number; nade: boolean; life: number; from: Unit | null; ghost: number }
 /** The model for a kind of body: its art if it has some, else a plain stand-in (see core/plain.ts). */
 const figureOf = (kind: Kind) => { try { return MD.unit(kind); } catch { return plainBody(kind); } };
@@ -96,9 +101,13 @@ export class Game {
   tool = 1; buildSel = 0; buildRot = false; placeOK = false; placePos = V3(); ghost: Record<string, THREE.Group> = {}; ghostBad: Record<string, THREE.Group> = {};
   ammo = 24; reloadT = 0; fireCd = 0; recoil = 0; ads = 0; brace = false; nadeCd = 0; bashCd = 0; bashT = 0; mineT = 0; bob = 0; prompt = ''; swayX = 0; swayY = 0; sens = 1;
   tab = false; tabSel = 0; tabList: { label: string; task: string; unit: Unit; hp: number; alert: boolean }[] = [];
-  keys = new Set<string>(); pressed = new Set<string>(); mdx = 0; mdy = 0; lmb = false; rmb = false; wheel = 0;
+  keys = new Set<string>(); pressed = new Set<string>(); mdx = 0; mdy = 0; lmb = false; rmb = false; /** The middle button is held: it slides the camera in the command view. */ mmb = false; wheel = 0;
+  /** The command view and the map: the camera above the yard, what is picked, and the orders given from up there. */
+  cmd!: Command;
+  /** The bodies players are driving on the ground this tick. Crew near one of them fight better (see LEAD in command.ts). */
+  leads: Unit[] = [];
   obj = { drilled: 0, jumped: false, answered: false, built: false, called: false };
-  stats = { kills: 0, lost: 0, mined: 0, minedV: 0, built: 0, lostTo: {} as Record<string, number>, lostToV: {} as Record<string, number> };
+  stats = { kills: 0, lost: 0, mined: 0, minedV: 0, /** Ore banked by each side, by team (the watcher's income graph in a team game). */ bySide: [] as number[], built: 0, lostTo: {} as Record<string, number>, lostToV: {} as Record<string, number> };
   // effects
   vm: Record<string, THREE.Group> = {};
   tracers: { m: THREE.Mesh; t: number }[] = []; puffs: { m: THREE.Mesh; t: number; life: number; v: THREE.Vector3; s: number }[] = [];
@@ -116,17 +125,17 @@ export class Game {
   constructor(public pipe: Pipeline | ViewPipe, public hud: Hud, public diff: Difficulty = DIFFS[1], public mapI = 0, public mission: Mission | null = null, public net: Net | null = null, /** The Veyl run a real economy (Tenders, building, training) instead of breeding raids for free. On whenever somebody plays the Veyl. */ public eco = false) {
     // Only the classic match (Ironhold at home, the Veyl at the outpost) can run the Veyl as a free raid factory. The Gloam, the mirrors and
     // anyone else at home always run a real economy on both sides.
-    if (!(fac(SIDE.home) === 0 && fac(SIDE.out) === 1) || turnOf(mapI) > 0) this.eco = true;   // and on a hidden map nobody starts with a base already built
+    if (!(fac(SIDE.home) === 0 && fac(SIDE.out) === 1) || turnOf(mapI) > 0 || multi()) this.eco = true;   // and on a hidden map nobody starts with a base already built
     // Two economies and no story job: the ore is laid out the same for both ends (see LAYOUT). A story job keeps the fields it was written round.
     this.fair = LAYOUT.fair = this.eco && !mission && !STORY.on;
-    setMap(mapI); this.sites = MAP.sites!; (M.ground as any).uniforms.uColor.value.setRGB(MAP.ground[0], MAP.ground[1], MAP.ground[2]); (M.mesa as any).uniforms.uColor.value.setRGB(MAP.mesa[0], MAP.mesa[1], MAP.mesa[2]); (M.rock as any).uniforms.uColor.value.setRGB(MAP.rock[0], MAP.rock[1], MAP.rock[2]); 
+    setMap(mapI); this.sites = MAP.sites!; this.made = { plan: T.MADE.plan, code: T.MADE.code };   // terrain (J): a made map, if one is in use (M.ground as any).uniforms.uColor.value.setRGB(MAP.ground[0], MAP.ground[1], MAP.ground[2]); (M.mesa as any).uniforms.uColor.value.setRGB(MAP.mesa[0], MAP.mesa[1], MAP.mesa[2]); (M.rock as any).uniforms.uColor.value.setRGB(MAP.rock[0], MAP.rock[1], MAP.rock[2]); 
     this.wxSalt = mapI + (net ? 0 : Date.now() % 50);   // the clock, not the dice: a draw here would move every bot match that follows
     const s = this.scene; s.add(makeSky()); MD.buildWorld(s, this.props, this.anim); this.spires = this.props.filter(p => p.solid); s.add(this.cam);
     this.vm = { drill: MD.vmDrill(), rifle: MD.vmRifle(), scatter: MD.vmScatter(), shield: MD.vmShield(), cannon: MD.vmCannon(), long: MD.vmLong(), pistol: MD.vmPistol(), veyl: MD.vmVeyl() };
-    if (fac(SIDE.home) === 2 || fac(SIDE.out) === 2) for (const k of Object.keys(UNIT).filter(k => UNIT[k as Kind].team === 2)) { try { this.vm['g_' + k] = MD.vmG(k as any); } catch { /* no view model drawn for this kind yet */ } }
+    if (fac(SIDE.home) === 2 || fac(SIDE.out) === 2 || MATCH.teams.some(t => fac(t) === 2)) for (const k of Object.keys(UNIT).filter(k => UNIT[k as Kind].team === 2)) { try { this.vm['g_' + k] = MD.vmG(k as any); } catch { /* no view model drawn for this kind yet */ } }
     this.carpet = new Bloom(s);
     for (const k in this.vm) { this.vm[k].visible = false; this.cam.add(this.vm[k]); this.vm[k].traverse(o => { const m = o as THREE.Mesh; if (m.isMesh && !Array.isArray(m.material)) m.material = heldMaterial(m.material); }); }
-    for (const k of new Set([...BUILDABLE, ...FACTION[SIDE.home].builds, ...FACTION[SIDE.out].builds])) { const src = this.model(k); this.ghost[k] = MD.hologram(src, holoOK); this.ghostBad[k] = MD.hologram(src, holoBad); this.ghost[k].visible = this.ghostBad[k].visible = false; s.add(this.ghost[k], this.ghostBad[k]); }
+    for (const k of new Set([...BUILDABLE, ...FACTION[SIDE.home].builds, ...FACTION[SIDE.out].builds, ...MATCH.teams.flatMap(t => FACTION[t].builds)])) { const src = this.model(k); this.ghost[k] = MD.hologram(src, holoOK); this.ghostBad[k] = MD.hologram(src, holoBad); this.ghost[k].visible = this.ghostBad[k].visible = false; s.add(this.ghost[k], this.ghostBad[k]); }
     const pool = (n: number, geo: THREE.BufferGeometry, mat: THREE.Material, fx: boolean) => { const out: THREE.Mesh[] = []; for (let i = 0; i < n; i++) { const m = mk(geo, mat, 0, 0, 0, s); if (fx) m.layers.set(L_FX); m.visible = false; out.push(m); } return out; };
     this.tracers = pool(36, G.oct, tracerMat, true).map(m => ({ m, t: 0 }));
     this.puffs = pool(96, G.cloud, M.dust, false).map(m => ({ m, t: 0, life: 1, v: V3(), s: 1 }));
@@ -137,18 +146,20 @@ export class Game {
     for (let i = 0; i < 6; i++) { const g = new THREE.Group(), mats = [0x0e0d14, 0xffb23a, 0xfff6c0].map(c => new THREE.MeshBasicMaterial({ color: c, transparent: true, depthWrite: false })); mats.forEach((m, j) => { const k = [1, .86, .5][j]; mk(G.burst, m, [0, 0, j * .03], [k, k, 1], [0, 0, j === 2 ? .24 : 0], g).renderOrder = 5 + j; }); setLayer(g, L_FX); g.visible = false; s.add(g); this.bursts.push({ g, t: 0, s: 1, rot: 0, mats }); }
     this.bubbles = pool(10, G.sph, bubbleMat, true).map(m => ({ m, t: 0, u: null }));
     this.warns = pool(6, G.ringG, warnMat, true).map(m => { m.rotation.x = -Math.PI / 2; return { m, t: 0, life: 1, r: 1 }; });
-    this.fx = new HitFx(this); this.stance = new Stance(this);
-    const field = (list: number[][], amount: number) => { for (const [x, z, n, sc] of list) { const obj = MD.oreCluster(n, sc); obj.position.set(x, 0, z); s.add(obj); this.ores.push({ pos: V3(x, 0, z), amount, max: amount, obj }); } };
+    this.fx = new HitFx(this); this.stance = new Stance(this); this.cmd = new Command(this);
+    const field = (list: number[][], amount: number) => { for (const [x, z, n, sc] of list) { const gy = T.h(x, z), obj = MD.oreCluster(n, sc); obj.position.set(x, gy, z); s.add(obj); this.ores.push({ pos: V3(x, gy, z), amount, max: amount, obj }); } };
     field(YARD_SEAMS, 900);
     // the rich seam, then the other fields out on the map, each with room for a new Headframe on the side facing the yard
     // In a fair layout a field marked as a twin is the one before it turned round, seam for seam, and a field the same walk from both ends
     // faces away from the middle of the map and not away from the yard.
     { let prev: number[][] = [], prevAmt = 0; const mid = swapEnd(0, 0).map(v => v / 2);
-      MAP.sites!.forEach(([ex, ez, twin], i) => { let list: number[][], amt = 1000;
-        if (twin && prev.length) { list = prev.map(([x, z, n, sc]) => { const [mx, mz] = swapEnd(x, z); return [Math.round(mx), Math.round(mz), n, sc]; }); amt = prevAmt; }
+      MAP.sites!.forEach(([ex, ez, twin], i) => { let list: number[][], amt = 1000; const own = seamsFor(MAP, i, YARD_SEAMS);   // terrain (J): a team map's fields are laid by teammaps.ts
+        if (own) { list = own.list; amt = own.amt; }
+        else if (twin && prev.length) { list = prev.map(([x, z, n, sc]) => { const [mx, mz] = swapEnd(x, z); return [Math.round(mx), Math.round(mz), n, sc]; }); amt = prevAmt; }
         else if (!i) { list = [[ex - 1, ez, 10, 1.5], [ex + 4, ez + 4, 8, 1.3], [ex - 3, ez - 5, 9, 1.4]]; amt = 1600; }
         else { const even = this.fair && Math.abs(Math.hypot(ex, ez) - Math.hypot(ex - mid[0] * 2, ez - mid[1] * 2)) < 6, fx = even ? ex - mid[0] : ex, fz = even ? ez - mid[1] : ez, l = Math.hypot(fx, fz) || 1, ux = fx / l, uz = fz / l; list = [[ex + ux * 3 - uz * 6, ez + uz * 3 + ux * 6, 8, 1.2], [ex + ux * 6, ez + uz * 6, 9, 1.3], [ex + ux * 3 + uz * 6, ez + uz * 3 - ux * 6, 7, 1.1], [ex + ux * 9 - uz * 2, ez + uz * 9 + ux * 2, 8, 1.2]].map(p => [Math.round(p[0]), Math.round(p[1]), p[2], p[3]]); }
-        field(list, amt); prev = list; prevAmt = amt; }); }
+        field(list, amt); prev = list; prevAmt = amt; if (T.isBright(i)) MD.brighten(this.ores.slice(-list.length), T.BRIGHT); }); }
+    for (const f of T.TER.fields) { field(f.seams.map(([x, z, n, sc]) => [f.x + x, f.z + z, n, sc]), f.amount); }   // terrain (J): island fields
     // The home seams at the outpost end. Against Ironhold at the yard they are the Veyl's own, a few metres closer to the Choir Stone than the
     // yard's are to the Headframe (the pairings were balanced with that). Any other pairing gets the yard's layout turned end for end, so a
     // mirror match starts both sides the same walk from their ore: with the closer seams the outpost side won 25 of 30 mirror bot matches.
@@ -159,8 +170,14 @@ export class Game {
       // The yard keeps its walks to the ore clear; the outpost's scenery was laid out for the Veyl's seams. Clear anything standing on the walk
       // from the outpost's home building to each turned-round seam, so its workers do not detour round domes and crystals (they mined 12% less).
       const seg = (px: number, pz: number, bx: number, bz: number) => { const dx = bx - VHOME.x, dz = bz - VHOME.z, L = dx * dx + dz * dz || 1, t = Math.max(0, Math.min(1, ((px - VHOME.x) * dx + (pz - VHOME.z) * dz) / L)); return Math.hypot(px - VHOME.x - dx * t, pz - VHOME.z - dz * t); };
-      for (const q of this.props) if (q.alive && q.kind !== 'mesa' && seams.some(([x, z]) => seg(q.x, q.z, x, z) < q.r + 2.5)) { q.alive = false; const i = this.spires.indexOf(q); if (i >= 0) this.spires.splice(i, 1); for (const r of q.ranges) { const a = r.attr.array as Float32Array; for (let k = r.start * 3, e = (r.start + r.count) * 3; k < e; k += 3) { a[k] = q.x; a[k + 1] = -80; a[k + 2] = q.z; } r.attr.needsUpdate = true; } if (q.obj) s.remove(q.obj); }
+      for (const q of this.props) if (q.alive && q.kind !== 'mesa' && seams.some(([x, z]) => seg(q.x, q.z, x, z) < q.r + 2.5)) this.clearProp(q);
     }
+    // A match of more than two sides: every other start gets the yard's seams turned round to it (unless the map already has a field there),
+    // and the scenery on its building ground and its walks to the ore is cleared, as the far base's is.
+    if (multi()) MATCH.teams.forEach((t, j) => { if (j < 2) return; const i = MATCH.at[j], [sx, sz] = startXZ(i);
+      if (!this.ores.some(n => Math.hypot(n.pos.x - sx, n.pos.z - sz) < 25)) field(YARD_SEAMS.map(([x, z, n, sc]) => { const [mx, mz] = turnPt(i, x, z); return [Math.round(mx), Math.round(mz), n, sc]; }), 900);
+      const mine = this.ores.filter(n => Math.hypot(n.pos.x - sx, n.pos.z - sz) < 25), seg = (px: number, pz: number, bx: number, bz: number) => { const dx = bx - sx, dz = bz - sz, L = dx * dx + dz * dz || 1, k = Math.max(0, Math.min(1, ((px - sx) * dx + (pz - sz) * dz) / L)); return Math.hypot(px - sx - dx * k, pz - sz - dz * k); };
+      for (const q of this.props) if (q.alive && q.kind !== 'mesa' && (Math.hypot(q.x - sx, q.z - sz) < q.r + 16 || mine.some(n => seg(q.x, q.z, n.pos.x, n.pos.z) < q.r + 2.5))) this.clearProp(q); });
     layVents(this);
     // Each end starts with its faction's home building and six workers: the yard for the side at home, the outpost for the side at the far end.
     // The one exception is the classic match, where a Veyl outpost nobody plays is a whole working base that breeds its raids for free.
@@ -169,6 +186,7 @@ export class Game {
     start(SIDE.home, 0, 0, crew);
     const V = (k: BKind, lx: number, lz: number, rot = false) => { if (net) return; const [x, z] = veylPt(lx, lz); this.addBuilding(k, SIDE.out, x, z, true, rot); };
     // With turned-round seams the far crew is the yard crew turned round too, so both ends start the same walk from the same spots.
+    if (multi()) MATCH.teams.forEach((t, j) => { if (j >= 2) { const i = MATCH.at[j], [sx, sz] = startXZ(i); start(t, sx, sz, crew.map(([x, z]) => turnPt(i, x, z))); } });
     if (this.eco) start(SIDE.out, VHOME.x, VHOME.z, classic ? [[14, 4], [15, -3], [17, 6], [13, -6], [16, 1], [12, 7]].map(([lx, lz]) => veylPt(lx, lz)) : crew.map(([x, z]) => swapEnd(x, z)));
     else {
     for (const [x, z] of [[-6, -9], [3, 1], [-6, 11]]) V('choir', x, z);
@@ -193,7 +211,7 @@ export class Game {
   spawn(kind: Kind, team: number, x: number, z: number, id = 0): Unit {
     const md = unitRule(kind).figure?.() ?? figureOf(kind); tintMirror(md.obj, team); const st = UNIT[kind], hp = st.hp * (fac(team) === 0 || this.eco ? this.armorMul(team, catOf(kind)) : 1), sh = st.shield * (fac(team) && this.eco ? this.armorMul(team, catOf(kind)) : 1);
     const rs = st.rad * 3.6, ring = mk(G.ringG, ringMat, [0, .08, 0], [rs, rs, 1], [-Math.PI / 2, 0, 0], md.obj); ring.layers.set(L_FX); ring.visible = false;
-    const u: Unit = { id: id || nextId++, kind, team, pilot: 0, nx: x, nz: z, pos: V3(x, 0, z), yaw: R(0, 6), hp, maxHp: hp, shield: sh, maxShield: sh, obj: md.obj, rig: md.rig, ring, alive: true, speed: st.speed, moving: false, phase: R(0, 6), cd: R(0, 1), think: R(0, .3), target: null, order: { type: 'guard', x, z }, lastHit: -99, state: 'idle', timer: 0, carrying: 0, node: null, site: null, dashCd: R(2, 5), dashT: 0, swing: 0, slot: 0, flashT: 0, pop: 0, wind: 0, windX: 0, windZ: 0, kx: 0, kz: 0, pitch: 0, brace: false };
+    const u: Unit = { id: id || nextId++, kind, team, pilot: 0, nx: x, nz: z, pos: V3(x, T.h(x, z), z) /* terrain (J) */, yaw: R(0, 6), hp, maxHp: hp, shield: sh, maxShield: sh, obj: md.obj, rig: md.rig, ring, alive: true, speed: st.speed, moving: false, phase: R(0, 6), cd: R(0, 1), think: R(0, .3), target: null, order: { type: 'guard', x, z }, lastHit: -99, state: 'idle', timer: 0, carrying: 0, node: null, site: null, dashCd: R(2, 5), dashT: 0, swing: 0, slot: 0, flashT: 0, pop: 0, wind: 0, windX: 0, windZ: 0, kx: 0, kz: 0, pitch: 0, brace: false };
     initEnergy(u); initAir(u);
     md.obj.position.copy(u.pos); md.obj.rotation.y = u.yaw; md.obj.userData.team = team; md.obj.userData.worker = isWorker(kind); this.scene.add(md.obj); this.units.push(u);
     if (this.dir && !this.net && isFighter(u) && (this.eco || team === SIDE.home)) this.dir.enlist(u);
@@ -216,12 +234,13 @@ export class Game {
     b.obj = obj; b.kind = kind; b.maxHp = st.hp; b.hp = Math.max(1, st.hp * k); b.h = st.h; b.hx = b.rot ? st.hz : st.hx; b.hz = b.rot ? st.hx : st.hz; b.stage = 0; return true;
   }
   /** Runs one of a building's commands (BldRules.actions): checks it, pays it, runs it. Online the browser asks ('ba') and the server does it. */
-  buildingAction(b: Building, key: string, manual = false) {
-    if (this.net) { this.net.cmd('ba', b.id, key); return true; }
+  buildingAction(b: Building, key: string, manual = false, aim?: { x: number; z: number }) {
+    // Online the ask carries where the player is looking, for actions aimed at the ground (a Scan, a Crawl): the server has no camera.
+    if (this.net) { const p = V3(), at = aim || (this.me && this.groundPoint(p, 400) ? p : null); this.net.cmd('ba', b.id, key, ...(at ? [Math.round(at.x * 10) / 10, Math.round(at.z * 10) / 10] : [])); return true; }
     const a = bldRule(b.kind).actions?.(this, b).find(x => x.key === key); if (!a || !b.alive) return false;
     const why = a.ok?.(this, b) || (a.cost && !canPay(this, b.team, a.cost) ? `Short of ${shortOf(this, b.team, a.cost)}.` : '');
     if (why) { if (manual) { sfx.deny(); this.feed(FACTION[b.team].voice, why, 'al', b.team); } return false; }
-    if (a.cost) pay(this, b.team, a.cost); a.run(this, b); if (manual) sfx.blip(); return true;
+    if (a.cost) pay(this, b.team, a.cost); a.run(this, b, aim); if (manual) sfx.blip(); return true;
   }
   /** Takes an order off a building's training queue and gives the price back. Online the client asks ('cq') and the server does it. */
   cancelTrain(b: Building, i: number) {
@@ -231,8 +250,8 @@ export class Game {
   /** Uses one of a body's abilities (src/core/ability.ts): `key` from abilitiesOf(kind), aimed at a spot or a body. */
   useAbility(u: Unit, key: string, t?: Target) { return useAbility(this, u, key, t); }
   addBuilding(kind: BKind, team: number, x: number, z: number, built: boolean, rot = false, id = 0): Building {
-    const st = BLD[kind], obj = this.model(kind); obj.position.set(x, 0, z); if (rot) obj.rotation.y = Math.PI / 2; tintMirror(obj, team); obj.userData.team = team; obj.userData.markR = Math.max(st.hx, st.hz) * 1.15; this.scene.add(obj);
-    const b: Building = { id: id || nextId++, kind, team, pos: V3(x, 0, z), hx: rot ? st.hz : st.hx, hz: rot ? st.hx : st.hz, h: st.h, hp: built ? st.hp : st.hp * .1, maxHp: st.hp, obj, holo: null, built, progress: built ? 1 : 0, pdone: built ? 1 : 0, queue: [], alive: true, cd: R(0, 1), builder: null, lastHit: -99, rot, smokeT: 0, stage: 0 };
+    const st = BLD[kind], obj = this.model(kind), gy = T.h(x, z) /* terrain (J) */; obj.position.set(x, gy, z); if (rot) obj.rotation.y = Math.PI / 2; tintMirror(obj, team); obj.userData.team = team; obj.userData.markR = Math.max(st.hx, st.hz) * 1.15; this.scene.add(obj);
+    const b: Building = { id: id || nextId++, kind, team, pos: V3(x, gy, z), hx: rot ? st.hz : st.hx, hz: rot ? st.hx : st.hz, h: st.h, hp: built ? st.hp : st.hp * .1, maxHp: st.hp, obj, holo: null, built, progress: built ? 1 : 0, pdone: built ? 1 : 0, queue: [], alive: true, cd: R(0, 1), builder: null, lastHit: -99, rot, smokeT: 0, stage: 0 };
     for (const q of this.props) if (q.dress && q.alive && Math.abs(q.x - x) < b.hx + q.r * .6 && Math.abs(q.z - z) < b.hz + q.r * .6) this.damageProp(q, 1e4, null);
     if (!built) { b.holo = MD.hologram(obj, holoOK); b.holo.position.copy(obj.position); b.holo.rotation.copy(obj.rotation); this.scene.add(b.holo); obj.scale.y = .06; }
     factionRule(team).added?.(this, b, built); bldRule(kind).added?.(this, b, built);
@@ -291,7 +310,11 @@ export class Game {
   fair = false; sites: number[][] = [];
   /** The map, the sides and the layout are shared by every Game in the process. A server that runs several matches sets the map and sides before it
    *  touches one, and this puts back the layout that match was built with. */
-  pin() { LAYOUT.fair = this.fair; MAP.sites = this.sites; }
+  /** The match's enemy picks (MATCH.foe), kept with the game so a server running several matches puts each one's back before it steps. */
+  foePick: number[] = MATCH.foe;
+  pin() { LAYOUT.fair = this.fair; MAP.sites = this.sites; if (multi()) MATCH.foe = this.foePick; T.MADE.plan = this.made.plan; T.MADE.code = this.made.code; T.layoutTerrain(); }
+  /** The made map this match is on (terrain (J)), so a server running several matches lays the right ground for each. */
+  made: { plan: T.Plan | null; code: string } = { plan: null, code: '' };
   /** How far out a Choir Stone takes a Tender's ore (see CHOIR_REACH: a dial for balance tables, 0 in play). */
   bankReach(hq: Building) { return hq.kind === 'choir' ? CHOIR_REACH.m : 0; }
   otSaid = false;
@@ -326,8 +349,10 @@ export class Game {
     for (const o of this.ores) { if (o.amount <= 0) continue; const dx = p.x - o.pos.x, dz = p.z - o.pos.z, d = Math.hypot(dx, dz), m = 1.7; if (d < m && d > .001) { p.x += dx / d * (m - d); p.z += dz / d * (m - d); } }
     // The edge of the world: a circle around the middle of the map, inside the ring of mesas. It moves with the map, so the far end of Glass Flats stays reachable.
     const [ox, oz] = MAP.mid!, cx = p.x - ox, cz = p.z - oz, cd = Math.hypot(cx, cz), lim = MAP.rad!; if (cd > lim) { p.x = ox + cx / cd * lim; p.z = oz + cz / cd * lim; }
+    T.block(p, gx, gz, ai);   // terrain (J): no walking up or off a cliff, only up and down ramps
   }
   moveTo(u: Unit, x: number, z: number, dt: number, stop = .4, mul = 1) {
+    const w = T.via(u, x, z); if (w) { x = w[0]; z = w[1]; stop = 0; }   // terrain (J): to another level by way of a ramp; never 'arrived' on the way
     const dx = x - u.pos.x, dz = z - u.pos.z, d = Math.hypot(dx, dz); if (d < stop) return true;
     const st = Math.min(d, u.speed * mul * this.pace(u) * dt); u.pos.x += dx / d * st; u.pos.z += dz / d * st; u.yaw = Math.atan2(dx, dz); u.moving = true; this.collide(u, x, z); return false;
   }
@@ -375,6 +400,8 @@ export class Game {
   }
 
   damage(t: Unit | Building, amt: number, from: Unit | Building | null, crit = false) {
+    // With more than two sides, a shot or a blast never hurts a friend's bodies or buildings (its own side's, as ever, it can).
+    if (from && from.team !== t.team && multi() && !isEnemy(from.team, t.team)) return;
     if (this.net) {   // multiplayer client: only the server changes health. Report what this player hit and show the number now.
       if (from !== this.me || !this.me || !t.alive || amt <= 0) return;
       this.net.cmd('dm', t.id, Math.round(amt * 10) / 10, crit ? 1 : 0); if (isUnit(t)) { t.pop = 1; this.fx.hit(t, amt, from, crit, t.shield > 0); }
@@ -389,6 +416,8 @@ export class Game {
     if (u && u.cover && u.cover.alive && from && from !== me && isUnit(from) && !from.pilot) { const c = u.cover, cx = c.x - u.pos.x, cz = c.z - u.pos.z; if (Math.hypot(cx, cz) < c.r + 2.4 && cx * (from.pos.x - u.pos.x) + cz * (from.pos.z - u.pos.z) > 0 && Math.random() < .55) { this.damageProp(c, amt, from); return; } }
     if (u && from) { const h = unitRule(u.kind).hurt; if (h) amt = h(this, u, amt, from); }
     amt = armourHit(this, t, amt, from);
+    // Crew fighting beside a body somebody is driving hit harder and take less. A side led from the command view gets neither.
+    if (this.leads.length) { if (from && isUnit(from) && this.led(from)) amt *= LEAD.dmg; if (u && this.led(u)) amt *= LEAD.guard; }
     let warded = false;
     if (!u && !bldRule((t as Building).kind).ward) { const w = this.ward(t.pos, t.team); if (w) { amt *= .7; warded = true; if (this.time > this.wardFx) { this.wardFx = this.time + .35; this.tracer(V3(w.pos.x, 4.6, w.pos.z), V3(t.pos.x, (t as Building).h * .6, t.pos.z), beamMat, .22); this.puff(TMP.set(t.pos.x, (t as Building).h * .6, t.pos.z), 3, .7, M.cyan, .5); } } }
     const dealt = amt, shielded = (!!u && u.shield > 0) || warded;
@@ -414,6 +443,10 @@ export class Game {
     if (t.hp <= 0) u ? this.killUnit(u, from) : this.killBuilding(t as Building);
   }
   quiet = false; vAlertT = 0;
+  /** True for a body the game is driving that has one of its own side's players on the ground within reach. */
+  led(u: Unit) { if (u.pilot || u === this.me && !this.cmd.on) return false; for (const l of this.leads) if (l !== u && l.team === u.team && Math.abs(l.pos.x - u.pos.x) < LEAD.reach && Math.hypot(l.pos.x - u.pos.x, l.pos.z - u.pos.z) < LEAD.reach) return true; return false; }
+  /** How many of the player's fighters are close enough to get the bonus right now. */
+  ledCount() { const me = this.me; if (!me || !me.alive || this.cmd.on) return 0; let n = 0; for (const u of this.units) if (u.alive && u !== me && u.team === me.team && !u.pilot && isFighter(u) && Math.hypot(u.pos.x - me.pos.x, u.pos.z - me.pos.z) < LEAD.reach) n++; return n; }
   /** Counts down while a freshly taken body brings its weapon up into view. */
   drawT = 0;
   /** How far sustained fire has opened the crosshair, 0 to 1. The first shot after a pause is the accurate one. */
@@ -468,8 +501,24 @@ export class Game {
     if (this.net) return;
     this.dir.buildingLost(b);
     if (this.mission) { const mine = this.mission.out ? SIDE.out : SIDE.home; if (b.team === mine && this.isHQ(b) && !this.hqs(mine).length && !this.mission.noHq) { this.endT = 2.4; this.endWon = false; this.pipe.flash = 1; } }
+    else if (multi()) { if (this.isHQ(b) && !this.hqs(b.team).length && !this.outOf.includes(b.team)) this.knockOut(b.team); }
     else if (b.team === SIDE.out && this.isHQ(b) && !(this.eco ? this.hqs(SIDE.out) : this.stones()).length) { this.endT = 2.4; this.endWon = true; this.pipe.flash = 1; } else if (b.team === SIDE.home && this.isHQ(b) && !this.hqs(SIDE.home).length) { this.endT = 2.4; this.endWon = false; this.pipe.flash = 1; }
   }
+  /** Teams knocked out of a match of more than two sides: their last home building fell. What they have left stands, but plans nothing. */
+  outOf: number[] = [];
+  /** The teams left standing when a match of more than two sides ended. */
+  winners: number[] = [];
+  /** A side's name for the feed: its player's name, or its faction, with a number when the faction is in the match more than once. */
+  sideName(t: number) { if (this.names[t]) return this.names[t]; const F = FACTION[t]; return MATCH.teams.filter(o => fac(o) === fac(t)).length > 1 ? `${F.short} ${Math.floor(t / 3) + 1}` : F.short; }
+  knockOut(t: number) {
+    this.outOf.push(t); const left = MATCH.teams.filter(o => !this.outOf.includes(o));
+    this.feed(FACTION[this.myTeam].voice, isFriend(t, this.myTeam) ? (t === this.myTeam ? 'Our last home building is down. We are out of the fight.' : `${this.sideName(t)} lost their last home building. They are out.`) : `${this.sideName(t)} lost their last home building. They are out.`, isFriend(t, this.myTeam) ? 'al' : '');
+    // Over when everyone left is on one side, or when every side with a player on it is out (nobody is left to play it out).
+    const humans = MATCH.teams.filter(h => this.human[h]), over = left.every(o => isFriend(o, left[0])), gone = humans.length > 0 && !left.some(o => humans.some(h => isFriend(o, h)));
+    if (over || gone) { this.winners = over ? left : []; this.endT = 2.4; this.endWon = left.some(o => isFriend(o, this.myTeam)) && over; this.pipe.flash = 1; }
+  }
+  /** Takes a prop off the map for good (a rock or crystal standing on a base's walk to its ore). */
+  clearProp(q: Prop) { q.alive = false; const i = this.spires.indexOf(q); if (i >= 0) this.spires.splice(i, 1); for (const r of q.ranges) { const a = r.attr.array as Float32Array; for (let k = r.start * 3, e = (r.start + r.count) * 3; k < e; k += 3) { a[k] = q.x; a[k + 1] = -80; a[k + 2] = q.z; } r.attr.needsUpdate = true; } if (q.obj) this.scene.remove(q.obj); }
   end(won: boolean) { if (this.phase === 'over') return; this.phase = 'over'; this.won = won; won ? sfx.win() : sfx.lose(); drillSound(false, false); setMood(0); this.hud.showEnd(this); if (document.pointerLockElement) document.exitPointerLock(); }
   nearestStone(p: { x: number; z: number }) { let best: Building | null = null, bd = 1e9; for (const b of this.stones()) { const d = Math.hypot(b.pos.x - p.x, b.pos.z - p.z); if (d < bd) { bd = d; best = b; } } return best; }
 
@@ -482,13 +531,13 @@ export class Game {
       if (!u.alive || u === skip || (team >= 0 && u.team !== team) || u.inside) continue; const st = UNIT[u.kind], k = st.rad / .66, al = u.alt || 0;
       if (u.status || UNIT[u.kind].cloak) { if (!seenBy(this, this.myTeam, u)) continue; }
       const ox = u.pos.x - o.x, oz = u.pos.z - o.z, along = ox * d.x + oz * d.z; if (along < -3 || along > best + 3) continue;
-      let t = sphere(u.pos.x, st.headY + al, u.pos.z, .46 * k); if (t > 0 && t < best) { best = t; hit = { unit: u, dist: t, head: true }; }
-      t = sphere(u.pos.x, st.bodyY + al, u.pos.z, st.rad); if (t > 0 && t < best) { best = t; hit = { unit: u, dist: t }; }
-      t = sphere(u.pos.x, st.bodyY * .35 + al, u.pos.z, st.rad * .7); if (t > 0 && t < best) { best = t; hit = { unit: u, dist: t }; }
+      let t = sphere(u.pos.x, st.headY + al + u.pos.y, u.pos.z, .46 * k); if (t > 0 && t < best) { best = t; hit = { unit: u, dist: t, head: true }; }
+      t = sphere(u.pos.x, st.bodyY + al + u.pos.y, u.pos.z, st.rad); if (t > 0 && t < best) { best = t; hit = { unit: u, dist: t }; }
+      t = sphere(u.pos.x, st.bodyY * .35 + al + u.pos.y, u.pos.z, st.rad * .7); if (t > 0 && t < best) { best = t; hit = { unit: u, dist: t }; }
     }
     for (const b of this.buildings) {
       if (!b.alive || (team >= 0 && b.team !== team)) continue;
-      let t0 = 0, t1 = best, ok = true; const ba = b.alt || 0, mn = [b.pos.x - b.hx, ba, b.pos.z - b.hz], mx = [b.pos.x + b.hx, b.h + ba, b.pos.z + b.hz], oo = [o.x, o.y, o.z], dd = [d.x, d.y, d.z];
+      let t0 = 0, t1 = best, ok = true; const ba = (b.alt || 0) + b.pos.y /* terrain (J) */, mn = [b.pos.x - b.hx, ba, b.pos.z - b.hz], mx = [b.pos.x + b.hx, b.h + ba, b.pos.z + b.hz], oo = [o.x, o.y, o.z], dd = [d.x, d.y, d.z];
       for (let i = 0; i < 3 && ok; i++) { if (Math.abs(dd[i]) < 1e-6) { if (oo[i] < mn[i] || oo[i] > mx[i]) ok = false; } else { let a = (mn[i] - oo[i]) / dd[i], c = (mx[i] - oo[i]) / dd[i]; if (a > c) { const s = a; a = c; c = s; } t0 = Math.max(t0, a); t1 = Math.min(t1, c); if (t0 > t1) ok = false; } }
       if (ok && t0 > 0 && t0 < best) { best = t0; hit = { b, dist: t0 }; }
     }
@@ -502,7 +551,10 @@ export class Game {
     return hit;
   }
   lookDir(out: THREE.Vector3) { const cp = Math.cos(this.pitch); return out.set(Math.sin(this.yaw) * cp, Math.sin(this.pitch), Math.cos(this.yaw) * cp); }
-  groundPoint(out: THREE.Vector3, max: number) { const d = this.lookDir(TMP), o = this.cam.position; if (d.y > -.02) return false; const t = -o.y / d.y; if (t > max) return false; out.copy(o).addScaledVector(d, t); out.y = 0; return true; }
+  groundPoint(out: THREE.Vector3, max: number) { const d = this.lookDir(TMP), o = this.cam.position; if (d.y > -.02) return false; let t = -o.y / d.y; if (t > max) return false;
+    // terrain (J): walk the look out to the first ground it meets, high ground included
+    if (T.TER.ridges.length) { for (let s = 0; s < t; s += .5) { const x = o.x + d.x * s, z = o.z + d.z * s, gy = T.h(x, z); if (gy > 0 && o.y + d.y * s <= gy) { out.set(x, gy, z); return true; } } }
+    out.copy(o).addScaledVector(d, t); out.y = 0; return true; }
 
   // ------------------------------------------------------------ possession
   bodyLayer(u: Unit, self: boolean) { setLayer(u.obj, self ? L_SELF : 0); u.ring.layers.set(L_FX); if (u.rig.flash) { if (self && fac(u.team) !== 0) u.rig.flash.visible = false; else setLayer(u.rig.flash, L_FX); } }
@@ -539,18 +591,21 @@ export class Game {
     this.pipe.time += dtReal;
     if (this.phase === 'card') { this.cardT -= dtReal; if (this.cardT <= 0) { this.phase = 'play'; this.hud.titleCard('', '', ''); } }
     if (this.phase === 'play') {
-      const tabNow = this.keys.has('Tab') && !!this.me?.alive && this.staticT <= 0;
+      this.cmd.update(dtReal, P);
+      const tabNow = this.keys.has('Tab') && !!this.me?.alive && this.staticT <= 0 && !this.cmd.on;
       if (tabNow && !this.tab) { this.tabSel = 0; this.refreshTab(); sfx.blip(); drillSound(false, false); }
       if (!tabNow && this.tab) { const e = this.tabList[this.tabSel]; if (e && e.unit.alive) this.possess(e.unit); }
       this.tab = tabNow;
       if (this.tab) { for (let i = 0; i < this.tabList.length; i++) if (P.has('Digit' + (i + 1))) { this.tabSel = i; sfx.blip(); } if (this.wheel) { this.tabSel = (this.tabSel + (this.wheel > 0 ? 1 : this.tabList.length - 1)) % Math.max(1, this.tabList.length); sfx.blip(); } }
       this.hitStop = Math.max(0, this.hitStop - dtReal); this.introT = Math.max(0, this.introT - dtReal);
       if (this.endT > 0) { this.endT -= dtReal; this.shake = Math.max(this.shake, .5 * this.endT / 2.4); if (this.endT <= 0) { this.end(this.endWon); P.clear(); return; } }
-      const dt = this.net ? dtReal : dtReal * (this.endT > 0 ? .22 : this.tab ? .25 : this.hitStop > 0 ? .12 : 1);
+      const dt = this.net ? dtReal * this.net.speed /* lobby rules (K) */ : dtReal * (this.endT > 0 ? .22 : this.tab ? .25 : this.hitStop > 0 ? .12 : 1);
       this.time += dt; this.safeT = Math.max(0, this.safeT - dt); this.jumpCd = Math.max(0, this.jumpCd - dtReal);
       if (!this.net && !this.otSaid && this.overtime() > 0) { this.otSaid = true; this.feed('Signal', `Overtime. From here every building takes ${Math.round(OVERTIME.perMin * 100)}% more damage for each minute that passes, and every tower does that much less.`, 'al'); }
       if (this.staticT > 0) { this.staticT -= dtReal; if (this.staticT <= 0) this.respawn(); }
-      else if (this.me?.alive && !this.tab) this.updatePlayer(dt, P);
+      else if (this.me?.alive && !this.tab && !this.cmd.on) this.updatePlayer(dt, P);
+      // Who is leading from the ground this tick: this screen's own body offline, every driven body on a server.
+      { const L = this.leads; L.length = 0; const me = this.me; if (LEAD.dmg !== 1 || LEAD.guard !== 1) { if (me && me.alive && !this.net && !this.cmd.on && this.staticT <= 0 && this.human[me.team]) L.push(me); for (const u of this.units) if (u.alive && u.pilot && !u.aloft && u !== me) L.push(u); } }
       // Each faction's own per-frame systems (the Gloam's Bloom and Buds), for every faction in the match at either end.
       for (const f of new Set([fac(SIDE.home), fac(SIDE.out), ...MATCH.teams.map(fac)])) factionRule(f).fx?.(this, dt);
       if (this.net) { netTick(this, dt); this.intel.update(dt); this.poseUnits(dt); this.updateProjs(dt); this.updateChunks(dt); this.updateWrecks(dt); this.updateFx(dt); } else {
@@ -583,7 +638,7 @@ export class Game {
   /** Puts a driven Rigger's pack on the books. Online the server does this and the replica only empties its own pack. */
   bank(u: Unit) {
     const n = u.carrying; u.carrying = 0; if (u.rig.pack) u.rig.pack.visible = false; if (n <= 0) return;
-    if (!this.net) { this.purse[u.team] += n * this.oreK(u.team); if (!atHome(u.team)) this.stats.minedV += n; else this.stats.mined += n; if (u.pilot && this.score[u.pilot]) this.score[u.pilot][1] += n; }
+    if (!this.net) { this.purse[u.team] += n * this.oreK(u.team); if (!atHome(u.team)) this.stats.minedV += n; else this.stats.mined += n; this.stats.bySide[u.team] = (this.stats.bySide[u.team] || 0) + n; if (u.pilot && this.score[u.pilot]) this.score[u.pilot][1] += n; }
     if (u === this.me) { sfx.bank(); this.hud.damage(V3(u.pos.x, 2.2, u.pos.z), `+${n} banked`, 'ore'); }
   }
   /** What this side has found of the map. */
@@ -621,7 +676,7 @@ export class Game {
     if (this.net && me.carrying > 0) { const hq = this.nearHQ(me.pos.x, me.pos.z, me.team); if (hq && this.distToBox(hq, me.pos.x, me.pos.z) < 2.6) this.bank(me); }
     this.bloom = Math.max(0, this.bloom - dt * (this.fireCd > -.12 ? .25 : 3.2)); this.salvoCd = Math.max(0, this.salvoCd - dt);
     this.fireCd -= dt; this.recoil = Math.max(0, this.recoil - dt * 6); this.nadeCd = Math.max(0, this.nadeCd - dt); this.bashCd = Math.max(0, this.bashCd - dt); this.bashT = Math.max(0, this.bashT - dt);
-    const eye = V3(me.pos.x, UNIT[me.kind].eye + (me.alt || 0), me.pos.z), dir = this.lookDir(V3());
+    const eye = V3(me.pos.x, UNIT[me.kind].eye + (me.alt || 0) + me.pos.y /* terrain (J) */, me.pos.z), dir = this.lookDir(V3());
     this.prompt = '';
     if (this.net && P.has('KeyB')) { const pp = V3(); if (!this.groundPoint(pp, 400)) pp.set(me.pos.x + dir.x * 40, 0, me.pos.z + dir.z * 40); this.net.cmd('pg', Math.round(pp.x), Math.round(pp.z)); }
     if (P.has('KeyQ') && this.lastBody?.alive) { this.possess(this.lastBody); return; }
@@ -631,26 +686,34 @@ export class Game {
     // production buildings
     const side = me.team, voice = FACTION[side].voice, lb = look?.b && look.b.team === side && look.b.built && look.dist < 10 ? look.b : null;
     if (lb && (TRAINS[lb.kind] || UPGRADES.some(u => u.at === lb.kind && (u.team || 0) === fac(side)))) {
-      // One key per thing on offer: units first, then the research this building sells that has not been bought.
-      const keys = 'ETYU', rows: string[] = [], notes: string[] = []; let i = 0;
-      for (const k of TRAINS[lb.kind] || []) {
-        const nb = UNIT_NEEDS[k], gate = this.gated(side, k) || bldRule(lb.kind).trains?.(this, lb, k) || '', ok = (!nb || this.ownB(nb, true, side).length > 0) && !gate, key = keys[i++], two = !!unitRule(k).pair;
-        if (ok) rows.push(`<b>${key}</b> ${UNIT[k].name}${two ? ' ×2' : ''} · ${UNIT[k].cost * (two ? 2 : 1)}`); else if (gate) { if (!notes.some(n => n.includes(gate))) notes.push(`<i>${UNIT[k].name} needs ${gate}</i>`); } else if (!notes.some(n => n.includes(BLD[nb!].name))) notes.push(`<i>${BLD[nb!].name} unlocks ${(TRAINS[lb.kind] || []).filter(x => UNIT_NEEDS[x] === nb).map(x => UNIT[x].name).join(' and ')}</i>`);
-        if (P.has('Key' + key)) { if (ok || gate) this.train(lb, k, true); else { sfx.deny(); this.feed(voice, `${UNIT[k].name} needs ${/^[AEIOU]/.test(BLD[nb!].name) ? 'an' : 'a'} ${BLD[nb!].name} first.`, 'al'); } }
-      }
-      const sold = UPGRADES.filter(u => u.at === lb.kind && (u.team || 0) === fac(side)), open = sold.filter(u => !this.upOf(side)[u.key]);
-      for (const u of open) {
-        if (u.needs && !this.upOf(side)[u.needs]) { notes.push(`<i>${u.name} needs ${UPGRADES.find(x => x.key === u.needs)!.name}</i>`); continue; }
-        if (i >= keys.length) break; const key = keys[i++]; rows.push(`<b>${key}</b> ${u.name} · ${u.cost} <i>${u.blurb}</i>`); if (P.has('Key' + key)) this.buyUpgrade(u.key, this.myTeam, true);
-      }
-      for (const a of bldRule(lb.kind).actions?.(this, lb) || []) { const why = a.ok?.(this, lb) || ''; if (why) { notes.push(`<i>${a.name}: ${why}</i>`); continue; } rows.push(`<b>${a.hotkey}</b> ${a.name}${a.cost ? ' · ' + a.cost[0] + (a.cost[1] ? ' / ' + a.cost[1] + ' Flux' : '') : ''}${a.blurb ? ` <i>${a.blurb}</i>` : ''}`); if (P.has('Key' + a.hotkey)) this.buildingAction(lb, a.key, true); }
-      { const why = this.silent(lb); if (why) notes.unshift(`<i>${why}</i>`); }
-      if (sold.length && !open.length) notes.push(fac(side) === 2 ? 'Everything here has grown in' : fac(side) ? 'Every song here is learned' : 'All research here is bought');
-      const all = rows.concat(notes.slice(0, 2)); const note = bldRule(lb.kind).note; if (note) all.push(note(lb)); else if (lb.queue.length) all.push(`${lb.queue.length} queued`);
-      this.prompt = all.join(all.length > 2 ? '<br>' : ' &nbsp; ');
+      this.prompt = this.shopAt(lb, P);
     }
     if (!this.prompt && look?.prop && !isWorker(me.kind) && look.dist < 60) { const q = look.prop.owner || look.prop; if (q.hp < q.maxHp) this.prompt = `${q.name} · <b>${Math.ceil(q.hp / q.maxHp * 100)}%</b>`; }
     if (isWorker(me.kind)) this.updateRigger(dt, P, eye, dir, look); else (unitRule(me.kind).drive || factionRule(me.team).drive || DEFAULTS.drive)?.(this, dt, P, eye, dir, look, gun || null);
+  }
+  /** Does this building train anything or sell research? */
+  sells(b: Building) { return !!(TRAINS[b.kind] || UPGRADES.some(u => u.at === b.kind && (u.team || 0) === fac(b.team))); }
+  /** What a production building has for sale, as the lines of a prompt. The keys E, T, Y and U buy: units first, then research not yet bought.
+   *  First person calls this for the building being looked at. */
+  shopAt(lb: Building, P: Set<string>): string {
+    const side = lb.team, voice = FACTION[side].voice;
+    // One key per thing on offer: units first, then the research this building sells that has not been bought.
+    const keys = 'ETYU', rows: string[] = [], notes: string[] = []; let i = 0;
+    for (const k of TRAINS[lb.kind] || []) {
+      const nb = UNIT_NEEDS[k], gate = this.gated(side, k) || bldRule(lb.kind).trains?.(this, lb, k) || '', ok = (!nb || this.ownB(nb, true, side).length > 0) && !gate, key = keys[i++], two = !!unitRule(k).pair;
+      if (ok) rows.push(`<b>${key}</b> ${UNIT[k].name}${two ? ' ×2' : ''} · ${UNIT[k].cost * (two ? 2 : 1)}`); else if (gate) { if (!notes.some(n => n.includes(gate))) notes.push(`<i>${UNIT[k].name} needs ${gate}</i>`); } else if (!notes.some(n => n.includes(BLD[nb!].name))) notes.push(`<i>${BLD[nb!].name} unlocks ${(TRAINS[lb.kind] || []).filter(x => UNIT_NEEDS[x] === nb).map(x => UNIT[x].name).join(' and ')}</i>`);
+      if (P.has('Key' + key)) { if (ok || gate) this.train(lb, k, true); else { sfx.deny(); this.feed(voice, `${UNIT[k].name} needs ${/^[AEIOU]/.test(BLD[nb!].name) ? 'an' : 'a'} ${BLD[nb!].name} first.`, 'al'); } }
+    }
+    const sold = UPGRADES.filter(u => u.at === lb.kind && (u.team || 0) === fac(side)), open = sold.filter(u => !this.upOf(side)[u.key]);
+    for (const u of open) {
+      if (u.needs && !this.upOf(side)[u.needs]) { notes.push(`<i>${u.name} needs ${UPGRADES.find(x => x.key === u.needs)!.name}</i>`); continue; }
+      if (i >= keys.length) break; const key = keys[i++]; rows.push(`<b>${key}</b> ${u.name} · ${u.cost} <i>${u.blurb}</i>`); if (P.has('Key' + key)) this.buyUpgrade(u.key, this.myTeam, true);
+    }
+    for (const a of bldRule(lb.kind).actions?.(this, lb) || []) { const why = a.ok?.(this, lb) || ''; if (why) { notes.push(`<i>${a.name}: ${why}</i>`); continue; } rows.push(`<b>${a.hotkey}</b> ${a.name}${a.cost ? ' · ' + a.cost[0] + (a.cost[1] ? ' / ' + a.cost[1] + ' Flux' : '') : ''}${a.blurb ? ` <i>${a.blurb}</i>` : ''}`); if (P.has('Key' + a.hotkey)) this.buildingAction(lb, a.key, true); }
+    { const why = this.silent(lb); if (why) notes.unshift(`<i>${why}</i>`); }
+    if (sold.length && !open.length) notes.push(fac(side) === 2 ? 'Everything here has grown in' : fac(side) ? 'Every song here is learned' : 'All research here is bought');
+    const all = rows.concat(notes.slice(0, 2)); const note = bldRule(lb.kind).note; if (note) all.push(note(lb)); else if (lb.queue.length) all.push(`${lb.queue.length} queued`);
+    return all.join(all.length > 2 ? '<br>' : ' &nbsp; ');
   }
   train(b: Building, k: Kind, manual = false) {
     const st = UNIT[k];
@@ -693,6 +756,7 @@ export class Game {
     for (const b of this.buildings) if (b.alive && Math.abs(x - b.pos.x) < hx + b.hx + 1.6 && Math.abs(z - b.pos.z) < hz + b.hz + 1.6) return false;
     for (const o of this.ores) if (o.amount > 0 && Math.abs(x - o.pos.x) < hx + 2.4 && Math.abs(z - o.pos.z) < hz + 2.4) return false;
     for (const s of this.spires) if (Math.abs(x - s.x) < hx + s.r && Math.abs(z - s.z) < hz + s.r) return false;
+    if (!T.flat(x, z, hx + .6, hz + .6, true)) return false;   // terrain (J): on one level, off the ramps (the vents are checked below)
     // A tap goes square on a vent nobody has tapped; nothing else may cover a vent.
     if (bldRule(k).tap) { const v = ventAt(this, x, z, 1.01); if (!v || (v.tap && v.tap.alive)) return false; }
     else for (const v of this.vents) if (Math.abs(x - v.pos.x) < hx + 1.6 && Math.abs(z - v.pos.z) < hz + 1.6) return false;
@@ -851,7 +915,7 @@ export class Game {
   }
   /** A small shell burst: splash damage without the full explosion fanfare. */
   burst(p: THREE.Vector3, dmg: number, radius: number, from: Unit | null, skip: Unit | Building | null = null) {
-    const foe = from ? foeOf(from.team) : SIDE.out; for (const u of this.units) { if (!u.alive || u.team !== foe || u === skip) continue; const d = Math.hypot(u.pos.x - p.x, u.pos.z - p.z); if (d > radius + UNIT[u.kind].rad || Math.abs(p.y - UNIT[u.kind].bodyY) > radius + 1.5) continue; const k = 1 - .6 * Math.min(1, d / radius); this.damage(u, dmg * k, from); if (d > .1 && !unitRule(u.kind).heavy) { u.kx += (u.pos.x - p.x) / d * 4 * k; u.kz += (u.pos.z - p.z) / d * 4 * k; } }
+    const foe = from ? foeOf(from.team) : SIDE.out, many = multi() && !!from; for (const u of this.units) { if (!u.alive || (many ? !isEnemy(from!.team, u.team) : u.team !== foe) || u === skip) continue; const d = Math.hypot(u.pos.x - p.x, u.pos.z - p.z); if (d > radius + UNIT[u.kind].rad || Math.abs(p.y - UNIT[u.kind].bodyY) > radius + 1.5) continue; const k = 1 - .6 * Math.min(1, d / radius); this.damage(u, dmg * k, from); if (d > .1 && !unitRule(u.kind).heavy) { u.kx += (u.pos.x - p.x) / d * 4 * k; u.kz += (u.pos.z - p.z) / d * 4 * k; } }
     this.blastProps(p, radius, dmg, from, skip); this.shove(p, radius * 1.5, 5);
     this.puff(p, 3, radius * .3, M.fire, 1.4, 1.2); this.puff(p, 2, radius * .32, M.smoke, 1, 1.6); this.debris(p, 3, .14, M.rock, 5); if (p.y < .6) this.scorchAt(p, radius * .7);
     const v = this.vol(p); this.shake = Math.max(this.shake, v * .35); sfx.boom(v * .45);
@@ -898,7 +962,7 @@ export class Game {
       if (u.kx || u.kz) { u.pos.x += u.kx * dt; u.pos.z += u.kz * dt; const k = Math.max(0, 1 - dt * 7); u.kx *= k; u.kz *= k; if (Math.abs(u.kx) + Math.abs(u.kz) < .05) u.kx = u.kz = 0; this.collide(u, u.pos.x, u.pos.z); }
       if (fac(u.team) === 0 && u.hp < u.maxHp && t - u.lastHit > 5) for (const b of this.buildings) if (b.team === u.team && b.built && bldRule(b.kind).mends && Math.abs(b.pos.x - u.pos.x) < 16 && Math.abs(b.pos.z - u.pos.z) < 16) { u.hp = Math.min(u.maxHp, u.hp + 5 * dt); break; }
       if (u.pilot) { u.kx = u.kz = 0; if (u.hp < u.maxHp && t - u.lastHit > 6) u.hp = Math.min(u.maxHp, u.hp + u.maxHp * .05 * dt); }
-      else if ((u !== me || this.staticT > 0) && (!u.status || canAct(u, !!unitRule(u.kind).dugFight))) { if (u.order.type === 'scout') this.intel.walk(u, dt); else if (isWorker(u.kind)) { const w = unitRule(u.kind).work; if (!w || !w(this, u, dt)) this.aiRigger(u, dt); } else (unitRule(u.kind).ai || factionRule(u.team).ai || DEFAULTS.ai)?.(this, u, dt); }
+      else if ((u !== me || this.staticT > 0 || this.cmd.on) && (!u.status || canAct(u, !!unitRule(u.kind).dugFight))) { if (u.order.type === 'scout') this.intel.walk(u, dt); else if (isWorker(u.kind)) { const w = unitRule(u.kind).work; if (!w || !w(this, u, dt)) this.aiRigger(u, dt); } else (unitRule(u.kind).ai || factionRule(u.team).ai || DEFAULTS.ai)?.(this, u, dt); }
     }
     // keep bodies apart
     for (let i = 0; i < us.length; i++) { const a = us[i]; if (!a.alive) continue; const ra = UNIT[a.kind].rad; for (let j = i + 1; j < us.length; j++) { const b = us[j]; if (!b.alive) continue; const dx = b.pos.x - a.pos.x; if (dx > 4 || dx < -4) continue; if ((a.air || b.air || a.inside || b.inside) && (!sameLayer(a, b) || a.inside || b.inside)) continue; const dz = b.pos.z - a.pos.z, mine = a === me || b === me, lim = (ra + UNIT[b.kind].rad) * (mine ? (a.team === b.team ? 1.8 : 1.25) : 1.12), d2 = dx * dx + dz * dz; if (d2 < lim * lim && d2 > 1e-5) { const d = Math.sqrt(d2), p = (lim - d) * .5; const wa = a === me || a.pilot ? 0 : unitRule(b.kind).heavy ? 2 : mine ? 2 : 1, wb = b === me || b.pilot ? 0 : unitRule(a.kind).heavy ? 2 : mine ? 2 : 1; a.pos.x -= dx / d * p * wa; a.pos.z -= dz / d * p * wa; b.pos.x += dx / d * p * wb; b.pos.z += dz / d * p * wb; } } }
@@ -910,6 +974,7 @@ export class Game {
   /** Turns each unit's state into a pose: legs, arms, bob and muzzle flash. */
   poseUnits(dt: number) {
     const us = this.units, t = this.time; this.fx.pre(); this.stance.pre();
+    T.look(this.units, (u: Unit) => SIGHT[u.kind] || 30, (x, z, r) => { let m = 0; for (const u of us) if (u.alive && Math.abs(u.pos.x - x) < r && Math.abs(u.pos.z - z) < r && Math.hypot(u.pos.x - x, u.pos.z - z) < r) m |= 1 << u.team; return m; }, this.time);   // terrain (J)
     for (const u of us) {
       if (!u.alive) continue; const r = u.rig, o = u.obj; o.position.x = u.pos.x; o.position.z = u.pos.z;
       let dy = u.yaw - o.rotation.y; dy = Math.atan2(Math.sin(dy), Math.cos(dy)); o.rotation.y += dy * Math.min(1, dt * 12);
@@ -936,7 +1001,7 @@ export class Game {
         if (big && r.armL && r.armR) { const k = u.wind > 0 ? Math.min(1, (1 - u.wind / .9) * 1.4) : 0; const a = u.wind > 0 ? -2.4 * k : u.swing * .9; r.armL.rotation.x += (a - r.armL.rotation.x) * Math.min(1, dt * 18); r.armR.rotation.x = r.armL.rotation.x; }
       }
     }
-    for (const u of us) if (u.alive && u.alt) u.obj.position.y += u.alt;
+    for (const u of us) if (u.alive) { if (this.net) u.pos.y = T.h(u.pos.x, u.pos.z); u.obj.position.y += u.pos.y + (u.alt || 0); }   // terrain (J): stand on the ground's height
     drawShimmer(this);
     this.stance.post(dt); this.fx.post(dt);
   }
@@ -961,26 +1026,31 @@ export class Game {
     // Only a fighter that is fighting counts: one standing still by the seam used to keep a whole bot economy running in circles, and called no guards.
     if ((side || this.eco) && u.state !== 'flee' && u.think <= 0) { const th = this.units.find(e => e.alive && e.team !== side && isFighter(e) && (e.target || e.swing > .3 || e.flashT > 0) && Math.hypot(e.pos.x - u.pos.x, e.pos.z - u.pos.z) < 11); if (th) { const dx = u.pos.x - th.pos.x, dz = u.pos.z - th.pos.z, l = Math.hypot(dx, dz) || 1; u.windX = u.pos.x + dx / l * 18; u.windZ = u.pos.z + dz / l * 18; u.state = 'flee'; u.timer = 3; for (const c of this.units) if (c.alive && c.team === side && !c.pilot && c !== this.me && !c.target && c.order.type === 'guard' && isFighter(c) && c.pos.distanceTo(u.pos) < 45) c.target = th; } }
     if (u.state === 'flee') { u.timer -= dt; this.moveTo(u, u.windX, u.windZ, dt, 1); if (u.timer <= 0) u.state = u.carrying > 0 ? 'toHQ' : 'idle'; return; }
+    // Sent somewhere from the command view: it walks there and waits for the next order.
+    if (u.state === 'walk') { if (this.moveTo(u, u.windX, u.windZ, dt, 1)) u.state = 'hold'; return; }
+    if (u.state === 'hold') return;
     if (u.vent && ventWork(this, u, dt)) return;
     if (u.state === 'mining' && u.node && !seamRate(this, u)) { u.node = null; u.state = 'idle'; }   // the seam is full: find another
-    // A seam right under the enemy's guns is not worth the walk.
-    if (u.state === 'idle' || (u.node && u.node.amount <= 0 && u.state !== 'toHQ')) { let best: OreNode | null = null, bd = 1e9; for (const n of this.ores) { if (n.amount <= 0 || seamFull(this, n, side, u) || this.buildings.some(b => b.alive && b.team !== side && Math.hypot(b.pos.x - n.pos.x, b.pos.z - n.pos.z) < 30)) continue; const d = n.pos.distanceTo(u.pos) + (this.units.filter(o => o.node === n).length) * 6 + (hq ? (() => { const h = this.nearHQ(n.pos.x, n.pos.z, side)!; return Math.hypot(n.pos.x - h.pos.x, n.pos.z - h.pos.z) * .6; })() : 0); if (d < bd) { bd = d; best = n; } } u.node = best; u.state = best ? 'toOre' : 'wait'; }
+    // A seam right under the enemy's guns is not worth the walk. A seam the player picked is used while it has ore.
+    if (u.state === 'idle' || (u.node && u.node.amount <= 0 && u.state !== 'toHQ')) { let best: OreNode | null = null, bd = 1e9; if (u.pref && u.pref.amount > 0) { best = u.pref; bd = -1; } else u.pref = null; for (const n of this.ores) { if (bd < 0) break; if (n.amount <= 0 || seamFull(this, n, side, u) || this.buildings.some(b => b.alive && b.team !== side && Math.hypot(b.pos.x - n.pos.x, b.pos.z - n.pos.z) < 30)) continue; const d = n.pos.distanceTo(u.pos) + (this.units.filter(o => o.node === n).length) * 6 + (hq ? (() => { const h = this.nearHQ(n.pos.x, n.pos.z, side)!; return Math.hypot(n.pos.x - h.pos.x, n.pos.z - h.pos.z) * .6; })() : 0); if (d < bd) { bd = d; best = n; } } u.node = best; u.state = best ? 'toOre' : 'wait'; }
     if (u.state === 'toOre' && u.node) { if (this.moveTo(u, u.node.pos.x, u.node.pos.z, dt, 2.5)) { u.state = 'mining'; u.timer = 3; } }
-    else if (u.state === 'mining' && u.node) { u.yaw = Math.atan2(u.node.pos.x - u.pos.x, u.node.pos.z - u.pos.z); u.timer -= dt * (quick ? 1.3 : 1) * seamRate(this, u) * (unitRule(u.kind).dig ?? 1); if (u.think <= 0) { u.think = .5; if (this.vol(u.pos) > .3) this.debris(TMP.set(u.pos.x + Math.sin(u.yaw) * 1.1, 1, u.pos.z + Math.cos(u.yaw) * 1.1), 1, .1, M.ore, 3); } if (u.timer <= 0) { const n = Math.min((fac(side) === 0 && up.buckets) || (fac(side) === 2 && up.ggut) ? 10 : 7, u.node.amount); u.node.amount -= n; u.carrying = n; this.oreCheck(u.node); if (u.rig.pack) u.rig.pack.visible = true; u.state = 'toHQ'; } }
-    else if (u.state === 'toHQ') { if (!hq) { u.state = 'wait'; return; } if (this.distToBox(hq, u.pos.x, u.pos.z) < 1.7 + this.bankReach(hq)) { this.purse[side] += u.carrying * this.oreK(side); if (!atHome(side)) this.stats.minedV += u.carrying; else this.stats.mined += u.carrying; u.carrying = 0; if (u.rig.pack) u.rig.pack.visible = false; u.state = 'idle'; } else { /* Walk to the near face of the home building, so neither end of the map has a longer walk round it than the other. */ const x = Math.max(hq.pos.x - hq.hx - .8, Math.min(hq.pos.x + hq.hx + .8, u.pos.x)), z = Math.max(hq.pos.z - hq.hz - .8, Math.min(hq.pos.z + hq.hz + .8, u.pos.z)); this.moveTo(u, x, z, dt, .3); } }
+    else if (u.state === 'mining' && u.node) { u.yaw = Math.atan2(u.node.pos.x - u.pos.x, u.node.pos.z - u.pos.z); u.timer -= dt * (quick ? 1.3 : 1) * seamRate(this, u) * (unitRule(u.kind).dig ?? 1); if (u.think <= 0) { u.think = .5; if (this.vol(u.pos) > .3) this.debris(TMP.set(u.pos.x + Math.sin(u.yaw) * 1.1, 1, u.pos.z + Math.cos(u.yaw) * 1.1), 1, .1, M.ore, 3); } if (u.timer <= 0) { const n = Math.min((fac(side) === 0 && up.buckets) || (fac(side) === 2 && up.ggut) ? 10 : 7, u.node.amount); u.node.amount -= n; u.carrying = Math.round(n * (u.node.rich || 1)) /* terrain (J): bright seams */; this.oreCheck(u.node); if (u.rig.pack) u.rig.pack.visible = true; u.state = 'toHQ'; } }
+    else if (u.state === 'toHQ') { if (!hq) { u.state = 'wait'; return; } if (this.distToBox(hq, u.pos.x, u.pos.z) < 1.7 + this.bankReach(hq)) { this.purse[side] += u.carrying * this.oreK(side); if (!atHome(side)) this.stats.minedV += u.carrying; else this.stats.mined += u.carrying; this.stats.bySide[side] = (this.stats.bySide[side] || 0) + u.carrying; u.carrying = 0; if (u.rig.pack) u.rig.pack.visible = false; u.state = 'idle'; } else { /* Walk to the near face of the home building, so neither end of the map has a longer walk round it than the other. */ const x = Math.max(hq.pos.x - hq.hx - .8, Math.min(hq.pos.x + hq.hx + .8, u.pos.x)), z = Math.max(hq.pos.z - hq.hz - .8, Math.min(hq.pos.z + hq.hz + .8, u.pos.z)); this.moveTo(u, x, z, dt, .3); } }
   }
   acquire(u: Unit, range: number, bRange: number) {
     if (this.truce) return null; if (u.status && hasStatus(u, 'blind')) { range = Math.min(range, 4); bRange = Math.min(bRange, 4); }
+    { const pr = u.order.prey; if (pr) { if (pr.alive) return pr; u.order.prey = undefined; } }
     let best: Unit | Building | null = null, bd = range;
     // Not simply the nearest: fighters go for healers, marksmen and the wounded first, and think twice about a raised shield.
     let bs = 1e9;
     for (const o of this.units) {
       if (!o.alive || !isEnemy(o.team, u.team) || o.inside) continue; const dx = o.pos.x - u.pos.x, dz = o.pos.z - u.pos.z; if (dx > range || dx < -range || dz > range || dz < -range) continue; const d = Math.hypot(dx, dz); if (d >= range) continue;
+      if (!T.sees(u.team, u.pos.y, o.pos.x, o.pos.z, o.pos.y)) continue;   // terrain (J): nobody shoots at what is up a cliff out of sight
       if ((o.air || o.status || UNIT[o.kind].cloak || UNIT[u.kind].hits === 'air') && (!canHit(u, o) || !seenBy(this, u.team, o))) continue;
       const w = (unitRule(o.kind).threat ?? 1) * (o.hp < o.maxHp * .4 ? .75 : 1) * (o === u.target ? .85 : 1);
       const sc = (d + 4) * w; if (sc < bs) { bs = sc; bd = d; best = o; }
     }
-    if (!best && bRange > 0) { bd = bRange; for (const b of this.buildings) { if (!b.alive || !isEnemy(b.team, u.team) || (b.air && !canHit(u, b))) continue; const d = this.distToBox(b, u.pos.x, u.pos.z); if (d < bd) { bd = d; best = b; } } }
+    if (!best && bRange > 0) { bd = bRange; for (const b of this.buildings) { if (!b.alive || !isEnemy(b.team, u.team) || (b.air && !canHit(u, b)) || !T.sees(u.team, u.pos.y, b.pos.x, b.pos.z, b.pos.y) /* terrain (J) */) continue; const d = this.distToBox(b, u.pos.x, u.pos.z); if (d < bd) { bd = d; best = b; } } }
     return best;
   }
   aimAt(u: Unit, t: Unit | Building, fromY: number) { const ty = isUnit(t) ? UNIT[t.kind].bodyY : Math.min(t.h * .5, 3), d = Math.hypot(t.pos.x - u.pos.x, t.pos.z - u.pos.z); u.yaw = Math.atan2(t.pos.x - u.pos.x, t.pos.z - u.pos.z); u.pitch += (Math.atan2(ty - fromY, d) - u.pitch) * .3; return ty; }
@@ -1035,32 +1105,32 @@ export class Game {
     const build = this.phase !== 'menu' && this.tool === 2 && !!me && isWorker(me.kind) && me.alive && !this.tab && this.staticT <= 0, blist = FACTION[me?.team || 0].builds;
     for (const k in this.ghost) { const on = build && blist[this.buildSel] === k; this.ghost[k].visible = on && this.placeOK; this.ghostBad[k].visible = on && !this.placeOK; if (on) { const g = this.placeOK ? this.ghost[k] : this.ghostBad[k]; g.position.copy(this.placePos); g.rotation.y = this.buildRot ? Math.PI / 2 : 0; } }
     holoOK.opacity = .2 + Math.sin(pipe.time * 3) * .05; warnMat.opacity = .6 + Math.sin(pipe.time * 30) * .3;
-    const near = !this.tab && this.phase !== 'menu' && me ? me : null;
-    for (const u of this.units) { u.ring.visible = this.tab && u.team === this.myTeam; u.obj.visible = !(near && u !== near && u.team === this.myTeam && Math.hypot(u.pos.x - near.pos.x, u.pos.z - near.pos.z) < 1.05); }
-    pipe.static = this.staticT > 0 ? .85 : 0; pipe.sat = this.tab ? .8 : 1;
+    const near = !this.tab && !this.cmd.on && this.phase !== 'menu' && me ? me : null, picked = this.cmd.on ? this.cmd.sel : null;
+    for (const u of this.units) { u.ring.visible = picked ? picked.has(u) : this.tab && u.team === this.myTeam; u.obj.visible = !(near && u !== near && u.team === this.myTeam && Math.hypot(u.pos.x - near.pos.x, u.pos.z - near.pos.z) < 1.05); }
+    pipe.static = this.staticT > 0 && !this.cmd.on ? .85 : 0; pipe.sat = this.tab ? .8 : 1; if (this.phase === 'menu' || this.phase === 'cut' || this.tab) this.cmd.veil(false, dt);
     for (const k in vm) vm[k].visible = false;
     if (this.phase === 'menu') {
       const a = pipe.time * .07; cam.fov = 46; cam.position.set(Math.sin(a) * 36 + 4, 8 + Math.sin(a * 2) * 2, Math.cos(a) * 36); cam.lookAt(2, 5.5, 0); if (me) this.bodyLayer(me, false);
       this.menuPos.copy(cam.position); this.menuQuat.copy(cam.quaternion);
-      cam.updateProjectionMatrix(); cam.updateMatrixWorld(); this.lamps(cam); pipe.draw(this.scene, cam, V3(0, 0, 0), 120); return;
+      cam.updateProjectionMatrix(); cam.updateMatrixWorld(); cam.near = .06; this.lamps(cam.position); pipe.draw(this.scene, cam, V3(0, 0, 0), 120); return;
     }
     if (this.phase === 'cut' && this.shot) {
       pipe.sat = this.cutSat; const sh = this.shake * .05; cam.fov = this.shot.fov; cam.position.copy(this.shot.pos).add(TMP2.set(R(-sh, sh), R(-sh, sh), R(-sh, sh))); cam.lookAt(this.shot.look); if (me) this.bodyLayer(me, false);
-      cam.updateProjectionMatrix(); cam.updateMatrixWorld(); this.lamps(cam); pipe.draw(this.scene, cam, this.shot.look, 130); return;
+      cam.near = .06; cam.updateProjectionMatrix(); cam.updateMatrixWorld(); this.lamps(cam.position); pipe.draw(this.scene, cam, this.shot.look, 130); return;
     }
     if (this.tab && me) {
       const iso = this.iso, h = 30, w = h * pipe.w / pipe.h; iso.left = -w; iso.right = w; iso.top = h; iso.bottom = -h; iso.updateProjectionMatrix();
       const shift = w * .28; iso.position.set(me.pos.x + shift, 150, me.pos.z + 120); iso.lookAt(me.pos.x + shift, 0, me.pos.z); iso.updateMatrixWorld();
-      this.bodyLayer(me, false); this.lamps(iso); pipe.draw(this.scene, iso, me.pos, 150); this.hud.update(this, iso); this.bodyLayer(me, true); return;
+      this.bodyLayer(me, false); this.lamps(iso.position); pipe.draw(this.scene, iso, me.pos, 150); this.hud.update(this, iso); this.bodyLayer(me, true); return;
     }
     if (me) {
       if (me.alive) this.bodyLayer(me, true);
       const sprint = this.keys.has('ShiftLeft') && me.moving && this.ads < .3, fovT = (this.hopT > 0 ? 82 : sprint ? 75 : 68) - this.ads * (unitRule(me.kind).shot?.zoom ?? 6) + this.recoil * 1.5 * (1 - this.ads); cam.fov += (this.fitFov(fovT) - cam.fov) * Math.min(1, dt * 10);
       const bobY = me.moving ? Math.sin(this.bob) * .035 * (1 - this.ads * .7) : 0, sh = this.shake * .03;
-      cam.position.set(me.pos.x + R(-sh, sh), UNIT[me.kind].eye + (me.alt || 0) + bobY + R(-sh, sh), me.pos.z + R(-sh, sh)); cam.rotation.set(this.pitch + this.recoil * .012, this.yaw + Math.PI, Math.sin(this.bob * .5) * (me.moving ? .004 : 0) - this.swayX * .6, 'YXZ'); this.fx.view(cam, dt);
+      cam.position.set(me.pos.x + R(-sh, sh), UNIT[me.kind].eye + (me.alt || 0) + me.pos.y /* terrain (J) */ + bobY + R(-sh, sh), me.pos.z + R(-sh, sh)); cam.rotation.set(this.pitch + this.recoil * .012, this.yaw + Math.PI, Math.sin(this.bob * .5) * (me.moving ? .004 : 0) - this.swayX * .6, 'YXZ'); this.fx.view(cam, dt);
       const intro = this.introT > 0 ? 1 - this.introT / 1.8 : 1;
       if (intro < 1) { const k = intro * intro * (3 - 2 * intro), q = cam.quaternion.clone(); TMP2.copy(cam.position); cam.position.lerpVectors(this.menuPos, TMP2, k); cam.quaternion.slerpQuaternions(this.menuQuat, q, k); cam.fov = 46 + (68 - 46) * k; if (me.alive) this.bodyLayer(me, k > .9); }
-      if (me.alive && this.staticT <= 0 && intro > .92) {
+      if (me.alive && this.staticT <= 0 && intro > .92 && this.cmd.z < .015) {
         const pose = (g: THREE.Group, k: number, kick: number, dip: number) => {
           const a = g.userData.rest, b = g.userData.ads || a, mv = me.moving ? 1 - k * .8 : 0; g.visible = true;
           g.position.set(a[0] + (b[0] - a[0]) * k + Math.cos(this.bob) * .008 * mv + this.swayX, a[1] + (b[1] - a[1]) * k + Math.sin(this.bob * 2) * .006 * mv - dip - this.drawT * .9 + this.swayY, a[2] + (b[2] - a[2]) * k + kick);
@@ -1070,16 +1140,20 @@ export class Game {
         (unitRule(me.kind).view || factionRule(me.team).view)?.(this, pose, rl, gun || null);
       }
     }
-    cam.updateProjectionMatrix(); cam.updateMatrixWorld(); this.lamps(cam);
-    LOD.myTeam = this.myTeam; pipe.draw(this.scene, cam, me ? me.pos : V3(), 110);
+    // The zoom: the camera is carried from the body's eyes up to the view from above, and what the crew cannot see is hidden on the way.
+    const C = this.cmd, up = (!!me || C.caster) && (C.z > 0 || C.zt > 0), above = up && C.z >= ZOOM.lift * .5; let span = 110;
+    if (up) { span = C.view(cam); SHARED.uFogD.value *= C.fogK; if (C.z > .015 && me && me.alive) this.bodyLayer(me, false); } else cam.near = .06;
+    C.veil(above, dt);
+    cam.updateProjectionMatrix(); cam.updateMatrixWorld(); this.lamps(above ? C.focus : cam.position);
+    LOD.myTeam = this.myTeam; pipe.draw(this.scene, cam, above ? C.focus : me ? me.pos : V3(), span);
     this.hud.update(this, cam);
     // music follows how hot things are around the player
     if (me) { let hot = this.time - me.lastHit < 6 ? 1 : 0; if (!hot) for (const u of this.units) if (u.team !== this.myTeam && u.alive && Math.abs(u.pos.x - me.pos.x) < 45 && Math.abs(u.pos.z - me.pos.z) < 45) { hot = 1; break; } this.mood += (hot - this.mood) * Math.min(1, dt * (hot ? 2 : .4)); setMood(this.phase === 'play' ? .25 + this.mood * .75 : .15); }
   }
   private lampDt = 0; private cones = new Map<Prop, THREE.Mesh>();
   /** Every lamp, fire and glowing thing near the camera, handed to the renderer for this frame. All for show. */
-  private lamps(cam: THREE.Camera) {
-    lampsBegin(); const t = this.pipe.time, c = cam.position, me = this.me, far = 95 * 95;
+  private lamps(c: THREE.Vector3) {
+    lampsBegin(); const t = this.pipe.time, me = this.me, far = 95 * 95;
     if (ENV.pool >= .02) {
       for (const b of this.buildings) {
         if (!b.alive || (b.pos.x - c.x) ** 2 + (b.pos.z - c.z) ** 2 > far * 2) continue; const f = fac(b.team), big = Math.max(b.hx, b.hz);
@@ -1096,7 +1170,7 @@ export class Game {
         const s = Math.sin(u.obj.rotation.y), q = Math.cos(u.obj.rotation.y); lamp(u.pos.x + s * L[1], L[0], u.pos.z + q * L[1], L[2], L[3], L[4]);
       }
       // what you are driving carries a lamp that lights the ground ahead of it
-      if (me && me.alive && !this.tab && this.phase !== 'menu' && this.phase !== 'cut') { const f = fac(me.team), s = Math.sin(this.yaw), q = Math.cos(this.yaw); lamp(me.pos.x + s * 3.2, UNIT[me.kind].eye * .7, me.pos.z + q * 3.2, f === 2 ? 8 : 11, f === 0 ? HEAD : f === 1 ? TEAL : SICK, f === 2 ? .7 : 1.1); }
+      if (me && me.alive && !this.tab && !this.cmd.on && this.phase !== 'menu' && this.phase !== 'cut') { const f = fac(me.team), s = Math.sin(this.yaw), q = Math.cos(this.yaw); lamp(me.pos.x + s * 3.2, UNIT[me.kind].eye * .7, me.pos.z + q * 3.2, f === 2 ? 8 : 11, f === 0 ? HEAD : f === 1 ? TEAL : SICK, f === 2 ? .7 : 1.1); }
       for (const o of this.ores) { if (o.amount <= 0 || (o.pos.x - c.x) ** 2 + (o.pos.z - c.z) ** 2 > far * .5) continue; lamp(o.pos.x, 1.6, o.pos.z, 7, ORE, .55 + .08 * Math.sin(t * 1.7 + o.pos.x)); }
       for (const p of this.props) { if (!p.alive || (p.kind !== 'crystal' && p.name !== 'Floodlight') || (p.x - c.x) ** 2 + (p.z - c.z) ** 2 > far) continue; if (p.name === 'Floodlight') { lamp(p.x, 6.8, p.z, 18, FLOOD, 1.1 * flicker(t, p.id, .05)); if (!this.cones.has(p)) { const m = makeCone(); m.position.set(p.x, 6.7, p.z); this.scene.add(m); this.cones.set(p, m); } } else lamp(p.x, p.y0 + Math.min(3, p.h * .5), p.z, p.r * 1.6 + 5, ORE, .5); }
     }

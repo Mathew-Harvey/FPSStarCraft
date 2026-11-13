@@ -26,7 +26,7 @@ const gap = (a: number, b: number) => Math.abs(Math.atan2(Math.sin(a - b), Math.
   check(!turns.has(-1) && !turns.has(0) && turns.size === TURNS, `a Vast match is turned one of ${TURNS} ways, never left as drawn (${turns.size} seen in 400 rolls)`);
   check(rollMap(mapCode(0, VAST), 7) === 730 && rollMap(1530) !== undefined && turnOf(rollMap(1530, 3)) === 3, 'a turn can be pinned, and rolling again replaces the old turn');
   check(!validMap(2500 + 30) && !validMap(134) && !validMap(-1) && validMap(2432) && validMap(30), 'map numbers past the last turn, and turned story maps, are refused');
-  check(SIZES[VAST].name === 'Vast' && SIZES.length === 4 && MAPS.length === 6, 'Vast is the fourth size, and no map was added or dropped');
+  check(SIZES[VAST].name === 'Vast' && SIZES.length === 4 && MAPS.length === 8 && MAPS[6].ring === 4 && MAPS[7].ring === 8, 'Vast is the fourth size, and the eight maps are the six before plus the two team maps');
 }
 
 // 2. Every hidden layout, all 72 of them: fields round both bases, roads that do not point at the enemy, and room behind each base.
@@ -105,8 +105,9 @@ for (const [map, home, out] of [[mapCode(0, VAST) + 500, 0, 1], [mapCode(2, VAST
   check(!!u && u.team === H && I.spots[0].some(s => s.sent && Math.hypot(s.x - u.order.x, s.z - u.order.z) < 1), 'the scout order sends one free body to the end of a road');
   g.dir.order('S', 0, 0, null); g.dir.order('S', 0, 0, null); const out = g.units.filter(x => x.alive && x.order.type === 'scout'), ends = new Set(out.map(x => Math.round(x.order.x) + ',' + Math.round(x.order.z)));
   check(out.length === 3 && ends.size === 3, 'three scout orders send three bodies down three different roads');
-  let far = 0; run(g, 150, () => { far = Math.max(far, Math.hypot(u.pos.x, u.pos.z)); });
-  check(far > 80 && (u.order.type !== 'scout' || u.order.back === true), `a scout walks out (${Math.round(far)} m) and turns for home`);
+  // Out to the end of its road (it turns once within a few metres of it; the nearest road end can be under 90 m out), then home.
+  const end = Math.hypot(u.order.x, u.order.z); let far = 0; run(g, 150, () => { far = Math.max(far, Math.hypot(u.pos.x, u.pos.z)); });
+  check(end > 40 && far > end - 8 && (u.order.type !== 'scout' || u.order.back === true), `a scout walks out (${Math.round(far)} m of a road ${Math.round(end)} m long) and turns for home`);
   run(g, 120); const back = g.units.filter(x => x.alive && x.order.type === 'scout').length;
   check(back <= 1 && I.spots[0].filter(s => s.seen).length >= 2, `scouts come home and go back to work, and the roads they walked are marked as looked at (${I.spots[0].filter(s => s.seen).length} of ${I.spots[0].length})`);
 }

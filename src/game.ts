@@ -8,7 +8,7 @@ import type { Hud } from './hud';
 import { Fog } from './fog';
 import { LOD } from './meshes';
 import { Intel } from './scout';
-import { Kind, BKind, UNIT, BLD, BUILDABLE, UPGRADES, TRAINS, UNIT_NEEDS, UpKey, Unit, Building, Prop, OreNode, Difficulty, DIFFS, OUTPOST, GATE, MAP, MAPS, ROAD, VHOME, FACTION, SIDE, setMap, veylPt, isUnit, isSoldier, isWorker, isFighter, foeOf, fac, MIRROR, atHome, endPt, swapEnd , STORY, turnOf, LAYOUT, OVERTIME, CHOIR_REACH, CLEAVE } from './data';
+import { Kind, BKind, UNIT, BLD, BUILDABLE, UPGRADES, TRAINS, UNIT_NEEDS, UpKey, Unit, Building, Prop, OreNode, Difficulty, DIFFS, OUTPOST, GATE, MAP, MAPS, ROAD, VHOME, FACTION, SIDE, setMap, veylPt, isUnit, isSoldier, isWorker, isFighter, foeOf, fac, MIRROR, atHome, endPt, swapEnd , STORY, turnOf, LAYOUT, OVERTIME, CHOIR_REACH, CLEAVE, turnPt, startXZ } from './data';
 import { Director } from './director';
 import { ENV, hourOf, matchHour, matchWeather, lampsBegin, lamp, flashLamp, lampsCommit, flicker, LAMP_ON } from './light';
 import type { Mission } from './campaign';
@@ -26,7 +26,7 @@ import { initAir, tickAir, airCollide, sameLayer, flyKeys } from './core/air';
 import { seenBy, drawShimmer } from './core/sight';
 import { tickCargo, spill, fightsInside } from './core/cargo';
 import { tickMorph } from './core/morph';
-import { isEnemy, TEAM_SLOTS } from './core/sides';
+import { isEnemy, isFriend, TEAM_SLOTS, MATCH, multi } from './core/sides';
 import { type Vent, layVents, costOf, canPay, pay, refund, shortOf, ventWork, ventAt, seamRate, seamFull, capSupply } from './core/econ';
 import { applySnap, netTick } from './netgame';
 import { G_TUNE, GBKind } from './factions/gloam/numbers';
@@ -121,17 +121,17 @@ export class Game {
   constructor(public pipe: Pipeline | ViewPipe, public hud: Hud, public diff: Difficulty = DIFFS[1], public mapI = 0, public mission: Mission | null = null, public net: Net | null = null, /** The Veyl run a real economy (Tenders, building, training) instead of breeding raids for free. On whenever somebody plays the Veyl. */ public eco = false) {
     // Only the classic match (Ironhold at home, the Veyl at the outpost) can run the Veyl as a free raid factory. The Gloam, the mirrors and
     // anyone else at home always run a real economy on both sides.
-    if (!(fac(SIDE.home) === 0 && fac(SIDE.out) === 1) || turnOf(mapI) > 0) this.eco = true;   // and on a hidden map nobody starts with a base already built
+    if (!(fac(SIDE.home) === 0 && fac(SIDE.out) === 1) || turnOf(mapI) > 0 || multi()) this.eco = true;   // and on a hidden map nobody starts with a base already built
     // Two economies and no story job: the ore is laid out the same for both ends (see LAYOUT). A story job keeps the fields it was written round.
     this.fair = LAYOUT.fair = this.eco && !mission && !STORY.on;
     setMap(mapI); this.sites = MAP.sites!; (M.ground as any).uniforms.uColor.value.setRGB(MAP.ground[0], MAP.ground[1], MAP.ground[2]); (M.mesa as any).uniforms.uColor.value.setRGB(MAP.mesa[0], MAP.mesa[1], MAP.mesa[2]); (M.rock as any).uniforms.uColor.value.setRGB(MAP.rock[0], MAP.rock[1], MAP.rock[2]); 
     this.wxSalt = mapI + (net ? 0 : Date.now() % 50);   // the clock, not the dice: a draw here would move every bot match that follows
     const s = this.scene; s.add(makeSky()); MD.buildWorld(s, this.props, this.anim); this.spires = this.props.filter(p => p.solid); s.add(this.cam);
     this.vm = { drill: MD.vmDrill(), rifle: MD.vmRifle(), scatter: MD.vmScatter(), shield: MD.vmShield(), cannon: MD.vmCannon(), long: MD.vmLong(), pistol: MD.vmPistol(), veyl: MD.vmVeyl() };
-    if (fac(SIDE.home) === 2 || fac(SIDE.out) === 2) for (const k of Object.keys(UNIT).filter(k => UNIT[k as Kind].team === 2)) { try { this.vm['g_' + k] = MD.vmG(k as any); } catch { /* no view model drawn for this kind yet */ } }
+    if (fac(SIDE.home) === 2 || fac(SIDE.out) === 2 || MATCH.teams.some(t => fac(t) === 2)) for (const k of Object.keys(UNIT).filter(k => UNIT[k as Kind].team === 2)) { try { this.vm['g_' + k] = MD.vmG(k as any); } catch { /* no view model drawn for this kind yet */ } }
     this.carpet = new Bloom(s);
     for (const k in this.vm) { this.vm[k].visible = false; this.cam.add(this.vm[k]); this.vm[k].traverse(o => { const m = o as THREE.Mesh; if (m.isMesh && !Array.isArray(m.material)) m.material = heldMaterial(m.material); }); }
-    for (const k of new Set([...BUILDABLE, ...FACTION[SIDE.home].builds, ...FACTION[SIDE.out].builds])) { const src = this.model(k); this.ghost[k] = MD.hologram(src, holoOK); this.ghostBad[k] = MD.hologram(src, holoBad); this.ghost[k].visible = this.ghostBad[k].visible = false; s.add(this.ghost[k], this.ghostBad[k]); }
+    for (const k of new Set([...BUILDABLE, ...FACTION[SIDE.home].builds, ...FACTION[SIDE.out].builds, ...MATCH.teams.flatMap(t => FACTION[t].builds)])) { const src = this.model(k); this.ghost[k] = MD.hologram(src, holoOK); this.ghostBad[k] = MD.hologram(src, holoBad); this.ghost[k].visible = this.ghostBad[k].visible = false; s.add(this.ghost[k], this.ghostBad[k]); }
     const pool = (n: number, geo: THREE.BufferGeometry, mat: THREE.Material, fx: boolean) => { const out: THREE.Mesh[] = []; for (let i = 0; i < n; i++) { const m = mk(geo, mat, 0, 0, 0, s); if (fx) m.layers.set(L_FX); m.visible = false; out.push(m); } return out; };
     this.tracers = pool(36, G.oct, tracerMat, true).map(m => ({ m, t: 0 }));
     this.puffs = pool(96, G.cloud, M.dust, false).map(m => ({ m, t: 0, life: 1, v: V3(), s: 1 }));
@@ -164,8 +164,14 @@ export class Game {
       // The yard keeps its walks to the ore clear; the outpost's scenery was laid out for the Veyl's seams. Clear anything standing on the walk
       // from the outpost's home building to each turned-round seam, so its workers do not detour round domes and crystals (they mined 12% less).
       const seg = (px: number, pz: number, bx: number, bz: number) => { const dx = bx - VHOME.x, dz = bz - VHOME.z, L = dx * dx + dz * dz || 1, t = Math.max(0, Math.min(1, ((px - VHOME.x) * dx + (pz - VHOME.z) * dz) / L)); return Math.hypot(px - VHOME.x - dx * t, pz - VHOME.z - dz * t); };
-      for (const q of this.props) if (q.alive && q.kind !== 'mesa' && seams.some(([x, z]) => seg(q.x, q.z, x, z) < q.r + 2.5)) { q.alive = false; const i = this.spires.indexOf(q); if (i >= 0) this.spires.splice(i, 1); for (const r of q.ranges) { const a = r.attr.array as Float32Array; for (let k = r.start * 3, e = (r.start + r.count) * 3; k < e; k += 3) { a[k] = q.x; a[k + 1] = -80; a[k + 2] = q.z; } r.attr.needsUpdate = true; } if (q.obj) s.remove(q.obj); }
+      for (const q of this.props) if (q.alive && q.kind !== 'mesa' && seams.some(([x, z]) => seg(q.x, q.z, x, z) < q.r + 2.5)) this.clearProp(q);
     }
+    // A match of more than two sides: every other start gets the yard's seams turned round to it (unless the map already has a field there),
+    // and the scenery on its building ground and its walks to the ore is cleared, as the far base's is.
+    if (multi()) MATCH.teams.forEach((t, j) => { if (j < 2) return; const i = MATCH.at[j], [sx, sz] = startXZ(i);
+      if (!this.ores.some(n => Math.hypot(n.pos.x - sx, n.pos.z - sz) < 25)) field(YARD_SEAMS.map(([x, z, n, sc]) => { const [mx, mz] = turnPt(i, x, z); return [Math.round(mx), Math.round(mz), n, sc]; }), 900);
+      const mine = this.ores.filter(n => Math.hypot(n.pos.x - sx, n.pos.z - sz) < 25), seg = (px: number, pz: number, bx: number, bz: number) => { const dx = bx - sx, dz = bz - sz, L = dx * dx + dz * dz || 1, k = Math.max(0, Math.min(1, ((px - sx) * dx + (pz - sz) * dz) / L)); return Math.hypot(px - sx - dx * k, pz - sz - dz * k); };
+      for (const q of this.props) if (q.alive && q.kind !== 'mesa' && (Math.hypot(q.x - sx, q.z - sz) < q.r + 16 || mine.some(n => seg(q.x, q.z, n.pos.x, n.pos.z) < q.r + 2.5))) this.clearProp(q); });
     layVents(this);
     // Each end starts with its faction's home building and six workers: the yard for the side at home, the outpost for the side at the far end.
     // The one exception is the classic match, where a Veyl outpost nobody plays is a whole working base that breeds its raids for free.
@@ -174,6 +180,7 @@ export class Game {
     start(SIDE.home, 0, 0, crew);
     const V = (k: BKind, lx: number, lz: number, rot = false) => { if (net) return; const [x, z] = veylPt(lx, lz); this.addBuilding(k, SIDE.out, x, z, true, rot); };
     // With turned-round seams the far crew is the yard crew turned round too, so both ends start the same walk from the same spots.
+    if (multi()) MATCH.teams.forEach((t, j) => { if (j >= 2) { const i = MATCH.at[j], [sx, sz] = startXZ(i); start(t, sx, sz, crew.map(([x, z]) => turnPt(i, x, z))); } });
     if (this.eco) start(SIDE.out, VHOME.x, VHOME.z, classic ? [[14, 4], [15, -3], [17, 6], [13, -6], [16, 1], [12, 7]].map(([lx, lz]) => veylPt(lx, lz)) : crew.map(([x, z]) => swapEnd(x, z)));
     else {
     for (const [x, z] of [[-6, -9], [3, 1], [-6, 11]]) V('choir', x, z);
@@ -296,7 +303,9 @@ export class Game {
   fair = false; sites: number[][] = [];
   /** The map, the sides and the layout are shared by every Game in the process. A server that runs several matches sets the map and sides before it
    *  touches one, and this puts back the layout that match was built with. */
-  pin() { LAYOUT.fair = this.fair; MAP.sites = this.sites; }
+  /** The match's enemy picks (MATCH.foe), kept with the game so a server running several matches puts each one's back before it steps. */
+  foePick: number[] = MATCH.foe;
+  pin() { LAYOUT.fair = this.fair; MAP.sites = this.sites; if (multi()) MATCH.foe = this.foePick; }
   /** How far out a Choir Stone takes a Tender's ore (see CHOIR_REACH: a dial for balance tables, 0 in play). */
   bankReach(hq: Building) { return hq.kind === 'choir' ? CHOIR_REACH.m : 0; }
   otSaid = false;
@@ -380,6 +389,8 @@ export class Game {
   }
 
   damage(t: Unit | Building, amt: number, from: Unit | Building | null, crit = false) {
+    // With more than two sides, a shot or a blast never hurts a friend's bodies or buildings (its own side's, as ever, it can).
+    if (from && from.team !== t.team && multi() && !isEnemy(from.team, t.team)) return;
     if (this.net) {   // multiplayer client: only the server changes health. Report what this player hit and show the number now.
       if (from !== this.me || !this.me || !t.alive || amt <= 0) return;
       this.net.cmd('dm', t.id, Math.round(amt * 10) / 10, crit ? 1 : 0); if (isUnit(t)) { t.pop = 1; this.fx.hit(t, amt, from, crit, t.shield > 0); }
@@ -479,8 +490,24 @@ export class Game {
     if (this.net) return;
     this.dir.buildingLost(b);
     if (this.mission) { const mine = this.mission.out ? SIDE.out : SIDE.home; if (b.team === mine && this.isHQ(b) && !this.hqs(mine).length && !this.mission.noHq) { this.endT = 2.4; this.endWon = false; this.pipe.flash = 1; } }
+    else if (multi()) { if (this.isHQ(b) && !this.hqs(b.team).length && !this.outOf.includes(b.team)) this.knockOut(b.team); }
     else if (b.team === SIDE.out && this.isHQ(b) && !(this.eco ? this.hqs(SIDE.out) : this.stones()).length) { this.endT = 2.4; this.endWon = true; this.pipe.flash = 1; } else if (b.team === SIDE.home && this.isHQ(b) && !this.hqs(SIDE.home).length) { this.endT = 2.4; this.endWon = false; this.pipe.flash = 1; }
   }
+  /** Teams knocked out of a match of more than two sides: their last home building fell. What they have left stands, but plans nothing. */
+  outOf: number[] = [];
+  /** The teams left standing when a match of more than two sides ended. */
+  winners: number[] = [];
+  /** A side's name for the feed: its player's name, or its faction, with a number when the faction is in the match more than once. */
+  sideName(t: number) { if (this.names[t]) return this.names[t]; const F = FACTION[t]; return MATCH.teams.filter(o => fac(o) === fac(t)).length > 1 ? `${F.short} ${Math.floor(t / 3) + 1}` : F.short; }
+  knockOut(t: number) {
+    this.outOf.push(t); const left = MATCH.teams.filter(o => !this.outOf.includes(o));
+    this.feed(FACTION[this.myTeam].voice, isFriend(t, this.myTeam) ? (t === this.myTeam ? 'Our last home building is down. We are out of the fight.' : `${this.sideName(t)} lost their last home building. They are out.`) : `${this.sideName(t)} lost their last home building. They are out.`, isFriend(t, this.myTeam) ? 'al' : '');
+    // Over when everyone left is on one side, or when every side with a player on it is out (nobody is left to play it out).
+    const humans = MATCH.teams.filter(h => this.human[h]), over = left.every(o => isFriend(o, left[0])), gone = humans.length > 0 && !left.some(o => humans.some(h => isFriend(o, h)));
+    if (over || gone) { this.winners = over ? left : []; this.endT = 2.4; this.endWon = left.some(o => isFriend(o, this.myTeam)) && over; this.pipe.flash = 1; }
+  }
+  /** Takes a prop off the map for good (a rock or crystal standing on a base's walk to its ore). */
+  clearProp(q: Prop) { q.alive = false; const i = this.spires.indexOf(q); if (i >= 0) this.spires.splice(i, 1); for (const r of q.ranges) { const a = r.attr.array as Float32Array; for (let k = r.start * 3, e = (r.start + r.count) * 3; k < e; k += 3) { a[k] = q.x; a[k + 1] = -80; a[k + 2] = q.z; } r.attr.needsUpdate = true; } if (q.obj) this.scene.remove(q.obj); }
   end(won: boolean) { if (this.phase === 'over') return; this.phase = 'over'; this.won = won; won ? sfx.win() : sfx.lose(); drillSound(false, false); setMood(0); this.hud.showEnd(this); if (document.pointerLockElement) document.exitPointerLock(); }
   nearestStone(p: { x: number; z: number }) { let best: Building | null = null, bd = 1e9; for (const b of this.stones()) { const d = Math.hypot(b.pos.x - p.x, b.pos.z - p.z); if (d < bd) { bd = d; best = b; } } return best; }
 
@@ -872,7 +899,7 @@ export class Game {
   }
   /** A small shell burst: splash damage without the full explosion fanfare. */
   burst(p: THREE.Vector3, dmg: number, radius: number, from: Unit | null, skip: Unit | Building | null = null) {
-    const foe = from ? foeOf(from.team) : SIDE.out; for (const u of this.units) { if (!u.alive || u.team !== foe || u === skip) continue; const d = Math.hypot(u.pos.x - p.x, u.pos.z - p.z); if (d > radius + UNIT[u.kind].rad || Math.abs(p.y - UNIT[u.kind].bodyY) > radius + 1.5) continue; const k = 1 - .6 * Math.min(1, d / radius); this.damage(u, dmg * k, from); if (d > .1 && !unitRule(u.kind).heavy) { u.kx += (u.pos.x - p.x) / d * 4 * k; u.kz += (u.pos.z - p.z) / d * 4 * k; } }
+    const foe = from ? foeOf(from.team) : SIDE.out, many = multi() && !!from; for (const u of this.units) { if (!u.alive || (many ? !isEnemy(from!.team, u.team) : u.team !== foe) || u === skip) continue; const d = Math.hypot(u.pos.x - p.x, u.pos.z - p.z); if (d > radius + UNIT[u.kind].rad || Math.abs(p.y - UNIT[u.kind].bodyY) > radius + 1.5) continue; const k = 1 - .6 * Math.min(1, d / radius); this.damage(u, dmg * k, from); if (d > .1 && !unitRule(u.kind).heavy) { u.kx += (u.pos.x - p.x) / d * 4 * k; u.kz += (u.pos.z - p.z) / d * 4 * k; } }
     this.blastProps(p, radius, dmg, from, skip); this.shove(p, radius * 1.5, 5);
     this.puff(p, 3, radius * .3, M.fire, 1.4, 1.2); this.puff(p, 2, radius * .32, M.smoke, 1, 1.6); this.debris(p, 3, .14, M.rock, 5); if (p.y < .6) this.scorchAt(p, radius * .7);
     const v = this.vol(p); this.shake = Math.max(this.shake, v * .35); sfx.boom(v * .45);

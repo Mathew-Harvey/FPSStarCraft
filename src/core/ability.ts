@@ -3,6 +3,7 @@
 import type { Game } from '../game';
 import type { Unit, Building } from '../data';
 import { UNIT } from '../data';
+import { isEnemy } from './sides';
 import { canAct } from './status';
 
 /** Where an ability is aimed: a spot on the ground, a body or building (id), or the caster itself. */
@@ -45,7 +46,7 @@ export function whyNot(g: Game, u: Unit, key: string, t: Target): string {
   if (!u.alive) return 'dead'; if (u.inside) return 'inside'; if (!canAct(u)) return 'cannot act';
   if ((u.energy ?? 0) < a.energy) return 'energy'; if ((u.abCd?.[key] ?? 0) > 0) return 'cooldown'; if (u.cast) return 'busy';
   if (a.target !== 'self') { if (!isFinite(t.x) || !isFinite(t.z)) return 'aim'; if (Math.hypot(t.x - u.pos.x, t.z - u.pos.z) > a.range + 1) return 'range'; }
-  if (a.target === 'body') { const o = bodyOf(g, t.id); if (!o || !o.alive) return 'target'; const ally = o.team === u.team; if ((a.who ?? 'foe') === 'ally' ? !ally : (a.who ?? 'foe') === 'foe' ? ally : false) return 'target'; if (Math.hypot(o.pos.x - u.pos.x, o.pos.z - u.pos.z) > a.range + 1) return 'range'; }
+  if (a.target === 'body') { const o = bodyOf(g, t.id); if (!o || !o.alive) return 'target'; const ally = !isEnemy(o.team, u.team); if ((a.who ?? 'foe') === 'ally' ? !ally : (a.who ?? 'foe') === 'foe' ? ally : false) return 'target'; if (Math.hypot(o.pos.x - u.pos.x, o.pos.z - u.pos.z) > a.range + 1) return 'range'; }
   if (a.can && !a.can(g, u, t)) return 'refused';
   return '';
 }

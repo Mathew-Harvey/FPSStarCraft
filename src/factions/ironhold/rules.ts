@@ -6,6 +6,7 @@ import { sfx } from '../../audio';
 import type { Game } from '../../game';
 import { TMP } from '../../game';
 import { UNIT, Unit, Building, isUnit, foeOf } from '../../data';
+import { isEnemy } from '../../core/sides';
 import { defineUnits, defineBuildings, defineFaction, DEFAULTS, type Weapon, type Shot } from '../../core/registry';
 import { defineAbilities } from '../../core/ability';
 
@@ -159,12 +160,12 @@ DEFAULTS.ai = aiSoldier; DEFAULTS.drive = drive;
 defineBuildings({
   bunkhouse: { sideDoor: true },
   watchpost: { tick(g, b, dt) {
-    b.cd -= dt; let tgt: Unit | null = null, bd = g.upOf(b.team).post ? 42 : 34; for (const o of g.units) { if (!o.alive || o.team === b.team) continue; const d = o.pos.distanceTo(b.pos); if (d < bd) { bd = d; tgt = o; } }
+    b.cd -= dt; let tgt: Unit | null = null, bd = g.upOf(b.team).post ? 42 : 34; for (const o of g.units) { if (!o.alive || !isEnemy(o.team, b.team)) continue; const d = o.pos.distanceTo(b.pos); if (d < bd) { bd = d; tgt = o; } }
     if (tgt) { const gun = b.obj.userData.gun; gun.rotation.y = Math.atan2(tgt.pos.x - b.pos.x, tgt.pos.z - b.pos.z) - b.obj.rotation.y; if (b.cd <= 0) { b.cd = g.upOf(b.team).post ? .3 : .45; const a = V3(b.pos.x, 6, b.pos.z), e = V3(tgt.pos.x, UNIT[tgt.kind].bodyY, tgt.pos.z); g.tracer(a, e, tracerMat, .1); sfx.turret(g.vol(b.pos) * .6); g.damage(tgt, 10 * g.gunMul(b.team), b); } }
   } },
   headframe: { tick(g, b, dt) {
     // The night watchman on the Headframe: a slow rivet gun, so two raiders cannot empty the pit while the squad is away.
-    b.cd -= dt; if (b.cd <= 0) { b.cd = .8; let tgt: Unit | null = null, bd = 20; for (const o of g.units) { if (!o.alive || o.team === b.team) continue; const d = o.pos.distanceTo(b.pos); if (d < bd) { bd = d; tgt = o; } }
+    b.cd -= dt; if (b.cd <= 0) { b.cd = .8; let tgt: Unit | null = null, bd = 20; for (const o of g.units) { if (!o.alive || !isEnemy(o.team, b.team)) continue; const d = o.pos.distanceTo(b.pos); if (d < bd) { bd = d; tgt = o; } }
       if (tgt) { g.tracer(V3(b.pos.x, b.h + .6, b.pos.z), V3(tgt.pos.x, UNIT[tgt.kind].bodyY, tgt.pos.z), tracerMat, .08); sfx.turret(g.vol(b.pos) * .4); g.damage(tgt, 9 * g.gunMul(b.team), b); } else b.cd = .3; }
   } },
 });

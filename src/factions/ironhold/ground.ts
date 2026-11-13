@@ -71,6 +71,7 @@ function sapperAbilities(): AbilityDef[] {
 defineAbilities('sapper', sapperAbilities());
 /** The satchel charges count down and go off (host). */
 export function tickCharges(g: Game, dt: number) {
+  clearOrphanMines(g);
   for (let i = CHARGES.length - 1; i >= 0; i--) {
     const c = CHARGES[i]; c.t -= dt; if (c.t > 0) continue; CHARGES.splice(i, 1); if (!c.b.alive) continue;
     g.explode(V3(c.x, .4, c.z), c.from.team, 20, 3, c.from); g.damage(c.b, TUNE.satchel.dmg * (c.from.alive ? mulOf(g, c.from) : 1), c.from);
@@ -86,7 +87,16 @@ function aiMine(g: Game, u: Unit) {
   if (u.think > 0) return; u.think = .2;
   const foe = nearest(g, u, TUNE.mine.trip, o => !o.air && fac(o.team) !== undefined);
   if (!foe) return; const m = mem(u), owner = g.units.find(x => x.id === m.owner && x.alive) || null;
-  g.explode(V3(u.pos.x, .4, u.pos.z), u.team, TUNE.mine.dmg * (owner ? mulOf(g, owner) : 1), TUNE.mine.r, owner || u); u.alive && g.damage(u, 1e4, null);
+  m.went = true; g.explode(V3(u.pos.x, .4, u.pos.z), u.team, TUNE.mine.dmg * (owner ? mulOf(g, owner) : 1), TUNE.mine.r, owner || u); u.alive && g.damage(u, 1e4, null);
+}
+/** A Sapper's mines go dead with it: each Sapper keeps two (three with Mine Drill), and a field with nobody to keep it does not stay. */
+function clearOrphanMines(g: Game) {
+  let live: Set<number> | null = null;
+  for (const u of g.units) {
+    if (!u.alive || u.kind !== 'shaftmine') continue; const m = mem(u); if (m.owner === undefined) continue;
+    live ??= new Set(g.units.filter(o => o.alive && o.kind === 'sapper').map(o => o.id)); if (live.has(m.owner)) continue;
+    m.fizzled = true; g.puff(TMP.set(u.pos.x, .3, u.pos.z), 3, .4, M.dust, .5, .6); u.alive = false; u.obj.visible = false;
+  }
 }
 
 // ---------------------------------------------------------------- Dustbike
@@ -181,7 +191,7 @@ function drivePileSet(g: Game, dt: number, P: Set<string>, eye: THREE.Vector3, d
 }
 defineUnits({
   sapper: { gun: W.sapper, ai: aiSapper, drive: (g, dt, P, e, d, l, w) => driveGun(g, dt, P, e, d, l, w, SAPPER, { spread: .016 }), task: (g, u) => `Mines laid: ${minesOf(g, u).length}` },
-  shaftmine: { ai: (g, u) => aiMine(g, u), skipRespawn: true, threat: .2, koWord: 'POP', drive: () => {} },
+  shaftmine: { gun: { name: 'Mine', mag: 0, cd: 1, reload: 1 }, ai: (g, u) => aiMine(g, u), skipRespawn: true, threat: .2, koWord: 'POP', drive: () => {} },
   dustbike: {
     gun: W.dustbike, ai: aiDustbike, threat: 1.1, step: 0, hop: 22, shove: 10,
     drive(g, dt, P, eye, dir, look, w) {

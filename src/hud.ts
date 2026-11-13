@@ -311,7 +311,7 @@ export class Hud {
     for (const b of g.buildings) { if (!b.alive || b.team !== g.myTeam || b.kind !== FACTION[b.team].hq) continue; name(b.pos.x, b.pos.z - b.hz - 4 / k, BLD[b.kind].name, '#ffc21a'); }
     // theirs as the crew last saw them
     for (const r of I.seen[mi].values()) { if (r.kind !== FACTION[foeOf(g.myTeam)].hq) continue; name(r.x, r.z - BLD[r.kind].hz - 4 / k, 'Enemy ' + BLD[r.kind].name, '#35e0c8'); }
-    if (me && me.alive) name(me.pos.x, me.pos.z + 12 / k, 'You', '#fff');
+    if (me && me.alive) name(me.pos.x, me.pos.z + 12 / k, g.net?.watch ? g.names[me.pilot] || 'Watching' : 'You', '#fff');
   }
 }
 

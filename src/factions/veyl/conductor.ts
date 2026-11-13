@@ -83,7 +83,7 @@ export function conductor(D: Director, dt: number, V0: Side = D.vs) {
   const exp = D.vExpansion(stones, T), homeLeft = g.ores.filter(n => Math.hypot(n.pos.x - HX, n.pos.z - HZ) < 40).reduce((a, n) => [a[0] + n.amount, a[1] + n.max], [0, 0]);
   const wantStones = Math.min((MAP.sites || []).length + 1, 1 + (now > DOC.expT || homeLeft[0] < homeLeft[1] * .5 ? 1 : 0) + (now > 960 ? 1 : 0) + (now > 1440 ? 1 : 0));
   const freeVent = () => g.vents.filter(v => !v.tap && v.amount > 0 && stones.some(s => s.built && Math.hypot(s.pos.x - v.pos.x, s.pos.z - v.pos.z) < 34) && g.canPlace('siphonbell', Math.round(v.pos.x), Math.round(v.pos.z), false, T)).sort((a, b) => Math.hypot(a.pos.x - HX, a.pos.z - HZ) - Math.hypot(b.pos.x - HX, b.pos.z - HZ))[0];
-  const wantBells = Math.min(2 * up('choir').length, has('broodpit') && army.length >= 3 ? 1 + (now > 300 && army.length >= 5 ? 1 : 0) + (now > 600 ? 2 : 0) : 0);
+  const wantBells = Math.min(2 * up('choir').length, has('broodpit') && army.length >= 3 ? 1 + ((now > 300 && army.length >= 5) || now > 450 ? 1 : 0) + (now > 600 ? 2 : 0) : 0);
   const ground = !air && !tech;
   const techStep = (): boolean => {
     if (!has('reedgate')) return false;
@@ -150,7 +150,7 @@ export function conductor(D: Director, dt: number, V0: Side = D.vs) {
 
   // ---- Tenders: eight for the home Stone, six for each other Stone, four for each Siphon Bell
   const tend = g.own('tender', T), hqs = up('choir'), tapsUp = up('siphonbell').filter(b => g.vents.some(v => v.tap === b && v.amount > 0));
-  const onFlux = tend.filter(u => u.vent), wantFlux = tapsUp.length * (flux() > 700 ? 1 : flux() > 400 ? 2 : ore() > 600 ? 4 : 3);
+  const onFlux = tend.filter(u => u.vent), wantFlux = tapsUp.length * (flux() > 700 ? 1 : flux() > 400 ? 2 : ore() > 300 || has('kiln') || has('skyloft') ? 4 : 3);
   if (onFlux.length < wantFlux) { const v = g.vents.filter(v => v.tap && tapsUp.includes(v.tap) && tapped(g, v, T)).sort((a, b) => tend.filter(u => u.vent === a).length - tend.filter(u => u.vent === b).length)[0]; const w = v && tend.filter(u => !u.vent && !u.site && !u.pilot && u !== g.me && u.carrying === 0).sort((a, b) => Math.hypot(a.pos.x - v.pos.x, a.pos.z - v.pos.z) - Math.hypot(b.pos.x - v.pos.x, b.pos.z - v.pos.z))[0]; if (v && w) sendToVent(g, w, v); }
   else if (onFlux.length > wantFlux + 1) { const w = onFlux.find(u => !(u.fluxing! > 0)); if (w) sendToVent(g, w, null); }
   const wantTend = 12 + DOC.crew + 7 * (hqs.length - 1) + tapsUp.length * 3;

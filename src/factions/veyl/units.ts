@@ -31,6 +31,34 @@ const foe = (u: Unit, o: { team: number }) => isEnemy(u.team, o.team);
 /** Bodies of a side within r of a spot. */
 export function near(g: Game, x: number, z: number, r: number, pick: (o: Unit) => boolean) { const out: Unit[] = []; for (const o of g.units) if (o.alive && !o.inside && pick(o) && Math.hypot(o.pos.x - x, o.pos.z - z) <= r + UNIT[o.kind].rad) out.push(o); return out; }
 
+// ---------------------------------------------------------------- casts on every screen (AbilityDef.show)
+// `effect` runs only where the rules run; `show` runs on every screen that sees the caster (online too, from the cast event). Puffs and
+// sounds live here. Meshes the host already has (glass panes, the Toll orb) are drawn here only on an online screen (g.net), where the
+// host's own meshes never arrive. Rings on the ground (g.warn), beams (g.tracer) and blasts (g.explode) already travel on their own.
+const nowS = () => performance.now() / 1000;
+/** A mesh for show only: `step` poses it each frame with its age in seconds, and it takes itself away after `life`. */
+function timed(g: Game, obj: THREE.Object3D, life: number, step?: (age: number) => void) {
+  const t0 = nowS(), host = obj instanceof THREE.Mesh ? obj : (obj.children[0] as THREE.Mesh | undefined); g.scene.add(obj);
+  if (!host) { setTimeout(() => g.scene.remove(obj), life * 1000); return; }
+  host.onBeforeRender = () => { const a = nowS() - t0; if (a > life) { g.scene.remove(obj); host.onBeforeRender = () => {}; return; } step?.(a); };
+}
+const mine = (g: Game, u: Unit) => !isEnemy(u.team, g.myTeam);
+function showWall(g: Game, u: Unit, t: Target) {
+  sfx.charge(g.vol(u.pos)); g.puff(TMP.set(t.x, 1.5, t.z), 6, 1.4, M.cyan, 1, 2); if (!g.net) return;
+  const ang = Math.atan2(t.x - u.pos.x, t.z - u.pos.z), px = Math.cos(ang), pz = -Math.sin(ang), n = Math.max(3, Math.round(T.tuner.wallLen / 1.6)), obj = new THREE.Group();
+  for (let i = 0; i < n; i++) { const k = (i - (n - 1) / 2) * 1.6, m = new THREE.Mesh(PANE, M.crys); m.position.set(t.x + px * k, 1.6, t.z + pz * k); m.rotation.y = ang; obj.add(m); }
+  timed(g, obj, T.tuner.wallT);
+}
+function showToll(g: Game, u: Unit, t: Target) {
+  sfx.charge(g.vol(u.pos)); if (!g.net) return; const x0 = u.pos.x, z0 = u.pos.z, orb = new THREE.Mesh(ORB, M.cyan); orb.position.set(x0, .8, z0);
+  timed(g, orb, T.knell.roll, a => { const k = Math.min(1, a / T.knell.roll); orb.position.set(x0 + (t.x - x0) * k, .8, z0 + (t.z - z0) * k); });
+}
+function showShatter(g: Game, u: Unit, t: Target) {
+  sfx.charge(g.vol(u.pos)); if (!g.net) return; const C = T.choirmaster, ticks = Math.round(C.shatterT / .5);
+  for (let i = 0; i < ticks; i++) setTimeout(() => g.puff(TMP.set(t.x, 1.2, t.z), 4, C.shatterR * .6, M.cyan, 1.4, C.shatterR * .6), (C.mark + i * .5) * 1000);
+}
+const PANE = new THREE.BoxGeometry(1.7, 3.2, .35), ORB = new THREE.SphereGeometry(.7, 12, 8);
+
 /** The target a body would pick: the nearest enemy body its weapon can reach and its side can see, else an enemy building in `bRange`. */
 export function seek(g: Game, u: Unit, range: number, bRange: number): Unit | Building | null {
   if (g.truce) return null; let best: Unit | Building | null = null, bs = 1e9;
@@ -101,27 +129,26 @@ function glassWall(g: Game, u: Unit, t: Target) {
   const ang = Math.atan2(t.x - u.pos.x, t.z - u.pos.z), px = Math.cos(ang), pz = -Math.sin(ang), n = Math.max(3, Math.round(T.tuner.wallLen / 1.6));
   for (let i = 0; i < n; i++) {
     const k = (i - (n - 1) / 2) * 1.6, x = t.x + px * k, z = t.z + pz * k, obj = new THREE.Group();
-    const m = new THREE.Mesh(new THREE.BoxGeometry(1.7, 3.2, .35), M.crys); m.position.y = 1.6; m.rotation.y = ang; obj.add(m); obj.position.set(x, 0, z); g.scene.add(obj);
+    const m = new THREE.Mesh(PANE, M.crys); m.position.y = 1.6; m.rotation.y = ang; obj.add(m); obj.position.set(x, 0, z); g.scene.add(obj);
     const p = { id: paneId--, kind: 'crystal', name: 'Glass pane', x, z, r: .9, y0: 0, h: 3.2, hp: 260, maxHp: 260, alive: true, solid: true, stage: 0, stages: 0, ranges: [], obj, link: [] } as unknown as Prop;
     g.spires.push(p); S(g).panes.push({ p, t: g.time + T.tuner.wallT });
   }
-  g.warn(t.x, t.z, T.tuner.wallLen / 2, 1); sfx.charge(g.vol(u.pos)); g.puff(TMP.set(t.x, 1.5, t.z), 6, 1.4, M.cyan, 1, 2);
+  g.warn(t.x, t.z, T.tuner.wallLen / 2, 1);
 }
 function falseVoice(g: Game, u: Unit, o: Unit) {
   for (let i = 0; i < T.tuner.voiceN; i++) {
     const a = i * Math.PI + u.id, c = g.spawn(o.kind, o.team, o.pos.x + Math.cos(a) * 2, o.pos.z + Math.sin(a) * 2); ECHO.set(c, g.time + T.tuner.voiceT);
-    c.order = { ...o.order, path: o.order.path ? o.order.path.map(p => [...p]) : undefined }; c.target = o.target; g.puff(TMP.set(c.pos.x, 1.2, c.pos.z), 4, .9, M.violet, .8);
+    c.order = { ...o.order, path: o.order.path ? o.order.path.map(p => [...p]) : undefined }; c.target = o.target;
   }
-  sfx.charge(g.vol(o.pos));
 }
-function shatter(g: Game, u: Unit, t: Target) { const C = T.choirmaster; g.warn(t.x, t.z, C.shatterR, C.mark + C.shatterT); S(g).notes.push({ x: t.x, z: t.z, t: C.shatterT, tick: 0, team: u.team, by: u, mark: C.mark }); sfx.charge(g.vol(u.pos)); }
+function shatter(g: Game, u: Unit, t: Target) { const C = T.choirmaster; g.warn(t.x, t.z, C.shatterR, C.mark + C.shatterT); S(g).notes.push({ x: t.x, z: t.z, t: C.shatterT, tick: 0, team: u.team, by: u, mark: C.mark }); }
 function toll(g: Game, u: Unit, t: Target) {
-  const obj = new THREE.Mesh(new THREE.SphereGeometry(.7, 12, 8), M.cyan); obj.position.set(u.pos.x, .8, u.pos.z); g.scene.add(obj);
-  S(g).orbs.push({ x: u.pos.x, z: u.pos.z, tx: t.x, tz: t.z, t: T.knell.roll, by: u, obj }); g.warn(t.x, t.z, T.knell.r, T.knell.roll); sfx.charge(g.vol(u.pos));
+  const obj = new THREE.Mesh(ORB, M.cyan); obj.position.set(u.pos.x, .8, u.pos.z); g.scene.add(obj);
+  S(g).orbs.push({ x: u.pos.x, z: u.pos.z, tx: t.x, tz: t.z, t: T.knell.roll, by: u, obj }); g.warn(t.x, t.z, T.knell.r, T.knell.roll);
 }
 function joinUp(g: Game, u: Unit) {
   const mate = near(g, u.pos.x, u.pos.z, 8, o => o !== u && o.team === u.team && o.kind === 'choirmaster' && !JOIN.has(o) && !o.pilot && o !== g.me)[0]; if (!mate) return;
-  const t = T.choirmaster.joinT; JOIN.set(u, { with: mate, t }); JOIN.set(mate, { with: u, t: 1e9 }); for (const o of [u, mate]) { addStatus(o, 'root', t + .5); o.cast = null; } sfx.charge(g.vol(u.pos));
+  const t = T.choirmaster.joinT; JOIN.set(u, { with: mate, t }); JOIN.set(mate, { with: u, t: 1e9 }); for (const o of [u, mate]) { addStatus(o, 'root', t + .5); o.cast = null; }
 }
 
 /** Every frame on the host: panes and copies fade, Shatter Notes tick, Toll orbs roll, Still Stones wait, joins finish, Bells regrow their
@@ -227,51 +254,57 @@ function cluster(g: Game, u: Unit, range: number, r: number, pick: (o: Unit) => 
   for (const o of g.units) { if (!o.alive || !pick(o) || !seenBy(g, u.team, o) || Math.hypot(o.pos.x - u.pos.x, o.pos.z - u.pos.z) > range) continue; const n = near(g, o.pos.x, o.pos.z, r, pick).length; if (!best || n > best.n) best = { x: o.pos.x, z: o.pos.z, n, friends: near(g, o.pos.x, o.pos.z, r + 1, f => f.team === u.team).length }; }
   return best;
 }
-const blink = (g: Game, u: Unit, t: Target, max: number) => { const dx = t.x - u.pos.x, dz = t.z - u.pos.z, d = Math.hypot(dx, dz) || 1, k = Math.min(1, max / d); g.puff(TMP.set(u.pos.x, 1.2, u.pos.z), 4, .8, M.violet, .6); u.pos.x += dx * k; u.pos.z += dz * k; g.collide(u, u.pos.x, u.pos.z); u.obj.position.x = u.pos.x; u.obj.position.z = u.pos.z; g.puff(TMP.set(u.pos.x, 1.2, u.pos.z), 4, .8, M.violet, .6); sfx.dash(g.vol(u.pos)); };
+const blink = (g: Game, u: Unit, t: Target, max: number) => { const dx = t.x - u.pos.x, dz = t.z - u.pos.z, d = Math.hypot(dx, dz) || 1, k = Math.min(1, max / d); u.pos.x += dx * k; u.pos.z += dz * k; g.collide(u, u.pos.x, u.pos.z); u.obj.position.x = u.pos.x; u.obj.position.z = u.pos.z; };
+/** The look of a blink, where the body lands (a Mute's only on its own side's screens: it is unseen). */
+const showBlink = (g: Game, u: Unit) => { if (u.kind === 'mute' && !mine(g, u)) return; g.puff(TMP.set(u.pos.x, 1.2, u.pos.z), 6, .8, M.violet, .6); sfx.dash(g.vol(u.pos)); };
 
 const ABS: Record<string, AbilityDef[]> = {
   cantor: [{ key: 'rush', name: 'Rush', hotkey: 'C', energy: 0, cd: T.cantor.rushCd, cast: 0, range: T.cantor.rushRange, target: 'body', autocast: true, blurb: 'Runs the last 10 m to a body and its first cut does 10 more. Needs Rush from a Dusk Hall.',
-    can: (g, u) => known(g, u, 'vrush'), effect: (g, u) => { u.dashT = .55; u.dashCd = 2; (u as any).rushHit = 1; sfx.dash(g.vol(u.pos)); g.puff(TMP.copy(u.pos).setY(.5), 3, .7, M.teal, .4); },
+    can: (g, u) => known(g, u, 'vrush'), effect: (g, u) => { u.dashT = .55; u.dashCd = 2; (u as any).rushHit = 1; },
+    show: (g, u) => { sfx.dash(g.vol(u.pos)); g.puff(TMP.copy(u.pos).setY(.5), 3, .7, M.teal, .4); },
     ai: (g, u) => { const t = u.target; return t && t.alive && isUnit(t) && known(g, u, 'vrush') ? (d => d > 4 && d < T.cantor.rushRange ? { x: t.pos.x, z: t.pos.z, id: t.id } : null)(gap(g, u, t)) : null; } }],
   lancer: [{ key: 'skip', name: 'Skip', hotkey: 'C', energy: 0, cd: T.lancer.skipCd, cast: 0, range: T.lancer.skip, target: 'point', blurb: 'Steps 8 m in a blink. Needs Skip from a Dusk Hall.',
-    can: (g, u) => known(g, u, 'vskip'), effect: (g, u, t) => blink(g, u, t, T.lancer.skip),
+    can: (g, u) => known(g, u, 'vskip'), effect: (g, u, t) => blink(g, u, t, T.lancer.skip), show: (g, u) => showBlink(g, u),
     ai: (g, u) => { const t = u.target; if (!t || !t.alive || !isUnit(t) || !known(g, u, 'vskip') || u.shield > u.maxShield * .3) return null; const d = gap(g, u, t); if (d > 10) return null; const ax = u.pos.x - t.pos.x, az = u.pos.z - t.pos.z, l = Math.hypot(ax, az) || 1; return { x: u.pos.x + ax / l * T.lancer.skip, z: u.pos.z + az / l * T.lancer.skip }; } }],
   tuner: [
     { key: 'wall', name: 'Glass Wall', hotkey: 'R', energy: 50, cd: 2, cast: 0, range: 9, target: 'point', blurb: 'Puts up a glass pane 7 m wide for 11 s. Bodies cannot walk through it; shots can break it.',
-      effect: (g, u, t) => glassWall(g, u, t),
+      effect: (g, u, t) => glassWall(g, u, t), show: (g, u, t) => showWall(g, u, t),
       ai: (g, u) => { const t = u.target; if (!t || !t.alive || !isUnit(t) || UNIT[t.kind].air) return null; // cut the enemy's melee off from our casters, or block a retreat
         const melee = near(g, u.pos.x, u.pos.z, 12, o => foe(u, o) && (o.kind === 'cantor' || o.kind === 'mute' || o.kind === 'snapper' || o.kind === 'breacher' || (o.kind as string) === 'dustbike')).length; if (melee < 3) return null;
         const ax = t.pos.x - u.pos.x, az = t.pos.z - u.pos.z, l = Math.hypot(ax, az) || 1; return { x: u.pos.x + ax / l * Math.min(7, l * .6), z: u.pos.z + az / l * Math.min(7, l * .6) }; } },
     { key: 'hum', name: 'Ward Hum', hotkey: 'C', energy: 75, cd: 2, cast: 0, range: 0, target: 'self', radius: T.tuner.humR, blurb: 'For 11 s every friend within 5 m takes 2 less from each shot.',
-      effect: (g, u) => { (u as any).humT = g.time + T.tuner.humT; g.warn(u.pos.x, u.pos.z, T.tuner.humR, 1); g.puff(TMP.set(u.pos.x, 1.4, u.pos.z), 6, T.tuner.humR * .5, M.cyan, .6, T.tuner.humR * .6); sfx.charge(g.vol(u.pos)); },
+      effect: (g, u) => { (u as any).humT = g.time + T.tuner.humT; g.warn(u.pos.x, u.pos.z, T.tuner.humR, 1); },
+      show: (g, u) => { g.puff(TMP.set(u.pos.x, 1.4, u.pos.z), 6, T.tuner.humR * .5, M.cyan, .6, T.tuner.humR * .6); sfx.charge(g.vol(u.pos)); },
       ai: (g, u) => near(g, u.pos.x, u.pos.z, 18, o => foe(u, o) && !!o.target).length >= 4 && near(g, u.pos.x, u.pos.z, T.tuner.humR, o => o.team === u.team).length >= 3 ? { x: u.pos.x, z: u.pos.z } : null },
     { key: 'voice', name: 'False Voice', hotkey: 'V', energy: 100, cd: 2, cast: 0, range: 9, target: 'body', who: 'ally', blurb: 'Makes two copies of a friend for 30 s. Copies deal no damage and take double.',
       can: (g, u, t) => { const o = g.uById?.get(t.id!) || g.units.find(x => x.id === t.id); return !!o && isUnit(o) && !echo(o) && !UNIT[o.kind].air && o.kind !== 'tender'; }, effect: (g, u, _t, o) => falseVoice(g, u, o as Unit),
+      show: (g, u, _t, o) => { if (!o) return; for (const a of [-1, 1]) g.puff(TMP.set(o.pos.x + a * 2, 1.2, o.pos.z), 4, .9, M.violet, .8); sfx.charge(g.vol(o.pos)); },
       ai: (g, u) => { if ((u.energy ?? 0) < 150) return null; const big = near(g, u.pos.x, u.pos.z, 9, o => o.team === u.team && (o.kind === 'warden' || o.kind === 'bell' || o.kind === 'reedwalker') && !echo(o))[0]; return big && near(g, u.pos.x, u.pos.z, 25, o => foe(u, o)).length >= 3 ? { x: big.pos.x, z: big.pos.z, id: big.id } : null; } },
   ],
   mute: [{ key: 'step', name: 'Step Through', hotkey: 'C', energy: 0, cd: T.mute.stepCd, cast: 0, range: T.mute.stepRange, target: 'point', blurb: 'Blinks 9 m. Needs Step Through from a Quiet House.',
-    can: (g, u) => known(g, u, 'vstepthru'), effect: (g, u, t) => blink(g, u, t, T.mute.stepRange),
+    can: (g, u) => known(g, u, 'vstepthru'), effect: (g, u, t) => blink(g, u, t, T.mute.stepRange), show: (g, u) => showBlink(g, u),
     ai: (g, u) => { const t = u.target; if (!t || !t.alive || !known(g, u, 'vstepthru')) return null; const d = gap(g, u, t); return d > 4 && d < T.mute.stepRange ? { x: t.pos.x, z: t.pos.z } : null; } }],
   choirmaster: [
     { key: 'shatter', name: 'Shatter Note', hotkey: 'R', energy: 75, cd: 1.5, cast: .25, range: 9, target: 'area', radius: T.choirmaster.shatterR, blurb: 'Marks a 3 m circle; a second later it cracks for 80 damage over 4 s to everyone in it, friends too. Needs Shatter Note from a Song Archive.',
-      can: (g, u) => known(g, u, 'vshatter'), effect: (g, u, t) => shatter(g, u, t),
+      can: (g, u) => known(g, u, 'vshatter'), effect: (g, u, t) => shatter(g, u, t), show: (g, u, t) => showShatter(g, u, t),
       ai: (g, u) => { if (!known(g, u, 'vshatter')) return null; const c = cluster(g, u, 9 + reach(g, u), T.choirmaster.shatterR); return c && c.n >= 3 && c.friends <= 1 ? c : null; } },
     { key: 'drain', name: 'Drain', hotkey: 'C', energy: 50, cd: 1, cast: 0, range: T.choirmaster.range, target: 'body', blurb: 'Takes up to 50 energy from an enemy body and deals that much damage to it.',
       can: (g, u, t) => { const o = g.units.find(x => x.id === t.id); return !!o && (o.energy ?? 0) > 0; },
       effect: (g, u, _t, o) => { const t = o as Unit, n = Math.min(t.energy ?? 0, T.choirmaster.drain); t.energy = (t.energy ?? 0) - n; zap(g, u, t, n * (echo(u) ? 0 : 1), .2, beamMat); g.hud.damage(V3(t.pos.x, UNIT[t.kind].headY + .6, t.pos.z), 'DRAINED', 'shield'); },
       ai: (g, u) => { const t = near(g, u.pos.x, u.pos.z, T.choirmaster.range + reach(g, u), o => foe(u, o) && (o.energy ?? 0) >= 40 && seenBy(g, u.team, o)).sort((a, b) => (b.energy ?? 0) - (a.energy ?? 0))[0]; return t ? { x: t.pos.x, z: t.pos.z, id: t.id } : null; } },
     { key: 'join', name: 'Join', hotkey: 'V', energy: 0, cd: 2, cast: 0, range: 0, target: 'self', blurb: 'Joins with another Choirmaster within 8 m. In 10 s the two become one Chord.',
-      can: (g, u) => near(g, u.pos.x, u.pos.z, 8, o => o !== u && o.team === u.team && o.kind === 'choirmaster' && !JOIN.has(o)).length > 0, effect: (g, u) => joinUp(g, u),
+      can: (g, u) => near(g, u.pos.x, u.pos.z, 8, o => o !== u && o.team === u.team && o.kind === 'choirmaster' && !JOIN.has(o)).length > 0, effect: (g, u) => joinUp(g, u), show: (g, u) => { sfx.charge(g.vol(u.pos)); g.puff(TMP.set(u.pos.x, 1.6, u.pos.z), 5, .9, M.cyan, .8); },
       ai: (g, u) => (u.energy ?? 0) < 50 && !near(g, u.pos.x, u.pos.z, 20, o => foe(u, o)).length && near(g, u.pos.x, u.pos.z, 8, o => o !== u && o.team === u.team && o.kind === 'choirmaster' && (o.energy ?? 0) < 75 && !JOIN.has(o)).length ? { x: u.pos.x, z: u.pos.z } : null },
   ],
   knell: [{ key: 'toll', name: 'Toll', hotkey: 'Mouse0', energy: 0, cd: T.knell.cd, cast: 0, range: T.knell.range, target: 'area', radius: T.knell.r, blurb: 'Rolls an orb to a spot. After 3 s it bursts for 145 on everything within 3 m, friends too.',
-    can: (g, u) => true, effect: (g, u, t) => { toll(g, u, t); if (g.upOf(u.team).vtoll && u.abCd) u.abCd.toll = T.knell.quickCd; },
+    can: (g, u) => true, effect: (g, u, t) => { toll(g, u, t); if (g.upOf(u.team).vtoll && u.abCd) u.abCd.toll = T.knell.quickCd; }, show: (g, u, t) => showToll(g, u, t),
     ai: (g, u) => { const c = cluster(g, u, T.knell.range, T.knell.r); return c && c.n >= 3 && c.friends <= 1 ? c : null; } }],
   listener: [{ key: 'settle', name: 'Settle', hotkey: 'C', energy: 0, cd: 1, cast: 0, range: 0, target: 'self', blurb: 'Stops and sees further. Use again to fly on.',
     effect: (g, u) => { const L = u as any; L.settled = !L.settled; if (!L.settled) clearStatus(u, 'root'); } }],
   ferry: [
     { key: 'unfold', name: 'Unfold', hotkey: 'C', energy: 0, cd: 1.5, cast: 0, range: 0, target: 'self', blurb: 'Lands and opens into a song field (5 m). Use again to fold up and fly.',
-      effect: (g, u) => { const on = !unfolded(u); setUnfolded(u, on); if (on) addStatus(u, 'root', Infinity); else clearStatus(u, 'root'); g.warn(u.pos.x, u.pos.z, T.ferry.fold * 3, 1); sfx.charge(g.vol(u.pos)); },
+      effect: (g, u) => { const on = !unfolded(u); setUnfolded(u, on); if (on) addStatus(u, 'root', Infinity); else clearStatus(u, 'root'); g.warn(u.pos.x, u.pos.z, T.ferry.fold * 3, 1); },
+      show: (g, u) => { sfx.charge(g.vol(u.pos)); g.puff(TMP.set(u.pos.x, .4, u.pos.z), 6, 1.2, M.dust, .6, 2); },
       ai: (g, u) => { const on = unfolded(u), fight = near(g, u.pos.x, u.pos.z, 26, o => foe(u, o)).length > 0, home = g.ownB(undefined, true, u.team).some(b => Math.hypot(b.pos.x - u.pos.x, b.pos.z - u.pos.z) < 25); return !on && !home && fight && !(u.cargo && u.cargo.length) && g.upOf(u.team).vfar ? { x: u.pos.x, z: u.pos.z } : on && !fight && (u as any).wantMove ? { x: u.pos.x, z: u.pos.z } : null; } },
     { key: 'load', name: 'Load', hotkey: 'R', energy: 0, cd: .5, cast: 0, range: 0, target: 'self', blurb: 'Takes in every friend within 4 m that fits (8 beds).',
       can: (g, u) => !unfolded(u), effect: (g, u) => { for (const o of near(g, u.pos.x, u.pos.z, 4 + UNIT.ferry.rad, o => o.team === u.team && !o.air && !o.inside && o !== g.me && !o.pilot && o !== u)) if (usedOf(u) + (UNIT[o.kind].slots ?? UNIT[o.kind].supply) <= roomOf(u)) load(g, u, o); } },
@@ -282,22 +315,26 @@ const ABS: Record<string, AbilityDef[]> = {
     effect: (g, u, _t, o) => { addStatus(o as Unit, 'lifted', T.swift.liftT); (o as Unit).target = null; zap(g, u, o as Unit, 0, .2); },
     ai: (g, u) => { if (near(g, u.pos.x, u.pos.z, T.swift.range + 6, o => foe(u, o) && o.air).length) return null; const t = near(g, u.pos.x, u.pos.z, T.swift.liftRange, o => foe(u, o) && !o.air && !hasTag(o, 'huge') && !hasStatus(o, 'lifted') && isFighter(o) && seenBy(g, u.team, o)).sort((a, b) => UNIT[b.kind].cost - UNIT[a.kind].cost)[0]; return t ? { x: t.pos.x, z: t.pos.z, id: t.id } : null; } }],
   prism: [{ key: 'burn', name: 'Burn Bright', hotkey: 'C', energy: 0, cd: T.prism.burnCd, cast: 0, range: 0, target: 'self', blurb: 'For 12 s the beam does 10 more to plated bodies.',
-    effect: (g, u) => { (u as any).burnT = g.time + T.prism.burnT; sfx.charge(g.vol(u.pos)); },
+    effect: (g, u) => { (u as any).burnT = g.time + T.prism.burnT; },
+    show: (g, u) => { sfx.charge(g.vol(u.pos)); g.puff(TMP.set(u.pos.x, (u.alt || 0) + 1, u.pos.z), 5, .8, M.cyan, .6); },
     ai: (g, u) => { const t = u.target; return t && t.alive && hasTag(t, 'plated') && gap(g, u, t) < T.prism.range + 2 ? { x: u.pos.x, z: u.pos.z } : null; } }],
   omen: [
     { key: 'shrill', name: 'Shrill', hotkey: 'Mouse0', energy: T.omen.shrill, cd: 1, cast: 0, range: 0, target: 'self', blurb: 'Turns the beam on: it burns energy while on and hits soft bodies hard. Use again to turn it off.',
       effect: (g, u) => { const O = u as any; O.shrill = !O.shrill; if (!O.shrill) u.energy = (u.energy ?? 0) + T.omen.shrill; },
       ai: (g, u) => { const O = u as any, soft = near(g, u.pos.x, u.pos.z, T.omen.range + 6, o => foe(u, o) && !o.air && hasTag(o, 'soft') && seenBy(g, u.team, o)).length, guns = near(g, u.pos.x, u.pos.z, 20, o => foe(u, o) && isFighter(o) && !hasTag(o, 'soft')).length; return (!O.shrill && soft >= 2 && guns <= 2 && (u.energy ?? 0) > 60) || (O.shrill && !soft) ? { x: u.pos.x, z: u.pos.z } : null; } },
     { key: 'reveal', name: 'Reveal', hotkey: 'C', energy: T.omen.reveal, cd: 1, cast: 0, range: 12, target: 'area', radius: T.omen.revealR, blurb: 'Every enemy body in an 8 m circle can be seen for 20 s, unseen or not.',
-      effect: (g, u, t) => { for (const o of near(g, t.x, t.z, T.omen.revealR, o => foe(u, o))) addStatus(o, 'revealed', T.omen.revealT); g.warn(t.x, t.z, T.omen.revealR, 1.2); g.puff(TMP.set(t.x, 1, t.z), 8, T.omen.revealR * .5, M.indigoL, .6, T.omen.revealR); },
+      effect: (g, u, t) => { for (const o of near(g, t.x, t.z, T.omen.revealR, o => foe(u, o))) addStatus(o, 'revealed', T.omen.revealT); g.warn(t.x, t.z, T.omen.revealR, 1.2); },
+      show: (g, u, t) => { g.puff(TMP.set(t.x, 1, t.z), 8, T.omen.revealR * .5, M.indigoL, .6, T.omen.revealR); sfx.charge(g.vol(u.pos) * .6); },
       ai: (g, u) => { const h = g.units.find(o => o.alive && foe(u, o) && (UNIT[o.kind].cloak || o.status?.some(s => s.k === 'unseen' || s.k === 'dug')) && !hasStatus(o, 'revealed') && Math.hypot(o.pos.x - u.pos.x, o.pos.z - u.pos.z) < 12 && !seenBy(g, u.team, o)); return h ? { x: h.pos.x, z: h.pos.z } : null; } },
     { key: 'stone', name: 'Still Stone', hotkey: 'V', energy: T.omen.stone, cd: 1, cast: 0, range: 8, target: 'point', blurb: 'Leaves a hidden trap. The first enemy ground body to come within 4 m freezes everything around it for 20 s: frozen bodies cannot act or be hurt.',
-      effect: (g, u, t) => { S(g).stones.push({ x: t.x, z: t.z, team: u.team, arm: T.omen.stoneArm, by: u }); g.puff(TMP.set(t.x, .3, t.z), 3, .6, M.indigoL, .3); },
+      effect: (g, u, t) => { S(g).stones.push({ x: t.x, z: t.z, team: u.team, arm: T.omen.stoneArm, by: u }); },
+      show: (g, u, t) => { if (mine(g, u)) g.puff(TMP.set(t.x, .3, t.z), 3, .6, M.indigoL, .3); },   // a trap: only its own side sees it laid
       ai: (g, u) => { if ((u.energy ?? 0) < 150 || S(g).stones.filter(s => s.team === u.team).length >= 3) return null; const home = g.ownB(undefined, true, u.team)[0]; if (!home || Math.hypot(home.pos.x - u.pos.x, home.pos.z - u.pos.z) > 40 || near(g, u.pos.x, u.pos.z, 30, o => foe(u, o)).length) return null; const hq = g.ownB('choir', true, u.team)[0] || home, [ox, oz] = [hq.pos.x, hq.pos.z], a = u.id * 2.39; return { x: u.pos.x + (ox - u.pos.x) * 0 + Math.cos(a) * 4, z: u.pos.z + Math.sin(a) * 4 }; } },
   ],
   cantus: [
     { key: 'gather', name: 'Gather', hotkey: 'C', energy: 0, cd: T.cantus.gatherCd, cast: 1.5, range: 400, target: 'point', radius: T.cantus.gatherR, blurb: 'Calls every friend within 7 m of a spot to the Cantus.',
-      effect: (g, u, t) => { let i = 0; for (const o of near(g, t.x, t.z, T.cantus.gatherR, o => o.team === u.team && o !== u && !o.inside && o.kind !== 'cantus')) { const a = i++ * 2.4; g.puff(TMP.set(o.pos.x, 1.2, o.pos.z), 3, .8, M.violet, .6); o.pos.x = u.pos.x + Math.cos(a) * (3 + i * .3); o.pos.z = u.pos.z + Math.sin(a) * (3 + i * .3); o.obj.position.x = o.pos.x; o.obj.position.z = o.pos.z; o.target = null; o.order = { type: 'guard', x: o.pos.x, z: o.pos.z }; } sfx.charge(g.vol(u.pos)); },
+      effect: (g, u, t) => { let i = 0; for (const o of near(g, t.x, t.z, T.cantus.gatherR, o => o.team === u.team && o !== u && !o.inside && o.kind !== 'cantus')) { const a = i++ * 2.4; o.pos.x = u.pos.x + Math.cos(a) * (3 + i * .3); o.pos.z = u.pos.z + Math.sin(a) * (3 + i * .3); o.obj.position.x = o.pos.x; o.obj.position.z = o.pos.z; o.target = null; o.order = { type: 'guard', x: o.pos.x, z: o.pos.z }; } },
+      show: (g, u, t) => { g.puff(TMP.set(t.x, 1.2, t.z), 8, 1.4, M.violet, .8, 2); g.puff(TMP.set(u.pos.x, 1.2, u.pos.z), 10, 1.6, M.violet, .8, 3); sfx.charge(g.vol(u.pos)); },
       ai: (g, u) => { // a group losing far from the Cantus comes home to it
         for (const o of g.army(u.team)) { if (o.kind === 'cantus' || Math.hypot(o.pos.x - u.pos.x, o.pos.z - u.pos.z) < 40) continue; const mine = near(g, o.pos.x, o.pos.z, T.cantus.gatherR, f => f.team === u.team && isFighter(f)), theirs = near(g, o.pos.x, o.pos.z, 16, f => foe(u, f) && isFighter(f)); if (mine.length >= 4 && theirs.length > mine.length * 1.6 && mine.every(f => f.shield < f.maxShield * .3)) return { x: o.pos.x, z: o.pos.z }; } return null; } },
     { key: 'hold', name: 'Hold Time', hotkey: 'R', energy: T.cantus.hold, cd: 1, cast: 0, range: 16, target: 'area', radius: T.cantus.holdR, blurb: 'Every enemy body in an 8 m circle moves 60% slower for 8 s.',

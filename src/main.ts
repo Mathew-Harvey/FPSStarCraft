@@ -19,10 +19,11 @@ import { watchInit, watchFrame } from './watch';
 import { treeHtml, treeTabs } from './tree';
 import { TEAM_LAYOUTS } from './teammaps';
 import { isFriend, planTeams, type TeamPlan } from './core/sides';
-import { defineBuildings } from './core/registry';
+import { defineBuildings, unitRule } from './core/registry';
 import { defineAbilities } from './core/ability';
 import { artGate, artSoon } from './artgate';
 import { TouchPad, TouchPref, touchDevice, touchWords } from './touch';
+import { PORTRAIT as VEYL_PORTRAIT } from './factions/veyl/look/figures';
 
 THREE.ColorManagement.enabled = false;
 const $ = (id: string) => document.getElementById(id)!;
@@ -68,6 +69,11 @@ function portraits() {
     pipe.draw(scene, cam, V3(0, 0, 0), 8);
     hud.portraits[kind] = canvas.toDataURL('image/jpeg', .85);
     scene.remove(m.obj);
+  }  // the new Veyl kinds: stream F's figures, framed by its PORTRAIT table (height to aim at, distance back)
+  for (const kind in VEYL_PORTRAIT) {
+    if (!UNIT[kind as Kind]) continue; let m: MD.Model; try { m = unitRule(kind as Kind).figure?.() ?? MD.unit(kind as Kind); } catch { continue; } const P = VEYL_PORTRAIT[kind]; m.obj.rotation.y = .5; scene.add(m.obj);
+    cam.position.set(0, P.y + .15, P.dist); cam.lookAt(0, P.y, 0); cam.updateMatrixWorld(); pipe.draw(scene, cam, V3(0, 0, 0), 8);
+    hud.portraits[kind] = canvas.toDataURL('image/jpeg', .85); scene.remove(m.obj);
   }
 }
 

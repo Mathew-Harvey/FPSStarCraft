@@ -45,6 +45,8 @@ body{background:var(--bg);color:var(--paper);font-family:var(--cond);font-size:1
 .res span.low{color:var(--red)}
 .res i{display:inline-block;width:20px;height:20px;border:3px solid var(--ink)}
 .clock{right:34px;top:84px;font-size:24px;text-align:right}
+.clock small{display:block;font:600 12px var(--cond);letter-spacing:.06em;text-transform:uppercase;color:var(--red);margin-top:2px}
+.clock.ot{color:var(--yel)}
 .qm{right:34px;top:118px;font-size:15px;text-align:right;color:var(--muted)}
 .qm b{color:var(--grn)} .qm.off b{color:var(--red)}
 
@@ -290,6 +292,13 @@ body.cb{--grn:#4da3ff;--mag:#ff9d1a}
 /* tech tree on the pause screen */
 .treeh{font-family:var(--display);font-weight:400;font-size:24px;letter-spacing:.04em;text-transform:uppercase;color:var(--yel);margin:14px 0 4px}
 .tree{display:flex;flex-direction:column;gap:8px;width:100%;max-width:1040px}
+#intel{width:100%;max-width:1040px}
+.intel{background:rgba(14,13,20,.78);border:3px solid var(--ink);box-shadow:4px 4px 0 var(--teal);padding:8px 12px 10px;font-family:var(--cond);font-size:18px;font-weight:600;line-height:1.3}
+.intel b{color:var(--teal);font-weight:700}
+.intel p{margin:0 0 4px}
+.intel ul{margin:4px 0 0;padding:0;list-style:none;display:flex;flex-wrap:wrap;gap:4px 8px}
+.intel li{background:rgba(53,224,200,.14);border:2px solid var(--ink);padding:1px 8px 2px}
+.intel small{color:var(--muted);font-size:15px}
 .tree .tier{display:flex;gap:8px;flex-wrap:wrap;justify-content:center;position:relative}
 .tree .tier+.tier::before{content:"";position:absolute;left:50%;top:-8px;width:4px;height:8px;margin-left:-2px;background:var(--yel)}
 .tree .node{flex:1 1 220px;max-width:340px;min-width:0;background:rgba(14,13,20,.78);border:3px solid var(--ink);box-shadow:4px 4px 0 var(--muted);padding:6px 10px 8px;font-family:var(--cond);color:var(--paper)}

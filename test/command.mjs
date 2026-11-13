@@ -8,9 +8,9 @@ import { dirname, join } from 'node:path';
 const require = createRequire(import.meta.url); const { chromium } = require('playwright');
 const page = pathToFileURL(join(dirname(fileURLToPath(import.meta.url)), '..', 'dist', 'index.html')).href, SHOTS = process.env.SHOTS || '';
 const fail = []; const check = (ok, what) => { console.log((ok ? 'PASS ' : 'FAIL ') + what); if (!ok) fail.push(what); };
-const b = await chromium.launch({ args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist', '--enable-webgl'] });
+const b = await chromium.launch({ args: ['--disable-dev-shm-usage', '--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist', '--enable-webgl'] });
 try {
-  const p = await b.newPage({ viewport: { width: 960, height: 540 } }); p.setDefaultTimeout(300000);
+  let p = await b.newPage({ viewport: { width: 960, height: 540 } }); p.setDefaultTimeout(300000);
   p.on('pageerror', e => { console.log('[pageerror]', e.message.slice(0, 400)); fail.push('page error'); });
   const until = (fn, arg, ms = 90000) => p.waitForFunction(fn, arg, { timeout: ms }).then(() => true, () => false);
   const shot = async n => { if (SHOTS) { await p.evaluate(() => { for (const d of document.querySelectorAll('#feed div')) d.style.animation = 'none'; }); await p.screenshot({ path: `${SHOTS}/${n}.jpg`, type: 'jpeg', quality: 85 }); } };
@@ -89,8 +89,12 @@ try {
   check(r.a, 'N goes back to the body the player left');
   check(r.b && r.c, 'M again closes the map and returns to first person');
 
-  // ---- the same orders through a split screen match, which runs the server's code
-  await p.evaluate(() => { __ore.hold(false); __ore.quit(); __ore.startSplit(); });
+  // ---- the same orders through a split screen match, which runs the server's code. A fresh page: headless drawing keeps memory from
+  // every frame, and one page for the whole file runs out of it now the art is in the page.
+  await p.close(); p = await b.newPage({ viewport: { width: 960, height: 540 } }); p.setDefaultTimeout(300000);
+  p.on('pageerror', e => { console.log('[pageerror]', e.message.slice(0, 400)); fail.push('page error'); });
+  await p.goto(page); await p.waitForFunction('window.__ore && __ore.game');
+  await p.evaluate(() => { __ore.setFree(true); __ore.startSplit(); });
   check(await until(() => __ore.game.me && __ore.game2() && __ore.game2().me && __ore.game.units.length > 6), 'a split screen match starts');
   await p.evaluate(() => { const h = __ore.split().host; h.truce = true; h.dir.raidIn = 9999; for (let i = 0; i < 4; i++) h.spawn('linesman', 0, -6 + i * 2.2, 16); __ore.game2().noRender = true; });
   check(await until(() => __ore.game.units.filter(u => u.kind === 'linesman').length >= 4), 'the fighters reach player one\'s half');

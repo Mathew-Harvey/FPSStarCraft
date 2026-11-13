@@ -1,7 +1,7 @@
 // The heads-up display: plain HTML over the canvas, laid out in a 900-unit-tall space and scaled to fit.
 import * as THREE from 'three';
 import type { Game } from './game';
-import { UNIT, BLD, FACTION, SIDE, fac, foeOf, atHome, Kind, Unit, Building, MAP, MAPS, OUTPOST, ROAD, NORTH_PATH, roadPt, isWorker } from './data';
+import { UNIT, BLD, FACTION, SIDE, fac, foeOf, atHome, homeXZ, Kind, Unit, Building, MAP, MAPS, OUTPOST, VHOME, ROAD, NORTH_PATH, roadPt, isWorker } from './data';
 import { keyName } from './card';
 const capW = (t: string) => t.charAt(0).toUpperCase() + t.slice(1);
 
@@ -104,13 +104,16 @@ export class Hud {
     const side = g.myTeam, F = FACTION[side], cash = g.cash(side); this.set('ore', String(Math.floor(cash)));
     // Supply is out of 200 at most, however many supply buildings stand. Flux is the second resource; it reads 0 until the side has any.
     const used = g.supplyUsed(side), cap = Math.min(200, g.supplyCap(side)); this.set('sup', `${used}/${cap}`); this.cls('resSup', used >= cap ? 'low' : '');
-    { const f = (g as any).flux, fx = typeof f === 'function' ? f.call(g, side) : 0; this.set('flux', String(Math.floor(fx || 0))); }
-    const m = Math.floor(g.time / 60), s = Math.floor(g.time % 60); this.set('clock', `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`);
+    this.set('flux', String(Math.floor(g.flux(side))));
+    const m = Math.floor(g.time / 60), s = Math.floor(g.time % 60); { const ot = g.overtime(); this.set('clock', `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}` + (ot > 0 ? `<small>Overtime · buildings take +${Math.round(ot * 100)}%</small>` : ''), true); this.cls('clock', 'clock d out' + (ot > 0 ? ' ot' : '')); }
     const D = g.dir, S = D.side(side), pb = S.playbook, ph = pb.idx;
     // The squad's playbook means nothing until there is a squad: in the first minutes (and all of Job 1) it was a strip of jargon over the tutorial.
     this.vis('play', ph > 0 || !!S.plan || g.army(side).length > 0); this.set('play', `<b>${pb.name}</b>` + pb.steps.map((n, i) => `<span class="${i === ph ? 'on' : i < ph ? 'dn' : ''}">${n}</span>`).join(''), true);
     const st = g.stones().length, sq = g.army(side).length, hfs = g.ownB('headframe').length; { const n = g.ledCount(); this.set('whoSub', 'You · ' + F.name + (n ? ` · leading ${n}` : '')); } const foe = foeOf(side), fq = FACTION[foe].hq, nq = g.ownB(fq, false, foe).length; const clock = g.story && g.ms.clock !== undefined && g.ms.clock >= 0 ? ` · <em>${g.story.clockLabel || 'Clock'} ${Math.floor(g.ms.clock / 60)}:${String(Math.floor(g.ms.clock % 60)).padStart(2, '0')}</em>` : '';
-    if (g.eco && !g.story) this.set('goal', `${['Break', 'Silence', 'Squash'][fac(foe)]} ${nq > 1 ? 'every ' + BLD[fq].name : 'the ' + BLD[fq].name} · <em>${nq} standing</em>` + (sq ? ` · ${['Squad', 'Chorus', 'Swarm'][fac(side)]} ${sq}` : ''), true); else if (g.story) { const next = D.objectives().find(o => !o.done); this.set('goal', (next ? next.text : 'Job done') + clock + (sq ? ` · ${['Squad', 'Chorus', 'Swarm'][fac(side)]} ${sq}` : ''), true); } else this.set('goal', `${SIDE.out === 2 ? 'Squash the Mother Caps' : 'Smash the Choir Stones'} · <em>${st} left</em>` + (sq ? ` · Squad ${sq}` : ''), true);
+    // On a hidden map the count is of the ones your side has seen: the true count would tell you they had expanded before any scout did.
+    const nk = MAP.hid ? g.intel.known(side).filter(b => b.kind === fq).length : nq;
+    if (g.eco && !g.story && MAP.hid && !g.intel.knows(side)) this.set('goal', `Find the ${FACTION[foe].short} · <em>nobody has seen them</em>` + (sq ? ` · ${['Squad', 'Chorus', 'Swarm'][fac(side)]} ${sq}` : ''), true);
+    else if (g.eco && !g.story) this.set('goal', `${['Break', 'Silence', 'Squash'][fac(foe)]} ${nk > 1 ? 'every ' + BLD[fq].name : 'the ' + BLD[fq].name} · <em>${MAP.hid ? nk ? nk + ' seen' : 'not seen yet' : nk + ' standing'}</em>` + (sq ? ` · ${['Squad', 'Chorus', 'Swarm'][fac(side)]} ${sq}` : ''), true); else if (g.story) { const next = D.objectives().find(o => !o.done); this.set('goal', (next ? next.text : 'Job done') + clock + (sq ? ` · ${['Squad', 'Chorus', 'Swarm'][fac(side)]} ${sq}` : ''), true); } else this.set('goal', `${SIDE.out === 2 ? 'Squash the Mother Caps' : 'Smash the Choir Stones'} · <em>${st} left</em>` + (sq ? ` · Squad ${sq}` : ''), true);
     this.set('qm', `<span class="k" style="font-size:13px">G</span> ${F.voice} <b>${S.auto ? 'Auto' : 'Off'}</b>`, true); this.cls('qm', 'qm c out' + (S.auto ? '' : ' off'));
     // who
     this.set('whoName', UNIT[me.kind].name); this.img('whoImg', me.kind); this.set('whoHp', String(Math.max(0, Math.ceil(me.hp))));
@@ -126,7 +129,7 @@ export class Hud {
     const building = rig && g.tool === 2, blist = FACTION[me.team].builds; this.vis('build', building);
     if (building) this.set('buildRows', blist.map((k, i) => { const lock = !g.unlocked(k, me.team), miss = g.missing(k, me.team); return `<div class="${i === g.buildSel ? 'on' : ''}${lock ? ' lock' : cash < BLD[k].cost ? ' no' : ''}"><span>${BLD[k].name}<small>${lock ? (miss.length ? 'Needs ' + miss.map(n => BLD[n].name).join(' and ') : 'Not on this job') : BLD[k].blurb}</small></span><span>${lock ? 'locked' : BLD[k].cost + ' ore'}</span></div>`; }).join(''), true);
     this.vis('prompt', !!g.prompt && !building); if (g.prompt) this.set('prompt', g.prompt, true);
-    this.set('hint', `<span><span class="k">TAB</span> Jump${g.jumpCd > 0 ? ` <span class="cd">${g.jumpCd.toFixed(1)}s</span>` : ''}</span>` + (g.lastBody?.alive ? `<span><span class="k">Q</span> Last body</span>` : '') + (g.army(side).some(u => u !== me) ? `<span><span class="k">V</span> ${D.following(S) ? 'Send squad home' : 'Squad on me'}</span><span><span class="k">MMB</span> Send</span>` : '') + `<span><span class="k">N</span> Command</span><span><span class="k">M</span> Map</span>`, true);
+    this.set('hint', `<span><span class="k">TAB</span> Jump${g.jumpCd > 0 ? ` <span class="cd">${g.jumpCd.toFixed(1)}s</span>` : ''}</span>` + (g.lastBody?.alive ? `<span><span class="k">Q</span> Last body</span>` : '') + (g.army(side).some(u => u !== me) ? `<span><span class="k">V</span> ${D.following(S) ? 'Send squad home' : 'Squad on me'}</span><span><span class="k">MMB</span> Send</span>` : '') + (!g.story ? `<span><span class="k">H</span> Scout</span>` : '') + `<span><span class="k">N</span> Command</span><span><span class="k">M</span> Map</span>`, true);
     // squad callout and countdown
     const co = S.callout; this.vis('callout', !!co && !tab);
     if (co) { this.set('callKeys', co.keys.map(k => `<span><b>${k[0]}</b>${k[1]}</span>`).join(''), true); this.set('callWho', co.who); this.set('callText', co.text, true); this.img('callImg', F.lead); this.$('callTm').style.width = Math.max(0, co.t / co.dur * 100) + '%'; }
@@ -245,13 +248,17 @@ export class Hud {
   private drawMap(g: Game, c: CanvasRenderingContext2D, big: boolean) {
     const q = big ? 4 : 1; c.setTransform(q, 0, 0, q, 0, 0);
     // framed on everything worth finding: the yard, the outpost, both routes and every ore field
-    const pts = [[0, 0], [OUTPOST.x, OUTPOST.z], ...NORTH_PATH, ...(MAP.sites || [])], bx0 = Math.min(...pts.map(p => p[0])) - 26, bx1 = Math.max(...pts.map(p => p[0])) + 26, bz0 = Math.min(...pts.map(p => p[1])) - 22, bz1 = Math.max(...pts.map(p => p[1])) + 22;
+    // On a hidden map the frame is a circle round your own base, wide enough to hold the other base wherever it is, so the frame gives nothing away.
+    // Once they are found it slides over to sit between the two bases.
+    const hid = !!MAP.hid, I = g.intel, mi = I.ix(g.myTeam), knows = I.knows(g.myTeam), [mhx, mhz] = homeXZ(g.myTeam), [fhx, fhz] = homeXZ(foeOf(g.myTeam));
+    const reach = Math.hypot(VHOME.x, VHOME.z) + 45, fcx = knows ? (mhx + fhx) / 2 : mhx, fcz = knows ? (mhz + fhz) / 2 : mhz;
+    const pts = hid ? [[fcx - reach * 1.45, fcz - reach], [fcx + reach * 1.45, fcz + reach]] : [[0, 0], [OUTPOST.x, OUTPOST.z], ...NORTH_PATH, ...(MAP.sites || [])], bx0 = Math.min(...pts.map(p => p[0])) - 26, bx1 = Math.max(...pts.map(p => p[0])) + 26, bz0 = Math.min(...pts.map(p => p[1])) - 22, bz1 = Math.max(...pts.map(p => p[1])) + 22;
     const S = 260, span = Math.max(bx1 - bx0, (bz1 - bz0) / .69), x0 = (bx0 + bx1) / 2 - span / 2, z0 = (bz0 + bz1) / 2 - span * .345, k = S / span, X = (x: number) => (x - x0) * k, Z = (z: number) => (z - z0) * k;
     const fog = g.fog; fog.update(g, .12);
     c.fillStyle = '#4a2f29'; c.fillRect(0, 0, S, 180);
-    c.strokeStyle = '#6b4a3a'; c.lineWidth = 7; c.beginPath(); { const a = roadPt(4), b = roadPt(ROAD.len + 6); c.moveTo(X(a[0]), Z(a[1])); c.lineTo(X(b[0]), Z(b[1])); c.stroke(); }
-    c.fillStyle = 'rgba(53,224,200,.16)'; c.beginPath(); c.arc(X(OUTPOST.x - 2 * ROAD.dx), Z(OUTPOST.z - 2 * ROAD.dz), 20 * k, 0, 7); c.fill();
-    c.fillStyle = 'rgba(255,194,26,.13)'; c.beginPath(); c.arc(X(0), Z(0), 30 * k, 0, 7); c.fill();
+    c.strokeStyle = '#6b4a3a'; c.lineWidth = hid ? Math.max(2, 7 * k) : 7; c.beginPath(); if (hid) for (const r of MAP.roads || []) { c.moveTo(X(r[0]), Z(r[1])); c.lineTo(X(r[2]), Z(r[3])); } else { const a = roadPt(4), b = roadPt(ROAD.len + 6); c.moveTo(X(a[0]), Z(a[1])); c.lineTo(X(b[0]), Z(b[1])); } c.stroke();
+    if (!hid) { c.fillStyle = 'rgba(53,224,200,.16)'; c.beginPath(); c.arc(X(OUTPOST.x - 2 * ROAD.dx), Z(OUTPOST.z - 2 * ROAD.dz), 20 * k, 0, 7); c.fill(); }
+    c.fillStyle = 'rgba(255,194,26,.13)'; c.beginPath(); c.arc(X(hid ? mhx : 0), Z(hid ? mhz : 0), 30 * k, 0, 7); c.fill();
     for (const s of g.spires) { c.fillStyle = '#2a1a18'; c.beginPath(); c.arc(X(s.x), Z(s.z), Math.max(1.5, s.r * k), 0, 7); c.fill(); }
     // the fog: black where nobody has been, dimmed where nobody is looking now
     { const n = fog.n, cv = this.fogCv || (this.fogCv = document.createElement('canvas')); if (cv.width !== n) { cv.width = cv.height = n; this.fogImg = null; } const cx = cv.getContext('2d')!, img = this.fogImg || (this.fogImg = cx.createImageData(n, n)), d = img.data;
@@ -260,16 +267,20 @@ export class Hud {
       // Ground nobody has seen is hatched like the blank part of a survey sheet, rather than left as a black slab.
       const hc = big ? this.hatchBig || (this.hatchBig = document.createElement('canvas')) : this.fogHatch || (this.fogHatch = document.createElement('canvas')); if (hc.width !== S * q) { hc.width = S * q; hc.height = 180 * q; } const hx = hc.getContext('2d')!; hx.setTransform(q, 0, 0, q, 0, 0);
       if (!this.hatchPat) { const t = document.createElement('canvas'); t.width = t.height = 9; const tg = t.getContext('2d')!; tg.fillStyle = '#211614'; tg.fillRect(0, 0, 9, 9); tg.strokeStyle = '#4a332c'; tg.lineWidth = 1.3; tg.beginPath(); tg.moveTo(-1, 10); tg.lineTo(10, -1); tg.moveTo(-1, 1); tg.lineTo(1, -1); tg.moveTo(8, 10); tg.lineTo(10, 8); tg.stroke(); this.hatchPat = hx.createPattern(t, 'repeat'); }
-      hx.globalCompositeOperation = 'source-over'; hx.clearRect(0, 0, S, 180); hx.imageSmoothingEnabled = true; hx.drawImage(cv, X(fog.x0), Z(fog.z0), n * 4 * k, n * 4 * k);
+      hx.globalCompositeOperation = 'source-over'; hx.clearRect(0, 0, S, 180); hx.imageSmoothingEnabled = true; if (hid) { hx.fillStyle = 'rgba(22,15,14,.925)'; hx.fillRect(0, 0, S, 180); hx.clearRect(X(fog.x0), Z(fog.z0), n * 4 * k, n * 4 * k); }   // past the edge of the world is as unknown as anywhere else
+      hx.drawImage(cv, X(fog.x0), Z(fog.z0), n * 4 * k, n * 4 * k);
       hx.globalCompositeOperation = 'source-in'; hx.fillStyle = this.hatchPat || '#211614'; hx.fillRect(0, 0, S, 180); c.drawImage(hc, 0, 0, S, 180); }
     for (const o of g.ores) { if (o.amount <= 0 || !fog.seen(o.pos.x, o.pos.z)) continue; c.fillStyle = '#b8f58c'; c.fillRect(X(o.pos.x) - 2.5, Z(o.pos.z) - 2.5, 5, 5); }
     c.lineWidth = 1.5; c.strokeStyle = '#0e0d14';
-    for (const b of g.buildings) { if (!b.alive || (b.team !== g.myTeam && !fog.seen(b.pos.x, b.pos.z))) continue; const w = Math.max(5, b.hx * 2 * k), h = Math.max(5, b.hz * 2 * k); c.fillStyle = b.team !== g.myTeam ? (b.kind === 'reedgate' ? '#c58bff' : '#35e0c8') : b.built ? '#ffc21a' : '#7ef0ff'; c.fillRect(X(b.pos.x) - w / 2, Z(b.pos.z) - h / 2, w, h); c.strokeRect(X(b.pos.x) - w / 2, Z(b.pos.z) - h / 2, w, h); }
+    for (const b of g.buildings) { if (!b.alive || b.team !== g.myTeam) continue; const w = Math.max(5, b.hx * 2 * k), h = Math.max(5, b.hz * 2 * k); c.fillStyle = b.built ? '#ffc21a' : '#7ef0ff'; c.fillRect(X(b.pos.x) - w / 2, Z(b.pos.z) - h / 2, w, h); c.strokeRect(X(b.pos.x) - w / 2, Z(b.pos.z) - h / 2, w, h); }
+    // Their buildings are drawn as your side last saw them: a new one shows when somebody looks at it, and a fallen one stays until somebody looks again.
+    for (const r of I.seen[mi].values()) { const B = BLD[r.kind], w = Math.max(5, B.hx * 2 * k), h = Math.max(5, B.hz * 2 * k); c.fillStyle = r.kind === 'reedgate' ? '#c58bff' : '#35e0c8'; c.fillRect(X(r.x) - w / 2, Z(r.z) - h / 2, w, h); c.strokeRect(X(r.x) - w / 2, Z(r.z) - h / 2, w, h); }
     for (const u of g.units) { if (!u.alive || (u === g.me && !g.cmd.on) || (u.team !== g.myTeam && !fog.sees(u.pos.x, u.pos.z))) continue; const foeU = u.team !== g.myTeam; c.fillStyle = foeU ? (u.kind === 'tender' ? '#c58bff' : this.cb ? '#ff9d1a' : '#ff4f9a') : isWorker(u.kind) ? (this.cb ? '#4da3ff' : '#8be04e') : '#f4ead2'; c.beginPath(); c.arc(X(u.pos.x), Z(u.pos.z), u.kind === 'warden' ? 5 : foeU ? 2.6 : 2.2, 0, 7); c.fill(); }
     for (const p of g.pings) { c.strokeStyle = '#ffc21a'; c.lineWidth = 2.5; c.beginPath(); c.arc(X(p.x), Z(p.z), 4 + (8 - p.t) % 1 * 7, 0, 7); c.stroke(); }
     for (const u of g.units) if (u.alive && u.pilot && u !== g.me && u.team === g.myTeam) { c.fillStyle = '#ffc21a'; c.strokeStyle = '#0e0d14'; c.lineWidth = 1.5; c.beginPath(); c.arc(X(u.pos.x), Z(u.pos.z), 3.6, 0, 7); c.fill(); c.stroke(); }
     const D = g.dir; if (g.myTeam === SIDE.home && !g.eco && (D.raidIn < 15 || D.raidLive) && g.stones().length && Math.floor(performance.now() / 300) % 2) { c.fillStyle = '#ff4b3a'; c.strokeStyle = '#0e0d14'; c.lineWidth = 2; c.beginPath(); { const n = NORTH_PATH.length, p = D.raidDir === 'north' ? [(NORTH_PATH[n - 1][0] + NORTH_PATH[n - 2][0]) / 2, (NORTH_PATH[n - 1][1] + NORTH_PATH[n - 2][1]) / 2] : roadPt(62), a = Math.atan2(-p[1], -p[0]); c.moveTo(X(p[0]) + Math.cos(a) * 9, Z(p[1]) + Math.sin(a) * 9); c.lineTo(X(p[0]) + Math.cos(a + 2.4) * 8, Z(p[1]) + Math.sin(a + 2.4) * 8); c.lineTo(X(p[0]) + Math.cos(a - 2.4) * 8, Z(p[1]) + Math.sin(a - 2.4) * 8); } c.closePath(); c.fill(); c.stroke(); }
     if (this.pingT > 0) { c.strokeStyle = '#ffc21a'; c.lineWidth = 2; c.beginPath(); c.arc(X(this.pingPos.x), Z(this.pingPos.z), 5, 0, 7); c.stroke(); }
+    if (hid) { const rd = I.read(g.myTeam), txt = knows ? 'THEM: ' + rd.short.toUpperCase() : 'NOT FOUND · H SENDS A SCOUT'; c.fillStyle = 'rgba(14,13,20,.82)'; c.fillRect(0, 161, S, 19); c.fillStyle = knows ? '#35e0c8' : '#ffc21a'; c.font = '700 14px "Barlow Condensed", sans-serif'; c.textBaseline = 'middle'; c.textAlign = 'left'; c.fillText(txt, 8, 171); }
     const me = g.me, C = g.cmd;
     // picked bodies are ringed, and the ground the command view is looking at is framed
     if (C.on) { c.strokeStyle = '#7ef0ff'; c.lineWidth = 1.2; for (const u of C.sel) { c.beginPath(); c.arc(X(u.pos.x), Z(u.pos.z), 4, 0, 7); c.stroke(); } }
@@ -279,7 +290,9 @@ export class Hud {
     // the full map names what is on it
     this.bm.x0 = x0; this.bm.z0 = z0; this.bm.k = k;
     const name = (x: number, z: number, t: string, col: string) => { c.font = `700 5.6px ${this.face || (this.face = getComputedStyle(this.root).fontFamily || 'sans-serif')}`; t = t.toUpperCase(); c.textAlign = 'center'; c.lineJoin = 'round'; c.lineWidth = 1.8; c.strokeStyle = '#0e0d14'; c.strokeText(t, X(x), Z(z)); c.fillStyle = col; c.fillText(t, X(x), Z(z)); };
-    for (const b of g.buildings) { if (!b.alive) continue; const mine = b.team === g.myTeam; if (b.kind !== FACTION[b.team].hq || (!mine && !fog.seen(b.pos.x, b.pos.z))) continue; name(b.pos.x, b.pos.z - b.hz - 4 / k, mine ? BLD[b.kind].name : 'Enemy ' + BLD[b.kind].name, mine ? '#ffc21a' : '#35e0c8'); }
+    for (const b of g.buildings) { if (!b.alive || b.team !== g.myTeam || b.kind !== FACTION[b.team].hq) continue; name(b.pos.x, b.pos.z - b.hz - 4 / k, BLD[b.kind].name, '#ffc21a'); }
+    // theirs as the crew last saw them
+    for (const r of I.seen[mi].values()) { if (r.kind !== FACTION[foeOf(g.myTeam)].hq) continue; name(r.x, r.z - BLD[r.kind].hz - 4 / k, 'Enemy ' + BLD[r.kind].name, '#35e0c8'); }
     if (me && me.alive) name(me.pos.x, me.pos.z + 12 / k, 'You', '#fff');
   }
 }

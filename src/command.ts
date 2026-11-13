@@ -8,6 +8,8 @@ import * as THREE from 'three';
 import type { Game } from './game';
 import { UNIT, BLD, MAP, FACTION, Unit, Building, BKind, isWorker, fac } from './data';
 import { cardFor, Btn, Aim, KEYS } from './card';
+import { bldRule } from './core/registry';
+import { costOf, canPay } from './core/econ';
 import { V3, L_FX } from './gfx';
 import { sfx, drillSound } from './audio';
 
@@ -286,13 +288,8 @@ export class Command {
     if (id.startsWith('q:')) { if (this.selB) this.cancel(this.selB, +id.slice(2)); return; }
     const b = this.card.find(x => x.id === id); if (b) this.press(b);
   }
-  /** Takes one body off a building's queue and pays its ore back. */
-  cancel(b: Building, i: number) {
-    const g = this.g as any; if (i < 0 || i >= b.queue.length || b.kind === 'mothercap') { sfx.deny(); return; }
-    if (typeof g.cancelTrain === 'function') { g.cancelTrain(b, i); sfx.blip(); return; }
-    if (g.net) { sfx.deny(); return; }
-    const q = b.queue.splice(i, 1)[0]; g.purse[b.team] += UNIT[q.kind].cost; sfx.blip();
-  }
+  /** Takes one body off a building's queue and pays it back in full (online the server does it). */
+  cancel(b: Building, i: number) { if (i < 0 || i >= b.queue.length || bldRule(b.kind).buds) { sfx.deny(); return; } this.g.cancelTrain(b, i); sfx.blip(); }
   /** The order a card button was waiting on, given at a spot (and maybe on something). */
   private useAim(x: number, z: number, on: { k: string; id: number } | null, shift: boolean) {
     const g = this.g, aim = this.aim!; let keep = shift;
@@ -331,12 +328,12 @@ export class Command {
   // ------------------------------------------------------------ staking out a building from above
   private stakeHover(k: BKind, p: THREE.Vector3) {
     const g = this.g; this.stakeAt.set(Math.round(p.x * 2) / 2, 0, Math.round(p.z * 2) / 2);
-    this.fits = g.unlocked(k, g.myTeam) && g.cash(g.myTeam) >= BLD[k].cost && g.canPlace(k, this.stakeAt.x, this.stakeAt.z, this.rot, g.myTeam);
+    this.fits = g.unlocked(k, g.myTeam) && canPay(g, g.myTeam, costOf(k)) && g.canPlace(k, this.stakeAt.x, this.stakeAt.z, this.rot, g.myTeam);
   }
   /** Stakes a building out where the cursor is, and sends the nearest picked worker to put it up. A Gloam building is a Grazer that roots there. */
   private stake(k: BKind, x: number, z: number) {
     const g = this.g, team = g.myTeam, voice = FACTION[team].voice; this.stakeHover(k, V3(x, 0, z));
-    if (!this.fits) { sfx.deny(); g.hud.feed(voice, !g.unlocked(k, team) ? `${BLD[k].name} is locked.` : g.cash(team) < BLD[k].cost ? `A ${BLD[k].name} is ${BLD[k].cost} ore. We have ${Math.floor(g.cash(team))}.` : 'Can\'t build there.', 'al'); return false; }
+    if (!this.fits) { sfx.deny(); g.hud.feed(voice, !g.unlocked(k, team) ? `${BLD[k].name} is locked.` : !canPay(g, team, costOf(k)) ? `A ${BLD[k].name} costs ${BLD[k].cost} ore${costOf(k)[1] ? ' and ' + costOf(k)[1] + ' Flux' : ''}. We are short.` : 'Can\'t build there.', 'al'); return false; }
     const { x: sx, z: sz } = this.stakeAt, ws = [...this.sel].filter(u => isWorker(u.kind)).sort((a, b) => Math.hypot(a.pos.x - sx, a.pos.z - sz) - Math.hypot(b.pos.x - sx, b.pos.z - sz)), w = ws[0] || null;
     if (!w) { sfx.deny(); return false; }
     const site = g.place(k, sx, sz, this.rot, team, w); g.obj.built = true;

@@ -102,6 +102,7 @@
             <button type="button" data-s="1">Small<small>Close quarters, three fields</small></button>
             <button type="button" data-s="0">Medium<small>Four ore fields to take</small></button>
             <button type="button" data-s="2">Large<small>A long way out, seven fields</small></button>
+            <button type="button" data-s="3">Vast<small>Ten fields. Find them first</small></button>
           </div>
         </div>
         <div class="row">
@@ -166,7 +167,7 @@
           <div class="row">
             <div class="diff" id="mDiff" role="group" aria-label="Difficulty"><button type="button">Day shift</button><button type="button">Night shift</button><button type="button">Double shift</button></div>
             <div class="diff" id="mMaps" role="group" aria-label="Map"><button type="button">Needle's Eye</button><button type="button">Switchback</button><button type="button">Glass Flats</button></div>
-            <div class="diff" id="mSizes" role="group" aria-label="Map size"><button type="button" data-s="1">Small</button><button type="button" data-s="0">Medium</button><button type="button" data-s="2">Large</button></div>
+            <div class="diff" id="mSizes" role="group" aria-label="Map size"><button type="button" data-s="1">Small</button><button type="button" data-s="0">Medium</button><button type="button" data-s="2">Large</button><button type="button" data-s="3">Vast</button></div>
             <div class="diff" id="mHome" role="group" aria-label="Who holds the yard"><button type="button">Yard: Ironhold</button><button type="button">Yard: Veyl</button><button type="button">Yard: Gloam</button></div>
             <div class="diff" id="mFoes" role="group" aria-label="Who holds the outpost"><button type="button">The Veyl</button><button type="button">The Gloam</button><button type="button">Ironhold</button></div>
           </div>
@@ -231,9 +232,10 @@
         <button type="button" class="mini-btn" id="full">Fullscreen</button>
         <button type="button" class="mini-btn" id="quit">Quit to the menu</button>
       </div>
+      <div id="intel" hidden><h3 class="treeh">What we know about them</h3><div class="intel" id="intelBody"></div></div>
       <h3 class="treeh">Tech tree</h3>
       <div class="tree" id="tree"></div>
-      <p class="small only-keys">Space dash · Tab jump · F jump to target · Q last body · RMB aim, shield, kick or salvo · C grenade, stomp or patch-up · 2 build · E and T train or upgrade · Z yes · C other route · X hold · V follow · Middle click send squad · G Quartermaster</p>
+      <p class="small only-keys">Space dash · Tab jump · F jump to target · Q last body · RMB aim, shield, kick or salvo · C grenade, stomp or patch-up · 2 build · E and T train or upgrade · Z yes · C other route · X hold · V follow · H send a scout · Middle click send squad · G Quartermaster</p>
     </div>
   </div>
 

@@ -1,7 +1,6 @@
-// The Gloam's numbers and their two signature systems: Buds that ripen into units at a Mother Cap,
-// and Bloom, the living carpet their buildings spread and their units run faster and heal on.
-import * as THREE from 'three';
-import { bloomPatch } from './gloam-art';
+// The Gloam's numbers. Their two signature systems, Buds that ripen into units at a Mother Cap and Bloom, the living carpet their
+// buildings spread and their units run faster and heal on, are in rules.ts and bloom.ts.
+import type { Faction } from '../../data';
 
 export type GKind = 'grazer' | 'snapper' | 'quillback' | 'blister' | 'mulcher';
 export type GBKind = 'mothercap' | 'sporesac' | 'warren' | 'stinger' | 'quillgarden' | 'blisterbed' | 'tuskhollow' | 'oldgrowth';
@@ -35,19 +34,19 @@ export type GUpKey = 'gfat' | 'gtongue' | 'gdmg' | 'garmor' | 'gquill' | 'glegs'
 export const G_UPGRADES = [
   { key: 'gfat', name: 'Fat Buds', cost: 125, blurb: 'Mother Caps hold 4 Buds and grow them 30% faster', at: 'warren', say: 'Fat Buds. The Cap is heavy with them.' },
   { key: 'gtongue', name: 'Long Tongues', cost: 100, blurb: 'Grazers chew 30% faster', at: 'warren', say: 'Long Tongues. The rock goes down easier.' },
-  { key: 'gdmg', name: 'Sharp Mandibles', cost: 150, blurb: '+25% damage', at: 'quillgarden', say: 'Sharp Mandibles. Everything bites deeper.' },
-  { key: 'garmor', name: 'Thick Hide', cost: 150, blurb: '+25% health', at: 'quillgarden', say: 'Thick Hide grown over. Let them try.' },
+  { key: 'gdmg', line: 'atk', lvl: 1, name: 'Sharp Mandibles', cost: 150, blurb: '+25% damage', at: 'quillgarden', say: 'Sharp Mandibles. Everything bites deeper.' },
+  { key: 'garmor', line: 'arm', lvl: 1, name: 'Thick Hide', cost: 150, blurb: '+25% health', at: 'quillgarden', say: 'Thick Hide grown over. Let them try.' },
   { key: 'gquill', name: 'Barbed Quills', cost: 125, blurb: 'Quillbacks reach further and hit 15% harder', at: 'quillgarden', say: 'Barbed Quills. They stick, and they stay.' },
   { key: 'glegs', name: 'Quick Legs', cost: 100, blurb: 'Snappers and Blisters run 15% faster', at: 'warren', say: 'Quick Legs. Catch us if you can.' },
   { key: 'gsap', name: 'Volatile Sap', cost: 125, blurb: 'Blisters burst 40% harder', at: 'blisterbed', say: 'Volatile Sap. Mind where you step.' },
-  { key: 'gdmg2', name: 'Serrated Mandibles', cost: 200, blurb: '+20% damage', at: 'tuskhollow', needs: 'gdmg', say: 'Serrated Mandibles. Saw, then swallow.' },
-  { key: 'garmor2', name: 'Bark Hide', cost: 200, blurb: '+20% health', at: 'tuskhollow', needs: 'garmor', say: 'Bark Hide. Old and hard.' },
+  { key: 'gdmg2', line: 'atk', lvl: 2, name: 'Serrated Mandibles', cost: 200, blurb: '+20% damage', at: 'tuskhollow', needs: 'gdmg', say: 'Serrated Mandibles. Saw, then swallow.' },
+  { key: 'garmor2', line: 'arm', lvl: 2, name: 'Bark Hide', cost: 200, blurb: '+20% health', at: 'tuskhollow', needs: 'garmor', say: 'Bark Hide. Old and hard.' },
   { key: 'gcharge', name: 'Bull Charge', cost: 150, blurb: 'Mulchers charge twice as often', at: 'tuskhollow', say: 'Bull Charge. The old one is restless.' },
-  { key: 'gdmg3', name: 'Bone Mandibles', cost: 250, blurb: '+15% damage', at: 'oldgrowth', needs: 'gdmg2', say: 'Bone Mandibles. They crack steel now.' },
-  { key: 'garmor3', name: 'Stone Hide', cost: 250, blurb: '+15% health', at: 'oldgrowth', needs: 'garmor2', say: 'Stone Hide. We are the ground.' },
+  { key: 'gdmg3', line: 'atk', lvl: 3, name: 'Bone Mandibles', cost: 250, blurb: '+15% damage', at: 'oldgrowth', needs: 'gdmg2', say: 'Bone Mandibles. They crack steel now.' },
+  { key: 'garmor3', line: 'arm', lvl: 3, name: 'Stone Hide', cost: 250, blurb: '+15% health', at: 'oldgrowth', needs: 'garmor2', say: 'Stone Hide. We are the ground.' },
   { key: 'gbloom', name: 'Deep Bloom', cost: 175, blurb: 'Bloom spreads 40% wider and heals twice as fast', at: 'oldgrowth', say: 'Deep Bloom. The carpet runs to the horizon.' },
   { key: 'ggut', name: 'Fat Gut', cost: 175, blurb: 'Grazers carry 21 ore', at: 'oldgrowth', needs: 'gtongue', say: 'Fat Gut. Bellies dragging.' },
-] as { key: GUpKey; name: string; cost: number; blurb: string; at: GBKind; say: string; needs?: GUpKey }[];
+] as { key: GUpKey; name: string; cost: number; blurb: string; at: GBKind; say: string; needs?: GUpKey; line?: 'atk' | 'arm' | 'shd'; lvl?: number; pct?: number; flux?: number }[];
 
 /** Tuning the game reads. */
 export const G_TUNE = {
@@ -56,7 +55,7 @@ export const G_TUNE = {
   bloomR: { mothercap: 20, sporesac: 8, warren: 10, stinger: 7, quillgarden: 10, blisterbed: 9, tuskhollow: 11, oldgrowth: 12 } as Record<GBKind, number>,
   bloomRate: .7, bloomSpeed: 1.25, bloomHeal: 2,
   pack: 15, packFat: 21,
-  bite: { snapper: 7, grazer: 5, mulcher: 30, blister: 70 },
+  bite: { snapper: 7, grazer: 5, mulcher: 30, blister: 70, gnaw: 6 },
   biteCd: { snapper: .42, grazer: .7, mulcher: 1.0 },
   quill: { dmg: 11, cd: .55, speed: 70, fan: 5, fanCd: 6 },
   blister: { r: 4.2, bld: 2 },
@@ -65,30 +64,5 @@ export const G_TUNE = {
   stinger: { range: 9, dmg: 18, cd: 1.1 },
 };
 
-/** One spreading patch of Bloom under a building. */
-export interface Patch { x: number; z: number; r: number; max: number; base: number; obj: THREE.Group; grow: THREE.Object3D; dying: boolean; owner: any }
-/** All the Bloom on the map: grows patches toward their size, withers them when their building is gone, and answers "is this spot on Bloom". */
-export class Bloom {
-  patches: Patch[] = []; seed = 1; /** Teams that have grown Deep Bloom. */ deep = new Set<number>();
-  isDeep(team: number) { return this.deep.has(team); }
-  constructor(public scene: THREE.Scene | null) {}
-  add(owner: any, kind: GBKind, x: number, z: number, full = false) {
-    const max = G_TUNE.bloomR[kind] * (this.deep.has(owner?.team) ? 1.4 : 1), sd = this.seed++, obj = bloomPatch(sd, max), grow = obj.getObjectByName('grow')!;
-    obj.position.set(x, .02 + (sd % 9) * .004, z); const p: Patch = { x, z, r: full ? max : 1.5, max, base: max, obj, grow, dying: false, owner }; grow.scale.set(p.r / max, 1, p.r / max);
-    if (this.scene) this.scene.add(obj); this.patches.push(p); return p;
-  }
-  drop(owner: any) { for (const p of this.patches) if (p.owner === owner) p.dying = true; }
-  deepen(team: number) { if (this.deep.has(team)) return; this.deep.add(team); for (const p of this.patches) if (p.owner?.team === team) p.max *= 1.4; }
-  update(dt: number) {
-    for (let i = this.patches.length - 1; i >= 0; i--) {
-      const p = this.patches[i];
-      if (p.dying) { p.r -= dt * G_TUNE.bloomRate * 2; if (p.r <= .5) { if (this.scene) this.scene.remove(p.obj); this.patches.splice(i, 1); continue; } }
-      else if (p.r < p.max) p.r = Math.min(p.max, p.r + dt * G_TUNE.bloomRate * (this.deep.has(p.owner?.team) ? 1.4 : 1));
-      const k = p.r / p.base; p.grow.scale.set(k, 1, k);
-    }
-  }
-  /** Is (x, z) on Bloom? `pad` shrinks the test so a building's whole footprint has to fit. */
-  /** `team` limits it to one side's Bloom, for a match with the Gloam at both ends. */
-  on(x: number, z: number, pad = 0, team = -1) { for (const p of this.patches) if (!p.dying && (team < 0 || p.owner?.team === team) && Math.hypot(x - p.x, z - p.z) < p.r * .9 - pad) return true; return false; }
-  clear() { if (this.scene) for (const p of this.patches) this.scene.remove(p.obj); this.patches.length = 0; }
-}
+export const G_FACTION: Faction = { name: 'The Gloam', short: 'Gloam', hq: 'mothercap', worker: 'grazer', supply: 'sporesac', builds: G_BUILDABLE, voice: 'Overgrowth', squad: 'Swarm', lead: 'snapper', ore: 'ore', barracks: 'warren' };
+export const G_TRAINS: Partial<Record<GBKind, GKind[]>> = { mothercap: ['grazer', 'snapper', 'blister', 'quillback'], tuskhollow: ['mulcher'] };

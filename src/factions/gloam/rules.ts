@@ -1,11 +1,13 @@
 // How the Gloam play: their bots, their first-person bodies, Buds, Bloom and the Stinger Stalk.
 // Kept out of game.ts so the shared simulation only carries thin hooks.
 import * as THREE from 'three';
-import { V3, R, M } from './gfx';
-import { sfx } from './audio';
-import type { Game } from './game';
-import { UNIT, BLD, Unit, Building, isUnit, isWorker } from './data';
-import { G_TUNE, GBKind } from './gloam';
+import { V3, R, M } from '../../gfx';
+import { sfx } from '../../audio';
+import type { Game } from '../../game';
+import { UNIT, BLD, Unit, Building, isUnit, isWorker } from '../../data';
+import { G_TUNE, GBKind } from './numbers';
+import { defineUnits, defineBuildings, defineFaction } from '../../core/registry';
+import { defineAbilities } from '../../core/ability';
 
 const TMP = V3();
 export const quillMat = new THREE.MeshBasicMaterial({ color: 0xe9dab2 });
@@ -76,7 +78,7 @@ function aiSnapper(g: Game, u: Unit, dt: number) {
       if (!isB && d > 4 && d < 10 && u.dashCd <= 0) { u.dashT = .35; u.dashCd = G_TUNE.pounce.cd; g.puff(TMP.copy(u.pos).setY(.4), 3, .6, M.gS, .4); sfx.dash(g.vol(u.pos) * .7); }
       let wx = 0, wz = 0; if (!isB && d > 6 && u.dashT <= 0) { const k = Math.sin(g.time * 4.3 + u.id * 2.1) * Math.min(3.5, d * .3), nx = -(t.pos.z - u.pos.z) / d, nz = (t.pos.x - u.pos.x) / d; wx = nx * k; wz = nz * k; }
       g.moveTo(u, t.pos.x + wx, t.pos.z + wz, dt, .4, u.dashT > 0 ? 2.6 : 1);
-    } else { u.yaw = Math.atan2(t.pos.x - u.pos.x, t.pos.z - u.pos.z); if (u.cd <= 0) { u.cd = G_TUNE.biteCd.snapper; u.swing = 1; sfx.slash(g.vol(u.pos) * .6); g.damage(t, (isB ? 6 : G_TUNE.bite.snapper) * gMul(g, u.team), u); } }
+    } else { u.yaw = Math.atan2(t.pos.x - u.pos.x, t.pos.z - u.pos.z); if (u.cd <= 0) { u.cd = G_TUNE.biteCd.snapper; u.swing = 1; sfx.slash(g.vol(u.pos) * .6); g.damage(t, (isB ? G_TUNE.bite.gnaw : G_TUNE.bite.snapper) * gMul(g, u.team), u); } }
     return;
   }
   g.vIdle(u, dt, raiding(u) ? 3 : 1.5, u.order.type !== 'guard' ? 1 : .6);
@@ -216,3 +218,22 @@ export function spareGrazers(g: Game, team = g.myTeam) { return g.units.filter(u
 /** Where a Gloam building can grow: on its own Bloom, with the whole footprint covered. Mother Caps can seed bare ground. */
 export function onBloom(g: Game, k: GBKind, x: number, z: number, team: number) { return k === 'mothercap' || g.carpet.on(x, z, Math.max(BLD[k].hx, BLD[k].hz) * .6, team); }
 export { isWorker };
+
+defineFaction(2, { ai: aiGloam, drive: (g, dt, P, eye, dir) => playerGloam(g, dt, P, eye, dir), each: gloamBuilding, grows: true });
+defineBuildings({
+  // A Mother Cap ripens every Bud at once; everything else trains one at a time.
+  mothercap: { hatch(g, b, dt) { for (let i = b.queue.length - 1; i >= 0; i--) { const q = b.queue[i]; q.t -= dt; if (q.t > 0) continue; b.queue.splice(i, 1); const a = R(0, 6.283), u = g.spawn(q.kind, b.team, b.pos.x + Math.cos(a) * (b.hx + 1.2), b.pos.z + Math.sin(a) * (b.hz + 1.2)); g.puff(TMP.copy(u.pos).setY(1), 4, .8, M.gS); if (g.vol(b.pos) > .2) sfx.blip(); g.dir.trained(u); } }, done(_g, b) { b.buds = 1; } },
+});
+defineUnits({ snapper: { pair: true }, mulcher: { skipRespawn: true, stride: 6 }, grazer: { task: () => 'Chewing ore' } });
+defineBuildings({
+  mothercap: { buds: true, added(_g, b, built) { b.buds = built ? G_TUNE.buds : 0; b.budT = 0; }, note: b => `${b.buds || 0} Bud${b.buds === 1 ? '' : 's'} ripe${b.queue.length ? ` · ${b.queue.length} ripening` : ''}` },
+});
+defineFaction(2, {
+  tab: ['snapper', 'quillback', 'blister', 'mulcher', 'grazer'], stride: 15,
+  added(g, b, built) { g.carpet.add(b, b.kind as GBKind, b.pos.x, b.pos.z, built); },
+  pace(g, u) { const up = g.upOf(u.team); return (u.kind !== 'grazer' && g.carpet.on(u.pos.x, u.pos.z, 0, u.team) ? G_TUNE.bloomSpeed : 1) * (up.glegs && (u.kind === 'snapper' || u.kind === 'blister') ? 1.15 : 1); },
+  task: (_g, u) => u.order.type === 'raid' || u.order.type === 'amove' ? 'Swarming the yard' : u.order.type === 'follow' ? 'At your heels' : 'Lurking in the Bloom',
+});
+
+// The Blister bursts, and itself with it. Online the server casts it when the player's browser asks.
+defineAbilities('blister', [{ key: 'burst', name: 'Burst', hotkey: 'Mouse0', energy: 0, cd: 9, cast: 0, range: 0, target: 'self', blurb: 'Bursts, hurting everything close by. The Blister dies.', effect: (g, u) => burst(g, u) }]);

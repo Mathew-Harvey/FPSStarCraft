@@ -115,7 +115,11 @@ void main(){ vUv=uv*uRep;
 #ifdef WEAR
   vUv2=aWear;
 #endif
-  float cq=floor(aEm/32.+.001), er=aEm-32.*cq; vCav=cq<.5?0.:(cq-16.)/15.; float sq=floor(er*.5+.001); vEm=er-2.*sq; vSh=sq*.1; vO=position*length(modelMatrix[0].xyz); vOn=normal; vec4 w=modelMatrix*vec4(position,1.); vW=w.xyz; vec4 mv=viewMatrix*w; vP=mv.xyz; vN=normalize(normalMatrix*normal); vWn=normalize(mat3(modelMatrix)*normal); vL=(viewMatrix*vec4(uL,0.)).xyz; gl_Position=projectionMatrix*mv; }`;
+  float cq=floor(aEm/32.+.001), er=aEm-32.*cq; vCav=cq<.5?0.:(cq-16.)/15.; float sq=floor(er*.5+.001); vEm=er-2.*sq; vSh=sq*.1; mat4 mm=modelMatrix;
+#ifdef USE_INSTANCING
+  mm=modelMatrix*instanceMatrix;   // a crowd of far bodies drawn in one call (src/meshes.ts)
+#endif
+  vO=position*length(mm[0].xyz); vOn=normal; vec4 w=mm*vec4(position,1.); vW=w.xyz; vec4 mv=viewMatrix*w; vP=mv.xyz; vWn=normalize(mat3(mm)*normal); vN=normalize(mat3(viewMatrix)*vWn); vL=(viewMatrix*vec4(uL,0.)).xyz; gl_Position=projectionMatrix*mv; }`;
 const TOON_FS = `precision highp float;
 uniform vec3 uColor,uFog; uniform sampler2D uMap,uShadow; uniform mat4 uShadowMat; uniform float uEmis,uOpacity,uHatch,uFogK,uFlat,uPx,uShadowTex,uGrit,uShine,uKey,uFogD,uMist,uCloudK,uCloudTh,uRimK; uniform vec2 uCloudO; uniform vec3 uRimC;
 uniform vec3 uSunT,uAmbT,uFogS; uniform vec4 uPLp[8]; uniform vec3 uPLc[8]; uniform int uPLn;
@@ -146,7 +150,7 @@ vec2 crackle(vec2 p){
 }
 #endif
 #ifdef GROUND
-uniform vec4 uRoad; uniform float uRoadW;
+uniform vec4 uRoads[10]; uniform int uRoadN; uniform float uRoadW;
 // The desert floor is painted here rather than in a tiled picture, so it never repeats and stays crisp underfoot:
 // big two-tone patches with a broken pen contour, wind-bleached drifts, cracked plates, pebbles, and the road with its ruts.
 vec3 groundAt(vec2 p){
@@ -169,7 +173,10 @@ vec3 groundAt(vec2 p){
     float st=(1.-smoothstep(.06,.06+fw/.2,abs(fract(hv)-.5)))*smoothstep(.52,.6,vnoise(vec2(hu*3.6,floor(hv)*3.7)));
     ink=max(ink,st*bun*near*.42*clamp(.03/fw,0.,1.)); c*=1.-bun*(1.-near)*.05; }
   // the road: packed earth, ragged at the edges, two ruts with tread marks
-  vec2 ab=uRoad.zw-uRoad.xy; float len=max(length(ab),.01); vec2 ad=ab/len, rp=p-uRoad.xy; float along=clamp(dot(rp,ad),0.,len), side=dot(rp,vec2(-ad.y,ad.x)), rd=length(rp-ad*along);
+  // (there can be several: the nearest one is the one drawn here)
+  vec2 ad=vec2(1.,0.); float along=0., side=0., rd=1e5;
+  for(int i=0;i<10;i++){ if(i>=uRoadN) break; vec4 sg=uRoads[i]; vec2 ab=sg.zw-sg.xy; float len=max(length(ab),.01); vec2 d0=ab/len, rp=p-sg.xy; float al=clamp(dot(rp,d0),0.,len), r0=length(rp-d0*al);
+    if(r0<rd){ rd=r0; ad=d0; along=al; side=dot(rp,vec2(-d0.y,d0.x)); } }
   float re=uRoadW+(vnoise(p*.33)-.5)*1.5+(vnoise(p*1.9)-.5)*.3, rm=(1.-smoothstep(re-fw,re+fw,rd))*step(.5,uRoadW);
   float rut=1.-smoothstep(.24,.3+fw,abs(abs(side)-1.2));
   vec3 rc=mix(vec3(.62,.39,.27),vec3(.5,.29,.21),rut*.8); rc=mix(rc,rc*1.12,smoothstep(.5,.7,vnoise(p*vec2(.9,.9)+ad*along*.2)));
@@ -370,7 +377,7 @@ if (LAMPS !== 8) throw new Error('the toon shader is written for eight lamps');
 export interface ToonOpts { color?: string; emis?: number; hatch?: number; fog?: number; flat?: number; rx?: number; ry?: number; side?: THREE.Side; ground?: boolean; cliff?: boolean; bloom?: boolean; /** 0 is chalk, 1 is polished metal. */ shine?: number }
 export function T(map?: THREE.Texture | null, o: ToonOpts = {}) {
   return new THREE.ShaderMaterial({
-    uniforms: { uColor: { value: new THREE.Color(o.color || '#ffffff') }, uMap: { value: map || WHITE }, uEmis: { value: o.emis || 0 }, uOpacity: { value: 1 }, uHatch: { value: o.hatch === undefined ? 1 : o.hatch }, uFogK: { value: o.fog === undefined ? .0032 : o.fog }, uFlat: { value: o.flat || 0 }, uShine: { value: o.shine === undefined ? .2 : o.shine }, uRep: { value: new THREE.Vector2(o.rx || 1, o.ry || 1) }, ...(o.ground ? { uRoad: { value: new THREE.Vector4() }, uRoadW: { value: 0 } } : {}), ...SHARED },
+    uniforms: { uColor: { value: new THREE.Color(o.color || '#ffffff') }, uMap: { value: map || WHITE }, uEmis: { value: o.emis || 0 }, uOpacity: { value: 1 }, uHatch: { value: o.hatch === undefined ? 1 : o.hatch }, uFogK: { value: o.fog === undefined ? .0032 : o.fog }, uFlat: { value: o.flat || 0 }, uShine: { value: o.shine === undefined ? .2 : o.shine }, uRep: { value: new THREE.Vector2(o.rx || 1, o.ry || 1) }, ...(o.ground ? { uRoads: { value: o.ground ? Array.from({ length: 10 }, () => new THREE.Vector4()) : [] }, uRoadN: { value: 0 }, uRoadW: { value: 0 } } : {}), ...SHARED },
     vertexShader: TOON_VS, fragmentShader: TOON_FS, side: o.side || THREE.FrontSide, defines: o.ground ? { GROUND: 1 } : o.cliff ? { CLIFF: 1 } : o.bloom ? { BLOOM: 1 } : {},
   });
 }
@@ -515,7 +522,7 @@ export function makeSky() {
 }
 
 // ---------------------------------------------------------------- pipeline
-const POST_FS = `precision highp float; varying vec2 vUv; uniform sampler2D tC,tD,tN; uniform vec2 uRes; uniform sampler2D tB; uniform vec2 uSun; uniform float uNear,uFar,uOrtho,uPx,uSat,uStatic,uTime,uFlash,uBold,uProj,uAO,uGrit,uGlow,uShaft; uniform sampler2D tB2,tB3,tS; uniform vec3 uTint,uLift,uShaftC; uniform float uVig,uPunch,uFlare,uAsp; uniform vec2 uSunUV; ${NOISE}
+const POST_FS = `precision highp float; varying vec2 vUv; uniform sampler2D tC,tD,tN; uniform vec2 uRes; uniform sampler2D tB; uniform vec2 uSun; uniform float uNear,uFar,uOrtho,uPx,uSat,uStatic,uTime,uFlash,uBold,uProj,uAO,uGrit,uGlow,uShaft; uniform sampler2D tB2,tB3,tS; uniform vec3 uTint,uLift,uShaftC; uniform float uVig,uPunch,uFlare,uAsp,uFarInk; uniform vec2 uSunUV; ${NOISE}
 float lin(vec2 uv){ float d=texture2D(tD,uv).x; if(uOrtho>.5) return uNear+d*(uFar-uNear); float z=d*2.-1.; return 2.*uNear*uFar/(uFar+uNear-z*(uFar-uNear)); }
 vec3 nrm(vec2 uv){ return texture2D(tN,uv).xyz*2.-1.; }
 float edgeAt(vec2 u, vec2 sp){
@@ -524,6 +531,9 @@ float edgeAt(vec2 u, vec2 sp){
   // so a distant Rigger gets a fine line rather than one as thick as a close one's.
   // Two pens, as a comic inker uses: a heavy one round the outside of a thing, a fine one for the folds and seams inside it.
   float th=uOrtho>.5?.9:clamp(1.15/(1.+d0/16.),.28,1.15), tk=uOrtho>.5?1.:1.+uBold*clamp(1./(1.+d0/9.),0.,1.);
+  // From high above (the command view, the map) every body is far off, and the rule above would thin its line to nothing. There the
+  // outside line keeps a width on the screen instead, a little heavier as the view climbs, so a body still reads as a drawn shape.
+  th=mix(th,max(th,.6),uFarInk); tk=mix(tk,1.,uFarInk);
   float wv=(.8+.4*vnoise(sp/46.))*uPx; th*=wv;
   vec2 px=th*tk/uRes, pw=px*1.4, pn=th/uRes*.62;
   float dA=lin(u+px),dB=lin(u-px),dC=lin(u+px*vec2(-1.,1.)),dD=lin(u+px*vec2(1.,-1.));
@@ -534,11 +544,14 @@ float edgeAt(vec2 u, vec2 sp){
     float dmin=min(min(dA,dB),min(dC,dD)); float dd=(abs(dA-dB)+abs(dC-dD))/max(dmin,.01); de=smoothstep(.05,.09,dd*clamp(abs(n0.z),.08,1.));
     float eA=lin(u+pw),eB=lin(u-pw),eC=lin(u+pw*vec2(-1.,1.)),eD=lin(u+pw*vec2(1.,-1.)); float emin=min(min(eA,eB),min(eC,eD));
     de=max(de,smoothstep(.5,.8,(abs(eA-eB)+abs(eC-eD))/max(emin,.01))*(1.-smoothstep(30.,70.,emin)));
+    // from high up a body is a small step in depth against the ground behind it: find it by how many pixels deep the step is
+    if(uFarInk>0.){ float foot=max(2.*dmin/(uProj*uRes.y),1e-5);
+    de=max(de,uFarInk*.8*smoothstep(26.,44.,(max(abs(dA-dB),abs(dC-dD)))/(foot*th*tk))); }
   }
   float nd=length(nA-nB)+length(nC-nD); float ne=smoothstep(.7,1.05,nd)*(1.-smoothstep(90.,220.,d0));
   // and it fades with distance, measured to the nearer side of the edge
   float near=uOrtho>.5?0.:min(d0,min(min(dA,dB),min(dC,dD)));
-  return max(de,ne)*mix(1.,.4,smoothstep(12.,110.,near));
+  return max(de,ne*(1.-uFarInk*.9))*mix(mix(1.,.4,smoothstep(12.,110.,near)),.75,uFarInk);
 }
 // Contact shading: where a thing meets the ground or tucks into a corner the page goes darker, which is what sits it in the world.
 // Each sample is a point of the scene near this one; it shades this one only if it is close by and stands above this surface.
@@ -611,6 +624,12 @@ const SHAFT_BLUR = `precision highp float; varying vec2 vUv; uniform sampler2D t
 void main(){ vec2 st=(uSunUV-vUv)*uLen/12., p=vUv+st*fract(52.9829189*fract(dot(gl_FragCoord.xy,vec2(.06711056,.00583715)))); float a=0., w=1., ws=0.;
   for(int i=0;i<12;i++){ float v; if(uOpen>.5&&(p.x<0.||p.x>1.||p.y<0.||p.y>1.)){ v=1.-smoothstep(0.,1.25,length((p-uSunUV)*vec2(uAsp,1.))); v=v*v*v; } else v=texture2D(tC,p).r; a+=v*w; ws+=w; w*=.92; p+=st; } gl_FragColor=vec4(vec3(a/ws),1.); }`;
 const SUNV = new THREE.Vector3();
+/** How far the view is up in the air, for the drawing rules that change from high up: 0 at head height, 1 from 54 m up. */
+export const farInkOf = (cam: THREE.Camera) => (cam as any).isOrthographicCamera ? 0 : Math.min(1, Math.max(0, (cam.position.y - 14) / 40));
+/** Called before every draw with the scene, the camera and the picture height in pixels (levels of detail, src/meshes.ts). */
+export const PRE_DRAW: ((scene: THREE.Scene, cam: THREE.Camera, h: number) => void)[] = [];
+/** Called with true just before the shadow map is drawn and false just after (src/meshes.ts draws bodies' shadows from a coarser model). */
+export const SHADOW_SWAP: ((on: boolean) => void)[] = [];
 export class Pipeline {
   renderer: THREE.WebGLRenderer;
   w = 1; h = 1; px = 1;
@@ -627,6 +646,8 @@ export class Pipeline {
   aa = 4;
   /** How much heavier the outside line of a thing is than the lines inside it, close up. 0 is one pen for everything. */
   bold = .5;
+  /** How much the ink keeps its width on screen for a view from high up (0 first person, 1 the map). -1 works it out from the camera's height. */
+  farInk = -1;
   /** The moody grade: soft shading and shine, deeper darks, held-back colour, worn edges. 0 is the bright flat comic look. */
   grit = 1;
   /** How far lights spill into the air round them. 0 turns the glow off (Low picture quality does). */
@@ -654,7 +675,7 @@ export class Pipeline {
     SHARED.uShadow.value = this.rtS.depthTexture; SHARED.uShadowTex.value = 1 / S;
     this.rtC = new THREE.WebGLRenderTarget(4, 4); this.rtN = new THREE.WebGLRenderTarget(4, 4);
     this.postMat = new THREE.ShaderMaterial({
-      uniforms: { tC: { value: null }, tD: { value: null }, tN: { value: null }, uRes: { value: new THREE.Vector2(1, 1) }, uNear: { value: .06 }, uFar: { value: 4000 }, uOrtho: { value: 0 }, uPx: SHARED.uPx, uSat: { value: 1 }, uFlash: { value: 0 }, uStatic: { value: 0 }, uTime: { value: 0 }, uBold: { value: 1 }, uProj: { value: 1 }, uAO: { value: 1 }, uGrit: SHARED.uGrit, uGlow: { value: 1 }, tB3: { value: null }, uPunch: { value: 1 }, uFlare: { value: 0 }, uAsp: { value: 1 }, uSunUV: { value: new THREE.Vector2(.5, .5) }, uSun: { value: new THREE.Vector2(-.6, .8) }, tB: { value: null }, tB2: { value: null }, tS: { value: null }, uShaft: { value: 0 }, uVig: { value: .2 }, uShaftC: { value: V3(1, 1, 1) }, uTint: { value: V3(1, 1, 1) }, uLift: { value: V3() } },
+      uniforms: { tC: { value: null }, tD: { value: null }, tN: { value: null }, uRes: { value: new THREE.Vector2(1, 1) }, uNear: { value: .06 }, uFar: { value: 4000 }, uOrtho: { value: 0 }, uPx: SHARED.uPx, uSat: { value: 1 }, uFlash: { value: 0 }, uStatic: { value: 0 }, uTime: { value: 0 }, uBold: { value: 1 }, uProj: { value: 1 }, uAO: { value: 1 }, uGrit: SHARED.uGrit, uGlow: { value: 1 }, tB3: { value: null }, uPunch: { value: 1 }, uFlare: { value: 0 }, uAsp: { value: 1 }, uSunUV: { value: new THREE.Vector2(.5, .5) }, uSun: { value: new THREE.Vector2(-.6, .8) }, tB: { value: null }, tB2: { value: null }, tS: { value: null }, uShaft: { value: 0 }, uVig: { value: .2 }, uFarInk: { value: 0 }, uShaftC: { value: V3(1, 1, 1) }, uTint: { value: V3(1, 1, 1) }, uLift: { value: V3() } },
       vertexShader: `varying vec2 vUv; void main(){ vUv=uv; gl_Position=vec4(position.xy,0.,1.); }`, fragmentShader: POST_FS, depthTest: false, depthWrite: false,
     });
     this.postScene.add(this.fsq = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), this.postMat));
@@ -708,6 +729,7 @@ export class Pipeline {
   /** Renders the scene with shadows centred on `focus`, covering `span` metres. */
   draw(scene: THREE.Scene, cam: THREE.PerspectiveCamera | THREE.OrthographicCamera, focus: THREE.Vector3, span: number, shadows = false) {
     const r = this.renderer, sun = this.sun;
+    for (const f of PRE_DRAW) f(scene, cam, this.rect ? this.rect[3] : this.h);
     // the dust in the air is placed round this view's camera before anything is drawn
     { const dt = Math.min(.1, Math.max(0, this.time - this.lastT)), wd = ENV.wind, m = MOTEU, ortho = !!(cam as any).isOrthographicCamera; this.lastT = this.time; this.gust.x += dt * wd * 1.5; this.gust.z += dt * wd * .5; this.gust.y -= dt * (.04 + wd * .02);
       m.uCam.value.copy(cam.position); m.uDrift.value.copy(this.gust); m.uPxH.value = this.h * cam.projectionMatrix.elements[5] * .5; m.uKey.value = ENV.key; m.uAmt.value = ortho || this.shafts <= 0 ? 0 : Math.min(.9, .42 + ENV.motes * .07);
@@ -718,7 +740,9 @@ export class Pipeline {
       sun.position.copy(focus).addScaledVector(LIGHT, 220); sun.lookAt(focus); sun.updateMatrixWorld();
       SHARED.uShadowMat.value.multiplyMatrices(sun.projectionMatrix, sun.matrixWorldInverse);
       sun.layers.set(0); sun.layers.enable(L_SELF);
+      for (const f of SHADOW_SWAP) f(true);
       scene.overrideMaterial = this.depthMat; r.setRenderTarget(this.rtS); r.clear(); r.render(scene, sun); scene.overrideMaterial = null;
+      for (const f of SHADOW_SWAP) f(false);
     }
 
     cam.layers.set(0); cam.layers.enable(L_FX); cam.layers.enable(L_VM);
@@ -726,7 +750,7 @@ export class Pipeline {
     cam.layers.set(0); cam.layers.enable(L_VM); scene.overrideMaterial = this.normalMat;
     r.setRenderTarget(this.rtN); r.setClearColor(0x8080ff, 1); r.clear(); r.render(scene, cam); scene.overrideMaterial = null;
 
-    const u = this.postMat.uniforms; u.uOrtho.value = (cam as any).isOrthographicCamera ? 1 : 0; u.uProj.value = cam.projectionMatrix.elements[5]; u.uBold.value = this.bold; u.uAO.value = this.ao; u.uNear.value = cam.near; u.uFar.value = cam.far; u.uSat.value = this.sat; u.uFlash.value = this.flash; u.uStatic.value = this.static; u.uTime.value = this.time;
+    const u = this.postMat.uniforms; u.uOrtho.value = (cam as any).isOrthographicCamera ? 1 : 0; u.uProj.value = cam.projectionMatrix.elements[5]; u.uBold.value = this.bold; u.uFarInk.value = this.farInk >= 0 ? this.farInk : farInkOf(cam); u.uAO.value = this.ao; u.uNear.value = cam.near; u.uFar.value = cam.far; u.uSat.value = this.sat; u.uFlash.value = this.flash; u.uStatic.value = this.static; u.uTime.value = this.time;
     SUNV.copy(LIGHT).transformDirection(cam.matrixWorldInverse); u.uSun.value.set(SUNV.x, SUNV.y); if (u.uSun.value.lengthSq() < 1e-4) u.uSun.value.set(0, 1); u.uSun.value.normalize();
     SHARED.uGrit.value = this.grit; u.uGlow.value = this.glow * .9 * ENV.glow; SKYU.uTime.value = this.time; SHARED.uCloudO.value.set(this.time * .011 * (1 + ENV.wind * .6), this.time * .004);
     if (this.glow > 0) { const [a, b] = this.rtG, g = this.glowMat, bl = this.blurMat;
@@ -768,3 +792,21 @@ export class ViewPipe {
 }
 /** Builds the shared textures and materials without a renderer, for the match server. */
 export function initHeadless() { makeTextures(); makeMaterials(); }
+
+/** The dark sheet over ground nobody has walked, seen from above. The fog is kept as one cell per few metres, and drawn straight that
+ *  shows as stair steps. This reads it through a soft round brush a cell and a half wide and lets the edge wander a little, so the
+ *  boundary is a smooth hand-drawn line at any zoom. `n` is the texture's width in cells. Same use as a MeshBasicMaterial with that map. */
+export function fogSheetMaterial(tex: THREE.Texture, n: number) {
+  return new THREE.ShaderMaterial({ transparent: true, depthTest: false, depthWrite: false,
+    uniforms: { tMap: { value: tex }, uT: { value: 1 / n } },
+    vertexShader: 'varying vec2 vUv; varying vec2 vW; void main(){ vUv=uv; vW=(modelMatrix*vec4(position,1.)).xz; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.); }',
+    fragmentShader: `uniform sampler2D tMap; uniform float uT; varying vec2 vUv; varying vec2 vW; ${NOISE}
+      vec4 at(vec2 u){ return texture2D(tMap,clamp(u,vec2(uT*.5),vec2(1.-uT*.5))); }
+      void main(){
+        vec2 w=vec2(vnoise(vW*.07),vnoise(vW*.07+19.))-.5; vec2 u=vUv+w*uT*1.4;
+        vec4 c=at(u)*.2; float s=0.;
+        for(int i=0;i<8;i++){ float a=float(i)*.785398+.39; vec2 o=vec2(cos(a),sin(a))*uT*1.25; c+=at(u+o)*.1; }
+        // the soft step is pulled back toward the levels it was blended from, so the edge is round but not a long smear
+        float al=c.a; al=mix(al,smoothstep(.1,.9,al),.55);
+        gl_FragColor=vec4(c.rgb,al); }` });
+}

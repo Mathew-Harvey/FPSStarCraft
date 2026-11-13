@@ -9,10 +9,10 @@ A first-person RTS for the browser. You start as a single worker with a drill, b
 ```
 npm install
 npm run dev      # http://localhost:5173, rebuilds on every reload
-npm run build    # type-checks and writes dist/index.html, a single self-contained file
+npm run build    # type-checks and writes dist/index.html (one self-contained file) and dist/play.html + dist/art/ (small page, art beside it)
 ```
 
-Needs a keyboard and mouse. `dist/index.html` can be opened straight from disk or hosted anywhere.
+Needs a keyboard and mouse. `dist/index.html` can be opened straight from disk or hosted anywhere. `dist/play.html` needs a web server and the `dist/art/` folder beside it (see `art/README.md`).
 
 ## What is in the game
 
@@ -80,10 +80,23 @@ TypeScript and three.js, bundled by esbuild into one HTML file. No art assets: m
 - `src/skins.ts`: the hand-inked skins. Brushed colour, tapered pen strokes, edge wear, hatching, seams, rivets and stencils, in cuts for boxes, turned forms and domes.
 - `src/units.ts`: the cast, for both sides.
 - `src/models.ts`: structures, the world, first-person view-models and the unit atlas. Models are merged per material when built, and units are cloned from a cached prototype. The world is dressed with a few hundred small props per map (scrub, stones, scrap, bones, spoil heaps, abandoned camps). They are placed with their own dice after everything else, so they never move a mesa or a seam, none of them blocks a path, and laying a building over one flattens it.
-- `src/data.ts`: stat tables, shared types and map constants.
-- `src/game.ts`: the simulation and the player. Entities, combat, effects, the first-person bodies and jumping between them.
+- `src/data.ts`: shared types, and the tables the shared code reads (`UNIT`, `BLD`, `TRAINS`, `UPGRADES`, `FACTION`), joined from each faction's own numbers. It passes on the map tables from `src/maps.ts`.
+- `src/maps.ts`: the maps, sizes and map codes, `setMap` (the road, rallies and far base for a code), the painted roads, and where the ore fields go.
+- `src/factions/<faction>/` (ironhold, veyl, gloam): everything one faction is. `numbers.ts` holds its units, buildings, research and what trains where. `rules.ts` says what its bodies and buildings do: first-person controls, the brain the bots drive each body with, hits, deaths, towers. `brain.ts` is its bot side (the Quartermaster, the Conductor, the Overgrowth) and every line it says in the feed. `look/` says which model, pose, lamp and view model goes with each kind. Adding a kind means adding it here; nothing in the shared files names it.
+- `src/core/registry.ts`: how the shared code asks about a kind. `unitRule(kind)`, `bldRule(kind)` and `factionRule(team)` return that kind's hooks (`ai`, `drive`, `hurt`, `dying`, `tick`, `model`, `pose`, `view` and so on) and flags (`heavy`, `steady`, `threat`, `stride`). A kind with no hooks still works: it gets a plain stand-in model (`src/core/plain.ts`), the plain gun soldier's brain and controls, and dies like anything else. `npm run test:core` checks every faction is wired in and that a kind with nothing defined walks, fights and dies on every side.
+- `src/core/` also holds the engine's shared systems. Each is off or does nothing for a kind that does not ask for it, so the old rosters play exactly as before. `test/core/systems.ts` tests every one on scratch kinds, and ends with one body that uses them all.
+  - `econ.ts`: **Flux**, the second resource. Every price is `[ore, Flux]` (`costOf(kind)`; a def's `flux` field, 0 when left out). Vents (`g.vents`, or a map's own `MAP.vents`) are laid two behind each home base and one by each ore field, the same walks at both ends; a building whose rules say `tap` goes square on one, and workers sent there (`sendToVent`) carry Flux home. Vents only appear once a roster in the match has a tap. Supply stops at 200. `ECON.full` turns on seam saturation (two workers at full speed, a third at half); it is off until the balance pass.
+  - `combat.ts`: armour tags (`soft`, `plated`, `living`, `machine`, `huge`, `sung`), flat `armour`, a weapon's `bonus` against a tag, and `hits` (`ground`, `air` or `both`; ground weapons cannot touch fliers). Research is levels 1 to 3 per line (attack, armour, shields), read from each upgrade's `line` and `lvl`. `LEVELS.mode` is `percent` (the old 25%, 20%, 15%) until the balance stream has tables for `flat` (each attack level adds damage, each armour level takes 1 off a hit).
+  - `ability.ts`: energy (up to 200, grows back about 0.8 a second) and abilities. `defineAbilities(kind, [...])` with energy, cooldown, wind-up, range, aim (`self`, `point`, `body`, `area`), an effect, an optional autocast and a bot hook. `g.useAbility(body, key, {x, z, id})` checks it all the same way for a key, a bot and the server; online the browser only asks (`ab`).
+  - `status.ts`: effects on a body for a while: `slow`, `stun`, `root`, `unseen`, `revealed`, `dug` (dug in), `borrowed` (taken over by the enemy; a marker, the faction code switches the team), `lifted`, `shielded` and `burning`. `addStatus`, `hasStatus`.
+  - `air.ts`: fliers (`air: true`) hold a height, cross cliffs and buildings, keep their own spacing, and can only be hit by weapons that reach the air. In first person: mouse aims, W forward, Space up, Ctrl down. Buildings whose rules say so lift off, fly slowly and land. `AIR.shadow` is the hook for the shadow under a flier.
+  - `sight.ts`: hidden bodies (`cloak`, or an effect) and detectors (`detect` metres). The enemy cannot target or shoot a hidden body, and online the server leaves it out of that side's snapshot. Its own side sees a shimmer.
+  - `cargo.ts`: transports (`cargo` slots) and bunkers carry bodies (`slots` each). Riders of a bunker fight from inside; when a carrier dies its riders spill out hurt, or die with a flier.
+  - `morph.ts`: mode switches (`switchKind`) and ripening over time (`morph`): the same body, id, pilot and share of health.
+  - `sides.ts`: up to eight sides. `isEnemy(a, b)`, alliances, start spots from the map. A one on one match keeps its old teams.
+- `src/game.ts`: the simulation and the player. Entities, combat, effects, the first-person bodies and jumping between them. It asks the registry whenever something depends on the kind of body or building.
 - `src/hitfx.ts`: getting shot, dying, and what a bullet does where it lands. Flinches are springs laid over a body's normal pose; deaths are chosen by what killed it (a shot, a headshot, a blast) and by how the body is built; bullets leave sparks, chips, dirt and marks that match what they hit. All of it is for show: it never touches health or the match's seeded random numbers, and the match server skips it. It works through a model's named parts (body, head, arms, legs, halo), so a new model that keeps the names gets it all.
-- `src/director.ts`: the strategy layer. The Quartermaster, the Veyl raid planner, squad playbooks, callouts and chatter.
+- `src/director.ts`: the strategy layer every side shares: squad playbooks, rallies, pushes, orders from the player, callouts and chatter. Each faction's own bot brain is in its `brain.ts`.
 - `src/hud.ts`, `src/style.css`, `src/page.html`: the HUD and menus.
 - `src/audio.ts`: sound effects (sampled, with the old synthesised set as a fallback), voices and the step-sequenced music.
 
@@ -151,7 +164,7 @@ A third side: a fungal swarm that grows out of the ground. On the Skirmish tab, 
 
 Every pairing plays, mirrors included: Ironhold against Ironhold, Veyl against Veyl, Gloam against Gloam, and the Veyl against the Gloam. On the Skirmish tab pick your side and then who you fight (**Against the Veyl**, **Against the Gloam** or **Against Ironhold**). An Ironhold player always starts at the yard; anyone else starts at the outpost with the foe at the yard. In an online lobby the host picks who holds the yard and who holds the outpost. Ironhold against a Veyl outpost nobody plays is still the classic match, where the outpost breeds raids for free; every other pairing is two built bases, each run by its own faction's brain at whichever end it starts.
 
-In a mirror the far side's bodies and buildings wear a different tint, and each side keeps its own ore, research, Bloom and voice lines. The far end gets the yard's ore fields and starting crew turned round, so both ends have the same walk to their ore. Outside the classic match the outpost also gets the yard's rich nearby ore field turned round, so neither end has the shorter walk to its first new base.
+In a mirror the far side's bodies and buildings wear a different tint, and each side keeps its own ore, research, Bloom and voice lines. The far end gets the yard's ore fields and starting crew turned round, so both ends have the same walk to their ore.
 
 The Gloam are cheap, fast and always more of them, with three rules of their own:
 
@@ -189,9 +202,26 @@ Veyl Lancers use the scenery. Between shots a Lancer ducks behind the nearest ro
 
 Pick one on the menu. **Needle's Eye** is the original road east. **Switchback** is a tight canyon at sunset with a long flank. **Glass Flats** is open salt pan with almost no cover.
 
-Each map comes in three sizes, picked on the Skirmish tab or by the lobby host: **Small** (three ore fields out on the map), **Medium** (four) and **Large** (seven, with the outpost about 170 m away). A map number carries its size in the tens: 0 to 2 are Medium, 10 to 12 Small, 20 to 22 Large.
+Each map comes in four sizes, picked on the Skirmish tab or by the lobby host: **Small** (three ore fields out on the map), **Medium** (four), **Large** (seven, with the outpost about 170 m away) and **Vast** (twelve, with the other base hidden, see below). A map number carries its size in the tens: 0 to 2 are Medium, 10 to 12 Small, 20 to 22 Large.
 
+- **Two-sided matches get a fair ore layout.** When both ends run an economy (every skirmish and versus pairing except the classic Ironhold yard against the raid outpost, and never a story job), the ore fields out on the map come in matched pairs. Each field has a twin with the same seams and the same ore, turned round through the middle of the map, so each end has the same walk to every field. An odd field sits the same distance from both ends. `LAYOUT.fair` in `src/data.ts` switches it, `Game.pin()` keeps a running match on its own layout when more than one match shares the page or the server, and `npm run test:rules` checks that no field is more than 8 m nearer one end than its twin is to the other.
+- **Overtime is written and switched off.** `OVERTIME` in `src/data.ts` can make every building take more damage, and every tower do less, for each minute past a start time in a two-sided match, with a yellow clock that says how much. In bot tables it halved the matches still undecided at 40 minutes and did not end them, so it stays off until somebody decides how a long match should end.
 - **The map starts undiscovered.** The minimap is black until one of your bodies or buildings has seen the ground, dims what nobody is looking at now, and only shows enemy bodies in sight. Ore fields and the Veyl outpost appear once somebody has walked there.
+### Vast maps: find them first
+
+**Vast** is the fourth size, and it plays differently. Nobody tells you where the other base is. You have to send scouts.
+
+- **Where they are.** The other base is 250 to 300 m away, in one of 24 directions picked afresh for every match. Both ends start with one home building and six workers, whoever plays them.
+- **Roads.** Five roads leave your base. One ends at their front door. The other four end at ore fields. They all look the same, and the rock arch that marks the road on the smaller maps is gone.
+- **Ore.** Twelve fields lie in rings round both bases, the same for each end, so where the ore is says nothing about where they are. The world has 200 m of ground behind each base, and its middle is off to one side, so the skyline does not point at them either.
+- **What the game stops telling you.** Until one of your bodies has seen one of their buildings, the map is framed round your own base, the goal reads "Find the Veyl", your squad waits beside your base and not on the road to theirs, your lookout cannot say which way an attack is coming from, and your squad will not pitch a push. You start every match facing the same way.
+- **Scouting.** Press **H** to send a scout: the fastest free fighter, or a worker if there is nobody else. It walks a road nobody has looked down, then comes home. Press it again and another goes down a different road. When one sees them, your lookout calls the bearing and the distance, and the map slides over to hold both bases. The scout walks once round what it found and comes back. It does not stop to fight, and it turns for home if it is badly hurt. You can also jump into the scout and look for yourself.
+- **What they are building.** The map only shows the enemy buildings your side has looked at. A new one appears when somebody sees it, and one that falls out of sight stays drawn until somebody looks again. Each time a scout sees something new you get one line: what it saw, and what that says about their plan. The pause screen keeps the list, with how long ago it was last seen. On a Vast map the goal counts the home buildings you have seen, not the ones they have.
+- **Build plans.** A side run by the game picks one of four plans for the match: a standard opening, an early rush (a second barracks at a minute and a half, no towers, a small squad that marches early), dig in and tech up (towers first, tech sooner, a big squad late), or a second base early (a new home building before anything else, more workers, a late first push). The scout's read comes from the buildings it saw, never from the enemy's own notes, so it can be wrong if it only saw half the base.
+- **They have to find you too.** A side run by the game sends its own scouts, up to three at a time, and plans no push until one has seen you. Your lookout tells you when you have been seen. If nine minutes pass and it still has not found you, word reaches it anyway, so a match cannot stall.
+
+The scout order, the scout report and the pause screen list work on every map size. On the three smaller sizes nothing else changes: the map numbers, the layouts and the bot matches are as they were. A map number carries the turn in the hundreds (530 is Needle's Eye, Vast, turn 5). `npm run test:scout` checks all 72 Vast layouts, scouting and the build plans.
+
 - **New bases.** A Headframe can be built (400 ore) on any open ground short of the Veyl. Riggers bank at the nearest one, each extra one adds eight beds and lets you build around it, and the shift is only lost when the last Headframe falls. The Quartermaster stakes one on the nearest free field once the home seams thin out or the shift runs long, then puts a Watchpost beside it. The raids go for whatever is softest, which is usually the new base.
 
 ![Switchback](docs/screenshots/switchback.jpg)
@@ -269,13 +299,14 @@ The Ironhold tree has five tiers. Each building needs the one above it standing,
 | 3 | Foundry | Machine Shop | Gantry | Tungsten Core (after Hollow Points), Reactive Plating (after Plating), Servo Legs |
 | 4 | Signal Mast | Foundry and Assay Office | | Charter Specials (after Tungsten Core), Vault Plate (after Reactive Plating), Field Welders, Deep Buckets (after Diamond Bits) |
 
-The tables live in `src/data.ts` (`BLD`, `TRAINS`, `UNIT_NEEDS`, `UPGRADES`). The pause screen draws the whole tree with what is standing and bought. The Quartermaster follows the same tree when it runs the yard.
+The tables live in each faction's `src/factions/<faction>/numbers.ts` and are joined in `src/data.ts` (`BLD`, `TRAINS`, `UNIT_NEEDS`, `UPGRADES`). The pause screen draws the whole tree with what is standing and bought. The Quartermaster follows the same tree when it runs the yard.
 
 ## Balance tools
 
 Two scripts play whole matches in a headless browser at many times real speed, with drawing switched off.
 
 - `npm run sim -- '{"out":2,"map":0,"diff":1,"seed":1}'` plays one bot-against-bot match in Node with no browser (40 minutes of match in about 20 seconds): `home` and `out` name the faction at each end (0 Ironhold, 1 Veyl, 2 Gloam; the same twice is a mirror), on any map code and shift. The result names the winner, with a 2 on the end for the far side of a mirror, and `bdump: [seconds]` prints each side's buildings, ore, bodies and research at those times. The match's own dice are seeded by the map, so `seed` shuffles where the starting workers stand and when each brain first thinks; without that, two runs of one map are the same match. `human: [1, 0]` makes a side turtle (it builds but never says yes to a push), `verbose: 1` prints both sides every two minutes, and `probe: "park"` runs a cheese scenario. `npm run test:rules` runs the checks from the matchup sweep (`test/matchups.ts`) the same way.
+- `node tools/table.mjs [seeds] [pairs] [maps] ['{options}']` plays a whole table of bot matches, four at a time, and adds it up: wins for each pairing from each end, mirrors by map, match length, when the first building falls, lead changes, comebacks, quiet time and ore mined a minute. With no arguments it plays ten seeds of all nine pairings on the three Medium maps (270 matches, about a quarter of an hour). Each match is one run of `tools/review.ts`, whose options turn single rules up or down for an experiment (`ot`, `otk`, `reach`, `vhp`, `vdmg`, `cleave`, `bite`, `gnaw`, `cap`, `bud`). `node tools/table.mjs sum dist/table.jsonl` adds up a saved table again.
 - `node tools/soak.cjs '[[0,1],[1,1]]'` plays hands-off matches (pairs of map and difficulty) and reports errors, bodies that stop moving, and who won.
 - `node tools/monkey.cjs [seconds] [scenario]` mashes every control at random in single player on every map and shift, each campaign job, and split screen co-op and versus, and reports crashes and broken state (NaN positions, bodies off the map, health over the maximum, halves of a split screen that disagree).
 - `node tools/bot.cjs <mode> <difficulty> [map]` plays as a scripted first-person player with perfect aim. Modes: `linesman` (walk in alone and shoot), `rigger` (drill rush), `longshot`, `squad` (defend, say yes to pushes, go with them) and `afk`. It exists to find one-trick wins.

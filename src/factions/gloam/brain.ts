@@ -1,8 +1,12 @@
 // The Gloam's economy brain, the Overgrowth: what to root next, what to grow, and how many mouths to feed.
 // It mirrors the Quartermaster and the Conductor, with the Gloam's own rules: every building costs a Grazer,
 // every unit costs a Bud, and buildings only grow on Bloom.
-import type { Director, Side } from './director';
-import { BLD, UNIT, UPGRADES, Kind, BKind, Building, MAP, veylPt, endPt, homeXZ, foeOf } from './data';
+import type { Director, Side } from '../../director';
+import { DOCTRINES } from '../../doctrine';
+import { sfx } from '../../audio';
+import { defineFaction } from '../../core/registry';
+const LOOKOUT = ['Lookout', 'Watcher', 'Rootwatch'];
+import { BLD, UNIT, UPGRADES, Kind, BKind, Building, MAP, veylPt, endPt, homeXZ, foeOf, fac } from '../../data';
 export const GHINTS: [number, string, string][] = [
   [1.5, 'Overgrowth', 'The Gloam stir. Hold click on the green ore to chew it loose, then carry it in your belly to the Mother Cap. I will grow the rest.'],
   [16, 'Overgrowth', 'Press 2 to root a building yourself. It costs a Grazer, and it only grows on our Bloom. Press G and I will stop.'],
@@ -21,9 +25,6 @@ export const GCHATTER = [
 ];
 export const GKILL = ['Soil now.', 'Chewed.', 'One fewer hammer.', 'Mulch.', 'The Bloom will have that one.'];
 export const GDOWN = ['A sister is gone.', 'We are fewer.', 'They popped one of us.', 'Remember the smell of it.'];
-/** What the Ironhold say about the Gloam. */
-export const IKILL_G = ['Bug down!', 'Squashed one.', 'That one is fertiliser.', 'Put it on my tab. Legs and all.', 'Got one. Smells awful.'];
-export const ICHATTER_G = ['Anyone else itchy? Just me?', 'Those mushrooms are looking at me.', 'I stepped in the green stuff again.', 'How many legs is too many legs? I say four.', 'Quartermaster says the carpet is not contagious. Quartermaster is a liar.'];
 
 /** Where the Overgrowth roots its buildings, as offsets from the home Mother Cap (rotated to face the road like the Veyl's). */
 const SLOT: Partial<Record<BKind, number[][]>> = {
@@ -53,30 +54,34 @@ export function overgrowth(D: Director, dt: number, V: Side = D.vs) {
   };
   const spare = (keys: string[]) => { for (const k of keys) { const u = UPGRADES.find(x => x.key === k)!; if (!U[u.key] && g.ownB(u.at, true, T).length && (!u.needs || U[u.needs]) && cash() >= u.cost + 120) return g.buyUpgrade(u.key, T); } return false; };
   const homeLeft = g.ores.filter(n => Math.hypot(n.pos.x - HX, n.pos.z - HZ) < 40).reduce((a, n) => [a[0] + n.amount, a[1] + n.max], [0, 0]);
-  const wantCaps = Math.min((MAP.sites || []).length + 1, 1 + (g.time > 420 || homeLeft[0] < homeLeft[1] * .5 ? 1 : 0) + (g.time > 900 ? 1 : 0) + (g.time > 1380 ? 1 : 0));
+  const DOC = V.doc || DOCTRINES[0], wantCaps = Math.min((MAP.sites || []).length + 1, 1 + (g.time > DOC.expT - 60 || homeLeft[0] < homeLeft[1] * .5 ? 1 : 0) + (g.time > 900 ? 1 : 0) + (g.time > 1380 ? 1 : 0));
   const wantSac = free <= 3 && !sites.some(b => b.kind === 'sporesac') && own('sporesac').length < 7;
-  const wantStingers = army >= 3 ? 1 + (g.time > 420 ? 1 : 0) + (g.time > 840 ? 1 : 0) : 0;
+  const wantStingers = Math.max(0, (army >= 3 ? 1 + (g.time > 420 ? 1 : 0) + (g.time > 840 ? 1 : 0) : 0) + DOC.towers);
   const exp = expansion(D, T);
+  // A new Cap goes ten metres from the seam on the side facing home, or a little further back if the ore is in the way there.
+  const capSpot = ([sx, sz]: number[]) => { const dx = HX - sx, dz = HZ - sz, l = Math.hypot(dx, dz) || 1; return [10, 12, 14, 16, 18].map(r => [Math.round(sx + dx / l * r), Math.round(sz + dz / l * r)]).find(p => g.canPlace('mothercap', p[0], p[1], false, T)) || null; };
   let saving = true, hold = 80;
   if (!warren.length) put('warren', 'A Warren first. The Snappers need somewhere to sleep.');
   else if (wantSac) put('sporesac', 'We are crowded. Rooting a Spore Sac.');
   else if (growing) saving = false;
   // Outnumbered: no new tech until the swarm has caught up, or the side that rooted a Garden first is the side that gets run over.
   else if (warrenUp && g.army(foeOf(T)).length > army + 3) saving = false;
+  else if (DOC.key === 'boom' && warrenUp && exp.site && caps.length < Math.min(2, wantCaps)) { hold = BLD.mothercap.cost; const at = capSpot(exp.site);
+    if (cash() >= BLD.mothercap.cost && canRoot && at && g.place('mothercap', at[0], at[1], false, T, null)) D.say('Overgrowth', 'A Grazer goes to the far seam early. Ore first, teeth later.', '', T); }
   else if (warrenUp && stingers < Math.min(1, wantStingers)) put('stinger', 'A Stinger Stalk by the road. It will whip anything that sniffs too close.');
-  else if (warrenUp && !garden.length && army >= 4) put('quillgarden', 'A Quill Garden. Spitters, and the first new tricks.');
+  else if (warrenUp && !garden.length && army >= 4 + DOC.tech) put('quillgarden', 'A Quill Garden. Spitters, and the first new tricks.');
   // Fat Buds once the Garden is down, never before: bought at exactly three fighters it starved the swarm for half a minute, and which side happened
   // to hatch an odd Snapper decided the mirror match.
   else if (warrenUp && garden.length && !U.gfat && army >= 4) g.buyUpgrade('gfat', T);
-  else if (warrenUp && !bed.length && army >= 6) put('blisterbed', 'A Blister Bed. Let them come close.');
+  else if (warrenUp && !bed.length && army >= 6 + DOC.tech) put('blisterbed', 'A Blister Bed. Let them come close.');
   else if (warrenUp && stingers < wantStingers) put('stinger', 'Another Stinger Stalk. The road should hurt.');
   else if (gardenUp && !U.gdmg && army >= 5) g.buyUpgrade('gdmg', T);
-  else if (warrenUp && army >= 6 && exp.site && caps.length < wantCaps) {
-    hold = BLD.mothercap.cost; const [sx, sz] = exp.site, dx = HX - sx, dz = HZ - sz, l = Math.hypot(dx, dz) || 1, x = Math.round(sx + dx / l * 10), z = Math.round(sz + dz / l * 10);
-    if (cash() >= BLD.mothercap.cost && canRoot && g.canPlace('mothercap', x, z, false, T) && g.place('mothercap', x, z, false, T, null)) D.say('Overgrowth', 'A Grazer has wandered to the far seam to become a Mother Cap. The Bloom will follow it.', '', T);
+  else if (warrenUp && army >= Math.max(1, 6 + DOC.expArmy) && exp.site && caps.length < wantCaps) {
+    hold = BLD.mothercap.cost; const at = capSpot(exp.site);
+    if (cash() >= BLD.mothercap.cost && canRoot && at && g.place('mothercap', at[0], at[1], false, T, null)) D.say('Overgrowth', 'A Grazer has wandered to the far seam to become a Mother Cap. The Bloom will follow it.', '', T);
   }
   else if (exp.bare) { const [bx, bz] = exp.bare; for (const [ox, oz] of [[7, 7], [-7, 7], [7, -7], [-7, -7]]) if (cash() >= BLD.stinger.cost && canRoot && g.canPlace('stinger', bx + ox, bz + oz, false, T) && g.place('stinger', bx + ox, bz + oz, false, T, null)) { D.say('Overgrowth', 'A Stinger Stalk to guard the new Cap.', '', T); break; } }
-  else if (gardenUp && !hollow.length && U.gdmg && army >= 7) { hold = 200; put('tuskhollow', 'The Tusk Hollow grows. Something old is waking in it.'); }
+  else if (gardenUp && !hollow.length && U.gdmg && army >= 7 + DOC.tech) { hold = 200; put('tuskhollow', 'The Tusk Hollow grows. Something old is waking in it.'); }
   else if (hollowUp && army >= 6 && free >= 4 && g.own('mulcher', T).length + hollowUp.queue.length < (g.time > 660 ? 2 : 1)) { hold = UNIT.mulcher.cost; if (cash() >= hold) g.train(hollowUp, 'mulcher'); }
   else if (gardenUp && !U.garmor && army >= 6) g.buyUpgrade('garmor', T);
   else if (hollowUp && !U.gdmg2 && army >= 9) { hold = 200; g.buyUpgrade('gdmg2', T); }
@@ -87,7 +92,7 @@ export function overgrowth(D: Director, dt: number, V: Side = D.vs) {
   else if (spare(['gtongue', 'glegs', 'gquill', 'gsap', 'gcharge', 'gbloom', 'ggut'])) saving = true;
   else saving = false;
   // Buds: every Mother Cap ripens what it can. Grazers first, until each Cap has its crew plus a few spare to root with.
-  const want = 8 + 6 * (capsUp.length - 1) + (warren.length && !old.length ? 1 : 0);
+  const want = 8 + DOC.crew + 6 * (capsUp.length - 1) + (warren.length && !old.length ? 1 : 0);
   const sn = g.own('snapper', T).length, qb = g.own('quillback', T).length, bl = g.own('blister', T).length;
   for (const cap of capsUp) {
     while ((cap.buds || 0) > 0) {
@@ -110,3 +115,22 @@ function expansion(D: Director, T: number): { site: number[] | null; bare: numbe
   const bare = g.ownB('mothercap', true, T).find(h => Math.hypot(h.pos.x - HX, h.pos.z - HZ) > 30 && !near(h.pos.x, h.pos.z, 24, b => b.team === T && b.kind === 'stinger'));
   return { site: free[0] || null, bare: bare ? [bare.pos.x, bare.pos.z] : null };
 }
+
+defineFaction(2, {
+  brain: (D, dt, S) => overgrowth(D, dt, S), hints: GHINTS, books: GBOOKS,
+  chatter: () => GCHATTER, lines: kind => kind === 'kill' ? GKILL : GDOWN,
+  trained(D, u) {
+    if (u.kind === 'snapper' && !D.flags.gsn) { D.flags.gsn = true; D.say('Snapper', 'Two of us, fresh from the Bud. Look at me and press F. Click bites, right click pounces.', 'in', u.team); sfx.callout(); }
+    if (u.kind === 'quillback' && !D.flags.gqb) { D.flags.gqb = true; D.say('Quillback', 'A Quillback, bristling. Click spits a quill; right click throws a fan of five.', 'in', u.team); sfx.callout(); }
+    if (u.kind === 'blister' && !D.flags.gbl) { D.flags.gbl = true; D.say('Blister', 'I am a Blister. Carry me into a crowd, click, and I pop. You will need a new body after.', 'in', u.team); sfx.callout(); }
+    if (u.kind === 'mulcher' && !D.flags.gmu) { D.flags.gmu = true; D.say('Mulcher', 'The old one walks. Click sweeps the tusks; right click charges through a line.', 'in', u.team); sfx.callout(); }
+  },
+  built(D, b) {
+    if (b.kind === 'warren' && !D.flags.gwar) { D.flags.gwar = true; D.say('Overgrowth', 'The Warren is open. Snappers can ripen at any Mother Cap now: look at a Cap and press T.', 'in', b.team); }
+    else if (b.kind === 'quillgarden') D.say('Overgrowth', 'The Quill Garden is grown. Quillbacks ripen at the Caps, and the Garden teaches thicker hide and sharper mouths.', 'in', b.team);
+    else if (b.kind === 'blisterbed') D.say('Overgrowth', 'The Blister Bed is full. Blisters ripen at the Caps now.', 'in', b.team);
+    else if (b.kind === 'tuskhollow') D.say('Overgrowth', 'The Tusk Hollow is grown. A Mulcher can wake inside it.', 'in', b.team);
+    else if (b.kind === 'mothercap') D.say('Overgrowth', 'A new Mother Cap stands. Grazers can bring ore here, and it grows Buds of its own.', 'in', b.team);
+  },
+  lost(D, b, left) { D.say('Rootwatch', `The ${BLD[b.kind].name} has withered.`, 'al', b.team); if (b.kind === 'mothercap' && left) D.say(LOOKOUT[fac(foeOf(b.team))], `A Mother Cap is down. ${left} still growing.`, 'in', foeOf(b.team)); else if (b.kind !== 'mothercap') D.say('Alpha', `${BLD[b.kind].name} squashed. Keep swinging.`, '', foeOf(b.team)); },
+});

@@ -38,7 +38,7 @@ export class TouchPad {
   constructor(parent: HTMLElement, private game: () => Game, private act: { live(): boolean; pause(): void; chat(): void }) {
     const r = this.root = document.createElement('div'); r.id = 'touch'; r.hidden = true;
     r.innerHTML = `<div class="tstick" hidden><i></i></div><div class="tctx"></div>
-      <div class="tbar"><button data-b="pause" aria-label="Pause">II</button><button data-b="qm">QM</button><button data-b="squad">Squad</button><button data-b="send">Send</button><button data-b="ping">Ping</button><button data-b="say">Say</button></div>
+      <div class="tbar"><button data-b="pause" aria-label="Pause">II</button><button data-b="qm">QM</button><button data-b="squad">Squad</button><button data-b="send">Send</button><button data-b="scout">Scout</button><button data-b="ping">Ping</button><button data-b="say">Say</button></div>
       <div class="tleft"><button data-b="tool">Build</button><button data-b="back">Back</button></div>
       <div class="tright">
         <button data-b="fire" class="big">Fire</button><button data-b="aim">Aim</button><button data-b="dash">Dash</button>
@@ -47,7 +47,7 @@ export class TouchPad {
       </div>`;
     parent.appendChild(r);
     this.stickBase = r.querySelector('.tstick') as HTMLElement; this.stickNub = this.stickBase.firstElementChild as HTMLElement; this.ctx = r.querySelector('.tctx') as HTMLElement;
-    const keys: Record<string, [string, boolean?, boolean?]> = { pause: ['pause'], qm: ['KeyG'], squad: ['KeyV'], send: ['Mouse1'], ping: ['KeyB'], say: ['say'], tool: ['tool'], back: ['KeyQ'], fire: ['Mouse0', true, true], aim: ['Mouse2', true, true], dash: ['Space'], abil: ['KeyC'], reload: ['KeyR'], jump: ['jump'], prev: ['wheel-'], next: ['wheel+'] };
+    const keys: Record<string, [string, boolean?, boolean?]> = { pause: ['pause'], qm: ['KeyG'], squad: ['KeyV'], send: ['Mouse1'], scout: ['KeyH'], ping: ['KeyB'], say: ['say'], tool: ['tool'], back: ['KeyQ'], fire: ['Mouse0', true, true], aim: ['Mouse2', true, true], dash: ['Space'], abil: ['KeyC'], reload: ['KeyR'], jump: ['jump'], prev: ['wheel-'], next: ['wheel+'] };
     r.querySelectorAll('button[data-b]').forEach(e => { const el = e as HTMLButtonElement, id = el.dataset.b!, k = keys[id]; this.btns[id] = { id, el, key: k[0], held: k[1], look: k[2] }; });
     r.addEventListener('pointerdown', e => this.down(e)); r.addEventListener('pointermove', e => this.move(e));
     r.addEventListener('pointerup', e => this.up(e)); r.addEventListener('pointercancel', e => this.up(e)); r.addEventListener('lostpointercapture', e => this.up(e));
@@ -136,7 +136,7 @@ export class TouchPad {
     show('prev', building || g.tab); show('next', building || g.tab);
     show('back', !!g.lastBody?.alive && g.lastBody !== me);
     show('dash', !g.tab); show('jump', true, g.tab ? 'Go' : 'Jump');
-    const army = g.army(me.team).some(u => u !== me); show('squad', army, g.dir.following(g.dir.side(me.team)) ? 'Home' : 'Squad'); show('send', army);
+    const army = g.army(me.team).some(u => u !== me); show('squad', army, g.dir.following(g.dir.side(me.team)) ? 'Home' : 'Squad'); show('send', army); show('scout', !g.story);
     show('ping', !!g.net); show('say', !!g.net);
     this.btns.jump.el.classList.toggle('on', g.tab);
     // Whatever the prompt or the squad offers, as big buttons: train, research, jump into, answer the squad.

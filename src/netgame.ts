@@ -3,8 +3,9 @@
 // everyone a snapshot of the world about fifteen times a second, plus a list of things to draw and say.
 import * as THREE from 'three';
 import { Game, beamMat } from './game';
-import { UNIT, BLD, BUILDABLE, UPGRADES, TRAINS, UNIT_NEEDS, FACTION, VOICE_SIDE, SIDE, fac, atHome, Kind, BKind, Unit, Building, UpKey, isSoldier, isWorker } from './data';
-import { burst } from './gloam-play';
+import { UNIT, BLD, BUILDABLE, UPGRADES, TRAINS, UNIT_NEEDS, FACTION, VOICE_SIDE, SIDE, fac, atHome, Kind, BKind, Unit, Building, UpKey, isSoldier, isWorker, type StatusKey } from './data';
+import { useAbility } from './core/ability';
+import { seenBy, isHidden } from './core/sight';
 import type { Side } from './director';
 import { V3, M, R, tracerMat } from './gfx';
 import { sfx, babble } from './audio';
@@ -14,17 +15,22 @@ const r1 = (v: number) => Math.round(v * 10) / 10;
 const F_MOVE = 1, F_TGT = 2, F_WORK = 4, F_CARRY = 8, F_FIRE = 16, F_BRACE = 128, /** in a player's own report: they are up in the command view */ F_ALOFT = 256;
 
 // ---------------------------------------------------------------- server: world to snapshot
-export function buildSnap(g: Game) {
-  const D = g.dir;
-  const u = g.units.filter(x => x.alive).map(x => [x.id, KINDS.indexOf(x.kind), x.team, r1(x.pos.x), r1(x.pos.z), Math.round(x.yaw * 100), Math.ceil(x.hp), Math.ceil(x.maxHp), Math.floor(x.shield),
-    (x.moving ? F_MOVE : 0) | (x.target ? F_TGT : 0) | (x.state === 'mining' || x.state === 'build' || x.state === 'repair' ? F_WORK : 0) | (x.carrying ? F_CARRY : 0) | (x.swing > .6 || x.flashT > 0 ? F_FIRE : 0) | (ORD.indexOf(x.order.type) << 5) | (x.brace ? F_BRACE : 0),
+/** The world as one side may see it. `team` -1 is everything (nothing hidden on the map, or split screen); a side's own snapshot leaves out
+ *  enemy bodies it cannot see (src/core/sight.ts) entirely: not even their ids, which would give away how many there are.
+ *  `ev` is the event list when several sides' snapshots share one tick's events. */
+export function buildSnap(g: Game, team = -1, ev?: any[]) {
+  const D = g.dir, vis = (x: Unit) => team < 0 || seenBy(g, team, x);
+  // Extra fields only some bodies have: energy, effects, height and the carrier it rides in.
+  const ux = g.units.filter(x => x.alive && vis(x) && (x.maxEnergy || x.status?.length || x.alt || x.inside)).map(x => [x.id, Math.floor(x.energy || 0), statusBits(x), Math.round((x.alt || 0) * 10), x.inside ? x.inside.id : 0]);
+  const u = g.units.filter(x => x.alive && vis(x)).map(x => [x.id, KINDS.indexOf(x.kind), x.team, r1(x.pos.x), r1(x.pos.z), Math.round(x.yaw * 100), Math.ceil(x.hp), Math.ceil(x.maxHp), Math.floor(x.shield),
+    (x.moving ? F_MOVE : 0) | (x.target ? F_TGT : 0) | (x.state === 'mining' || x.state === 'build' || x.state === 'repair' ? F_WORK : 0) | (x.carrying ? F_CARRY : 0) | (x.swing > .6 || x.flashT > 0 ? F_FIRE : 0) | (ORD.indexOf(x.order.type === 'scout' ? 'amove' : x.order.type) << 5)   /* two bits on the wire: a scout goes as a body on the march */ | (x.brace ? F_BRACE : 0),
     x.pilot, Math.round(x.pitch * 100), Math.round(x.wind * 10)]);
   const b = g.buildings.filter(x => x.alive).map(x => [x.id, BKINDS.indexOf(x.kind), x.team, x.pos.x, x.pos.z, x.rot ? 1 : 0, Math.ceil(x.hp), x.built ? 1 : 0, Math.round(x.progress * 100), x.queue.length, x.queue[0] ? KINDS.indexOf(x.queue[0].kind) : 0, x.queue[0] ? r1(x.queue[0].t) : 0, x.buds || 0]);
-  const st = g.stats, e = g.evq || []; g.evq = [];
+  const st = g.stats, e = ev || g.evq || []; if (!ev) g.evq = [];
   return {
     t: 's', time: r1(g.time), ore: Math.floor(g.cash(SIDE.home)), up: UPS.map((k, i) => g.upOf(SIDE.home)[k] ? i : -1).filter(i => i >= 0), uo: UPS.map((k, i) => g.upOf(SIDE.out)[k] ? i : -1).filter(i => i >= 0), o: g.ores.map(n => Math.round(n.amount)), u, b,
     d: [r1(D.raidIn), D.raidDir === 'north' ? 1 : 0, D.raidLive ? 1 : 0, D.auto ? 1 : 0, D.plan ? [D.plan.phase, r1(D.plan.t), D.plan.label, D.plan.book] : 0, D.callout ? [D.callout.who, D.callout.text, r1(D.callout.t), D.callout.dur, D.callout.keys] : 0, [D.playbook.name, D.playbook.steps, D.playbook.idx]],
-    v: g.eco ? sideSnap(D.vs) : 0, vo: Math.floor(g.cash(SIDE.out)),
+    v: g.eco ? sideSnap(D.vs) : 0, vo: Math.floor(g.cash(SIDE.out)), fl: [Math.floor(g.flux(SIDE.home)), Math.floor(g.flux(SIDE.out))], ux, hid: team >= 0 ? 1 : 0,
     st: [Math.floor(st.mined), st.built, st.kills, st.lost, Math.floor(st.minedV)], e, mo: g.mission ? D.objectives() : 0, mc: g.mission && g.ms.clock !== undefined ? r1(g.ms.clock) : -1, sc: Object.keys(g.score).map(k => [+k, g.score[+k][0], Math.floor(g.score[+k][1]), g.score[+k][2]]),
   };
 }
@@ -37,8 +43,17 @@ function sideApply(g: Game, S: Side, d: any[]) {
   S.playbook.name = d[4][0]; S.playbook.steps = d[4][1]; S.playbook.idx = d[4][2];
 }
 
+const SBITS: StatusKey[] = ['slow', 'stun', 'root', 'unseen', 'revealed', 'dug', 'lifted', 'shielded', 'burning', 'borrowed'];
+const statusBits = (u: Unit) => (u.status || []).reduce((n, s) => s.t > 0 ? n | (1 << SBITS.indexOf(s.k)) : n, 0);
+/** Snapshots for every side with a player, sharing one tick's events. One snapshot for all when nobody on the map is hidden. */
+export function buildSnaps(g: Game, teams: number[]): Map<number, string> {
+  const out = new Map<number, string>(), hidden = g.units.some(x => x.alive && isHidden(x));
+  if (!hidden) { const s = JSON.stringify(buildSnap(g)); for (const t of teams) out.set(t, s); return out; }
+  const ev = g.evq || []; g.evq = []; for (const t of new Set(teams)) out.set(t, JSON.stringify(buildSnap(g, t, ev))); return out;
+}
+
 // ---------------------------------------------------------------- server: one player's actions
-const BUDGET = new WeakMap<Unit, { left: number; t: number }>(), MOVED = new WeakMap<Unit, number>();
+const BUDGET = new WeakMap<Unit, { left: number; t: number }>(), MOVED = new WeakMap<Unit, { left: number; t: number }>();
 /** A refilling allowance per body and per kind of claim: ore drilled, seconds of welding, damage to scenery, and the Patch's pulse.
  *  An honest client never comes near these. They stop a doctored one from claiming a thousand ore or a finished Foundry in one message. */
 const ALLOW = new WeakMap<Unit, Record<string, { left: number; t: number }>>();
@@ -57,14 +72,19 @@ export function serverCmd(g: Game, pid: number, unit: Unit | null, c: any[]) {
     const bk = BUDGET.get(unit) || { left: 900, t: g.time }; BUDGET.set(unit, bk); bk.left = Math.min(900, bk.left + (g.time - bk.t) * 450); bk.t = g.time;
     const amt = Math.min(450, num(2), bk.left); if (amt <= 0) return; bk.left -= amt; g.damage(t, amt, unit, !!c[3]);
   }
-  else if (k === 'vs') { if (unit && unit.kind === 'warden' && fac(unit.team) === 1 && g.time >= ((unit as any).noteT || 0)) { (unit as any).noteT = g.time + 19; for (const o of g.units) if (o.alive && o.team === unit.team && Math.hypot(o.pos.x - unit.pos.x, o.pos.z - unit.pos.z) < 16) { o.shield = Math.min(o.maxShield, o.shield + 60); o.pop = .6; } } }
+  // Abilities (src/core/ability.ts): the server checks the body is the player's own (or one of their side's), then energy, cooldown and range.
+  // The old one-off calls are the same abilities under their old names.
+  else if (k === 'ab') { const u = g.units.find(x => x.id === num(1)); if (u && u.alive && (u === unit || (u.team === side && !u.pilot))) useAbility(g, u, String(c[2]), { x: num(3), z: num(4), id: num(5) || undefined }); }
+  else if (k === 'vs') { if (unit && unit.kind === 'warden') useAbility(g, unit, 'lownote'); }
+  else if (k === 'ba') { const b = g.buildings.find(x => x.id === num(1)); if (b && b.alive && b.team === side && b.built) { g.feedTo = pid; g.buildingAction(b, String(c[2]), true); g.feedTo = 0; } }
+  else if (k === 'cq') { const b = g.buildings.find(x => x.id === num(1)); if (b && b.alive && b.team === side) g.cancelTrain(b, num(2)); }
   else if (k === 'hl') { const o = g.units.find(x => x.id === num(1)); if (unit && unit.kind === 'patch' && o && o.alive && o.team === unit.team && Math.hypot(o.pos.x - unit.pos.x, o.pos.z - unit.pos.z) < 70) { const bk = BUDGET.get(unit) || { left: 900, t: g.time }; BUDGET.set(unit, bk); bk.left = Math.min(900, bk.left + (g.time - bk.t) * 450); bk.t = g.time; if (bk.left >= 80) { bk.left -= 80; o.hp = Math.min(o.maxHp, o.hp + 10); } } }
   else if (k === 'dp') { if (!unit) return; const p = g.props[num(1)]; if (p && p.alive && Math.hypot(p.x - unit.pos.x, p.z - unit.pos.z) < 175 + p.r) { const a = allow(g, unit, 'dp', Math.min(900, num(2)), 2400, 1200); if (a > 0) g.damageProp(p, a, unit); } }
   else if (k === 'tr') { if (c.length === 9) g.evq!.push(['tr', ...c.slice(1).map(Number), pid]); }
   else if (k === 'pj') { if (c.length === 9) g.evq!.push(['pj', ...c.slice(1).map(Number), 2, pid]); }
   else if (k === 'tn') {
     const b = g.buildings.find(x => x.id === num(1)), kind = c[2] as Kind; if (!b || !b.alive || b.team !== side || !b.built || !(TRAINS[b.kind] || []).includes(kind) || (UNIT[kind].team || 0) !== fac(side)) return;
-    const nb = UNIT_NEEDS[kind]; if (nb && !g.ownB(nb, true, side).length) return;
+    const nb = UNIT_NEEDS[kind]; if (nb && !g.ownB(nb, true, side).length) return; if (g.gated(side, kind)) return;
     g.feedTo = pid; g.train(b, kind, true); g.feedTo = 0;
   }
   else if (k === 'up') { const u = UPGRADES.find(x => x.key === c[1]); if (u && (u.team || 0) === fac(side) && g.ownB(u.at, true, side).length) { g.feedTo = pid; g.buyUpgrade(u.key, side, true); g.feedTo = 0; } }
@@ -76,25 +96,29 @@ export function serverCmd(g: Game, pid: number, unit: Unit | null, c: any[]) {
   else if (k === 'mn') { const n = g.ores[num(1)]; if (!n || !unit || !isWorker(unit.kind) || Math.hypot(n.pos.x - unit.pos.x, n.pos.z - unit.pos.z) > 8) return; const a = allow(g, unit, 'mn', Math.max(0, Math.min(3, num(2), n.amount, g.packCap(unit.team) - unit.carrying)), 12, 12); n.amount -= a; unit.carrying += a; g.oreCheck(n); }   // banked when the body reaches the Headframe
   else if (k === 'wd') { const b = g.buildings.find(x => x.id === num(1)); if (unit && isWorker(unit.kind) && b && b.alive && b.team === unit.team && !b.built && g.distToBox(b, unit.pos.x, unit.pos.z) < 8) b.progress += allow(g, unit, 'wd', Math.min(.6, Math.max(0, num(2))), 1, 1.25) / BLD[b.kind].time * 1.6; }
   else if (k === 'fx') { const b = g.buildings.find(x => x.id === num(1)); if (unit && isWorker(unit.kind) && b && b.alive && b.team === unit.team && b.built && g.distToBox(b, unit.pos.x, unit.pos.z) < 8) b.hp = Math.min(b.maxHp, b.hp + 40 * allow(g, unit, 'wd', Math.min(.6, Math.max(0, num(2))), 1, 1.25)); }
-  else if (k === 'gb') { if (unit && unit.alive && unit.kind === 'blister') burst(g, unit); }
+  else if (k === 'gb') { if (unit && unit.alive && unit.kind === 'blister') useAbility(g, unit, 'burst'); }
   else if (k === 'xx') { g.evq!.push(['ex', num(1), 0, num(2), Math.min(8, Math.max(1, num(3))), 1, pid]); }
   else if (k === 'rd') { /* the old raid call: the Veyl now march as a squad, answered with Z like Ironhold's */ }
   else if (k === 'pg') { const x = Math.max(-400, Math.min(400, num(1))), z = Math.max(-400, Math.min(400, num(2))); g.evq!.push(['pg', pid, x, z]); }
   else if (k === 'ch') { const t = String(c[1] || '').replace(/[<>&]/g, '').trim().slice(0, 120); if (t) g.evq!.push(['fd', g.names[pid] || 'Crew', t, 'ch']); }
-  else if (k === 'pt') { if (unit && unit.kind === 'patch' && allow(g, unit, 'pt', 1, 1, 1 / 6.5) >= 1) g.patchUp(unit); }
+  else if (k === 'pt') { if (unit && unit.kind === 'patch') useAbility(g, unit, 'pulse'); }
   else if (k === 'uo') {
     // Orders from the command view: which bodies, what to do, and where. Only this player's own side, and never a body somebody is driving.
     const o = String(c[1]), ids = Array.isArray(c[5]) ? c[5].filter((v: any) => typeof v === 'number').slice(0, 80) : []; if (o.length !== 1 || !'maobr'.includes(o) || !ids.length) return;
     g.dir.command(side, ids, o, Math.max(-900, Math.min(900, num(2))), Math.max(-900, Math.min(900, num(3))), Math.round(num(4)));
   }
-  else if (k === 'or') { const o = String(c[1]); if ('GVMXZC'.includes(o) && o.length === 1 && (unit ? unit.team === side : side === SIDE.home)) g.dir.order(o, num(2), num(3), unit); }
+  else if (k === 'or') { const o = String(c[1]); if ('GVMXZCS'.includes(o) && o.length === 1 && (unit ? unit.team === side : side === SIDE.home)) g.dir.order(o, num(2), num(3), unit); }
 }
 /** The player's own body, as their browser last reported it. */
 export function serverMove(g: Game, unit: Unit, m: any[]) {
   const x = +m[0], z = +m[1]; if (!isFinite(x) || !isFinite(z)) return;
-  // Nobody walks faster than a sprinting, dashing body. A report from further away than that is pulled back toward where the body could have got to.
-  const d = Math.hypot(x - unit.pos.x, z - unit.pos.z), was = MOVED.get(unit) ?? g.time - .1, reach = 4 + Math.max(0, g.time - was) * 11; MOVED.set(unit, g.time);
-  if (d <= reach) { unit.pos.x = x; unit.pos.z = z; } else if (d < 40) { unit.pos.x += (x - unit.pos.x) / d * reach; unit.pos.z += (z - unit.pos.z) / d * reach; }
+  // Nobody walks faster than their body can sprint and dash. Each body has an allowance of ground that refills at its own top speed (sprint,
+  // every speed upgrade, the Gloam carpet and the dash, plus a tenth) and holds a second and a quarter of it, which covers a hitch in the
+  // connection. A report from further away than the allowance is pulled back toward where the body could have got to. The allowance used to
+  // be 4 m on every message, however many messages came in one tick, so a doctored client could cross the map in a second.
+  const top = unit.speed * 2.4 + 3, d = Math.hypot(x - unit.pos.x, z - unit.pos.z), a = MOVED.get(unit) || { left: top * .5, t: g.time }; MOVED.set(unit, a);
+  a.left = Math.min(top * 1.25, a.left + Math.max(0, g.time - a.t) * top); a.t = g.time; const reach = Math.min(d, a.left);
+  if (d <= a.left) { unit.pos.x = x; unit.pos.z = z; a.left -= d; } else if (d < 40 && reach > 0) { unit.pos.x += (x - unit.pos.x) / d * reach; unit.pos.z += (z - unit.pos.z) / d * reach; a.left -= reach; }
   unit.yaw = +m[2] || 0; unit.pitch = Math.max(-1.5, Math.min(1.5, +m[3] || 0)); const f = m[4] | 0;
   unit.moving = !!(f & F_MOVE); unit.brace = !!(f & F_BRACE); unit.aloft = !!(f & F_ALOFT); if (f & F_FIRE) { unit.swing = 1; unit.flashT = .08; } unit.target = null;
 }
@@ -118,7 +142,7 @@ function event(g: Game, e: any[]) {
 export function applySnap(g: Game, s: any) {
   const net = g.net!; g.applying = true;
   for (const e of s.e) event(g, e);
-  g.time = s.time; g.purse[SIDE.home] = s.ore; if (s.vo !== undefined) g.purse[SIDE.out] = s.vo;
+  g.time = s.time; g.purse[SIDE.home] = s.ore; if (s.vo !== undefined) g.purse[SIDE.out] = s.vo; if (s.fl) { g.fluxPurse[SIDE.home] = s.fl[0]; g.fluxPurse[SIDE.out] = s.fl[1]; }
   for (const [t, list] of [[SIDE.home, s.up], [SIDE.out, s.uo || []]] as [number, number[]][]) { const on = new Set<number>(list), U = g.upOf(t); UPS.forEach((k, i) => { const was = U[k]; U[k] = on.has(i); if (k === 'gbloom' && U[k] && !was) g.carpet.deepen(t); }); }
   g.ores.forEach((n, i) => { const a = s.o[i]; if (a !== undefined && a !== n.amount) { n.amount = a; g.oreCheck(n); } });
   if (s.sc) { g.score = {}; for (const r of s.sc) g.score[r[0]] = [r[1], r[2], r[3]]; }
@@ -132,7 +156,13 @@ export function applySnap(g: Game, s: any) {
     if (r[8] < u.shield - 1) g.bubble(u); if (r[6] < u.hp - .5 || r[8] < u.shield - 1) g.fx.remote(u, Math.max(1, u.hp - r[6], u.shield - r[8]), r[8] < u.shield - 1); u.hp = r[6]; u.shield = u.maxShield ? Math.min(r[8], u.maxShield) : r[8]; (u as any).nf = r[9]; u.wind = r[12] / 10;
     if (u !== g.me) { u.yaw = r[5] / 100; u.pitch = r[11] / 100; u.pilot = r[10]; } else if (r[10] === net.id || s.time > g.possT + 1.5) u.pilot = r[10];
   }
-  for (const u of g.units) if (u.alive && !seen.has(u.id)) { u.alive = false; g.scene.remove(u.obj); if (u === g.me) g.staticT = .2; }
+  // A body missing from the snapshot is gone, or out of this side's sight (hidden). An enemy one is set aside, not killed, while the map has
+  // hidden bodies, so it can come back when seen; its death still arrives as a 'ku' event.
+  for (const u of g.units) if (u.alive && !seen.has(u.id)) { if (s.hid && u.team !== g.myTeam) { u.obj.visible = false; u.obj.userData.netHid = true; continue; } u.alive = false; g.scene.remove(u.obj); if (u === g.me) g.staticT = .2; }
+  const ext = new Map<number, any[]>(); for (const r of s.ux || []) ext.set(r[0], r);
+  for (const u of g.units) { if (!u.alive || !seen.has(u.id)) continue; const r = ext.get(u.id);
+    if (u.maxEnergy) u.energy = r ? r[1] : u.energy; u.status = r && r[2] ? SBITS.filter((_, i) => r[2] & (1 << i)).map(k => ({ k, t: 1 })) : undefined;
+    if (r) u.alt = r[3] / 10; else if (!u.air) u.alt = 0; const c = r && r[4] ? (g.uById.get(r[4]) || g.bById.get(r[4]) || null) : null; u.inside = c; if (c) { u.obj.visible = false; u.obj.userData.netHid = true; } else if (u.obj.userData.netHid) { u.obj.visible = true; u.obj.userData.netHid = false; } }
   const seenB = new Set<number>();
   for (const r of s.b) {
     let b = g.bById.get(r[0]); if (b && !b.alive) continue;

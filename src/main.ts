@@ -3,12 +3,12 @@ import * as THREE from 'three';
 import { Pipeline, ViewPipe, V3, makeSky, TX, M } from './gfx';
 import { LAMP_ON } from './light';
 import * as MD from './models';
-import { GLOAM_BUILDINGS, bloomPatch } from './gloam-art';
+import { GLOAM_BUILDINGS, bloomPatch } from './factions/gloam/look/art';
 import { Game } from './game';
 import { Hud } from './hud';
 import { initAudio, setVolume, setMusic, audioSeat, hush, soundsReady, sfx } from './audio';
 import { LocalMatch, SplitMode } from './split';
-import { UNIT, BLD, UPGRADES, TRAINS, UNIT_NEEDS, DIFFS, Kind, BKind, mapCode, validMap, FACTION, SIDE, STORY, setSides, setSidesCode, sidesCode, fac, isWorker } from './data';
+import { UNIT, BLD, UPGRADES, TRAINS, UNIT_NEEDS, DIFFS, Kind, BKind, mapCode, validMap, rollMap, baseOf, sizeOf, MAP, FACTION, SIDE, STORY, setSides, setSidesCode, sidesCode, fac, isWorker } from './data';
 import { MISSIONS, STORY_JOBS, ACTS, missionSides, charterTeam, Mission } from './campaign';
 import { CUTS, CutPlayer } from './cutscene';
 import { Net, Lobby } from './net';
@@ -69,14 +69,14 @@ let camp = 0, sideDone = 0, mpOpen = true, mode = 'camp', jobI = 0, pname = '', 
 const MP_AFTER = 8;
 let net: Net | null = null;
 /** Rebindable actions: [what the game code listens for, label]. A player's choice is stored as action code to physical key. */
-const ACTIONS: [string, string][] = [['KeyW', 'Forward'], ['KeyS', 'Back'], ['KeyA', 'Left'], ['KeyD', 'Right'], ['ShiftLeft', 'Sprint'], ['Space', 'Dash'], ['Tab', 'Jump wheel'], ['KeyF', 'Jump to target'], ['KeyQ', 'Last body'], ['KeyE', 'Use or train'], ['KeyR', 'Reload or rotate'], ['KeyC', 'Grenade or ability'], ['Digit1', 'Drill'], ['Digit2', 'Build'], ['KeyG', 'Quartermaster or raid'], ['KeyZ', 'Yes to the squad'], ['KeyX', 'Hold'], ['KeyV', 'Follow me'], ['KeyB', 'Ping'], ['KeyN', 'Command view'], ['KeyM', 'Map'], ['Enter', 'Chat']];
+const ACTIONS: [string, string][] = [['KeyW', 'Forward'], ['KeyS', 'Back'], ['KeyA', 'Left'], ['KeyD', 'Right'], ['ShiftLeft', 'Sprint'], ['Space', 'Dash'], ['Tab', 'Jump wheel'], ['KeyF', 'Jump to target'], ['KeyQ', 'Last body'], ['KeyE', 'Use or train'], ['KeyR', 'Reload or rotate'], ['KeyC', 'Grenade or ability'], ['Digit1', 'Drill'], ['Digit2', 'Build'], ['KeyG', 'Quartermaster or raid'], ['KeyZ', 'Yes to the squad'], ['KeyX', 'Hold'], ['KeyV', 'Follow me'], ['KeyH', 'Send a scout'], ['KeyB', 'Ping'], ['KeyN', 'Command view'], ['KeyM', 'Map'], ['Enter', 'Chat']];
 let binds: Record<string, string> = {}, gfxI = 0, cbOn = false, optsOpen = false, fpsOn = false, fpsN = 0, fpsT = 0, fpsWorst = 0;
 const keyOf = (action: string) => binds[action] || action;
 const keyText = (code: string) => code.replace(/^Key|^Digit/, '').replace('ShiftLeft', 'Shift').replace('ShiftRight', 'R Shift').replace('ControlLeft', 'Ctrl').replace('AltLeft', 'Alt').replace(/^Arrow/, '').replace(/^Numpad/, 'Num ');
 /** The key a player pressed, as the action the game code listens for. A default key that has been given away does nothing. */
 function logical(code: string) { for (const a in binds) if (binds[a] === code) return a; return binds[code] ? 'Unbound' : code; }
 let diffI = 1, mapI = 0, sideI = 0, foeI = 0, sens = 1, vol = .5, mus = true, curX = .5, moved = false;
-try { const o = JSON.parse(localStorage.getItem('ore-else') || '{}'); if (o.d >= 0 && o.d < 3) diffI = o.d; if (o.side >= 0 && o.side < 3) sideI = o.side; if (o.vs >= 0 && o.vs < 3) foeI = o.vs; else if (sideI) foeI = 2; else if (o.foe === 1) foeI = 1; if (validMap(o.map)) mapI = o.map; if (o.st === 2) { if (o.camp > 0) camp = Math.min(STORY_JOBS, o.camp); if (o.sd > 0) sideDone = o.sd | 0; if (o.ore > 0) STORY.oreTotal = o.ore; } else if (o.camp > 0) camp = [0, 1, 2, 3, 3, 8][Math.min(5, o.camp)]; if (o.mp) mpOpen = true; if (o.mode === 'skirm') mode = 'skirm'; if (o.tp === 'on' || o.tp === 'off') touchPref = o.tp; if (typeof o.name === 'string') pname = o.name.slice(0, 14); if (typeof o.srv === 'string') srv = o.srv.slice(0, 200); if (o.s > 0) sens = o.s; if (o.v >= 0) vol = o.v; if (o.m === false) mus = false; if (o.q >= 0 && o.q < 4) gfxI = o.q | 0; cbOn = !!o.cb; fpsOn = !!o.fps; splitSide = o.ss !== 0; if (o.side === 1) sideI = 1; if (o.k && typeof o.k === 'object') for (const [a] of ACTIONS) if (typeof o.k[a] === 'string' && o.k[a] !== a) binds[a] = o.k[a]; } catch (e) { /* storage is optional */ }
+try { const o = JSON.parse(localStorage.getItem('ore-else') || '{}'); if (o.d >= 0 && o.d < 3) diffI = o.d; if (o.side >= 0 && o.side < 3) sideI = o.side; if (o.vs >= 0 && o.vs < 3) foeI = o.vs; else if (sideI) foeI = 2; else if (o.foe === 1) foeI = 1; if (validMap(o.map)) mapI = o.map % 100; if (o.st === 2) { if (o.camp > 0) camp = Math.min(STORY_JOBS, o.camp); if (o.sd > 0) sideDone = o.sd | 0; if (o.ore > 0) STORY.oreTotal = o.ore; } else if (o.camp > 0) camp = [0, 1, 2, 3, 3, 8][Math.min(5, o.camp)]; if (o.mp) mpOpen = true; if (o.mode === 'skirm') mode = 'skirm'; if (o.tp === 'on' || o.tp === 'off') touchPref = o.tp; if (typeof o.name === 'string') pname = o.name.slice(0, 14); if (typeof o.srv === 'string') srv = o.srv.slice(0, 200); if (o.s > 0) sens = o.s; if (o.v >= 0) vol = o.v; if (o.m === false) mus = false; if (o.q >= 0 && o.q < 4) gfxI = o.q | 0; cbOn = !!o.cb; fpsOn = !!o.fps; splitSide = o.ss !== 0; if (o.side === 1) sideI = 1; if (o.k && typeof o.k === 'object') for (const [a] of ACTIONS) if (typeof o.k[a] === 'string' && o.k[a] !== a) binds[a] = o.k[a]; } catch (e) { /* storage is optional */ }
 const save = () => { try { localStorage.setItem('ore-else', JSON.stringify({ d: diffI, map: mapI, camp, st: 2, sd: sideDone, ore: Math.floor(STORY.oreTotal), mp: mpOpen, mode: mode === 'multi' ? 'camp' : mode, name: pname, srv, s: sens, v: vol, m: mus, q: gfxI, cb: cbOn, fps: fpsOn, ss: splitSide ? 1 : 0, side: sideI, vs: foeI, k: binds, tp: touchPref })); } catch (e) { /* storage is optional */ } };
 jobI = Math.min(camp, STORY_JOBS - 1);
 const jobOpen = (i: number) => i < STORY_JOBS ? i <= camp : camp >= (MISSIONS[i].opens || 0);
@@ -88,7 +88,10 @@ const FOE_FAC = [1, 2, 0];
 const sidesWanted = (versus = false): [number, number] => mode !== 'skirm' ? missionSides(MISSIONS[jobI]) : versus ? [sideI, FOE_FAC[foeI]] : sideI === 0 ? [0, FOE_FAC[foeI]] : [FOE_FAC[foeI], sideI];
 const wantCode = () => { const [h, o] = sidesWanted(); return h * 3 + o; };
 const want = () => { setSides(...sidesWanted()); STORY.charter = mode === 'skirm' ? -1 : charterTeam(MISSIONS[jobI]); return want0(); };
-const want0 = () => mode !== 'skirm' ? { d: DIFFS[MISSIONS[jobI].diff], map: MISSIONS[jobI].map, m: MISSIONS[jobI] } : { d: DIFFS[diffI], map: mapI, m: null };
+/** The skirmish map with its turn: a Vast map is turned a new way for every new match (see rollMap). `__ore.turn` pins it, for tests and pictures. */
+let playMap = 0; const reroll = () => playMap = rollMap(mapI, (window as any).__ore?.turn | 0);
+const want0 = () => mode !== 'skirm' ? { d: DIFFS[MISSIONS[jobI].diff], map: MISSIONS[jobI].map, m: MISSIONS[jobI] } : { d: DIFFS[diffI], map: playMap, m: null };
+reroll();
 let game = new Game(pipe, hud, want().d, want().map, want().m); game.sens = sens;
 window.addEventListener('resize', resize);
 
@@ -142,7 +145,7 @@ document.addEventListener('visibilitychange', () => { if (document.hidden) { pad
 document.addEventListener('pointerlockerror', () => { freeMouse = true; });
 document.addEventListener('pointerlockchange', () => { if (!locked() && live() && !freeMouse) pause(); });
 
-function fresh() { endSplit(); hush(); hud.reset(); const w = want(); game.dispose(); game = new Game(pipe, hud, w.d, w.map, w.m); game.sens = sens; ended = false; (window as any).__ore.game = game; }
+function fresh() { endSplit(); hush(); hud.reset(); reroll(); const w = want(); game.dispose(); game = new Game(pipe, hud, w.d, w.map, w.m); game.sens = sens; ended = false; (window as any).__ore.game = game; }
 function start() { if (mode === 'skirm' && sideI) { startVeyl(); return; } if (mode !== 'skirm' && MISSIONS[jobI].out) { startStory(MISSIONS[jobI]); return; } if (sidesCode() !== wantCode()) fresh(); initAudio(); setVolume(vol); setMusic(mus); { const w = want(); if (game.diff !== w.d || game.mapI !== w.map || game.mission !== w.m || game.time > 0) fresh(); } $('menu').hidden = true; $('pause').hidden = true; $('end').hidden = true; hud.show(true); game.phase = 'play'; game.introT = 1.8; lock(); }
 /** The pause screen shows the whole tech tree: what is standing, what can be built next and what each building sells. */
 function showTree() {
@@ -153,6 +156,11 @@ function showTree() {
     const ups = UPGRADES.filter(u => u.at === k).map(u => { const nu = u.needs ? UPGRADES.find(x => x.key === u.needs)! : null; return `<li class="${g.upOf(t)[u.key] ? 'dn' : have && (!nu || g.upOf(t)[nu.key]) ? 'ok' : ''}"><b>${u.name}</b><small>${g.upOf(t)[u.key] ? 'Bought' : u.blurb + ' · ' + u.cost}${nu && !g.upOf(t)[u.key] ? ' · after ' + nu.name : ''}</small></li>`; }).join('');
     return `<div class="node ${have ? 'have' : off || miss.length ? 'lock' : 'can'}"><h4>${BLD[k].name}</h4><p>${have ? 'Standing' : off ? 'Not on this job' : miss.length ? 'Needs ' + miss.map(n => BLD[n].name).join(' and ') : k === hq ? '' : 'Ready to build · ' + BLD[k].cost}</p>${units || ups ? `<ul>${units}${ups}</ul>` : `<ul><li class="${have ? 'ok' : ''}"><small>${BLD[k].blurb}</small></li></ul>`}</div>`;
   }).join('')}</div>`).join('');
+  // What the scouts have seen of the other side: the buildings, how long ago, and what that says about their plan. Not shown on story jobs.
+  const I = g.intel, show = !g.mission; $('intel').hidden = !show; if (!show) return;
+  const tl = I.tally(t), rd = I.read(t), recs = [...I.seen[I.ix(t)].values()], ago = recs.length ? Math.max(0, Math.round(g.time - Math.max(...recs.map(r => r.t)))) : 0, when = ago < 8 ? 'in sight now' : ago < 90 ? ago + ' seconds ago' : Math.round(ago / 60) + ' minutes ago';
+  $('intelBody').innerHTML = !tl.length ? `<p><b>Not found yet.</b> ${MAP.hid ? 'One of the roads out of your base ends at theirs. Press H to send a scout down one, or walk it yourself.' : 'Nobody has looked at their base. Press H to send a scout.'}</p>`
+    : `<p><b>${rd.short}.</b> ${rd.line}</p><ul>${tl.map(([k, n]) => `<li>${n > 1 ? n + ' × ' : ''}${BLD[k].name}</li>`).join('')}</ul><p><small>Last seen ${when}. Press H to send a scout for another look.</small></p>`;
 }
 function pause() { if (game.phase !== 'play' && game.phase !== 'card') return; hush(); showTree(); for (const g of [game, game2]) if (g && g.phase === 'card') g.hud.titleCard('', '', ''); if (game2) { game2.phase = 'paused'; game2.keys.clear(); game2.lmb = game2.rmb = false; look2.clear(); } if (game.net) { game.phase = 'paused'; game.keys.clear(); game.lmb = game.rmb = false; $('pause').hidden = false; return; } game.phase = 'paused'; game.keys.clear(); game.lmb = game.rmb = false; $('pause').hidden = false; }
 function resume(byPad = false) { if (game.phase !== 'paused') return; initAudio(); $('pause').hidden = true; game.phase = 'play'; if (game2) game2.phase = 'play'; if (!byPad) lock(); }
@@ -220,7 +228,7 @@ function p2Labels() {
 let splitMode: SplitMode = 'coop';
 function startSplit(how: SplitMode | boolean = splitMode) {
   splitMode = how === true ? 'versus' : how === false ? 'coop' : how; splitVs = splitMode === 'versus'; setSides(...sidesWanted(splitVs)); STORY.charter = -1; initAudio(); setVolume(vol); setMusic(mus); mode = 'skirm'; hud.reset(); hud2.reset();
-  const prev = split, m = split = new LocalMatch(mapI, diffI, 2, splitMode), mk = (i: number) => { const g = new Game(i ? view2 : view1, i ? hud2 : hud, DIFFS[diffI], mapI, null, m.seats[i], m.host.eco); g.sens = i ? 1 : sens; g.names = m.names; g.teams = m.teams; g.myTeam = m.teams[i + 1] ?? SIDE.home; g.phase = 'play'; g.introT = 1.8; return g; };
+  reroll(); const prev = split, m = split = new LocalMatch(playMap, diffI, 2, splitMode), mk = (i: number) => { const g = new Game(i ? view2 : view1, i ? hud2 : hud, DIFFS[diffI], playMap, null, m.seats[i], m.host.eco); g.sens = i ? 1 : sens; g.names = m.names; g.teams = m.teams; g.myTeam = m.teams[i + 1] ?? SIDE.home; g.phase = 'play'; g.introT = 1.8; return g; };
   const old = [game, game2, prev?.host]; game = mk(0); game2 = mk(1); game2.cmd.locked = true; for (const g of old) if (g && g !== game) g.dispose(); view1.time = view2.time = pipe.time; ended = false; (window as any).__ore.game = game;
   padTwo = pads().length > 0; p2Seen = false; p2Hint = 0; padHeld[0].clear(); padHeld[1].clear(); look2.clear(); p2Labels();
   $('game').classList.add('split'); $('game').classList.toggle('stack', !splitSide);
@@ -229,15 +237,15 @@ function startSplit(how: SplitMode | boolean = splitMode) {
 /** A skirmish as the Veyl: the Ironhold bots run on a local host, and this screen is its only seat. */
 function startVeyl() {
   endSplit(); splitMode = 'veyl'; splitVs = false; setSides(...sidesWanted()); STORY.charter = -1; initAudio(); setVolume(vol); setMusic(mus); hush(); hud.reset();
-  const m = split = new LocalMatch(mapI, diffI, 1, 'veyl'), old = game;
-  game = new Game(pipe, hud, DIFFS[diffI], mapI, null, m.seats[0], true); game.sens = sens; game.names = m.names; game.teams = m.teams; game.myTeam = SIDE.out; game.phase = 'play'; game.introT = 1.8; old.dispose(); ended = false; (window as any).__ore.game = game;
+  reroll(); const m = split = new LocalMatch(playMap, diffI, 1, 'veyl'), old = game;
+  game = new Game(pipe, hud, DIFFS[diffI], playMap, null, m.seats[0], true); game.sens = sens; game.names = m.names; game.teams = m.teams; game.myTeam = SIDE.out; game.phase = 'play'; game.introT = 1.8; old.dispose(); ended = false; (window as any).__ore.game = game;
   $('menu').hidden = true; $('pause').hidden = true; $('end').hidden = true; hud.show(true); resize(); lock();
 }
 /** A story job played from the outpost end: the job's script runs on a hidden local host, and this screen is its one seat. */
 function startStory(mi: Mission) {
   endSplit(); splitMode = 'veyl'; splitVs = false; want(); initAudio(); setVolume(vol); setMusic(mus); hush(); hud.reset();
-  const m = split = new LocalMatch(mi.map, mi.diff, 1, 'veyl', mi), old = game;
-  game = new Game(pipe, hud, DIFFS[mi.diff], mi.map, null, m.seats[0], true); game.story = mi; game.sens = sens; game.names = m.names; game.teams = m.teams; game.myTeam = SIDE.out; game.phase = 'play'; game.introT = 1.8; old.dispose(); ended = false; (window as any).__ore.game = game;
+  STORY.on = true; const m = split = new LocalMatch(mi.map, mi.diff, 1, 'veyl', mi), old = game;
+  game = new Game(pipe, hud, DIFFS[mi.diff], mi.map, null, m.seats[0], true); STORY.on = false; game.story = mi; game.sens = sens; game.names = m.names; game.teams = m.teams; game.myTeam = SIDE.out; game.phase = 'play'; game.introT = 1.8; old.dispose(); ended = false; (window as any).__ore.game = game;
   $('menu').hidden = true; $('pause').hidden = true; $('end').hidden = true; hud.show(true); resize(); lock();
 }
 // ---- cut scenes
@@ -251,7 +259,7 @@ function playCuts(ids: string[], then: () => void) {
 function nextCut() {
   const id = cutQ.shift(); if (!id) { const t = cutThen; cutThen = null; t?.(); return; }
   const c = CUTS[id]; endSplit(); hush(); hud.reset(); setSides(...c.sides); STORY.charter = c.charter === 'home' ? SIDE.home : c.charter === 'out' ? SIDE.out : -1;
-  game.dispose(); game = new Game(pipe, hud, DIFFS[1], c.map, null); game.duskFix = c.dusk; game.sens = sens; ended = false; (window as any).__ore.game = game;
+  game.dispose(); STORY.on = true; game = new Game(pipe, hud, DIFFS[1], c.map, null); STORY.on = false; game.duskFix = c.dusk; game.sens = sens; ended = false; (window as any).__ore.game = game;
   $('menu').hidden = true; $('pause').hidden = true; $('end').hidden = true; hud.show(false); if (document.pointerLockElement) document.exitPointerLock();
   cutP.start(c, game, nextCut);
 }
@@ -306,7 +314,7 @@ function showLobby(l: Lobby) {
   // The lobby's match code says who holds each end: yard faction * 3 + outpost faction (1 and 2 are the classic Ironhold matches).
   const code = l.out ?? 1, lh = Math.floor(code / 3), lf = code % 3, outT = lf === lh ? lf + 3 : lf, onOut = (p: { team: number }) => p.team === outT, FN = ['Ironhold', 'Veyl Chorus', 'The Gloam'];
   $('mPlayers').innerHTML = l.players.map(p => `<button type="button" disabled class="${p.ready || p.id === l.host ? 'dn' : ''}${onOut(p) ? ' v' : ''}">${onOut(p) ? FN[lf] + (lf === lh ? ' (outpost)' : '') : lh ? FN[lh] + (lf === lh ? ' (yard)' : '') : p.id === l.host ? 'Host' : 'Crew'}<b>${p.name.replace(/[<>&]/g, '')}</b><small>${p.id === l.host ? 'Runs the shift' : p.ready ? 'Ready' : 'Not ready'}</small></button>`).join('');
-  mDiffB.forEach((b, i) => { b.classList.toggle('on', i === l.diff); b.disabled = !host; }); lobMap = l.map; mMapB.forEach((b, i) => { b.classList.toggle('on', i === l.map % 10); b.disabled = !host; }); mSizeB.forEach(b => { b.classList.toggle('on', +(b.dataset.s || 0) === Math.floor(l.map / 10)); b.disabled = !host; });
+  mDiffB.forEach((b, i) => { b.classList.toggle('on', i === l.diff); b.disabled = !host; }); lobMap = l.map; mMapB.forEach((b, i) => { b.classList.toggle('on', i === baseOf(l.map)); b.disabled = !host; }); mSizeB.forEach(b => { b.classList.toggle('on', +(b.dataset.s || 0) === sizeOf(l.map)); b.disabled = !host; });
   const nm = ['Ironhold', 'the Veyl', 'the Gloam'], foeName = nm[lf] + (lf === lh ? ' at the outpost' : ''), homeName = nm[lh] + (lf === lh ? ' at the yard' : '');
   mFoeB.forEach((b, i) => { b.classList.toggle('on', FOE_FAC[i] === lf); b.disabled = !host; }); mHomeB.forEach((b, i) => { b.classList.toggle('on', i === lh); b.disabled = !host; });
   $('mSide').textContent = me && onOut(me) ? 'Play as ' + homeName : 'Play as ' + foeName; { const v = l.players.filter(onOut).length, c = l.players.length - v; if (v) $('mHint').textContent = (c ? 'Versus shift. Both sides dig, build and train, and any side with nobody on it is run by bots. ' : `Everyone is on ${foeName}. ${homeName[0].toUpperCase() + homeName.slice(1)} will be bots. `) + (host ? 'You start it when everyone is ready.' : 'Hit Ready when you are.'); }
@@ -332,18 +340,18 @@ $('mLeave').addEventListener('click', () => { net?.send({ t: 'leave' }); });
 $('mSide').addEventListener('click', () => { const l = net?.lobby, me = l?.players.find(p => p.id === l.you), c = l?.out ?? 1, outT = c % 3 === Math.floor(c / 3) ? c % 3 + 3 : c % 3; net?.send({ t: 'team', v: me && me.team === outT ? 0 : 1 }); });
 $('mReady').addEventListener('click', () => { const l = net?.lobby, me = l?.players.find(p => p.id === l.you); net?.send({ t: 'ready', v: !(me && me.ready) }); });
 $('mStart').addEventListener('click', () => net?.send({ t: 'start' }));
-mDiffB.forEach((b, i) => b.addEventListener('click', () => net?.send({ t: 'set', diff: i }))); mFoeB.forEach((b, i) => b.addEventListener('click', () => { const c = net?.lobby?.out ?? 1; net?.send({ t: 'set', out: Math.floor(c / 3) * 3 + FOE_FAC[i] }); })); mHomeB.forEach((b, i) => b.addEventListener('click', () => { const c = net?.lobby?.out ?? 1; net?.send({ t: 'set', out: i * 3 + c % 3 }); })); mMapB.forEach((b, i) => b.addEventListener('click', () => net?.send({ t: 'set', map: mapCode(i, Math.floor(lobMap / 10)) }))); mSizeB.forEach(b => b.addEventListener('click', () => net?.send({ t: 'set', map: mapCode(lobMap % 10, +(b.dataset.s || 0)) })));
+mDiffB.forEach((b, i) => b.addEventListener('click', () => net?.send({ t: 'set', diff: i }))); mFoeB.forEach((b, i) => b.addEventListener('click', () => { const c = net?.lobby?.out ?? 1; net?.send({ t: 'set', out: Math.floor(c / 3) * 3 + FOE_FAC[i] }); })); mHomeB.forEach((b, i) => b.addEventListener('click', () => { const c = net?.lobby?.out ?? 1; net?.send({ t: 'set', out: i * 3 + c % 3 }); })); mMapB.forEach((b, i) => b.addEventListener('click', () => net?.send({ t: 'set', map: mapCode(i, sizeOf(lobMap)) }))); mSizeB.forEach(b => b.addEventListener('click', () => net?.send({ t: 'set', map: mapCode(baseOf(lobMap), +(b.dataset.s || 0)) })));
 showMode();
 const diffBtns = Array.from($('diff').querySelectorAll('button')) as HTMLButtonElement[];
 const showDiff = () => diffBtns.forEach((b, i) => { b.classList.toggle('on', i === diffI); b.setAttribute('aria-pressed', String(i === diffI)); });
 diffBtns.forEach((b, i) => b.addEventListener('click', () => { diffI = i; showDiff(); save(); })); showDiff();
 const mapBtns = Array.from($('maps').querySelectorAll('button')) as HTMLButtonElement[];
 const sizeBtns = Array.from($('sizes').querySelectorAll('button')) as HTMLButtonElement[];
-const showMap = () => { mapBtns.forEach((b, i) => { b.classList.toggle('on', i === mapI % 10); b.setAttribute('aria-pressed', String(i === mapI % 10)); }); sizeBtns.forEach(b => { const on = +(b.dataset.s || 0) === Math.floor(mapI / 10); b.classList.toggle('on', on); b.setAttribute('aria-pressed', String(on)); }); };
+const showMap = () => { mapBtns.forEach((b, i) => { b.classList.toggle('on', i === baseOf(mapI)); b.setAttribute('aria-pressed', String(i === baseOf(mapI))); }); sizeBtns.forEach(b => { const on = +(b.dataset.s || 0) === sizeOf(mapI); b.classList.toggle('on', on); b.setAttribute('aria-pressed', String(on)); }); };
 /** Picks a map, keeping the size; a number of 10 or more is a whole map code with its size. */
-const useMap = (code: number) => { mode = 'skirm'; mapI = code; showMap(); showMode(); save(); if (game.mapI !== mapI || game.mission) fresh(); };
-const pickMap = (i: number) => useMap(i >= 10 ? i : mapCode(i, Math.floor(mapI / 10)));
-const pickSize = (s: number) => useMap(mapCode(mapI % 10, s));
+const useMap = (code: number) => { mode = 'skirm'; mapI = code % 100; showMap(); showMode(); save(); if (game.mapI % 100 !== mapI || game.mission) fresh(); };
+const pickMap = (i: number) => useMap(i >= 10 ? i : mapCode(i, sizeOf(mapI)));
+const pickSize = (s: number) => useMap(mapCode(baseOf(mapI), s));
 mapBtns.forEach((b, i) => b.addEventListener('click', () => pickMap(i))); sizeBtns.forEach(b => b.addEventListener('click', () => pickSize(+(b.dataset.s || 0)))); showMap();
 const sensEl = $('sens') as HTMLInputElement, volEl = $('vol') as HTMLInputElement; sensEl.value = String(sens); volEl.value = String(vol);
 sensEl.addEventListener('input', () => { sens = +sensEl.value; game.sens = sens; pad.sens = sens; save(); });
@@ -416,5 +424,5 @@ function frame(now: number) {
   if (fast > 900 && quality < 1) { quality = Math.min(1, quality / .85); fast = 0; pipe.aa = aaFor(); pipe.ao = aoFor(); pipe.glow = pipe.shafts = glowFor(); LAMP_ON.value = (gfxI as number) !== 1; resize(); }
   requestAnimationFrame(frame);
 }
-(window as any).__ore = { models: MD, tx: TX, mats: M, gloamB: GLOAM_BUILDINGS, gloamBloom: bloomPatch, sounds: { ready: soundsReady, sfx }, quit, atlasUsed: MD.atlasUsed, game, start, pipe, hud, hud2, startSplit, startVeyl, split: () => split, game2: () => game2, setFree: (v: boolean) => { freeMouse = v; }, hold: (v: boolean) => { still = v; }, pickMap, pickSize, pickSide: (s: number, f = 0) => { mode = "skirm"; sideI = s; foeI = s ? s - 1 : f; showSide(); fresh(); }, unlock: () => { camp = STORY_JOBS; mpOpen = true; mode = 'multi'; showMode(); }, net: () => net, pickJob: (i: number) => { mode = 'camp'; camp = Math.max(camp, Math.min(i, STORY_JOBS)); jobI = i; showMode(); fresh(); }, playCuts, cuts: CUTS, cutP, startStory: (i: number) => { mode = 'camp'; jobI = i; camp = Math.max(camp, Math.min(i, STORY_JOBS)); start(); } };
+(window as any).__ore = { MAP: () => MAP, models: MD, tx: TX, mats: M, gloamB: GLOAM_BUILDINGS, gloamBloom: bloomPatch, sounds: { ready: soundsReady, sfx }, quit, atlasUsed: MD.atlasUsed, game, start, pipe, hud, hud2, startSplit, startVeyl, split: () => split, game2: () => game2, setFree: (v: boolean) => { freeMouse = v; }, hold: (v: boolean) => { still = v; }, pickMap, pickSize, pickSide: (s: number, f = 0) => { mode = "skirm"; sideI = s; foeI = s ? s - 1 : f; showSide(); fresh(); }, unlock: () => { camp = STORY_JOBS; mpOpen = true; mode = 'multi'; showMode(); }, net: () => net, pickJob: (i: number) => { mode = 'camp'; camp = Math.max(camp, Math.min(i, STORY_JOBS)); jobI = i; showMode(); fresh(); }, playCuts, cuts: CUTS, cutP, startStory: (i: number) => { mode = 'camp'; jobI = i; camp = Math.max(camp, Math.min(i, STORY_JOBS)); start(); } };
 requestAnimationFrame(frame);

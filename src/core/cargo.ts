@@ -26,6 +26,19 @@ export function unload(g: Game, c: Unit | Building, which?: Unit) {
   for (const u of out) { const a = (i++ / Math.max(1, out.length)) * Math.PI * 2 + c.id, r = (isUnit(c) ? UNIT[c.kind].rad : Math.max((c as Building).hx, (c as Building).hz)) + 1.6; u.pos.set(c.pos.x + Math.sin(a) * r, 0, c.pos.z + Math.cos(a) * r); u.inside = null; u.obj.visible = true; u.order = { type: 'guard', x: u.pos.x, z: u.pos.z }; }
   c.cargo = (c.cargo || []).filter(u => !out.includes(u)); return out.length;
 }
+/** Sends a body to get into a carrier of its own side: it walks there and climbs in when close (see boardWork). Online it goes as 'ld'. */
+export function board(g: Game, u: Unit, c: Unit | Building): boolean {
+  if (g.net) { g.net.cmd('ld', u.id, c.id); return true; }
+  if (!c.alive || !u.alive || u.inside || u === c || c.team !== u.team || roomOf(c) <= 0 || usedOf(c) + slotsOf(u) > roomOf(c)) return false;
+  u.boarding = c; u.target = null; return true;
+}
+/** A boarding body's step: walk to the carrier and get in. Returns true while it is boarding (its own brain sits the step out). */
+export function boardWork(g: Game, u: Unit, dt: number): boolean {
+  const c = u.boarding; if (!c) return false;
+  if (!c.alive || u.inside || usedOf(c) + slotsOf(u) > roomOf(c)) { u.boarding = null; return false; }
+  if (load(g, c, u)) { u.boarding = null; return true; }
+  g.moveTo(u, c.pos.x, c.pos.z, dt, .3); return true;
+}
 /** The carrier died: everything inside spills out and is hurt (or dies, out of a flier). */
 export function spill(g: Game, c: Unit | Building, from: Unit | Building | null) {
   if (!c.cargo || !c.cargo.length) return; const air = !!c.air, list = c.cargo.slice(); unload(g, c);

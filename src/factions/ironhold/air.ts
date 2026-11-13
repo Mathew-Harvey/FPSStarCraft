@@ -66,7 +66,7 @@ defineAbilities('flakkite', [{
   key: 'land', name: 'Land', hotkey: 'C', energy: 0, cd: 1, cast: 0, range: 0, target: 'self',
   blurb: `Comes down over ${TUNE.land} s and walks with a short gun that hits the ground.`,
   effect(g, u) { morph(g, u, 'flakwalker', TUNE.land); },
-  ai(g, u) { const air = nearest(g, u, 34, o => !!o.air && fair(g, u, o)); if (air) return null; const ground = nearest(g, u, 12, o => !o.air && fair({ ...g } as Game, { ...u, kind: 'flakwalker' } as Unit, o)); return ground && u.order.type !== 'follow' ? { x: u.pos.x, z: u.pos.z } : null; },
+  ai(g, u) { const air = nearest(g, u, 34, o => !!o.air && fair(g, u, o)); if (air) return null; const ground = nearest(g, u, 12, o => !o.air && fair(g, { ...u, kind: 'flakwalker' } as Unit, o)); return ground && u.order.type !== 'follow' ? { x: u.pos.x, z: u.pos.z } : null; },
 }]);
 defineAbilities('flakwalker', [{
   key: 'takeoff', name: 'Take off', hotkey: 'C', energy: 0, cd: 1, cast: 0, range: 0, target: 'self',

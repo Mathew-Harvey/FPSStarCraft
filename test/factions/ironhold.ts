@@ -119,7 +119,12 @@ const bolt = (g: Game, host: Building, k: 'labbay' | 'twinbay') => { const ok = 
   sap.abCd = {}; check(!!why(sap, 'mine', { x: 41, z: 42 }), `a Sapper keeps no more than ${TUNE.mine.keep} mines`);
   { const { tickCharges } = require('../../src/factions/ironhold/ground'), mem2 = require('../../src/factions/ironhold/kit').mem, mines = () => g.units.filter(u => u.alive && u.kind === 'shaftmine' && u.team === T).length;
     tickCharges(g, 0); check(mines() === TUNE.mine.keep, 'a living Sapper\'s mines stay in the ground');
-    const lone = g.spawn('shaftmine' as Kind, T, 56, 50); mem2(lone).owner = 987654; tickCharges(g, 0); check(!lone.alive && mines() === TUNE.mine.keep, 'a mine whose Sapper is dead goes with it'); }
+    const lone = g.spawn('shaftmine' as Kind, T, 56, 50); mem2(lone).owner = 987654; tickCharges(g, 0); check(!lone.alive && mines() === TUNE.mine.keep, 'a mine whose Sapper is dead goes with it');
+    // other screens hear how it went (blown or fizzled) with the death, and whether a Depot is up
+    const NL = require('../../src/net-look'), twin = g.spawn('shaftmine' as Kind, T, 57, 50); twin.alive = false;
+    NL.applyUnitLook(g, twin, NL.packUnitLook(g, lone)); check(!!mem2(twin).fizzled && !mem2(twin).went, 'another screen hears a dead Sapper\'s mine fizzled, not blew');
+    const dep = g.buildings.find(b => b.alive && b.kind === 'depot' && b.team === T);
+    if (dep) { const was = !!mem2(dep).raised; mem2(dep).raised = true; const pk = NL.packLook(g, dep); mem2(dep).raised = false; NL.applyLook(g, dep, pk); check(!!mem2(dep).raised, 'another screen hears a Depot is up'); mem2(dep).raised = was; } }
   // Satchel
   const vb = g.addBuilding('hushwell' as BKind, F, 60, 40, true), sap2 = at('sapper', 60 - vb.hx - 1.5, 40), bhp = vb.hp;
   check(!!why(sap2, 'satchel', { x: 30, z: 30, id: lin.id }), 'a Satchel is refused on something that is not an enemy building');
@@ -140,6 +145,10 @@ const bolt = (g: Game, host: Building, k: 'labbay' | 'twinbay') => { const ok = 
   // Flak Kite lands and takes off
   const kite = at('flakkite', 80, 20); useAbility(g, kite, 'land'); run(g, TUNE.land + 1); check(kite.kind === 'flakwalker' && !kite.air, 'a Flak Kite lands as a walker');
   useAbility(g, kite, 'takeoff'); run(g, TUNE.land + 1); check(kite.kind === 'flakkite' && !!kite.air, 'and takes off again');
+  { // its bot asks whether to land when a hidden ground foe is near: that check needs the real game (a copy loses upOf), or the match dies
+    const FT = g.units.find(u => u.alive && u.team !== T)!.team, hid = g.spawn('cantor' as Kind, FT, kite.pos.x + 4, kite.pos.z); require('../../src/core/status').addStatus(hid, 'unseen', 9); const post = g.addBuilding('watchpost' as any, T, kite.pos.x - 6, kite.pos.z + 6, true);
+    let ok = true; try { abilitiesOf('flakkite').find(a => a.key === 'land')!.ai!(g, kite); } catch (e) { ok = false; console.log(String(e)); }
+    check(ok, 'a Flak Kite weighs landing near a hidden ground foe without throwing'); hid.alive = false; hid.obj.visible = false; post.alive = false; post.obj.visible = false; }
   // Gadfly cloak
   const gad = at('gadfly', 85, 30); gad.energy = 200; check(!!why(gad, 'cloak'), 'Smoke Cloak is refused before the research');
   U.smoke = true; check(useAbility(g, gad, 'cloak') && isHidden(gad), 'with the research the Gadfly goes unseen');

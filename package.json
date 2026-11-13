@@ -10,8 +10,9 @@
     "start": "node dist/server.mjs",
     "test:rules": "node tools/run-ts.mjs test/matchups.ts",
     "test:scout": "node tools/run-ts.mjs test/scouting.ts",
+    "test:terrain": "node tools/run-ts.mjs test/terrain.ts",
     "sim": "node tools/run-ts.mjs tools/sim.ts",
-    "test": "node tools/run-ts.mjs test/matchups.ts && node tools/run-ts.mjs test/scouting.ts && node tools/run-ts.mjs test/story.ts 1 && node tools/run-ts.mjs test/playthrough.ts && node test/story.mjs && node test/server.mjs && node test/coop.mjs && node test/versus.mjs && node test/split.mjs && node test/touch.mjs && node test/veyl.mjs && node test/gloam.mjs && node test/sweep.mjs && node test/artfiles.mjs"
+    "test": "node tools/run-ts.mjs test/matchups.ts && node tools/run-ts.mjs test/scouting.ts && node tools/run-ts.mjs test/terrain.ts && node tools/run-ts.mjs test/story.ts 1 && node tools/run-ts.mjs test/playthrough.ts && node test/story.mjs && node test/server.mjs && node test/coop.mjs && node test/versus.mjs && node test/split.mjs && node test/touch.mjs && node test/veyl.mjs && node test/gloam.mjs && node test/sweep.mjs && node test/artfiles.mjs"
   },
   "dependencies": {
     "three": "0.160.0",

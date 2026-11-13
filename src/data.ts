@@ -1,4 +1,5 @@
 // Shared types, stat tables and map constants.
+import { layoutTerrain } from './terrain';
 import type * as THREE from 'three';
 import type { Rig } from './models';
 
@@ -143,7 +144,7 @@ export interface Prop {
   /** Litter on the ground: scrub, stones, scrap. A new building flattens whatever of it is underfoot. */
   dress?: boolean;
 }
-export interface OreNode { pos: THREE.Vector3; amount: number; max: number; obj: THREE.Group; /** Seconds the seam has been empty. */ dryT?: number }
+export interface OreNode { pos: THREE.Vector3; amount: number; max: number; obj: THREE.Group; /** Seconds the seam has been empty. */ dryT?: number; /** A bright seam: each load from it holds this much more (terrain.ts). */ rich?: number }
 export interface Callout { who: string; text: string; t: number; dur: number; keys: [string, string][] }
 export interface Difficulty { name: string; enemy: number; raid: number; blurb: string }
 export const DIFFS: Difficulty[] = [
@@ -164,6 +165,7 @@ export interface MapDef {
   hid?: boolean; turn?: number; /** The middle of the world and how far from it anyone can walk. On a hidden map the middle is pushed off the line between the bases, so the edge of the world does not point at the far base either. */ mid?: [number, number]; rad?: number; /** Every road painted on the ground, as [ax, az, bx, bz]. The first is the one between the two bases. */ roads?: number[][];
   /** A story map's set piece, built on top of the base layout: the split canyon, the glass field round the First Stone, or the Charter drill site. */
   set?: 'crack' | 'stone' | 'drill'; /** The base map whose layout a story map borrows. */ like?: number;
+  /** Where Flux comes out of the ground, two by each base and each field: laid out with the rest of the ground (see terrain.ts). */ vents?: [number, number][];
 }
 export const MAPS: MapDef[] = [
   { name: 'Needle\'s Eye', blurb: 'One road east, one ridge north', out: [124, 13], flank: [[118, -40], [62, -50], [20, -30]], road: 'east road', flankName: 'north ridge', exp: [61, -28], arch: 68, wreck: [46, 30],
@@ -276,12 +278,13 @@ const SITES = new Map<string, number[][]>();
  *  routes. The rich seam sits a short walk from the yard, which suits the classic match (Ironhold at the yard against an outpost). In every other
  *  pairing the outpost gets the same seam turned round, so neither end has the nearer first field. */
 function layoutSites() {
-  if (!MAP || MAP.code === undefined) return;
-  const fair = LAYOUT.fair && !MAP.hid, even = fair || !(fac(SIDE.home) === 0 && fac(SIDE.out) !== 0) || !!MAP.hid, key = MAP.code + (fair ? 'f' : even ? 'e' : 'c'), had = SITES.get(key); if (had) { MAP.sites = had; layoutRoads(); return; }
+  if (!MAP || MAP.code === undefined) return;   // the ground (terrain.ts) is laid out at every way out of here, once the fields are down
+  const fair = LAYOUT.fair && !MAP.hid, even = fair || !(fac(SIDE.home) === 0 && fac(SIDE.out) !== 0) || !!MAP.hid, key = MAP.code + (fair ? 'f' : even ? 'e' : 'c'), had = SITES.get(key); if (had) { MAP.sites = had; layoutRoads(); layoutTerrain(); return; }
   const k = MAP.k, S = SIZES[MAP.size], [ox, oz] = MAP.out;
   const sites: number[][] = [[MAP.exp[0], MAP.exp[1]]], cx = ox / 2, cz = oz / 2, end = roadPt(ROAD.len + 6);
   if (even) sites.push(swapEnd(MAP.exp[0], MAP.exp[1]).map(Math.round));
   if (MAP.hid) {
+    sites[1][2] = 1;
     // A hidden map lays its fields in rings round the yard and gives the far base the same rings turned end for end. Fields lie on every side of
     // both bases, so where the ore is says nothing about where the other base is.
     const [mx, mz] = MAP.mid!, lim = MAP.rad! - 45, hs = (n: number) => { const v = Math.sin(MAP.code! * 39.3468 + n * 11.135) * 24634.6345; return v - Math.floor(v); };
@@ -291,8 +294,8 @@ function layoutSites() {
     for (const [r, n, pairs] of [[108, 9, 2], [178, 12, 2], [250, 15, 1]]) { const a0 = hs(r) * 6.2832, ring: number[][] = [];
       for (let i = 0; i < n; i++) { const x = Math.round(Math.cos(a0 + i / n * 6.2832) * r), z = Math.round(Math.sin(a0 + i / n * 6.2832) * r), m = swapEnd(x, z); if (fine(x, z) && fine(m[0], m[1])) ring.push([x, z]); }
       for (let c = 0; c < pairs && sites.length < S.sites; c++) { let best = -1, bd = 76; ring.forEach(([x, z], i) => { const m = swapEnd(x, z), d = Math.min(gapTo(x, z), gapTo(m[0], m[1]), Math.hypot(x - m[0], z - m[1])); if (d > bd) { bd = d; best = i; } }); if (best < 0) break;
-        const [x, z] = ring.splice(best, 1)[0]; sites.push([x, z], swapEnd(x, z).map(Math.round)); } }
-    MAP.sites = sites; SITES.set(key, sites); layoutRoads(); return;
+        const [x, z] = ring.splice(best, 1)[0]; sites.push([x, z], [...swapEnd(x, z).map(Math.round), 1]); } }   // the twin's seams are the first one's turned round (see Game)
+    MAP.sites = sites; SITES.set(key, sites); layoutRoads(); layoutTerrain(); return;
   }
   const ok = (x: number, z: number) => { if (Math.hypot(x, z) < 52 * k || Math.hypot(x - ox, z - oz) < 58 * k || Math.hypot(x - cx, z - cz) > 168 * k) return false; if (segD(x, z, ROAD.x, ROAD.z, end[0], end[1]) < 20) return false;
     let qx = ox, qz = oz; for (const [fx, fz] of MAP.flank) { if (segD(x, z, qx, qz, fx, fz) < 16) return false; qx = fx; qz = fz; } return segD(x, z, qx, qz, 0, 0) >= 16; };
@@ -307,10 +310,10 @@ function layoutSites() {
     while (sites.length + 2 <= S.sites) { let best: number[] | null = null, bd = 1e9; for (const [x, z] of grid) { const [mx, mz] = swapEnd(x, z).map(Math.round); if (!ok(mx, mz) || dH(x, z) < 85 * k || dH(x, z) > dO(x, z) - 30 || gap(x, z) < 58 * k || gap(mx, mz) < 58 * k) continue; const d = dH(x, z) + Math.max(0, dO(x, z) - dH(x, z) * 1.6) * 2; if (d < bd) { bd = d; best = [x, z, mx, mz]; } }
       if (!best) break; sites.push([best[0], best[1]], [best[2], best[3], 1]); }
     if (sites.length < S.sites) { let best: number[] | null = null, bd = -1; for (const [x, z] of grid) { if (Math.abs(dH(x, z) - dO(x, z)) > 4) continue; const d = gap(x, z); if (d > bd) { bd = d; best = [x, z]; } } if (best && bd >= 34) sites.push(best); }
-    MAP.sites = sites; SITES.set(key, sites); layoutRoads(); return;
+    MAP.sites = sites; SITES.set(key, sites); layoutRoads(); layoutTerrain(); return;
   }
   while (sites.length < S.sites && cand.length) { let best = -1, bd = -1; cand.forEach(([x, z], i) => { const d = Math.min(Math.hypot(x, z) * .8, ...sites.map(s => Math.hypot(x - s[0], z - s[1]))); if (d > bd) { bd = d; best = i; } }); if (bd < 34) break; sites.push(cand.splice(best, 1)[0]); }
-  MAP.sites = sites; SITES.set(key, sites); layoutRoads();
+  MAP.sites = sites; SITES.set(key, sites); layoutRoads(); layoutTerrain();
 }
 
 export const isUnit = (t: any): t is Unit => !!t && t.rig !== undefined;

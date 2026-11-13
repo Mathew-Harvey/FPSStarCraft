@@ -409,3 +409,27 @@ body.touch .only-keys,body.touch #freeNote{display:none!important}
 .cut .ctag::after{content:'';position:absolute;left:50%;bottom:-7px;margin-left:-5px;border:5px solid transparent;border-top:7px solid var(--ink);border-bottom:0}
 .cut.black .cstamp{top:64%;right:24%}
 .cut .cskip{font:inherit;color:var(--yel);background:none;border:0;cursor:pointer;padding:0;text-decoration:underline}
+
+/* The command view and the full map. The first-person parts of the HUD step aside while it is up. */
+.hud.cmdv .cross,.hud.cmdv .hitm,.hud.cmdv .prompt,.hud.cmdv .who,.hud.cmdv #hint,.hud.cmdv .slots,.hud.cmdv .ammo,.hud.cmdv .build,.hud.cmdv .boss,.hud.cmdv .edge,.hud.cmdv .hurtdir{display:none!important}
+.cmdui{inset:0}
+.cmdui>*{position:absolute}
+.cnote{left:50%;top:92px;transform:translateX(-50%);font-size:15px;white-space:nowrap;background:rgba(14,13,20,.8);padding:4px 12px 6px;border:3px solid var(--ink);color:var(--yel)}
+.cnote b{color:var(--paper)}
+.cbox{border:2px solid var(--cyan);background:rgba(126,240,255,.12);box-shadow:0 0 0 2px var(--ink)}
+.cpan{left:34px;bottom:30px;width:400px;padding:10px 18px 14px;box-shadow:5px 5px 0 var(--cyan)}
+.cpan h4{margin:0;font-family:var(--display);font-weight:400;font-size:30px;color:var(--cyan);text-transform:uppercase}
+.cpan p{margin:8px 0 0;font-size:15px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);line-height:1.4}
+.cpan p b{color:var(--paper)}
+.cpan .hpl{height:8px;margin-top:6px;background:#2a1a18;border:2px solid var(--ink)}.cpan .hpl i{display:block;height:100%;background:var(--grn)}
+.cpan .kinds{display:flex;flex-wrap:wrap;gap:4px 14px;margin-top:8px;font-size:19px;font-weight:600}
+.cpan .shop{margin-top:8px;font-size:19px;font-weight:600;line-height:1.35}.cpan .shop b{display:inline-block;min-width:22px;margin-right:6px;padding:0 5px;background:var(--yel);color:var(--ink);text-align:center}.cpan .shop i{font-style:normal;opacity:.7;font-size:.8em}
+.ckeysbar{left:470px}
+.bigmap{border:5px solid var(--ink);box-shadow:8px 8px 0 var(--ink);background:#3a2623}
+.bigmap canvas{display:block;width:100%;height:100%}
+.bigmap .legend{position:absolute;left:0;right:0;top:100%;margin-top:14px;display:flex;justify-content:center;gap:22px;font-size:14px;white-space:nowrap}
+.bigmap .legend span{display:flex;align-items:center;gap:7px;background:rgba(14,13,20,.8);padding:3px 10px 5px;border:3px solid var(--ink)}
+.bigmap .legend i{display:block;width:13px;height:13px;border:2px solid var(--ink)}
+.bigmap .legend i.hatch{background:repeating-linear-gradient(135deg,#211614 0 3px,#4a332c 3px 5px)}
+.ccur{left:0;top:0;width:0;height:0;will-change:transform}
+.ccur i{position:absolute;left:0;top:0;width:0;height:0;border-left:15px solid var(--paper);border-bottom:15px solid transparent;filter:drop-shadow(2px 2px 0 var(--ink)) drop-shadow(-1px -1px 0 var(--ink))}

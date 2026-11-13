@@ -38,7 +38,7 @@ function sideApply(g: Game, S: Side, d: any[]) {
 }
 
 // ---------------------------------------------------------------- server: one player's actions
-const BUDGET = new WeakMap<Unit, { left: number; t: number }>(), MOVED = new WeakMap<Unit, number>();
+const BUDGET = new WeakMap<Unit, { left: number; t: number }>(), MOVED = new WeakMap<Unit, { left: number; t: number }>();
 /** A refilling allowance per body and per kind of claim: ore drilled, seconds of welding, damage to scenery, and the Patch's pulse.
  *  An honest client never comes near these. They stop a doctored one from claiming a thousand ore or a finished Foundry in one message. */
 const ALLOW = new WeakMap<Unit, Record<string, { left: number; t: number }>>();
@@ -87,9 +87,13 @@ export function serverCmd(g: Game, pid: number, unit: Unit | null, c: any[]) {
 /** The player's own body, as their browser last reported it. */
 export function serverMove(g: Game, unit: Unit, m: any[]) {
   const x = +m[0], z = +m[1]; if (!isFinite(x) || !isFinite(z)) return;
-  // Nobody walks faster than a sprinting, dashing body. A report from further away than that is pulled back toward where the body could have got to.
-  const d = Math.hypot(x - unit.pos.x, z - unit.pos.z), was = MOVED.get(unit) ?? g.time - .1, reach = 4 + Math.max(0, g.time - was) * 11; MOVED.set(unit, g.time);
-  if (d <= reach) { unit.pos.x = x; unit.pos.z = z; } else if (d < 40) { unit.pos.x += (x - unit.pos.x) / d * reach; unit.pos.z += (z - unit.pos.z) / d * reach; }
+  // Nobody walks faster than their body can sprint and dash. Each body has an allowance of ground that refills at its own top speed (sprint,
+  // every speed upgrade, the Gloam carpet and the dash, plus a tenth) and holds a second and a quarter of it, which covers a hitch in the
+  // connection. A report from further away than the allowance is pulled back toward where the body could have got to. The allowance used to
+  // be 4 m on every message, however many messages came in one tick, so a doctored client could cross the map in a second.
+  const top = unit.speed * 2.4 + 3, d = Math.hypot(x - unit.pos.x, z - unit.pos.z), a = MOVED.get(unit) || { left: top * .5, t: g.time }; MOVED.set(unit, a);
+  a.left = Math.min(top * 1.25, a.left + Math.max(0, g.time - a.t) * top); a.t = g.time; const reach = Math.min(d, a.left);
+  if (d <= a.left) { unit.pos.x = x; unit.pos.z = z; a.left -= d; } else if (d < 40 && reach > 0) { unit.pos.x += (x - unit.pos.x) / d * reach; unit.pos.z += (z - unit.pos.z) / d * reach; a.left -= reach; }
   unit.yaw = +m[2] || 0; unit.pitch = Math.max(-1.5, Math.min(1.5, +m[3] || 0)); const f = m[4] | 0;
   unit.moving = !!(f & F_MOVE); unit.brace = !!(f & F_BRACE); if (f & F_FIRE) { unit.swing = 1; unit.flashT = .08; } unit.target = null;
 }

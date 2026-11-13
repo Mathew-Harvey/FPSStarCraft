@@ -100,7 +100,7 @@ export class Hud {
     // top row
     const side = g.myTeam, F = FACTION[side], cash = g.cash(side); this.set('ore', String(Math.floor(cash)));
     const used = g.supplyUsed(side), cap = g.supplyCap(side); this.set('sup', `${used}/${cap}`); this.cls('resSup', used >= cap ? 'low' : '');
-    const m = Math.floor(g.time / 60), s = Math.floor(g.time % 60); this.set('clock', `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`);
+    const m = Math.floor(g.time / 60), s = Math.floor(g.time % 60); { const ot = g.overtime(); this.set('clock', `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}` + (ot > 0 ? `<small>Overtime · buildings take +${Math.round(ot * 100)}%</small>` : ''), true); this.cls('clock', 'clock d out' + (ot > 0 ? ' ot' : '')); }
     const D = g.dir, S = D.side(side), pb = S.playbook, ph = pb.idx;
     // The squad's playbook means nothing until there is a squad: in the first minutes (and all of Job 1) it was a strip of jargon over the tutorial.
     this.vis('play', ph > 0 || !!S.plan || g.army(side).length > 0); this.set('play', `<b>${pb.name}</b>` + pb.steps.map((n, i) => `<span class="${i === ph ? 'on' : i < ph ? 'dn' : ''}">${n}</span>`).join(''), true);

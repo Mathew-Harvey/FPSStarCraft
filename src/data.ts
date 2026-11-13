@@ -181,8 +181,24 @@ export const STORY = {
   /** The Ironhold team that is Charter Security on this job (they wear company grey), or -1. */
   charter: -1,
   /** Ore banked across every finished campaign job, for the Quartermaster's last line. */
-  oreTotal: 0,
+  oreTotal: 0,  /** A story job is being set up or played. Its map keeps the ore fields the job was written round. */
+  on: false,
 };
+/** How the ore fields are laid out. `fair` is on for any match two economies fight that is not a story job: the fields then come in pairs, one
+ *  for each end, the same walk from each home building, and each end's home seams and first field are the other's turned round. A Game sets it
+ *  for itself (see Game.pin). */
+export const LAYOUT = { fair: false };
+/** How many more bodies a Cantor's sweep cuts into (at half damage) beside its target. */
+export const CLEAVE = { n: 2 };
+/** How far out a Choir Stone takes ore from a Tender's sling, in metres, on top of the reach every home building has (see Game.bankReach).
+ *  A dial for balance tables, left at 0. A Choir Stone is thinner than a Headframe, so a Tender walks about 4 m further each way than a Rigger and
+ *  the Veyl bot mines about a fifth less. At 5 the bots' Ironhold v Veyl table went from 49-11 to 28-32, and Veyl v Gloam from 34-23 to 60-0. */
+export const CHOIR_REACH = { m: 0 };
+/** Overtime, a dial that is off (`start` 0). Two even sides can hold each other off for good: each push dies to the defenders and their towers
+ *  before it breaks anything. With `start` set to a number of seconds, from then on in a match two economies fight (not a story job) every
+ *  building takes `perMin` more damage for each minute that has passed and every tower does that much less to a body. In bot tables it cut
+ *  the matches still undecided at 40 minutes from 10 in 80 to 5 in 80 at 18 minutes and .1, which is not enough to switch it on untested by people. */
+export const OVERTIME = { start: 0, perMin: .1 };
 export let MAP: MapDef = MAPS[0];
 /** Map sizes. A map number carries its size in the tens: 0 to 2 are Medium, 10 to 12 Small, 20 to 22 Large. */
 export const SIZES = [{ name: 'Medium', k: 1, sites: 4, blurb: 'Four ore fields to take' }, { name: 'Small', k: .75, sites: 3, blurb: 'Close quarters, three fields' }, { name: 'Large', k: 1.4, sites: 7, blurb: 'A long way out, seven fields' }];
@@ -224,13 +240,25 @@ const SITES = new Map<string, number[][]>();
  *  pairing the outpost gets the same seam turned round, so neither end has the nearer first field. */
 function layoutSites() {
   if (!MAP || MAP.code === undefined) return;
-  const even = !(fac(SIDE.home) === 0 && fac(SIDE.out) !== 0), key = MAP.code + (even ? 'e' : 'c'), had = SITES.get(key); if (had) { MAP.sites = had; return; }
+  const fair = LAYOUT.fair, even = fair || !(fac(SIDE.home) === 0 && fac(SIDE.out) !== 0), key = MAP.code + (fair ? 'f' : even ? 'e' : 'c'), had = SITES.get(key); if (had) { MAP.sites = had; return; }
   const k = MAP.k, S = SIZES[MAP.size], [ox, oz] = MAP.out;
   const sites: number[][] = [[MAP.exp[0], MAP.exp[1]]], cx = ox / 2, cz = oz / 2, end = roadPt(ROAD.len + 6);
   if (even) sites.push(swapEnd(MAP.exp[0], MAP.exp[1]).map(Math.round));
   const ok = (x: number, z: number) => { if (Math.hypot(x, z) < 52 * k || Math.hypot(x - ox, z - oz) < 58 * k || Math.hypot(x - cx, z - cz) > 168 * k) return false; if (segD(x, z, ROAD.x, ROAD.z, end[0], end[1]) < 20) return false;
     let qx = ox, qz = oz; for (const [fx, fz] of MAP.flank) { if (segD(x, z, qx, qz, fx, fz) < 16) return false; qx = fx; qz = fz; } return segD(x, z, qx, qz, 0, 0) >= 16; };
   const cand: number[][] = []; for (let a = 0; a < 32; a++) for (const f of [.5, .72, .95]) { const x = Math.round(cx + Math.cos(a / 32 * 6.2832) * f * 150 * k), z = Math.round(cz + Math.sin(a / 32 * 6.2832) * f * 120 * k); if (ok(x, z)) cand.push([x, z]); }
+  if (fair) {
+    // Every field after the first pair comes with its twin for the other end (a third number marks a twin: the game turns the first one's seams
+    // round for it). Each pair is the nearest spot to its own end that is a real walk out (85 m on a Medium map), well clear of the fields
+    // already down, nearer to its own end than to the other, and not tucked away behind its own base where nobody could ever reach it. An odd
+    // field out is one in the middle, the same walk from both ends.
+    sites[1][2] = 1; const [hx, hz] = swapEnd(0, 0), dH = (x: number, z: number) => Math.hypot(x, z), dO = (x: number, z: number) => Math.hypot(x - hx, z - hz), gap = (x: number, z: number) => Math.min(...sites.map(s => Math.hypot(x - s[0], z - s[1])));
+    const grid: number[][] = []; for (let x = Math.round(cx - 150 * k); x <= cx + 150 * k; x += 4) for (let z = Math.round(cz - 120 * k); z <= cz + 120 * k; z += 4) if (((x - cx) / (150 * k)) ** 2 + ((z - cz) / (120 * k)) ** 2 <= .9 && ok(x, z)) grid.push([x, z]);
+    while (sites.length + 2 <= S.sites) { let best: number[] | null = null, bd = 1e9; for (const [x, z] of grid) { const [mx, mz] = swapEnd(x, z).map(Math.round); if (!ok(mx, mz) || dH(x, z) < 85 * k || dH(x, z) > dO(x, z) - 30 || gap(x, z) < 58 * k || gap(mx, mz) < 58 * k) continue; const d = dH(x, z) + Math.max(0, dO(x, z) - dH(x, z) * 1.6) * 2; if (d < bd) { bd = d; best = [x, z, mx, mz]; } }
+      if (!best) break; sites.push([best[0], best[1]], [best[2], best[3], 1]); }
+    if (sites.length < S.sites) { let best: number[] | null = null, bd = -1; for (const [x, z] of grid) { if (Math.abs(dH(x, z) - dO(x, z)) > 4) continue; const d = gap(x, z); if (d > bd) { bd = d; best = [x, z]; } } if (best && bd >= 34) sites.push(best); }
+    MAP.sites = sites; SITES.set(key, sites); return;
+  }
   while (sites.length < S.sites && cand.length) { let best = -1, bd = -1; cand.forEach(([x, z], i) => { const d = Math.min(Math.hypot(x, z) * .8, ...sites.map(s => Math.hypot(x - s[0], z - s[1]))); if (d > bd) { bd = d; best = i; } }); if (bd < 34) break; sites.push(cand.splice(best, 1)[0]); }
   MAP.sites = sites; SITES.set(key, sites);
 }

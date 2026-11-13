@@ -42,6 +42,8 @@ body{background:var(--bg);color:var(--paper);font-family:var(--cond);font-size:1
 .res span.low{color:var(--red)}
 .res i{display:inline-block;width:20px;height:20px;border:3px solid var(--ink)}
 .clock{right:34px;top:84px;font-size:24px;text-align:right}
+.clock small{display:block;font:600 12px var(--cond);letter-spacing:.06em;text-transform:uppercase;color:var(--red);margin-top:2px}
+.clock.ot{color:var(--yel)}
 .qm{right:34px;top:118px;font-size:15px;text-align:right;color:var(--muted)}
 .qm b{color:var(--grn)} .qm.off b{color:var(--red)}
 

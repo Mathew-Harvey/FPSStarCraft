@@ -59,7 +59,7 @@ export class LocalMatch {
   private say(s: Seat, o: any) { s.inbox.push(JSON.parse(JSON.stringify(o))); }
 
   private step() {
-    const g = this.host; setMap(this.map); SIDE.home = this.home; SIDE.out = this.out;
+    const g = this.host; setMap(this.map); SIDE.home = this.home; SIDE.out = this.out; g.pin();
     for (const s of this.seats) {
       if (s.body && !s.body.alive) s.body = null;
       for (const m of s.mail) {

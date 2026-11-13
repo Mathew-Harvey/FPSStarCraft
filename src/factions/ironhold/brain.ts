@@ -85,7 +85,7 @@ export function quartermaster(D: Director, dt: number, S: Side = D) {
   const air = lean === 'air', mech = lean === 'mech', foeAir = g.units.some(o => o.alive && o.air && isEnemy(T, o.team) && seenBy(g, T, o));
   const hidden = g.units.find(o => o.alive && isEnemy(T, o.team) && isHidden(o) && g.units.some(m => m.alive && m.team === T && Math.hypot(m.pos.x - o.pos.x, m.pos.z - o.pos.z) < 25));
   if (hidden) mem(S).hidT = g.time;
-  const flak = own('flaktower').length, wantFlak = (foeAir || (mem(S).hidT && g.time - mem(S).hidT < 300) ? 1 : 0) + (foeAir && army >= 10 ? 1 : 0) + (DOC.key === 'fort' ? 1 : 0);
+  const flak = own('flaktower').length, wantFlak = (foeAir || (mem(S).hidT && g.time - mem(S).hidT < 300) ? 1 : 0) + (foeAir && army >= 10 ? 1 : 0) + (DOC.key === 'fort' ? 1 : 0) + (g.time > 900 && army >= 12 ? 1 : 0);   // one by default late on: fliers come
   if (!bunk.length) put('bunkhouse', 15, 8, 'Staking out a Bunkhouse. Then we get rich.');
   // The first Claim Barge is a goal of its own: ore and Flux are held for it once the Annex stands.
   else if (up('annex').length && hangUp.some(hasLab) && !g.own('claimbarge', T).length && !g.ownB('hangar', true, T).some(h => h.queue.some(q => q.kind === 'claimbarge')) && army >= 14) { hold = costOf('claimbarge'); holdKind = 'claimbarge'; }

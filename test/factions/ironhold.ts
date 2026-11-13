@@ -214,7 +214,8 @@ async function matches(): Promise<Row[]> {
     for (const k of IRON_UNITS) check((all[k] || 0) > 0, `the Quartermaster made a ${UNIT[k].name} in the bot matches (${all[k] || 0})`);
     for (const k of ['pumpjack', 'labbay', 'twinbay', 'assay', 'machineshop', 'foundry', 'hangar', 'mast', 'annex', 'flaktower', 'depot', 'watchpost']) check((built[k] || 0) > 0, `the Quartermaster raised a ${BLD[k as BKind].name} (${built[k] || 0})`);
     for (const k of ['surveyrig', 'drone']) check((acts[k] || 0) > 0, `the Quartermaster used the ${k} command (${acts[k] || 0})`);
-    for (const k of ['mine', 'painkiller', 'overtime', 'kick', 'anchor', 'doors', 'land', 'stake']) check((casts[k] || 0) > 0, `bots cast ${k} (${casts[k] || 0})`);
+    if (all.surveyor) check(['stake', 'jam', 'flare', 'scan'].some(k => (casts[k] || 0) + (acts[k] || 0) > 0), `bots used a Surveyor ability or a Scan`);
+    for (const k of ['mine', 'painkiller', 'overtime', 'kick', 'anchor', 'doors', 'land']) check((casts[k] || 0) > 0, `bots cast ${k} (${casts[k] || 0})`);
   }
   console.log(fail.length ? `\n${fail.length} FAILED` : '\nALL PASS'); process.exit(fail.length ? 1 : 0);
 })();

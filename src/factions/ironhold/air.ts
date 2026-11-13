@@ -91,7 +91,7 @@ defineAbilities('surveyor', [{
   key: 'stake', name: 'Stake Gun', hotkey: 'C', energy: TUNE.stake.energy, cd: 2, cast: .5, range: TUNE.stake.range, target: 'point',
   blurb: `Drops a gun turret that fires for ${TUNE.stake.t} s.`,
   effect(g, u, t) { const s = g.spawn('staketurret', u.team, t.x, t.z); mem(s).born = g.time; g.puff(TMP.set(t.x, .4, t.z), 4, .6, M.dust, .5, 1); sfx.clang(); },
-  ai(g, u) { const f = nearest(g, u, 10, o => !o.air); return f && (u.energy || 0) >= 100 ? { x: (u.pos.x + f.pos.x) / 2, z: (u.pos.z + f.pos.z) / 2 } : null; },
+  ai(g, u) { const f = nearest(g, u, 14, o => !o.air); return f && (u.energy || 0) >= 75 ? { x: (u.pos.x + f.pos.x) / 2, z: (u.pos.z + f.pos.z) / 2 } : null; },
 }, {
   key: 'jam', name: 'Jam', hotkey: 'T', energy: TUNE.jam.energy, cd: 1, cast: 0, range: TUNE.jam.range, target: 'body', who: 'foe',
   blurb: `A machine stops dead for ${TUNE.jam.t} s: no moving, no shooting.`,

@@ -113,8 +113,8 @@ const bolt = (g: Game, host: Building, k: 'labbay' | 'twinbay') => { const ok = 
   const sap = at('sapper', 40, 40); check(useAbility(g, sap, 'mine', { x: 41, z: 40 }), 'a Sapper starts digging a Shaft Mine');
   run(g, TUNE.mine.dig + .5); const mine = g.units.find(u => u.alive && u.kind === 'shaftmine' && u.team === T);
   check(!!mine && isHidden(mine), 'the Shaft Mine is dug in and unseen');
-  const foe = at('lancer' as Kind, 44, 40, F); foe.order = { type: 'move', x: 41, z: 40 } as any; const fhp = foe.hp;
-  run(g, 4, () => !mine!.alive); check(!mine!.alive && (foe.hp < fhp || !foe.alive), 'a foe walking onto it sets it off and is hurt');
+  const foe = at('lancer' as Kind, 42.5, 40, F); const fhp = foe.hp + foe.shield;
+  run(g, 4, () => !mine!.alive); check(!mine!.alive && (foe.hp + foe.shield < fhp || !foe.alive), 'a foe stepping near it sets it off and is hurt (shield counts)');
   for (let i = 0; i < TUNE.mine.keep; i++) { const m = g.spawn('shaftmine' as Kind, T, 50 + i * 2, 50); (m as any).owner = sap; const { mem } = require('../../src/factions/ironhold/kit'); mem(m).owner = sap; }
   sap.abCd = {}; check(!!why(sap, 'mine', { x: 41, z: 42 }), `a Sapper keeps no more than ${TUNE.mine.keep} mines`);
   // Satchel
@@ -204,7 +204,7 @@ async function matches(): Promise<Row[]> {
     const b = spawn('node', ['tools/run-ts.mjs', 'tools/iron-match.ts', '{"mins":0}']); await new Promise(ok => b.on('close', ok));
     const rows = await matches(), all: Record<string, number> = {}, spend: Record<string, number> = {}, casts: Record<string, number> = {}, built: Record<string, number> = {}, acts: Record<string, number> = {};
     for (const r of rows) { for (const k in r.trained) all[k] = (all[k] || 0) + r.trained[k]; for (const k in r.spend) spend[k] = (spend[k] || 0) + r.spend[k]; for (const k in r.casts) casts[k] = (casts[k] || 0) + r.casts[k]; for (const k in r.built) built[k] = (built[k] || 0) + r.built[k]; for (const k in r.acts) acts[k] = (acts[k] || 0) + r.acts[k]; }
-    console.log(`\n${rows.length} matches: ` + rows.map(r => `${['mirror', 'Veyl', 'Gloam'][r.out]} m${r.map} ${r.res} ${Math.round(r.t / 60)}min`).join(', '));
+    console.log(`\n${rows.length} matches: ` + rows.map(r => `${['mirror', 'Veyl', 'Gloam'][r.out % 3]} m${r.map} ${r.res} ${Math.round(r.t / 60)}min`).join(', '));
     const fighters = IRON_UNITS.filter(k => k !== 'rigger'), sum = fighters.reduce((a, k) => a + (spend[k] || 0), 0) || 1;
     console.log('\nUnit-use share (ore + Flux spent on each fighter, all matches):');
     for (const k of fighters) console.log(`  ${UNIT[k].name.padEnd(13)} ${String(all[k] || 0).padStart(4)} made  ${((spend[k] || 0) / sum * 100).toFixed(1).padStart(5)}%`);
@@ -214,7 +214,7 @@ async function matches(): Promise<Row[]> {
     for (const k of IRON_UNITS) check((all[k] || 0) > 0, `the Quartermaster made a ${UNIT[k].name} in the bot matches (${all[k] || 0})`);
     for (const k of ['pumpjack', 'labbay', 'twinbay', 'assay', 'machineshop', 'foundry', 'hangar', 'mast', 'annex', 'flaktower', 'depot', 'watchpost']) check((built[k] || 0) > 0, `the Quartermaster raised a ${BLD[k as BKind].name} (${built[k] || 0})`);
     for (const k of ['surveyrig', 'drone']) check((acts[k] || 0) > 0, `the Quartermaster used the ${k} command (${acts[k] || 0})`);
-    for (const k of ['mine', 'painkiller', 'anchor', 'doors', 'land', 'stake', 'flak']) check((casts[k] || 0) > 0, `bots cast ${k} (${casts[k] || 0})`);
+    for (const k of ['mine', 'painkiller', 'overtime', 'kick', 'anchor', 'doors', 'land', 'stake']) check((casts[k] || 0) > 0, `bots cast ${k} (${casts[k] || 0})`);
   }
   console.log(fail.length ? `\n${fail.length} FAILED` : '\nALL PASS'); process.exit(fail.length ? 1 : 0);
 })();

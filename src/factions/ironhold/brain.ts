@@ -71,11 +71,11 @@ export function quartermaster(D: Director, dt: number, S: Side = D) {
   const put = (k: BKind, x: number, z: number, line: string, world = false) => { if (!pays(costOf(k)) || !allow(k) || g.gated(T, k)) return false; if (!world) [x, z] = P(x, z); const at = D.freeSpot(k, x, z, T); if (!at) return false; g.place(k, at[0], at[1], false, T); D.say('Quartermaster', line, '', T); return true; };
   const spot = (k: BKind, slots: number[][], line: string, world = false) => { const at = (p: number[]): [number, number] => world ? [p[0], p[1]] : P(p[0], p[1]), sl = slots.find(p => g.canPlace(k, ...at(p), false, T)) || slots[0]; return put(k, sl[0], sl[1], line, world); };
   const buy = (key: string) => { const u = UPGRADES.find(x => x.key === key)!; return !U[u.key] && up(u.at).length && (!u.needs || U[u.needs]) && !g.gated(T, key) && pays(costOf(u.key)) && g.buyUpgrade(u.key, T); };
-  const spare = (keys: string[]) => { for (const k of keys) { const u = UPGRADES.find(x => x.key === k); if (u && !U[u.key] && up(u.at).length && (!u.needs || U[u.needs]) && !g.gated(T, k) && pays(costOf(u.key), 120)) return g.buyUpgrade(u.key, T); } return false; };
+  const spare = (keys: string[]) => { for (const k of keys) { const u = UPGRADES.find(x => x.key === k); if (u && !U[u.key] && up(u.at).length && (!u.needs || U[u.needs]) && !g.gated(T, k) && pays(costOf(u.key), 120) && g.flux(T) >= costOf(u.key)[1] + (annex.length ? 300 : 100)) return g.buyUpgrade(u.key, T); } return false; };
   const bolt = (host: Building | undefined, k: 'labbay' | 'twinbay') => !!host && !addonOf(host) && pays(costOf(k)) && g.buildingAction(host, k);
   const DOC_T = DOC.tech, wantPosts = Math.max(0, (army >= 3 || (g.eco && g.human[foeOf(T)]) ? 1 + (D.raidN >= 2 ? 1 : 0) + (D.raidN >= 4 ? 1 : 0) : 0) + DOC.towers);
   // One goal at a time, in priority order. While a goal is unpaid, training holds back a reserve so the goal gets bought.
-  let saving = true, hold: [number, number] = [95, 0];
+  let saving = true, hold: [number, number] = [95, 0], holdKind: Kind | null = null;
   const exp = D.expansion(g.hqs(T, false), T), homeLeft = g.ores.filter(n => Math.hypot(n.pos.x - HX, n.pos.z - HZ) < 40).reduce((a, n) => [a[0] + n.amount, a[1] + n.max], [0, 0]);
   const wantHF = Math.min((MAP.sites || []).length + 1, 1 + (g.time > DOC.expT || homeLeft[0] < homeLeft[1] * .5 ? 1 : 0) + (g.time > 960 ? 1 : 0) + (g.time > 1440 ? 1 : 0));
   const jacks = own('pumpjack'), vent = g.vents.filter(v => !(v.tap && v.tap.alive) && v.amount > 0 && hqs.some(h => Math.hypot(h.pos.x - v.pos.x, h.pos.z - v.pos.z) < 40) && g.canPlace('pumpjack', v.pos.x, v.pos.z, false, T)).sort((a, b) => Math.hypot(a.pos.x - HX, a.pos.z - HZ) - Math.hypot(b.pos.x - HX, b.pos.z - HZ))[0];
@@ -87,9 +87,13 @@ export function quartermaster(D: Director, dt: number, S: Side = D) {
   if (hidden) mem(S).hidT = g.time;
   const flak = own('flaktower').length, wantFlak = (foeAir || (mem(S).hidT && g.time - mem(S).hidT < 300) ? 1 : 0) + (foeAir && army >= 10 ? 1 : 0) + (DOC.key === 'fort' ? 1 : 0);
   if (!bunk.length) put('bunkhouse', 15, 8, 'Staking out a Bunkhouse. Then we get rich.');
-  else if (free <= 3 && !sites.some(b => b.kind === 'depot') && own('depot').length < 24 && g.supplyCap(T) < 200) spot('depot', DEPOT_SLOTS, 'Running out of beds. Stacking another Depot.');
+  // The first Claim Barge is a goal of its own: ore and Flux are held for it once the Annex stands.
+  else if (up('annex').length && hangUp.some(hasLab) && !g.own('claimbarge', T).length && !g.ownB('hangar', true, T).some(h => h.queue.some(q => q.kind === 'claimbarge')) && army >= 14) { hold = costOf('claimbarge'); holdKind = 'claimbarge'; }
+  else if (free <= 3 && !sites.some(b => b.kind === 'depot') && own('depot').length < 24 && g.supplyCap(T) < 200) { const line = 'Running out of beds. Stacking another Depot.';
+    // The home slots fill up late: then a Depot goes behind whichever Headframe has room.
+    if (!spot('depot', DEPOT_SLOTS, line)) for (const h of hqs) { const dx = HX - h.pos.x || 1, dz = HZ - h.pos.z, l = Math.hypot(dx, dz) || 1; if (put('depot', h.pos.x + dx / l * 12 + (g.time % 7) - 3, h.pos.z + dz / l * 12 + (g.time % 5) - 2, line, true)) break; } }
   else if (building && sites.length >= 2) saving = false;
-  else if (vent && jacks.length < wantJacks && g.own('rigger', T).length >= 10 + jacks.length * 2 && (army >= 6 || g.time > 420)) { hold = costOf('pumpjack'); if (pays(hold)) { g.place('pumpjack', vent.pos.x, vent.pos.z, false, T); D.say('Quartermaster', LINES.pumpjack!, '', T); } }
+  else if (vent && jacks.length < wantJacks && g.own('rigger', T).length >= 8 + jacks.length * 2 && (army >= 6 || g.time > 420)) { hold = costOf('pumpjack'); if (pays(hold)) { g.place('pumpjack', vent.pos.x, vent.pos.z, false, T); D.say('Quartermaster', LINES.pumpjack!, '', T); } }
   // A side playing for ore stakes its second Headframe before anything else.
   else if (DOC.key === 'boom' && bunkUp.length && exp.site && hqs.length < Math.min(2, wantHF)) { hold = costOf('headframe'); const [sx, sz] = exp.site, dx = sx - HX, dz = sz - HZ, l = Math.hypot(dx, dz) || 1; put('headframe', Math.round(sx - dx / l * 11), Math.round(sz - dz / l * 11), 'Staking a second Headframe early. Ore first, soldiers later.', true); }
   else if (bunkUp.length && posts < Math.min(1, wantPosts)) spot('watchpost', postSlots(g.intel.knows(T)), g.intel.knows(T) ? `Putting a Watchpost on the ${MAP.road}. For my nerves.` : 'Putting a Watchpost up. I do not know which way to point it, so it points at everything.');
@@ -145,17 +149,19 @@ export function quartermaster(D: Director, dt: number, S: Side = D) {
   for (const b of g.ownB(undefined, true, T)) for (const q of b.queue) have[q.kind] = (have[q.kind] || 0) + UNIT[q.kind].supply;
   const total = Object.values(have).reduce((a, n) => a + n!, 0) + 1, wsum = Object.values(mix).reduce((a, n) => a + n!, 0);
   // Fliers are wanted at all only against fliers, or for an air lean, or late; detectors once something unseen has shown up.
-  const want = (k: Kind) => { let w = (mix[k] || 0) / wsum; if (k === 'flakkite' && foeAir) w *= 3; if (k === 'surveyor' && mem(S).hidT) w = Math.max(w, .06); if (k === 'hopper' && army < 10) w = 0; if (k === 'claimbarge' && army < 14) w = 0; return w; };
+  const want = (k: Kind) => { let w = (mix[k] || 0) / wsum; if (k === 'flakkite' && foeAir) w *= 3; if (k === 'surveyor' && mem(S).hidT) w = Math.max(w, .06); if (k === 'hopper' && army < 10) w = 0; if (k === 'claimbarge' && army < 14) w = 0; if (w > 0 && !have[k] && army >= 12) w = Math.max(w, k === 'claimbarge' ? .25 : .1); return w; };
   const hosts = [...bunkUp, ...shopUp, ...fdyUp, ...hangUp].filter(b => b.queue.length < (hasTwin(b) ? 3 : 2) && !mem(b).crawl);
-  const optsOf = (b: Building) => (TRAINS[b.kind] || []).filter(k => !g.gated(T, k) && !bldRule(b.kind).trains?.(g, b, k) && (!UNIT_NEEDS[k] || g.ownB(UNIT_NEEDS[k]!, true, T).length) && free >= UNIT[k].supply);
+  const optsOf = (b: Building) => (TRAINS[b.kind] || []).filter(k => !g.gated(T, k) && !bldRule(b.kind).trains?.(g, b, k) && (!UNIT_NEEDS[k] || g.ownB(UNIT_NEEDS[k]!, true, T).length));
   const gapOf = (k: Kind) => (have[k] || 0) / total - want(k), best = (ks: Kind[]) => ks.filter(k => want(k) > 0).sort((a, c) => gapOf(a) - gapOf(c))[0];
   for (let n = 0; n < 6; n++) {
     // The kind the army is shortest of, wherever it can be made; a host that cannot make it only spends what is left over after it.
     const top = best(hosts.flatMap(optsOf)); let done = false;
     for (const b of hosts.filter(b => b.queue.length < (hasTwin(b) ? 3 : 2)).sort((a, c) => +optsOf(c).includes(top!) - +optsOf(a).includes(top!))) {
+      // Out of beds for the kind the army needs most: hold the beds for it rather than filling them with something small.
       const opts = optsOf(b), pick = best(opts) || (opts.includes('linesman') ? 'linesman' : null); if (!pick) continue;
-      const c = costOf(pick), extra = top && pick !== top ? costOf(top) : [0, 0];
-      if (pays(c, reserve[0] + extra[0]) && (!c[1] || g.flux(T) >= c[1] + reserve[1] + extra[1])) { g.train(b, pick); have[pick] = (have[pick] || 0) + UNIT[pick].supply; done = true; break; }
+      if (free < UNIT[pick].supply || (top && pick !== top && free - UNIT[pick].supply < UNIT[top].supply && g.supplyCap(T) >= 200)) continue;
+      const c = costOf(pick), extra = top && pick !== top ? costOf(top) : [0, 0], res = pick === holdKind ? [0, 0] : reserve;
+      if (pays(c, res[0] + extra[0]) && (!c[1] || g.flux(T) >= c[1] + res[1] + extra[1])) { g.train(b, pick); have[pick] = (have[pick] || 0) + UNIT[pick].supply; done = true; break; }
     }
     if (!done) break;
   }

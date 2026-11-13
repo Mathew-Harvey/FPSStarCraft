@@ -8,7 +8,7 @@ import type { Game } from '../../game';
 import { TMP, beamMat } from '../../game';
 import { UNIT, Unit, Building, isUnit, fac } from '../../data';
 import { defineUnits, type Weapon, type Hit } from '../../core/registry';
-import { defineAbilities } from '../../core/ability';
+import { defineAbilities, useAbility } from '../../core/ability';
 import { addStatus, clearStatus, hasStatus } from '../../core/status';
 import { hasTag } from '../../core/combat';
 import { morph } from '../../core/morph';
@@ -50,13 +50,13 @@ function aiHopper(g: Game, u: Unit, dt: number) {
   const m = mem(u), o = u.order;
   if (u.cargo?.length) {
     const near = nearest(g, u, 16) || g.buildings.find(b => b.alive && isEnemy(u.team, b.team) && g.distToBox(b, u.pos.x, u.pos.z) < 16);
-    if (near || (o.type !== 'amove' && g.time - (m.loadT || 0) > 25)) { u.alt = Math.max(1.5, (u.alt || 0) - dt * 6); if ((u.alt || 0) <= 2.2) unload(g, u); return; }
+    if (near || (o.type !== 'amove' && g.time - (m.loadT || 0) > 25)) { u.alt = Math.max(1.5, (u.alt || 0) - dt * 6); if ((u.alt || 0) <= 2.2 && !useAbility(g, u, 'doors')) unload(g, u); return; }
     if (o.type === 'amove') g.advance(u, dt, 3); return;
   }
   // Empty: pick up the squad's soldiers standing at the rally when a push is called, else trail the squad.
   if (o.type === 'amove' && g.time - (m.loadT || 0) > 30) {
     const riders = g.units.filter(x => x.alive && x.team === u.team && !x.air && !x.inside && !x.pilot && x !== g.me && x.order.type === 'amove' && fac(x.team) === 0 && !hasTag(x, 'huge') && dist(x, u) < 20 && UNIT[x.kind].supply <= 2);
-    if (riders.length >= 3) { const r0 = riders[0]; if (dist(u, r0) > 3) { g.moveTo(u, r0.pos.x, r0.pos.z, dt, 2); return; } for (const x of riders) if (usedOf(u) + (UNIT[x.kind].slots ?? UNIT[x.kind].supply) <= roomOf(u)) load(g, u, x); m.loadT = g.time; return; }
+    if (riders.length >= 3) { const r0 = riders[0]; if (dist(u, r0) > 3) { g.moveTo(u, r0.pos.x, r0.pos.z, dt, 2); return; } if (!useAbility(g, u, 'doors')) for (const x of riders) if (usedOf(u) + (UNIT[x.kind].slots ?? UNIT[x.kind].supply) <= roomOf(u)) load(g, u, x); m.loadT = g.time; return; }
   }
   walkOrder(g, u, dt);
 }

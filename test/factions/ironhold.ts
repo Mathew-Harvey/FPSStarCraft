@@ -115,8 +115,11 @@ const bolt = (g: Game, host: Building, k: 'labbay' | 'twinbay') => { const ok = 
   check(!!mine && isHidden(mine), 'the Shaft Mine is dug in and unseen');
   const foe = at('lancer' as Kind, 42.5, 40, F); const fhp = foe.hp + foe.shield;
   run(g, 4, () => !mine!.alive); check(!mine!.alive && (foe.hp + foe.shield < fhp || !foe.alive), 'a foe stepping near it sets it off and is hurt (shield counts)');
-  for (let i = 0; i < TUNE.mine.keep; i++) { const m = g.spawn('shaftmine' as Kind, T, 50 + i * 2, 50); (m as any).owner = sap; const { mem } = require('../../src/factions/ironhold/kit'); mem(m).owner = sap; }
+  for (let i = 0; i < TUNE.mine.keep; i++) { const m = g.spawn('shaftmine' as Kind, T, 50 + i * 2, 50); (m as any).owner = sap; const { mem } = require('../../src/factions/ironhold/kit'); mem(m).owner = sap.id; }
   sap.abCd = {}; check(!!why(sap, 'mine', { x: 41, z: 42 }), `a Sapper keeps no more than ${TUNE.mine.keep} mines`);
+  { const { tickCharges } = require('../../src/factions/ironhold/ground'), mem2 = require('../../src/factions/ironhold/kit').mem, mines = () => g.units.filter(u => u.alive && u.kind === 'shaftmine' && u.team === T).length;
+    tickCharges(g, 0); check(mines() === TUNE.mine.keep, 'a living Sapper\'s mines stay in the ground');
+    const lone = g.spawn('shaftmine' as Kind, T, 56, 50); mem2(lone).owner = 987654; tickCharges(g, 0); check(!lone.alive && mines() === TUNE.mine.keep, 'a mine whose Sapper is dead goes with it'); }
   // Satchel
   const vb = g.addBuilding('hushwell' as BKind, F, 60, 40, true), sap2 = at('sapper', 60 - vb.hx - 1.5, 40), bhp = vb.hp;
   check(!!why(sap2, 'satchel', { x: 30, z: 30, id: lin.id }), 'a Satchel is refused on something that is not an enemy building');

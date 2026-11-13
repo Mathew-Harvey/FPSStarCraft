@@ -152,7 +152,7 @@ export function showTick(g: Game, dt: number) {
     if (u.cast && m.castSeen !== u.cast) { m.castSeen = u.cast; const s = START[u.cast.key]; if (s) try { s(k, g, u, { x: u.cast.x, z: u.cast.z, id: u.cast.id }); } catch (e) { console.warn('ironhold fx', u.cast.key, e); } }
     if (m.seat && u !== g.me) { m.seat(); m.seat = null; }
   }
-  for (const [u, obj] of mines) if (!u.alive) { obj.visible = false; obj.scale.setScalar(1e-4); mines.delete(u); E.blast(k, V(u.pos.x, 0, u.pos.z), TUNE.mine.r); }
+  for (const [u, obj] of mines) if (!u.alive) { obj.visible = false; obj.scale.setScalar(1e-4); mines.delete(u); const mm = mem(u); if (mm.went || (g.net && !mm.fizzled)) E.blast(k, V(u.pos.x, 0, u.pos.z), TUNE.mine.r); else if (ours(g, u.team)) k.add(cloud({ x: u.pos.x, z: u.pos.z, r: .8, time: 1, color: '#d9a46a', puffs: 3 })); }
   for (const b of g.buildings) if (b.alive && fac(b.team) === 0) moveParts(g, b, dt);
 }
 /** The Flak Tower's gun follows what it shoots, the Hangar's doors open while it trains, and a crawling building rides on skids. */

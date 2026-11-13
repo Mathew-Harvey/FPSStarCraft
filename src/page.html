@@ -164,7 +164,9 @@
             <button type="button" class="mini-btn big" id="mJoinBtn">Join</button>
             <button type="button" class="mini-btn" id="mWatch">Watch</button>
             <button type="button" class="mini-btn" id="mReplays">Replays</button>
+            <button type="button" class="mini-btn" id="mRanked">Ranked</button>
           </div>
+          <div id="mRankBox" class="rk" hidden></div>
           <p class="small" id="mErr" role="status"></p>
         </div>
         <div class="brief" id="mLobby" hidden>
@@ -181,6 +183,11 @@
           <div class="row" id="mTeamRow" hidden>
             <div class="diff" id="mTeams" role="group" aria-label="Kind of game"></div>
             <div class="diff" id="mStarts" role="group" aria-label="Your start"></div>
+          </div>
+          <div class="row form" id="mRules">
+            <label>Start ore <select id="mRuleOre"><option value="0">None</option><option value="50">50</option><option value="100">100 (usual)</option><option value="250">250</option><option value="500">500</option><option value="1000">1000</option><option value="2500">2500</option><option value="5000">5000</option></select></label>
+            <label>Start Flux <select id="mRuleFlux"><option value="0">None (usual)</option><option value="50">50</option><option value="100">100</option><option value="250">250</option><option value="500">500</option><option value="1000">1000</option><option value="2000">2000</option></select></label>
+            <label>Game speed <select id="mRuleSpeed"><option value="0.5">Half</option><option value="0.75">Slow</option><option value="1">Normal</option><option value="1.25">Fast</option><option value="1.5">Faster</option><option value="2">Double</option></select></label>
           </div>
           <div class="row form">
             <button class="go" id="mStart">Clock in</button>

@@ -147,8 +147,9 @@ def shellpit():
             a = (i + ring_ * .5) / n * TAU
             c, s = np.cos(a), np.sin(a)
             o = V(c * r0, y, s * r0)
-            sc = S.ellipsoid(o, (.95 * sz, .62 * sz, .2 * sz), S.basis(V(c, .9, s), V(c, -.2, s)))
-            sc = S.cut(sc, S.ellipsoid(o + V(c, .2, s) * -.25 * sz, (.85 * sz, .55 * sz, .2 * sz), S.basis(V(c, .9, s), V(c, -.2, s))))
+            B_ = S.basis(V(c, .45, s), V(-c * .45, 1, -s * .45))          # each scale stands up round the rim, leaning out, dished on its inner face
+            sc = S.ellipsoid(o + V(0, .35 * sz, 0), (1.05 * sz, .85 * sz, .22 * sz), B_)
+            sc = S.cut(sc, S.ellipsoid(o + V(0, .4 * sz, 0) - V(c, .45, s) * .2 * sz, (.92 * sz, .75 * sz, .2 * sz), B_))
             scales.append(sc)
     fig.add('scales', 'body', 'gB', S.union(*scales), 2200, voxel=.022, uv=('cyl',))
     fig.add('brood', 'body', 'gMaw', S.ellipsoid((0, .55, 0), (2.4, .4, 2.4)), 260, voxel=.03, uv=('top',))
@@ -414,7 +415,7 @@ def sporepod():
     pod = S.ellipsoid((0, 1.25, 0), (.55, .66, .55))
     pod = S.bump(pod, lambda p: .03 * np.sin(np.arctan2(p[..., 0], p[..., 2]) * 6))
     pod = S.cut(pod, *[S.rcone(V(0, 1.95, 0), V(c * .35, 1.55, s * .35), .14, .02) for c, s in circle(5)], k=.03)
-    fig.add('pod', 'pod', 'gS', pod, 600, voxel=.01, uv=('cyl',), glow=.7)
+    fig.add('pod', 'pod', 'gS', pod, 600, voxel=.01, uv=('cyl',), glow=.3)
     leaves = [S.ellipsoid(V(c * .42, .95, s * .42), (.42, .5, .1), rot(0, -np.arctan2(s, c) + PI / 2, 0) @ rot(.45, 0, 0)) for c, s in circle(5, .6)]
     fig.add('leaves', 'pod', 'gH', hide(S.union(*leaves), 133.0, .02, 6, .006), 420, voxel=.01, uv=('cyl',))
     return fig

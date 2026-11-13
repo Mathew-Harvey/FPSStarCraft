@@ -9,10 +9,10 @@ A first-person RTS for the browser. You start as a single worker with a drill, b
 ```
 npm install
 npm run dev      # http://localhost:5173, rebuilds on every reload
-npm run build    # type-checks and writes dist/index.html, a single self-contained file
+npm run build    # type-checks and writes dist/index.html (one self-contained file) and dist/play.html + dist/art/ (small page, art beside it)
 ```
 
-Needs a keyboard and mouse. `dist/index.html` can be opened straight from disk or hosted anywhere.
+Needs a keyboard and mouse. `dist/index.html` can be opened straight from disk or hosted anywhere. `dist/play.html` needs a web server and the `dist/art/` folder beside it (see `art/README.md`).
 
 ## What is in the game
 

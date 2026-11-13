@@ -9,7 +9,8 @@ sys.path.insert(0, __file__.rsplit('/', 1)[0])
 from kit import sdf as S, build as B, human as Hu
 from kit.sdf import V, rot
 
-fig = B.Figure('rigger', scale=1.06, detail=.85, paint=1024, grade=(.96, 1.06))      # he is all cloth, which takes the deepest tone: keep him as warm and light as the troopers' plate
+PI = np.pi
+fig = B.Figure('rigger', scale=1.06, detail=.85, paint=1024, grade=(.96, 1.06), hi=(1.2, 2.6, 1.2))      # he is all cloth, which takes the deepest tone: keep him as warm and light as the troopers' plate
 HIP = .93
 fig.group('body', (0, 0, 0))
 fig.group('legL', (-.105, HIP, 0))
@@ -215,6 +216,40 @@ fig.add('lampglass', 'head', 'visG', hatspace(S.both(S.sphere(HP + V(0, .05, .13
 cable = S.chain([HP + V(.02, .05, .12), HP + V(.04, .09, .06), HP + V(.045, .095, -.04), HP + V(.03, .04, -.125), HP + V(.02, .0, -.14)], .007)
 clipc = S.box(HP + V(.035, .055, -.105), (.012, .008, .012), .003, rot(.5, 0, 0))
 fig.add('cable', 'head', 'rubber', hatspace(S.union(cable, clipc)), 160, voxel=.002, uv=('side',))
+
+# ---------------------------------------------------------------- the pack frame: he carries his own shelf, and the ore rides on it
+# Two steel uprights against his back, bent over at the top into a hoop that stands above his hat, a shelf to stand the ore box on,
+# a pick lashed down one side and a hurricane lamp swinging off the hoop.
+FZ = -.2
+ups = [S.chain([V(sx * .2, .98, FZ), V(sx * .2, 1.6, FZ - .005), V(sx * .19, 1.9, FZ - .03), V(sx * .12, 2.02, FZ - .05), V(0, 2.05, FZ - .055)], .016) for sx in (-1, 1)]
+bars = [S.cyl((-.2, y, FZ - dz), (.2, y, FZ - dz), .013, .003) for y, dz in ((1.04, 0), (1.52, .005), (1.82, .02))]
+shelf = [S.chain([V(sx * .2, .99, FZ), V(sx * .2, .985, FZ - .25), V(sx * .2, 1.03, FZ - .27)], .014) for sx in (-1, 1)] + [S.cyl((-.2, .985, FZ - .25), (.2, .985, FZ - .25), .013, .003)]
+fig.add('frame', 'body', 'nS', S.union(*ups, *bars, *shelf, k=.006), 760, voxel=.003, uv=('front',), sharp=50)
+straps = []
+for sx in (-1, 1):                                                                                                # a strap over each shoulder, round under the arm and back to the frame
+    st = S.both(S.cut(S.grow(torso, .03), S.grow(torso, .016)), S.slab((sx * .125, 0, 0), (1, .0, 0), .021))
+    straps.append(S.cut(st, S.below(1.16)))
+    straps.append(S.chain([V(sx * .125, 1.45, -.13), V(sx * .16, 1.5, FZ + .01)], .014))
+fig.add('framestraps', 'body', 'leaB', S.union(*straps), 420, voxel=.003, uv=('side',))
+roll = S.cyl((-.21, 1.93, FZ - .12), (.21, 1.93, FZ - .12), .075, .03)                                           # bedroll lashed under the hoop
+roll = S.bump(roll, lambda p: .005 * np.sin(np.arctan2(p[..., 1] - 1.93, p[..., 2] - FZ + .12) * 5 + p[..., 0] * 30) + (S.noise(p, 30, 2.2) - .5) * .006)
+fig.add('bedroll', 'body', 'fabG', roll, 420, voxel=.003, uv=('front',))
+fig.add('rollties', 'body', 'leaB', S.union(*[S.torus((x, 1.93, FZ - .12), .078, .01, rot(0, 0, PI / 2)) for x in (-.12, .12)]), 140, voxel=.003)
+# the pick: handle down the left upright, head up above the hoop
+PH = V(-.255, 2.0, FZ - .03)
+pick = S.union(S.rcone((-.25, 1.02, FZ - .02), PH, .017, .02), k=0)
+fig.add('pickhandle', 'body', 'wood', pick, 160, voxel=.003, uv=('side',))
+head_ = S.union(S.chain(S.bez(PH + V(0, .0, .2), PH + V(0, .06, 0), PH + V(0, -.02, -.22), 8), list(np.concatenate([np.linspace(.008, .024, 4), np.linspace(.024, .018, 5)]))), S.box(PH, (.022, .026, .03), .008), k=.008)
+fig.add('pickhead', 'body', 'nD', head_, 240, voxel=.0025, uv=('side',), sharp=40)
+fig.add('pickties', 'body', 'leaB', S.union(*[S.torus((-.225, y, FZ - .01), .034, .008) for y in (1.2, 1.7)]), 100, voxel=.0025)
+# the lamp, on a hook off the right of the hoop
+LH = V(.26, 1.86, FZ - .04)
+hook = S.chain([V(.15, 2.0, FZ - .05), V(.25, 2.03, FZ - .05), V(.265, 1.98, FZ - .045), LH + V(0, .07, 0)], .008)
+lamp = S.union(S.cyl(LH + V(0, -.085, 0), LH + V(0, -.06, 0), .04, .006), S.cyl(LH + V(0, .03, 0), LH + V(0, .05, 0), .036, .006), S.rcone(LH + V(0, .05, 0), LH + V(0, .075, 0), .024, .01),
+               *[S.cyl(LH + V(np.cos(a) * .036, -.06, np.sin(a) * .036), LH + V(np.cos(a) * .034, .03, np.sin(a) * .034), .004) for a in (0, 2.1, 4.2)], S.torus(LH + V(0, .075, 0), .02, .004, rot(PI / 2, 0, 0)))
+fig.add('lamphook', 'body', 'nD', hook, 80, voxel=.002)
+fig.add('lampcage', 'body', 'nD', lamp, 260, voxel=.002, uv=('side',), sharp=40)
+fig.add('lampflame', 'body', 'visG', S.ellipsoid(LH + V(0, -.015, 0), (.027, .042, .027)), 70, voxel=.002, uv=('side',))
 
 if __name__ == '__main__':
     args = sys.argv[1:]

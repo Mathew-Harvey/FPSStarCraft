@@ -131,8 +131,10 @@ for sx, nm in ((-1, 'strapL'), (1, 'strapR')):
     fig.add(nm, 'body', 'leaB', st, 170, voxel=.003, uv=('front',))
 fig.add('neckring', 'body', 'rib', ring((0, 1.5, -.005), .1, .1, .03, .03, .012), 150, voxel=.003)
 # a dust wrap bunched round the neck with its tail thrown over the off shoulder: nobody out here is in clean kit
-wrap = S.torus((0, 1.525, .0), .118, .046, squash=1.05)
-wrap = S.union(wrap, S.torus((0, 1.558, -.005), .1, .036, rot(.1, 0, .08)), k=.02)
+bare = long_ or patch                                        # two of them show their faces, so their wrap sits low on the collar instead of up over the chin
+wrap = S.torus((0, 1.492, -.004), .116, .036, squash=1.05) if bare else S.torus((0, 1.525, .0), .118, .046, squash=1.05)
+if not bare:
+    wrap = S.union(wrap, S.torus((0, 1.558, -.005), .1, .036, rot(.1, 0, .08)), k=.02)
 Wl = S.Limb((0, 1.47, 0), (0, 1.62, 0))
 wrap = S.bump(wrap, Wl.folds([(.3, .4, 1.2, .012, .1, .25), (.45, -1.2, 1.4, .012, .1, -.3), (.6, 2.2, 1.5, .012, .1, .3), (.35, 3.0, 1.2, .01, .09, -.2), (.7, -.3, 1.0, .009, .08, .2), (.52, 1.3, 1.0, .01, .09, -.25)]))
 tail = S.chain([V(-.1, 1.53, .1)] + [S.skin(plate if y > 1.15 else torso, (x, y, 0), (0, 0, 1), out=.022) for x, y in ((-.15, 1.44), (-.15, 1.31), (-.17, 1.22))], [.05, .05, .042, .02])
@@ -265,6 +267,70 @@ if long_:      # a hood of the same scrim over the helmet
     hd = S.cut(hd, S.plane(HC + V(0, 0, .02), (0, .35, -1)), S.below(1.56))
     hd = S.bump(hd, lambda p: .008 * np.sin(p[..., 0] * 45 + p[..., 1] * 20) + (S.noise(p, 18, 8.8) - .5) * .008)
     fig.add('scrimhood', 'head', 'fabG', hd, 600, voxel=.0035, uv=('cyl', HC))
+
+# ---------------------------------------------------------------- two of them show their faces
+# The Longshot has never liked a helmet: a bush hat, a scarf, one eye shut and the other behind a glass. The Patch keeps the
+# white helmet with the cross on it, but a medic who cannot be seen to smile is no use, so the mask hangs under the chin.
+if long_:
+    fig.parts = [q for q in fig.parts if q.name not in ('helmet', 'hood', 'mask', 'scopecups', 'scopeglass', 'eyeglass', 'respirator', 'grille', 'filters', 'earcups', 'eardiscs', 'antenna', 'antennatip', 'lamp', 'lampglass', 'scrimhood')]
+    FS, FC = 1.12, HC + V(0, -.03, 0)
+    Fp = lambda x, y, z: FC + V(x, y, z) * FS
+    fc, skl = Hu.face(FC, FS, jaw=.9, long=.012, cheek=.7, nose=(1.28, .72, 1.0), brow=1.15, lip=.8, lines=1.7, squint=(-1,), sockets=(1,))
+    stub = lambda p: np.clip((FC[1] - .062 * FS - p[..., 1]) * 45, 0, 1) * np.clip((p[..., 2] - FC[2] - .0) * 40, 0, 1) * np.clip((p[..., 1] - FC[1] + .2 * FS) * 40, 0, 1) * .5
+    fig.add('face', 'head', 'skinF', fc, 2400, voxel=.0023, uv=('cyl', FC), marks=[(stub, (.5, .48, .47))])
+    fig.add('hair', 'head', 'hairG', Hu.cropped(skl, FC, FS, .03), 300, voxel=.0025, uv=('cyl', FC))
+    brows = S.union(*[S.ellipsoid(Fp(sx * .045, .047, .094), (.036 * FS, .012 * FS, .014 * FS), rot(0, sx * .3, sx * -.3)) for sx in (-1, 1)])
+    fig.add('brows', 'head', 'hairG', S.bump(brows, lambda p: (S.noise(p, 160, 2.2) - .5) * .004), 160, voxel=.0018, uv=('front',))
+    HT, HRb = FC + V(0, .05 * FS, -.006), rot(-.12, 0, .07)
+    crown = S.cut(S.both(S.ellipsoid(HT + V(0, .0, 0), (.126, .13, .14)), S.below(HT[1] + .092)), S.below(HT[1]))
+    brim = S.ellipsoid(HT + V(0, .004, .004), (.232, .012, .242))
+
+    def flop(p):                                                 # a brim that has been slept on: down at the sides, up at the back, never level
+        q = p - HT
+        th, rr = np.arctan2(q[..., 0], q[..., 2]), np.sqrt(q[..., 0] ** 2 + q[..., 2] ** 2)
+        k = np.clip((rr - .11) / .12, 0, 1)
+        return k * (-.026 * np.sin(th) ** 2 + .016 * np.sin(th * 3 + .6) + .02 * np.clip(-np.cos(th), 0, 1)) + .0025 * np.sin(rr * 230) * k
+    brim = lambda p, b=brim: b(p + np.stack([np.zeros_like(p[..., 0]), -flop(p), np.zeros_like(p[..., 0])], -1))
+    hat = S.bump(S.union(crown, brim, k=.014), lambda p: (S.noise(p, 26, 8.8) - .5) * .006)
+    hs = lambda f: S.moved(f, R=HRb, c=HT)
+    fig.add('bushhat', 'head', 'fabG', hs(hat), 1500, voxel=.003, uv=('top',), texel=1.1)
+    fig.add('hatband', 'head', 'leaB', hs(S.torus(HT + V(0, .016, 0), .131, .011, squash=1.7)), 240, voxel=.0025, uv=('cyl', HT))
+    rounds = S.union(*[S.union(S.cyl(HT + V(-np.cos(a) * .141, .008, np.sin(a) * .148), HT + V(-np.cos(a) * .141, .05, np.sin(a) * .148), .009, .002), S.rcone(HT + V(-np.cos(a) * .141, .05, np.sin(a) * .148), HT + V(-np.cos(a) * .141, .068, np.sin(a) * .148), .008, .003)) for a in (-.25, 0, .25)])
+    fig.add('hatrounds', 'head', 'nY', hs(rounds), 150, voxel=.0018, uv=('side',), sharp=40)
+    cord = S.union(*[S.chain([HT + V(sx * .118, -.0, .03), Fp(sx * .095, -.09, .05), Fp(sx * .03, -.19, .07), Fp(0, -.2, .075)], .005) for sx in (-1, 1)], S.sphere(Fp(0, -.2, .078), .011))
+    fig.add('hatcord', 'head', 'leaB', cord, 120, voxel=.002)
+    E = Fp(.04, .001, .108)
+    cups = S.union(S.cyl(E, E + V(.004, -.004, .092), .041, .007), S.torus(E + V(.004, -.004, .09), .038, .007, rot(np.pi / 2, 0, 0)), S.cyl(E + V(.04, .0, .03), E + V(.06, .0, .03), .012, .003), S.torus(E + V(.002, -.002, .045), .042, .005, rot(np.pi / 2, 0, 0)), k=.003)
+    fig.add('scopecups', 'head', 'gunB', cups, 420, voxel=.0022, uv=('front',), sharp=50)
+    fig.add('scopeglass', 'head', 'lens', S.both(S.sphere(E + V(.003, -.003, .065), .05), S.cyl(E + V(.004, -.004, .076), E + V(.004, -.004, .1), .033)), 90, voxel=.0022, uv=('front',))
+    strap = S.both(S.cut(S.grow(skl, .007), skl), S.slab(FC + V(0, .004, 0), (.22, 1, .05), .011))
+    fig.add('scopestrap', 'head', 'leaB', S.cut(strap, S.above(HT[1] + .0)), 160, voxel=.0025, uv=('cyl', FC))
+    wrap = S.torus((0, 1.512, -.03), .082, .034, rot(-.3, 0, 0), squash=1.05)                                             # high at the back of the neck, low under the chin
+    wrap = S.union(wrap, S.ellipsoid((.035, 1.415, .098), (.05, .075, .03), rot(.12, 0, -.14)), k=.03)                   # the end of it hangs down the chest
+    wrap = S.bump(wrap, lambda p: .009 * np.sin(p[..., 1] * 70 + np.arctan2(p[..., 0], p[..., 2]) * 3) + (S.noise(p, 22, 6.1) - .5) * .008)
+    fig.add('scarf', 'head', 'fabG', wrap, 700, voxel=.003, uv=('cyl', V(0, 1.48, 0)))
+if patch:
+    fig.parts = [q for q in fig.parts if q.name not in ('hood', 'mask', 'gogglecups', 'goggleglass', 'respirator', 'grille', 'filters')]
+    FS, FC = 1.2, HC + V(0, -.055, .004)
+    Fp = lambda x, y, z: FC + V(x, y, z) * FS
+    fc, skl = Hu.face(FC, FS, jaw=1.06, long=-.004, cheek=1.14, nose=(.88, .94, 0), brow=.9, lip=1.4, lines=.5, sockets=(-1, 1), ears=False)
+    fig.add('face', 'head', 'skinD', fc, 2400, voxel=.0024, uv=('cyl', FC))
+    fig.add('hair', 'head', 'stache', Hu.cropped(skl, FC, FS, .0, 5.5), 260, voxel=.0028, uv=('cyl', FC))
+    strap = S.both(S.cut(S.grow(fc, .006), fc), S.slab(FC + V(0, 0, .012), (0, .2, 1), .013))
+    strap = S.cut(strap, S.below(FC[1] - .158 * FS), S.above(HC[1] - .02))
+    fig.add('chinstrap', 'head', 'leaB', S.union(strap, S.ellipsoid(Fp(0, -.166, .05), (.03, .012, .03)), k=.004), 220, voxel=.0025, uv=('front',))
+    rims, glass = [], []
+    for sx in (-1, 1):                                                                                           # round spectacles, mended at the bridge
+        c = Fp(sx * .041, .0, .124)
+        rims += [S.torus(c, .036, .0045, rot(np.pi / 2, 0, 0)), S.chain([c + V(sx * .036, 0, 0), c + V(sx * .068, .004, -.05), Fp(sx * .1, .0, .0)], .0035)]
+        glass.append(S.cyl(c + V(0, 0, -.004), c + V(0, 0, .003), .034, .001))
+    rims.append(S.union(S.rcone(Fp(-.012, .004, .13), Fp(.012, .004, .13), .004), S.sphere(Fp(0, .004, .131), .008)))
+    fig.add('gogglecups', 'head', 'nS', S.union(*rims), 320, voxel=.0018, uv=('front',))
+    fig.add('goggleglass', 'head', 'lens', S.union(*glass), 90, voxel=.002, uv=('front',))
+    hang = lambda f: S.moved(f, d=V(0, -.118, -.046), R=rot(.5, 0, 0), c=HC + V(0, -.125, .12))                 # the mask, pulled down under the chin
+    fig.add('respirator', 'head', 'pD', hang(resp), 300, voxel=.0025, uv=('front',), sharp=45)
+    fig.add('grille', 'head', 'rib', hang(gr), 110, voxel=.002, uv=('front',))
+    fig.add('maskstrap', 'head', 'leaB', S.torus((0, 1.475, -.0), .068, .011, rot(.3, 0, 0), squash=1.6), 140, voxel=.0025, uv=('cyl', V(0, 1.47, 0)))
 
 # ---------------------------------------------------------------- arms and the weapon
 GX, GY = (.2 if heavy else .135), 1.2                                              # the bore line: low on the right side, level, pointing ahead

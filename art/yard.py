@@ -24,6 +24,35 @@ def slab(fig, name, c, half, mat, seed=1.0, tris=60, group='body', amp=.03):
     fig.add(name, group, mat, Y.knocked(S.box(c, half, .03), seed, amp, 1.0), tris, voxel=.04, uv=('box',), sharp=35, lo=c - half - .1, hi=c + half + .1, planar=4)
 
 
+def gable(fig, tag, c, w, d, rise, mats, seed, over=.2, end='wallS'):
+    """A pitched roof over a block w by d: c is the middle of the block's top, the ridge runs along x, `rise` above it."""
+    c = V(c)
+    L, p = float(np.hypot(d / 2, rise)), float(np.arctan2(rise, d / 2))
+    for i, ry in enumerate((0, PI)):
+        Ry = rot(0, ry, 0)
+        R = (Ry @ rot(p, 0, 0) @ Y.FLAT).astype(F)
+        o = c + Ry @ V(0, -over * np.sin(p), d / 2 + over * np.cos(p))
+        Y.clad(fig, '%s%d_' % (tag, i), o, R, w + over * 2, L + over + .1, mats, seed + i * 1.7, out=.04, rows=False, curl=(.25, .01, .022), ragged=0.0, wide=(1.1, 2.0))
+    ridge = c + V(0, rise, 0)
+    for sx in (-1, 1):                                           # the triangles that close the ends
+        tri = S.both(S.both(S.box(c + V(sx * (w / 2 - .06), rise / 2, 0), (.05, rise / 2, d / 2), 0), S.plane(ridge, (0, d / 2, rise))), S.plane(ridge, (0, d / 2, -rise)))
+        fig.add('%send%d' % (tag, sx + 1), 'body', end, Y.knocked(tri, seed + sx, .02, 1.5), 40, voxel=.03, uv=('box',), sharp=35, lo=c + V(sx * w / 2 - .3, -.1, -d / 2 - .1), hi=c + V(sx * w / 2 + .3, rise + .1, d / 2 + .1), planar=4)
+    fig.add(tag + 'ridge', 'body', 'nD', Y.beam(ridge + V(-w / 2 - over, .05, 0), ridge + V(w / 2 + over, .05, 0), .16, .1), 30, voxel=.03, uv=('box',), lo=ridge - V(w / 2 + over + .2, .3, .3), hi=ridge + V(w / 2 + over + .2, .3, .3))
+
+
+def falsefront(fig, tag, c, R, w, h, mats, seed, crown=None, depth=1.3):
+    """A wall that stands up past the roof behind it, as a frontier shopfront does, propped from behind. c is the middle of its foot."""
+    c = V(c)
+    back = S.box(c + R @ V(0, h / 2, -.1), (w / 2 - .08, h / 2 - .03, .05), .02, R)
+    fig.add(tag + 'back', 'body', 'wallD', back, 30, voxel=.04, uv=('box',), lo=c - V(w / 2 + .2, .2, w / 2 + .2), hi=c + V(w / 2 + .2, h + .3, w / 2 + .2), planar=4)
+    Y.clad(fig, tag + 'f', c, R, w, h, mats, seed, out=-.02, rows=False, ragged=.32, wide=(1.0, 1.9))
+    if crown:                                                    # a raised middle, where the name would have gone
+        Y.clad(fig, tag + 'c', c + V(0, h - .08, 0), R, crown[0], crown[1], mats, seed + 3.1, out=.0, rows=False, ragged=.12, wide=(.9, 1.6))
+        fig.add(tag + 'cback', 'body', 'wallD', S.box(c + R @ V(0, h + crown[1] / 2, -.1), (crown[0] / 2 - .08, crown[1] / 2, .05), .02, R), 20, voxel=.04, uv=('box',), lo=c - V(w / 2, 0, w / 2), hi=c + V(w / 2, h + crown[1] + .3, w / 2), planar=4)
+    props = S.union(*[Y.beam(c + R @ V(x, h * .82, -.14), c + R @ V(x, -.02, -depth), .09) for x in (-w * .32, w * .32)])
+    fig.add(tag + 'props', 'body', 'nD', props, 60, voxel=.026, uv=('box',))
+
+
 # ---------------------------------------------------------------- Headframe
 def headframe():
     fig = site.building('headframe', 7.8, 5.6, 16.8, ink=0)
@@ -49,7 +78,7 @@ def headframe():
 
 # ---------------------------------------------------------------- Bunkhouse
 def bunkhouse():
-    fig = site.building('bunkhouse', 4.6, 3.6, 4.4, ink=0)
+    fig = site.building('bunkhouse', 4.6, 3.6, 5.2, ink=0)
     fig.group('body')
     Y.pads(fig, 7.6, 5.8, 2, 2, 11.0, .2)
     O = V(0, .2, 0)
@@ -66,9 +95,15 @@ def bunkhouse():
     ribs = S.union(*[S.torus((x, .2, 0), 2.63, .09, rot(0, 0, PI / 2), squash=1.3) for x in (-2.4, 0, 2.4)])
     fig.add('ribs', 'body', 'bD', S.both(ribs, S.above(.2)), 420, voxel=.03, uv=('box',))
     arch = S.cyl((-4, .2, 0), (4, .2, 0), 2.56)
-    endR = Y.sheet((3.5, 1.5, 0), 5.3, 2.7, Y.RIGHT, seed=13.0, dent=.07)
-    endR = S.cut(S.both(endR, arch), S.box((3.5, 1.25, 0), (.6, 1.1, .78)), S.box((3.5, 2.9, 0), (.6, .28, .48)))
-    fig.add('endR', 'body', 'wallS', endR, 160, voxel=.028, uv=('plane', (3.5, 1.5, 0), Y.RIGHT[:, 0], Y.RIGHT[:, 1], 5.3, 2.7), sharp=35)
+    # the door end is a square front, taller than the hut behind it and stepped up in the middle
+    endR = S.union(Y.sheet((3.5, 1.85, 0), 5.7, 3.3, Y.RIGHT, seed=13.0, dent=.07), Y.sheet((3.52, 3.75, 0), 2.7, .7, Y.RIGHT, seed=13.5, dent=.05))
+    endR = S.cut(endR, S.box((3.5, 1.25, 0), (.6, 1.1, .78)), S.box((3.5, 2.9, 0), (.6, .28, .48)))
+    fig.add('endR', 'body', 'wallS', endR, 220, voxel=.028, uv=('plane', (3.5, 2.05, 0), Y.RIGHT[:, 0], Y.RIGHT[:, 1], 5.7, 4.1), sharp=35)
+    fig.add('endprops', 'body', 'nD', S.union(*[Y.beam((3.44, 3.3, z), (2.3, 2.9 - abs(z) * .5, z), .09) for z in (-1.9, 1.9)]), 60, voxel=.026, uv=('box',))
+    fig.add('endcap', 'body', 'wallR', Y.knocked(S.union(S.box((3.5, 3.52, -2.1), (.12, .05, .8), .02), S.box((3.5, 3.52, 2.1), (.12, .05, .8), .02), S.box((3.52, 4.12, 0), (.12, .05, 1.42), .02)), 13.7, .02, 2), 60, voxel=.026, uv=('box',), sharp=35)
+    # a lookout box astride the ridge, with a roof of its own
+    Y.walls(fig, 'cu', (-.9, 2.5, 0), 1.6, 1.1, 1.5, ('wallS', 'wallG', 'wallR'), 18.0, rows=False, wide=(.8, 1.6), front=[(-.45, .45, .35, .85)], back=[(-.45, .45, .35, .85)])
+    gable(fig, 'cur', (-.9, 3.6, 0), 1.6, 1.5, .5, ('wallR', 'wallS'), 19.0, over=.18)
     endL = S.both(Y.sheet((-3.5, 1.5, 0), 5.3, 2.7, Y.LEFT, seed=14.0, dent=.08, peel=(1, 1, .04)), arch)
     fig.add('endL', 'body', 'wallD', endL, 120, voxel=.028, uv=('plane', (-3.5, 1.5, 0), Y.LEFT[:, 0], Y.LEFT[:, 1], 5.3, 2.7), sharp=35)
     Y.strip(fig, 'kickRa', (3.56, .5, 2.65), (3.56, .5, .9), .8, .14, 'wallD', 15.0)
@@ -107,11 +142,28 @@ def container(fig, tag, c, ry, mat, seed):
 
 
 def depot():
-    fig = site.building('depot', 3.6, 3.4, 5.4, ink=0)
+    fig = site.building('depot', 4.4, 3.6, 9.4, ink=0)
     fig.group('body')
     container(fig, 'r', (0, 1.15, -1.2), 0, 'wallR', 21.0)
     container(fig, 't', (.2, 1.15, 1.25), .06, 'wallT', 22.0)
     container(fig, 'y', (.1, 3.45, 0), -.12, 'wallY', 23.0)
+    # the derrick that stacked them: a mast at the back corner, a jib swung out over the top box, the hook still hanging
+    M0, M1 = V(-3.05, 0, -2.75), V(-3.0, 8.3, -2.75)
+    jd = V(4.9, 0, 2.3) / float(np.hypot(4.9, 2.3))
+    J0, J1 = M1 + V(0, -.7, 0) - jd * 1.5, M1 + V(0, -.7, 0) + jd * 5.2
+    mast_ = S.union(Y.beam(M0, M1, .34), S.box(M1 + V(0, -.7, 0), (.3, .32, .3), .03), S.box(M0 + V(0, 2.6, 0), (.21, .3, .21), .02))
+    for i in range(7):                                           # lightening holes up it
+        mast_ = S.cut(mast_, S.cyl(M0 + V(-.4, 1.0 + i * .95, 0), M0 + V(.4, 1.0 + i * .95, 0), .09, .01))
+    fig.add('mast', 'body', 'bY', Y.knocked(mast_, 24.0, .025, 1.4), 360, voxel=.03, uv=('box',), sharp=35)
+    fig.add('jib', 'body', 'bY', Y.knocked(Y.beam(J0, J1, .24, .3), 25.0, .025, 1.4), 220, voxel=.03, uv=('box',), sharp=35)
+    fig.add('counter', 'body', 'conc', Y.knocked(S.box(J0 + jd * .3 + V(0, -.34, 0), (.34, .3, .3), .03, S.basis(jd, (0, 1, 0))), 26.0, .03, 2), 60, voxel=.03, uv=('box',), sharp=35)
+    stays = S.union(Y.beam(M1 + V(0, .0, 0), J0 + jd * 4.4 + V(0, .16, 0), .07), Y.beam(M1, J0 + jd * .2 + V(0, .16, 0), .07), Y.beam(M0 + V(0, 5.2, 0), J0 + jd * 3.0 + V(0, -.1, 0), .1))
+    fig.add('stays', 'body', 'nD', stays, 140, voxel=.024, uv=('box',))
+    HK = J1 - jd * .35
+    hook = S.union(S.cyl(HK + V(0, -.1, 0), HK + V(0, -1.5, 0), .028), S.box(HK + V(0, -1.62, 0), (.15, .15, .13), .04), S.cut(S.torus(HK + V(0, -1.98, 0), .13, .045, rot(PI / 2, 0, 0)), S.box(HK + V(.13, -1.9, 0), (.09, .08, .1))),
+                   S.box(HK + V(0, -.02, 0), (.2, .14, .18), .03))
+    fig.add('hook', 'body', 'haz', hook, 160, voxel=.02, uv=('box',), cull=False)
+    fig.add('mastfoot', 'body', 'conc', Y.knocked(S.box(M0 + V(0, .16, 0), (.45, .17, .45), .03), 27.0, .03, 2), 50, voxel=.03, uv=('box',))
     return fig
 
 
@@ -154,6 +206,7 @@ def assay():
     slab(fig, 'roofbed', (0, 3.3, -.3), (3.0, .16, 2.4), 'wallD', 44.0)
     Y.roof(fig, 'rf', (0, 3.46, -.3), 6.2, 5.0, ('wallD', 'wallS', 'wallT'), 45.0, over=0)
     Y.tank(fig, 'st', (2.1, 3.4, -1.7), .55, 2.6, ('bS', 'cO', 'nD'), 46.0, dome=.46, tris=.7, voxel=.026)
+    falsefront(fig, 'ff', (0, 3.42, 1.9), Y.FRONT, 6.1, 1.5, ('wallT', 'wallS', 'wallT', 'wallD'), 47.0, crown=(2.9, .55))
     return fig
 
 
@@ -175,7 +228,7 @@ def mast():
 
 # ---------------------------------------------------------------- Machine Shop
 def machineshop():
-    fig = site.building('machineshop', 5.4, 4.4, 6.4, ink=0)
+    fig = site.building('machineshop', 5.4, 4.4, 8.0, ink=0)
     fig.group('body')
     Y.pads(fig, 9, 7, 3, 2, 61.0, .2)
     Y.walls(fig, 'w', (-.6, .1, -.4), 6.4, 3.6, 5, ('wallR', 'wallR', 'wallR', 'wallS', 'wallD', 'wallY'), 62.0, front=[(-1.75, 1.75, 0, 2.85), (-3.17, -2.03, 2.08, 2.92)])
@@ -188,20 +241,29 @@ def machineshop():
     fig.add('crane', 'body', 'bY', Y.knocked(crane, 67.0, .025, 1.4), 320, voxel=.03, uv=('box',), sharp=35)
     fig.add('stay', 'body', 'nD', S.union(Y.beam((3.4, 4.2, 2.2), (1.6, 5.45, 2.2), .12), Y.beam((3.4, 5.6, 2.2), (2.2, 6.3, 2.2), .08), Y.beam((2.2, 6.3, 2.2), (-.4, 5.6, 2.2), .08)), 160, voxel=.024, uv=('box',))
     fig.add('foot', 'body', 'conc', Y.knocked(S.box((3.4, .15, 2.2), (.38, .16, .38), .03), 68.0, .03, 2), 50, voxel=.03, uv=('box',))
+    # a tool loft stood on the back corner of the roof, a storey and a half of it, with a hoist beam out over the yard
+    Y.walls(fig, 'lf', (1.75, 3.96, -1.75), 1.8, 2.2, 2.1, ('wallS', 'wallR', 'wallD', 'wallY'), 69.0, rows=False, wide=(.9, 1.8), front=[(-.4, .4, 1.0, 1.75)])
+    gable(fig, 'lfr', (1.75, 6.16, -1.75), 1.8, 2.1, .75, ('wallR', 'wallD', 'wallS'), 69.5, over=.2, end='wallS')
+    hoist = S.union(Y.beam((1.75, 6.05, -.8), (1.75, 6.05, .75), .13, .16), S.cyl((1.68, 5.9, .6), (1.82, 5.9, .6), .13, .02), S.cyl((1.75, 5.9, .6), (1.75, 5.0, .6), .02), S.box((1.75, 4.9, .6), (.1, .12, .1), .03))
+    fig.add('hoist', 'body', 'bY', hoist, 120, voxel=.022, uv=('box',), cull=False)
+    fig.add('cowl', 'body', 'nD', S.union(S.cyl((1.75, 6.8, -1.75), (1.75, 7.3, -1.75), .16, .02), S.rcone((1.75, 7.3, -1.75), (1.75, 7.55, -1.75), .34, .06)), 90, voxel=.024, uv=('box',))
     return fig
 
 
 # ---------------------------------------------------------------- Foundry
 def foundry():
-    fig = site.building('foundry', 5.2, 4.6, 8.6, ink=0)
+    fig = site.building('foundry', 5.2, 4.6, 12.0, ink=0)
     fig.group('body')
     Y.pads(fig, 8.8, 7.6, 3, 2, 71.0, .2)
     Y.walls(fig, 'w', (-.8, .1, -.6), 5.8, 4.2, 5.2, ('wallD', 'wallD', 'wallD', 'wallS', 'wallR'), 72.0, front=[(-2.15, .55, 0, 2.85), (.75, 2.65, .22, 2.18)])
     Y.band(fig, 'fas', (-.8, 4.5, -.6), 6.2, 5.6, .4, .14, 'wallR', 73.0)
     slab(fig, 'roofbed', (-.8, 4.48, -.6), (3.0, .2, 2.7), 'wallD', 74.0)
     Y.walls(fig, 'cl', (-.8, 4.66, -.6), 4.6, .92, 4.2, ('wallS', 'wallS', 'wallD'), 75.0, rows=False, out=-.03)
-    Y.roof(fig, 'rf', (-.8, 5.56, -.6), 4.6, 4.2, ('wallD', 'wallS', 'wallR'), 76.0, over=.12)
-    Y.stack(fig, 'st', (3.2, 0, -1.8), .75, 7.4, ('wallR', 'nY'), (.02, .015), 77.0, n=4, tris=1.3)
+    gable(fig, 'rf', (-.8, 5.58, -.6), 4.6, 4.2, 1.25, ('wallD', 'wallS', 'wallR'), 76.0, over=.22, end='wallS')
+    vents = S.union(*[S.union(S.box((x, 6.95, -.6), (.32, .22, .5), .04), S.box((x, 7.2, -.6), (.42, .04, .62), .02)) for x in (-2.2, -.8, .6)])   # ridge vents, where the heat gets out
+    fig.add('vents', 'body', 'wallD', Y.knocked(vents, 76.5, .02, 2), 120, voxel=.028, uv=('box',), sharp=35)
+    Y.stack(fig, 'st', (3.2, 0, -1.8), .75, 10.6, ('wallR', 'nY'), (.022, .012), 77.0, n=6, tris=1.5)
+    Y.stack(fig, 's2', (-2.9, 4.5, -2.5), .34, 4.4, ('wallS', 'nD'), (-.04, -.02), 77.5, n=3)
     pot = Vk.lathe([(.7, 0), (.95, .12), (.99, .9), (.98, 1.4), (.9, 1.5)], c=(3.1, .15, 1.6))
     pot = S.cut(pot, S.cyl((3.1, 1.5, 1.6), (3.1, 1.9, 1.6), .8))
     pot = S.union(pot, S.torus((3.1, 1.6, 1.6), .95, .07), *[S.cyl((3.1 + sx * .95, 1.0, 1.6), (3.1 + sx * 1.2, 1.0, 1.6), .1, .02) for sx in (-1, 1)])

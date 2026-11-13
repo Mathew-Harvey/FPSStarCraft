@@ -55,7 +55,7 @@ def floater(fig, name, at, R_, r, mat, n=0, slen=.5, smat='teal', upright=False,
 
 # ---------------------------------------------------------------- Choir Stone
 def choir():
-    fig = site.building('choir', 3.2, 3.2, 15.0)
+    fig = site.building('choir', 3.2, 3.2, 15.0, look='stone')
     fig.group('body')
     fig.add('base', 'body', 'vD', mound([(2.3, 0), (2.25, .22), (1.95, .55), (1.4, .86), (1.1, 1.12)], 3, .1, 3.1, ribs=5), 800, voxel=.035, uv=('cyl',))
     sp = Vk.curve([(0, .5, 0), (.24, 3, .1), (-.22, 6, -.12), (.18, 9, .06), (0, 12.1, 0)], 18)
@@ -88,7 +88,7 @@ def choir():
 
 # ---------------------------------------------------------------- Reed Gate
 def reedgate():
-    fig = site.building('reedgate', 6.2, 4.6, 11.5)
+    fig = site.building('reedgate', 6.2, 4.6, 11.5, look='stone')
     fig.group('body')
     fig.add('base', 'body', 'vD', mound([(3.7, 0), (3.6, .3), (3.1, .62), (2.7, .86), (2.3, .96)], 2, .09, 5.2, zs=.72), 800, voxel=.04, uv=('cyl',))
     gold = []
@@ -115,7 +115,7 @@ def reedgate():
 
 # ---------------------------------------------------------------- Brood Pit
 def broodpit():
-    fig = site.building('broodpit', 4.6, 4.6, 6.0)
+    fig = site.building('broodpit', 4.6, 4.6, 6.0, look='stone')
     fig.group('body')
     pit = mound([(3.85, 0), (3.7, .45), (3.1, 1.05), (2.66, 1.36), (2.36, 1.44)], 3, .11, 4.4, ribs=7, rib=.1)
     pit = S.cut(pit, S.ellipsoid((0, 1.62, 0), (2.3, .86, 2.3)), k=.05)
@@ -141,7 +141,7 @@ def broodpit():
 
 # ---------------------------------------------------------------- Thorn Spire
 def thornspire():
-    fig = site.building('thornspire', 2.2, 2.2, 8.6)
+    fig = site.building('thornspire', 2.2, 2.2, 8.6, look='stone')
     fig.group('body')
     fig.add('base', 'body', 'vD', mound([(1.42, 0), (1.34, .22), (.95, .46), (.6, .62)], 2, .06, 2.7, ribs=4, rib=.04), 420, voxel=.028, uv=('cyl',))
     sp = Vk.curve([(0, .3, 0), (.22, 1.8, .1), (-.18, 3.4, -.1), (.1, 5.0, .06), (0, 6.05, 0)], 16)
@@ -170,7 +170,7 @@ def thornspire():
 
 # ---------------------------------------------------------------- Ward Pylon
 def wardpylon():
-    fig = site.building('wardpylon', 3.0, 3.0, 8.0)
+    fig = site.building('wardpylon', 3.0, 3.0, 8.0, look='stone')
     fig.group('body')
     fig.add('base', 'body', 'vD', mound([(1.75, 0), (1.66, .28), (1.2, .5), (.8, .62)], 2, .07, 6.1, ribs=3, rib=.07), 480, voxel=.03, uv=('cyl',))
     gold = [S.torus((0, .6, 0), 1.0, .07)]
@@ -193,7 +193,7 @@ def wardpylon():
 
 # ---------------------------------------------------------------- Hush Well
 def hushwell():
-    fig = site.building('hushwell', 3.4, 3.4, 5.6)
+    fig = site.building('hushwell', 3.4, 3.4, 5.6, look='stone')
     fig.group('body')
     well = mound([(2.42, 0), (2.34, .36), (2.0, .84), (1.72, 1.1), (1.5, 1.16)], 2, .08, 8.3, ribs=4, rib=.06)
     well = S.cut(well, S.ellipsoid((0, 1.3, 0), (1.46, .62, 1.46)), k=.04)

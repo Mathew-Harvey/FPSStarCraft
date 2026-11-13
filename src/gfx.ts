@@ -2,13 +2,14 @@
 // and the ink-outline post pass.
 import * as THREE from 'three';
 import { mergeVertices } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
+import { ENV, NOW, KEYDIR, SUNDIR, setLight, hourOf, LAMPS, LAMP_P, LAMP_C, LAMP_N } from './light';
 
 THREE.ColorManagement.enabled = false;
 
 export const V3 = (x = 0, y = 0, z = 0) => new THREE.Vector3(x, y, z);
 export const INK = '#0e0d14';
-/** Direction towards the sun. */
-export const LIGHT = V3(-0.55, 0.62, 0.56).normalize();
+/** Direction towards the key light: the sun by day, the ringed planet by night. light.ts moves it with the hour. */
+export const LIGHT = KEYDIR;
 
 // Layers: 0 solid world, 1 effects without outlines, 2 first-person view-model, 3 the player's own body (shadow only).
 export const L_FX = 1, L_VM = 2, L_SELF = 3;
@@ -103,17 +104,25 @@ function makeTextures() {
 }
 
 // ---------------------------------------------------------------- toon shader
-const FOG = new THREE.Color('#ecd2c2');
-/** 0 is midday, 1 is full sunset. Shared by the sky and the final grade. */
-export const DUSK = { value: 0 };
-const DUSKFOG = new THREE.Color('#f09a84');
+const FOG = new THREE.Color('#ecd2c2'), FOGS = new THREE.Color('#ffe6bd');
 export const NOISE = `float hash(vec2 p){return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453);}
 float vnoise(vec2 p){vec2 i=floor(p),f=fract(p);f=f*f*(3.-2.*f);return mix(mix(hash(i),hash(i+vec2(1,0)),f.x),mix(hash(i+vec2(0,1)),hash(i+vec2(1,1)),f.x),f.y);}`;
 const TOON_VS = `uniform vec3 uL; uniform vec2 uRep; attribute float aEm; varying vec3 vN,vL,vP,vW,vWn,vO,vOn; varying vec2 vUv; varying float vEm,vSh,vCav;
-void main(){ vUv=uv*uRep; float cq=floor(aEm/32.+.001), er=aEm-32.*cq; vCav=cq<.5?0.:(cq-16.)/15.; float sq=floor(er*.5+.001); vEm=er-2.*sq; vSh=sq*.1; vO=position*length(modelMatrix[0].xyz); vOn=normal; vec4 w=modelMatrix*vec4(position,1.); vW=w.xyz; vec4 mv=viewMatrix*w; vP=mv.xyz; vN=normalize(normalMatrix*normal); vWn=normalize(mat3(modelMatrix)*normal); vL=(viewMatrix*vec4(uL,0.)).xyz; gl_Position=projectionMatrix*mv; }`;
+#ifdef WEAR
+attribute vec2 aWear; varying vec2 vUv2;
+#endif
+void main(){ vUv=uv*uRep;
+#ifdef WEAR
+  vUv2=aWear;
+#endif
+  float cq=floor(aEm/32.+.001), er=aEm-32.*cq; vCav=cq<.5?0.:(cq-16.)/15.; float sq=floor(er*.5+.001); vEm=er-2.*sq; vSh=sq*.1; vO=position*length(modelMatrix[0].xyz); vOn=normal; vec4 w=modelMatrix*vec4(position,1.); vW=w.xyz; vec4 mv=viewMatrix*w; vP=mv.xyz; vN=normalize(normalMatrix*normal); vWn=normalize(mat3(modelMatrix)*normal); vL=(viewMatrix*vec4(uL,0.)).xyz; gl_Position=projectionMatrix*mv; }`;
 const TOON_FS = `precision highp float;
-uniform vec3 uColor,uFog; uniform sampler2D uMap,uShadow; uniform mat4 uShadowMat; uniform float uEmis,uOpacity,uHatch,uFogK,uFlat,uPx,uShadowTex,uGrit,uShine;
+uniform vec3 uColor,uFog; uniform sampler2D uMap,uShadow; uniform mat4 uShadowMat; uniform float uEmis,uOpacity,uHatch,uFogK,uFlat,uPx,uShadowTex,uGrit,uShine,uKey,uFogD,uMist;
+uniform vec3 uSunT,uAmbT,uFogS; uniform vec4 uPLp[8]; uniform vec3 uPLc[8]; uniform int uPLn;
 varying vec3 vN,vL,vP,vW,vWn,vO,vOn; varying vec2 vUv; varying float vEm,vSh,vCav;
+#ifdef WEAR
+uniform sampler2D uWear; varying vec2 vUv2;
+#endif
 ${NOISE}
 float shadowAt(vec3 wp){
   vec4 sc=uShadowMat*vec4(wp,1.); vec3 p=sc.xyz/sc.w*.5+.5;
@@ -266,6 +275,10 @@ void main(){
 #else
   vec3 base=uColor*texture2D(uMap,vUv).rgb;
 #endif
+#ifdef WEAR
+  // A building's own picture of wear lies over its tiled skin: mid grey leaves the skin alone. Whatever glows shows through it.
+  base*=mix(texture2D(uWear,vUv2).rgb*2.,vec3(1.),min(1.,uEmis+vEm));
+#endif
 #ifdef CLIFF
   // A mesa is one huge slow curve, so a fine wobble on its shadow edge turns into a field of speckle. Break it in big brush shapes instead.
   float nz=(vnoise(vW.xz*.16+vW.y*.21)-.5)*.8+(vnoise(vW.xz*.55+vW.y*.7+3.)-.5)*.3;
@@ -275,11 +288,13 @@ void main(){
   float t=dot(n,normalize(vL))+nz*.24; t=mix(t,1.,uFlat*.6);
 #ifdef VM
   // The thing in your hands is lit like a hero prop: its own light over your left shoulder, and your own body never shades it.
-  float sh=1.; t=dot(n,normalize(vec3(-.5,.72,.48)))+nz*.12;
+  float sh=1., ky=max(uKey,.6); t=dot(n,normalize(vec3(-.5,.72,.48)))+nz*.12;
 #else
+  float ky=uKey;
   float sh=shadowAt(vW+wn*.07);
 #endif
-  float lit=smoothstep(-.03,.03,t)*smoothstep(.3,.7,sh), hi=smoothstep(.74,.78,t)*sh, deep=1.-smoothstep(-.6,-.54,t);
+  // ky is how strong the key light is this hour: with none, nothing is lit and nothing is in shadow, and the inker's shading eases off
+  float lit=smoothstep(-.03,.03,t)*smoothstep(.3,.7,sh)*ky, hi=smoothstep(.74,.78,t)*sh*ky, dk=mix(.35,1.,ky), deep=(1.-smoothstep(-.6,-.54,t))*dk;
   vec3 shc=base*mix(vec3(.36,.3,.48),vec3(.27,.228,.325),uGrit)+mix(vec3(.02,.01,.055),vec3(.016,.01,.036),uGrit);
   vec3 col=mix(shc,base*vec3(.8,.75,.8),lit);
   col=mix(col,base,smoothstep(.3,.36,t)*lit);
@@ -304,15 +319,22 @@ void main(){
   float br2=mix(smoothstep(.36,.56,vnoise(vec2(u2/s0*.13,k2*37.1)+9.)),smoothstep(.36,.56,vnoise(vec2(u2/s0*.065,k2*37.1)+9.)),fr);
   float l1=(1.-smoothstep(.13,.13+aw,abs(q1-i1)))*br1*mix(1.,1.-fr,mod(i1,2.));
   float l2=(1.-smoothstep(.13,.13+aw,abs(q2-i2)))*br2*mix(1.,1.-fr,mod(i2,2.));
-  float term=smoothstep(-.42,-.3,t)*(1.-smoothstep(-.05,.03,t));
-  float cst=smoothstep(-.03,.03,t)*(1.-smoothstep(.3,.7,sh));
+  float term=smoothstep(-.42,-.3,t)*(1.-smoothstep(-.05,.03,t))*dk;
+  float cst=smoothstep(-.03,.03,t)*(1.-smoothstep(.3,.7,sh))*ky;
   float hatch=term*l1*.62+deep*(l1*.5+l2*.5)+cst*l1*.2;
   col=mix(col,col*.4,clamp(hatch,0.,1.)*uHatch);
   // and where a form turns right away from the sun the inker fills it in: a pool of near black, as comics spot their blacks
-  col=mix(col,col*.34+vec3(.012,.008,.03),(1.-smoothstep(-.86,-.78,t))*uHatch*(1.-uFlat));
+  col=mix(col,col*.34+vec3(.012,.008,.03),(1.-smoothstep(-.86,-.78,t))*uHatch*(1.-uFlat)*dk);
   float fres=1.-max(dot(n,normalize(-vP)),0.);
   col=mix(col,min(base*1.22+vec3(.1,.09,.06),vec3(1.)),smoothstep(.7,.78,fres)*lit*.45*(1.-uFlat)*uHatch);
   float rim=pow(1.-max(dot(n,normalize(-vP)),0.),3.)*(1.-lit)*.4; col+=rim*vec3(.45,.6,.95);
+  // The hour: whatever the key light reaches takes its colour, and the shade takes the colour of the sky that fills it.
+  { float wl=lit/(lit+.3*(1.-lit)); col*=mix(uAmbT,uSunT,wl); }
+  // Lamps, fires and crystals each throw a pool of light with a hard-edged heart, the way a comic paints lamplight.
+  { vec3 pl=vec3(0.); for(int i=0;i<8;i++){ if(i>=uPLn) break; vec3 dl=uPLp[i].xyz-vW; float r=uPLp[i].w, dd=dot(dl,dl);
+      if(dd<r*r){ float q=1.-sqrt(dd)/r+nz*.05, nl=dot(wn,dl)*inversesqrt(dd+1e-4); pl+=uPLc[i]*(smoothstep(0.,.55,q)*.4+smoothstep(.42,.47,q)*.28+smoothstep(.72,.77,q)*.32)*(smoothstep(-.3,.2,nl)*.82+.18); } }
+    // inside a pool the lamp is the light you see by, so the colour of the hour steps back and the lamp's own comes forward
+    col=col*(1.-.55*clamp(max(pl.r,max(pl.g,pl.b)),0.,1.))+(base*1.12+.03)*pl; }
 #ifdef BLOOM
   float em=min(1.,uEmis+vEm+bl.a*.8);
 #else
@@ -320,7 +342,12 @@ void main(){
 #endif
   col=mix(col,base*1.08,em);
 #ifndef VM
-  float d=length(vP); col=mix(col,uFog,(1.-exp(-d*uFogK))*.92*(1.-em*.6));
+  // The air: far things fade into its colour, which is warmer looking toward the light. Mist lies on the ground and thins with height.
+  // The map view looks straight down through all of it from high up, so weather is kept from blotting it out.
+  float d=length(vP); vec3 fc=mix(uFog,uFogS,pow(max(dot(vP/d,normalize(vL)),0.),3.));
+  float e0=exp(-.16*max(cameraPosition.y,0.)), e1=exp(-.16*max(vW.y,0.)), dy=vW.y-cameraPosition.y, hk=abs(dy)<.05?e0:(e0-e1)/(.16*dy);
+  float od=isOrthographic?d*uFogK*min(uFogD,1.3):d*(uFogK*uFogD+uMist*hk*step(1e-6,uFogK));
+  col=mix(col,fc,(1.-exp(-od))*.92*(1.-em*.6));
 #endif
 #ifdef BLOOM
   gl_FragColor=vec4(col,ba);
@@ -331,7 +358,9 @@ void main(){
 }`;
 const WHITE = new THREE.DataTexture(new Uint8Array([255, 255, 255, 255]), 1, 1, THREE.RGBAFormat); WHITE.needsUpdate = true;
 // Uniforms shared by every toon material so the shadow map and pixel scale update in one place.
-export const SHARED = { uShadow: { value: WHITE as THREE.Texture }, uShadowMat: { value: new THREE.Matrix4() }, uShadowTex: { value: 1 / 2048 }, uPx: { value: 1 }, uL: { value: LIGHT }, uFog: { value: FOG }, uGrit: { value: 1 } };
+export const SHARED = { uShadow: { value: WHITE as THREE.Texture }, uShadowMat: { value: new THREE.Matrix4() }, uShadowTex: { value: 1 / 2048 }, uPx: { value: 1 }, uL: { value: LIGHT }, uFog: { value: FOG }, uGrit: { value: 1 },
+  uFogS: { value: FOGS }, uSunT: { value: V3(1, 1, 1) }, uAmbT: { value: V3(1, 1, 1) }, uKey: { value: 1 }, uFogD: { value: 1 }, uMist: { value: 0 }, uPLp: { value: LAMP_P }, uPLc: { value: LAMP_C }, uPLn: LAMP_N };
+if (LAMPS !== 8) throw new Error('the toon shader is written for eight lamps');
 export interface ToonOpts { color?: string; emis?: number; hatch?: number; fog?: number; flat?: number; rx?: number; ry?: number; side?: THREE.Side; ground?: boolean; cliff?: boolean; bloom?: boolean; /** 0 is chalk, 1 is polished metal. */ shine?: number }
 export function T(map?: THREE.Texture | null, o: ToonOpts = {}) {
   return new THREE.ShaderMaterial({
@@ -410,27 +439,56 @@ export function beam(a: P3, b: P3, r: number, mat: THREE.Material, parent: THREE
 export function setLayer(o: THREE.Object3D, layer: number) { o.traverse(x => x.layers.set(layer)); return o; }
 
 // ---------------------------------------------------------------- sky
+// Dust in the air: specks that drift on the wind in a box that follows the camera. Where the sun reaches them they catch it, and in the
+// shadow of a building they go dull, so a shaft of light between two sheds shows as a shaft. Count, speed and colour come from the hour.
+const MOTEU = { uCam: { value: V3() }, uDrift: { value: V3() }, uPxH: { value: 600 }, uCol: { value: V3(1, 1, 1) }, uAmt: { value: 0 }, uKey: { value: 1 } };
+const MOTE_N = 1400; let moteGeo: THREE.BufferGeometry | null = null, moteMat: THREE.ShaderMaterial | null = null;
+function makeMotes() {
+  if (!moteGeo) { let sd = 5; const r = () => (sd = (sd * 16807) % 2147483647) / 2147483647, p = new Float32Array(MOTE_N * 3), a = new Float32Array(MOTE_N); for (let i = 0; i < MOTE_N; i++) { p[i * 3] = r(); p[i * 3 + 1] = r(); p[i * 3 + 2] = r(); a[i] = r(); }
+    moteGeo = new THREE.BufferGeometry(); moteGeo.setAttribute('position', new THREE.BufferAttribute(p, 3)); moteGeo.setAttribute('aR', new THREE.BufferAttribute(a, 1)); }
+  if (!moteMat) moteMat = new THREE.ShaderMaterial({ uniforms: { ...MOTEU, uShadow: SHARED.uShadow, uShadowMat: SHARED.uShadowMat }, transparent: true, depthWrite: false,
+    // the picture's fourth channel says what glows, so the specks are blended into the colour only
+    blending: THREE.CustomBlending, blendSrc: THREE.SrcAlphaFactor, blendDst: THREE.OneMinusSrcAlphaFactor, blendSrcAlpha: THREE.ZeroFactor, blendDstAlpha: THREE.OneFactor,
+    vertexShader: `uniform vec3 uCam,uDrift; uniform float uPxH; uniform mat4 uShadowMat; uniform sampler2D uShadow; attribute float aR; varying float vA,vLit; const vec3 B=vec3(26.,10.,26.);
+    void main(){ vec3 q=position*B+uDrift*(.6+.8*aR); vec3 w=vec3(mod(q.x-uCam.x,B.x)-B.x*.5,mod(q.y,B.y),mod(q.z-uCam.z,B.z)-B.z*.5), wp=vec3(uCam.x+w.x,w.y+.15,uCam.z+w.z);
+      vec4 mv=viewMatrix*vec4(wp,1.); gl_Position=projectionMatrix*mv; float dist=-mv.z; gl_PointSize=clamp(.06*(.5+aR)*uPxH/max(dist,.3),2.,uPxH*.017);
+      vA=smoothstep(.6,3.,dist)*(1.-smoothstep(9.,13.,length(w.xz)))*(.4+.6*aR);
+      vec4 sc=uShadowMat*vec4(wp,1.); vec3 p=sc.xyz/sc.w*.5+.5; vLit=(p.x<0.||p.x>1.||p.y<0.||p.y>1.||p.z>1.)?1.:step(p.z-.002,texture2D(uShadow,p.xy).x); }`,
+    fragmentShader: `precision highp float; uniform vec3 uCol; uniform float uAmt,uKey; varying float vA,vLit;
+    void main(){ float a=(1.-smoothstep(.2,.5,length(gl_PointCoord-.5)))*vA*uAmt*mix(.28,1.,mix(1.,vLit,uKey)); if(a<.004) discard; gl_FragColor=vec4(uCol,a); }` });
+  const pts = new THREE.Points(moteGeo, moteMat); pts.frustumCulled = false; pts.renderOrder = 5; setLayer(pts, L_FX); return pts;
+}
+/** What the sky reads each frame. The far air is shared with everything else, so the land fades into the sky's own horizon. */
+const SKYU = { uSunD: { value: SUNDIR }, uKeyD: { value: KEYDIR }, uTop: { value: V3() }, uMid: { value: V3() }, uCloud: { value: V3(1, 1, 1) }, uDisc: { value: V3(1, 1, 1) }, uStars: { value: 0 }, uCover: { value: .5 }, uTime: { value: 0 } };
 export function makeSky() {
   const mat = new THREE.ShaderMaterial({
-    uniforms: { uL: { value: LIGHT }, uPx: SHARED.uPx, uDusk: DUSK }, side: THREE.BackSide, depthWrite: false,
+    uniforms: { uPx: SHARED.uPx, uFog: SHARED.uFog, uFogS: SHARED.uFogS, ...SKYU }, side: THREE.BackSide, depthWrite: false,
     vertexShader: `varying vec3 vD; void main(){ vD=position; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.); }`,
-    fragmentShader: `precision highp float; varying vec3 vD; uniform vec3 uL; uniform float uPx; uniform float uDusk; ${NOISE}
+    fragmentShader: `precision highp float; varying vec3 vD; uniform vec3 uSunD,uKeyD,uTop,uMid,uFog,uFogS,uCloud,uDisc; uniform float uPx,uStars,uCover,uTime; ${NOISE}
     void main(){ vec3 d=normalize(vD); float h=d.y;
       float t=h+(vnoise(d.xz*5.+d.y*3.)-.5)*.05; t=floor(t*14.)/14.;
-      vec3 hor=mix(vec3(1.,.86,.58),vec3(1.,.58,.3),uDusk), mid=mix(vec3(.36,.78,.76),vec3(.86,.42,.5),uDusk), top=mix(vec3(.07,.33,.50),vec3(.15,.09,.34),uDusk);
-      vec3 col=t<.14?mix(hor,mid,clamp(t/.14,0.,1.)):mix(mid,top,clamp((t-.14)/.55,0.,1.));
-      vec2 p=vec2(d.x*4.+d.z*2.7,h*24.); float c=vnoise(p)*.65+vnoise(p*2.3+7.)*.35;
-      float band=smoothstep(.03,.1,h)*(1.-smoothstep(.34,.5,h));
-      col=mix(col,vec3(1.,.9,.72),smoothstep(.56,.58,c)*band*.85); col=mix(col,vec3(1.,.98,.9),smoothstep(.62,.64,c)*band);
-      float sd=dot(d,normalize(uL)); col=mix(col,vec3(1.,.95,.7),smoothstep(.9965,.9972,sd)); col=mix(col,vec3(1.,.9,.6),smoothstep(.985,.9855,sd)*.35);
+      float sd=dot(d,normalize(uSunD)), kd=pow(max(dot(d,normalize(uKeyD)),0.),3.);
+      // the horizon is the colour the land fades into, so the two meet without a seam
+      vec3 hor=mix(uFog,uFogS,kd);
+      vec3 col=t<.14?mix(hor,uMid,clamp(t/.14,0.,1.)):mix(uMid,uTop,clamp((t-.14)/.55,0.,1.));
+      // the sky lights up round the sun in a few flat steps
+      float up=smoothstep(-.12,.02,uSunD.y), hl=floor(pow(max(sd,0.),14.)*4.+.5)/4.; col=mix(col,mix(uDisc,hor,.35),hl*.4*up);
+      vec2 p=vec2(d.x*4.+d.z*2.7+uTime*.006,h*24.); float c=vnoise(p)*.65+vnoise(p*2.3+7.)*.35, th=.56-(uCover-.5)*.34;
+      float band=smoothstep(.03,.1,h)*(1.-smoothstep(.34+max(uCover-.5,0.)*.7,.5+max(uCover-.5,0.)*.9,h));
+      vec3 cl=mix(uCloud,uDisc,kd*.35*up);
+      col=mix(col,cl*.9,smoothstep(th,th+.02,c)*band*.85); col=mix(col,cl,smoothstep(th+.06,th+.08,c)*band);
+      float disc=smoothstep(.9965,.9972,sd), halo=smoothstep(.985,.9855,sd);
+      col=mix(col,uDisc,halo*.35); col=mix(col,min(uDisc*1.08,vec3(1.)),disc);
       vec2 q=gl_FragCoord.xy/uPx/8.; q.x+=mod(floor(q.y),2.)*.5; float dt=length(fract(q)-.5);
       col=mix(col,col*.84,step(dt,.36*(1.-clamp(h*3.2,0.,1.))));
-      vec2 sg=floor(vec2(atan(d.z,d.x)*90.,h*150.)); col=mix(col,vec3(1.,.95,.85),step(.992,hash(sg))*smoothstep(.5,.9,uDusk)*smoothstep(.25,.5,h));
+      vec2 sv=vec2(atan(d.z,d.x)*150.,h*240.), sg=floor(sv); float st=hash(sg), sr=length(fract(sv)-.5);
+      col=mix(col,vec3(1.,.95,.85),step(.988,st)*(1.-smoothstep(.1+.25*fract(st*77.),.16+.3*fract(st*77.),sr))*uStars*smoothstep(.06,.3,h)*(.6+.4*sin(uTime*(1.5+st*40.)+st*90.))*(1.-smoothstep(th,th+.02,c)*band));
       if(h<0.) col=hor;
-      gl_FragColor=vec4(col,1.); }`,
+      // the disc and the ring of sky round it glow
+      gl_FragColor=vec4(col,1.-(disc*.8+halo*.25)*step(0.,h)); }`,
   });
   const g = new THREE.Group();
-  setLayer(mk(new THREE.SphereGeometry(2600, 32, 20), mat, 0, 0, 0, g), L_FX);
+  setLayer(mk(new THREE.SphereGeometry(2600, 32, 20), mat, 0, 0, 0, g), L_FX); g.add(makeMotes());
   const pd = V3(.5, .3, -1).normalize().multiplyScalar(1500);
   mk(G.sph, M.planet, [pd.x, pd.y, pd.z], [470, 470, 470], [.3, 0, .35], g);
   mk(new THREE.RingGeometry(300, 430, 48), M.ring, [pd.x, pd.y, pd.z], 0, [Math.PI / 2 - .32, .35, 0], g);
@@ -440,7 +498,7 @@ export function makeSky() {
 }
 
 // ---------------------------------------------------------------- pipeline
-const POST_FS = `precision highp float; varying vec2 vUv; uniform sampler2D tC,tD,tN; uniform vec2 uRes; uniform sampler2D tB; uniform vec2 uSun; uniform float uNear,uFar,uOrtho,uPx,uSat,uStatic,uTime,uFlash,uDusk,uBold,uProj,uAO,uGrit,uGlow; ${NOISE}
+const POST_FS = `precision highp float; varying vec2 vUv; uniform sampler2D tC,tD,tN; uniform vec2 uRes; uniform sampler2D tB; uniform vec2 uSun; uniform float uNear,uFar,uOrtho,uPx,uSat,uStatic,uTime,uFlash,uBold,uProj,uAO,uGrit,uGlow,uShaft; uniform sampler2D tB2,tS; uniform vec3 uTint,uLift,uShaftC; ${NOISE}
 float lin(vec2 uv){ float d=texture2D(tD,uv).x; if(uOrtho>.5) return uNear+d*(uFar-uNear); float z=d*2.-1.; return 2.*uNear*uFar/(uFar+uNear-z*(uFar-uNear)); }
 vec3 nrm(vec2 uv){ return texture2D(tN,uv).xyz*2.-1.; }
 float edgeAt(vec2 u, vec2 sp){
@@ -493,9 +551,11 @@ void main(){
     float wear=max(rimE,ridge)*same*(1.-min(1.,edge*1.4))*(1.-smoothstep(25.,60.,d0))*(.6+.4*vnoise(sp/7.));
     col=mix(col,min(col*1.5+vec3(.1,.09,.06),vec3(1.)),wear*.5*uGrit); } }
   col=mix(col,vec3(.05,.045,.075),min(1.,edge*.95));
-  col=mix(col,col*vec3(1.1,.8,.84)+vec3(.03,0.,.07),uDusk*.75);
-  // Lights spill: lamps, visors, fire and crystals glow into the air round them.
-  if(uGlow>0.) col+=texture2D(tB,vUv).rgb*uGlow;
+  // Lights spill: lamps, visors, fire and crystals glow into the air round them, tightly and then in a wide soft halo.
+  if(uGlow>0.) col+=(texture2D(tB,vUv).rgb+texture2D(tB2,vUv).rgb*.6)*uGlow;
+  // Shafts: where the sun comes past the edge of a thing, the dust in the air shows the light as rays.
+  if(uShaft>0.){ float sf=texture2D(tS,vUv).r; col=1.-(1.-col)*(1.-uShaftC*min(sf*uShaft*.52,.75)); }
+  col=col*uTint+uLift;
   // The sky steps back: paler and less teal under the grade, so it is a backdrop and not the loudest thing in the frame.
   if(uOrtho<.5&&uGrit>0.&&lin(vUv)>900.){ float sl=dot(col,vec3(.3,.59,.11)); col=mix(col,mix(vec3(sl),col,.6)*vec3(1.,.99,1.02)+vec3(.04,.035,.045),uGrit); }
   col=mix(vec3(dot(col,vec3(.3,.59,.11))),col,1.18*uSat);
@@ -514,6 +574,14 @@ const GLOW_PICK = `precision highp float; varying vec2 vUv; uniform sampler2D tC
 void main(){ vec3 a=vec3(0.); for(int i=0;i<4;i++){ vec2 o=vec2(i==0||i==2?-1.:1.,i<2?-1.:1.)*uT; vec4 c=texture2D(tC,vUv+o); float k=max(1.-c.a,smoothstep(.9,1.,min(c.r,min(c.g,c.b)))*.3); a+=c.rgb*k; } gl_FragColor=vec4(a*.25,1.); }`;
 const GLOW_BLUR = `precision highp float; varying vec2 vUv; uniform sampler2D tC; uniform vec2 uT;
 void main(){ vec3 a=texture2D(tC,vUv).rgb*.2; a+=(texture2D(tC,vUv+uT*1.45).rgb+texture2D(tC,vUv-uT*1.45).rgb)*.17; a+=(texture2D(tC,vUv+uT*3.4).rgb+texture2D(tC,vUv-uT*3.4).rgb)*.125; a+=(texture2D(tC,vUv+uT*5.35).rgb+texture2D(tC,vUv-uT*5.35).rgb)*.07; a+=(texture2D(tC,vUv+uT*7.3).rgb+texture2D(tC,vUv-uT*7.3).rgb)*.035; gl_FragColor=vec4(a,1.); }`;
+// Sun shafts. First, at a quarter size, what lets the sun's light through: the sky and the far haze do, anything near blocks it.
+const SHAFT_PICK = `precision highp float; varying vec2 vUv; uniform sampler2D tD; uniform vec2 uSunUV; uniform float uNear,uFar,uAsp;
+void main(){ float z=texture2D(tD,vUv).x*2.-1., l=2.*uNear*uFar/(uFar+uNear-z*(uFar-uNear)); float a=smoothstep(90.,700.,l)*(1.-smoothstep(0.,.95,length((vUv-uSunUV)*vec2(uAsp,1.)))); gl_FragColor=vec4(vec3(a*a*a),1.); }`;
+// Then that is smeared away from the sun, twice: a long smear and a short one to take the steps out of it.
+// A step that lands off the edge of the picture is taken as open sky, or the edge would smear into rays of its own.
+const SHAFT_BLUR = `precision highp float; varying vec2 vUv; uniform sampler2D tC; uniform vec2 uSunUV; uniform float uLen,uAsp,uOpen;
+void main(){ vec2 st=(uSunUV-vUv)*uLen/12., p=vUv+st*fract(52.9829189*fract(dot(gl_FragCoord.xy,vec2(.06711056,.00583715)))); float a=0., w=1., ws=0.;
+  for(int i=0;i<12;i++){ float v; if(uOpen>.5&&(p.x<0.||p.x>1.||p.y<0.||p.y>1.)){ v=1.-smoothstep(0.,.95,length((p-uSunUV)*vec2(uAsp,1.))); v=v*v*v; } else v=texture2D(tC,p).r; a+=v*w; ws+=w; w*=.92; p+=st; } gl_FragColor=vec4(vec3(a/ws),1.); }`;
 const SUNV = new THREE.Vector3();
 export class Pipeline {
   renderer: THREE.WebGLRenderer;
@@ -521,7 +589,7 @@ export class Pipeline {
   private rtC: THREE.WebGLRenderTarget; private rtN: THREE.WebGLRenderTarget; private rtS: THREE.WebGLRenderTarget;
   private normalMat = new THREE.MeshNormalMaterial({ side: THREE.DoubleSide });
   private depthMat = new THREE.MeshBasicMaterial({ colorWrite: false, side: THREE.DoubleSide });
-  private rtG: THREE.WebGLRenderTarget[] = []; private glowMat: THREE.ShaderMaterial; private blurMat: THREE.ShaderMaterial; private fsq: THREE.Mesh;
+  private rtG: THREE.WebGLRenderTarget[] = []; private rtW: THREE.WebGLRenderTarget[] = []; private rtR: THREE.WebGLRenderTarget[] = []; private glowMat: THREE.ShaderMaterial; private blurMat: THREE.ShaderMaterial; private pickMat: THREE.ShaderMaterial; private rayMat: THREE.ShaderMaterial; private fsq: THREE.Mesh;
   private postMat: THREE.ShaderMaterial; private postScene = new THREE.Scene(); private postCam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
   private sun = new THREE.OrthographicCamera(-50, 50, 50, -50, 1, 500);
   sat = 1; static = 0; time = 0; flash = 0; private aaNow = -1;
@@ -537,6 +605,8 @@ export class Pipeline {
   glow = 1;
   /** Strength of the contact shading under and between things. Low picture quality turns it off. */
   ao = 1;
+  /** Sun shafts through the air, and the dust that drifts in it. Low picture quality turns them off. */
+  shafts = 1; private gust = V3(); private lastT = 0;
   /** Size of the canvas itself. It is larger than `w` by `h` only when the screen is split into views. */
   cw = 1; ch = 1;
   /** Where on the canvas the finished picture goes, in canvas pixels from the bottom left. Null fills the canvas. */
@@ -556,12 +626,15 @@ export class Pipeline {
     SHARED.uShadow.value = this.rtS.depthTexture; SHARED.uShadowTex.value = 1 / S;
     this.rtC = new THREE.WebGLRenderTarget(4, 4); this.rtN = new THREE.WebGLRenderTarget(4, 4);
     this.postMat = new THREE.ShaderMaterial({
-      uniforms: { tC: { value: null }, tD: { value: null }, tN: { value: null }, uRes: { value: new THREE.Vector2(1, 1) }, uNear: { value: .06 }, uFar: { value: 4000 }, uOrtho: { value: 0 }, uPx: SHARED.uPx, uSat: { value: 1 }, uFlash: { value: 0 }, uStatic: { value: 0 }, uTime: { value: 0 }, uDusk: DUSK, uBold: { value: 1 }, uProj: { value: 1 }, uAO: { value: 1 }, uGrit: SHARED.uGrit, uGlow: { value: 1 }, uSun: { value: new THREE.Vector2(-.6, .8) }, tB: { value: null } },
+      uniforms: { tC: { value: null }, tD: { value: null }, tN: { value: null }, uRes: { value: new THREE.Vector2(1, 1) }, uNear: { value: .06 }, uFar: { value: 4000 }, uOrtho: { value: 0 }, uPx: SHARED.uPx, uSat: { value: 1 }, uFlash: { value: 0 }, uStatic: { value: 0 }, uTime: { value: 0 }, uBold: { value: 1 }, uProj: { value: 1 }, uAO: { value: 1 }, uGrit: SHARED.uGrit, uGlow: { value: 1 }, uSun: { value: new THREE.Vector2(-.6, .8) }, tB: { value: null }, tB2: { value: null }, tS: { value: null }, uShaft: { value: 0 }, uShaftC: { value: V3(1, 1, 1) }, uTint: { value: V3(1, 1, 1) }, uLift: { value: V3() } },
       vertexShader: `varying vec2 vUv; void main(){ vUv=uv; gl_Position=vec4(position.xy,0.,1.); }`, fragmentShader: POST_FS, depthTest: false, depthWrite: false,
     });
     this.postScene.add(this.fsq = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), this.postMat));
     const quad = (fs: string) => new THREE.ShaderMaterial({ uniforms: { tC: { value: null }, uT: { value: new THREE.Vector2() } }, vertexShader: `varying vec2 vUv; void main(){ vUv=uv; gl_Position=vec4(position.xy,0.,1.); }`, fragmentShader: fs, depthTest: false, depthWrite: false });
     this.glowMat = quad(GLOW_PICK); this.blurMat = quad(GLOW_BLUR);
+    this.pickMat = quad(SHAFT_PICK); Object.assign(this.pickMat.uniforms, { tD: { value: null }, uSunUV: { value: new THREE.Vector2() }, uNear: { value: .06 }, uFar: { value: 4000 }, uAsp: { value: 1 } });
+    this.rayMat = quad(SHAFT_BLUR); Object.assign(this.rayMat.uniforms, { uSunUV: this.pickMat.uniforms.uSunUV, uLen: { value: 1 }, uAsp: this.pickMat.uniforms.uAsp, uOpen: { value: 1 } });
+    setLight(12); this.light();
   }
 
   /** `w` by `h` is the size of one view. `cw` by `ch` is the whole canvas, when that is bigger because the screen is split. */
@@ -576,14 +649,32 @@ export class Pipeline {
     this.rtN = new THREE.WebGLRenderTarget(w, h, { minFilter: THREE.NearestFilter, magFilter: THREE.NearestFilter });
     for (const t of this.rtG) t.dispose(); const gw = Math.max(2, w >> 2), gh = Math.max(2, h >> 2);
     this.rtG = [0, 1].map(() => new THREE.WebGLRenderTarget(gw, gh, { minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter, depthBuffer: false }));
-    const u = this.postMat.uniforms; u.tC.value = this.rtC.texture; u.tD.value = this.rtC.depthTexture; u.tN.value = this.rtN.texture; u.uRes.value.set(w, h); u.tB.value = this.rtG[0].texture;
+    for (const t of this.rtW) t.dispose(); for (const t of this.rtR) t.dispose(); const small = (x: number, y: number) => new THREE.WebGLRenderTarget(Math.max(2, x), Math.max(2, y), { minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter, depthBuffer: false });
+    this.rtW = [0, 1].map(() => small(w >> 3, h >> 3)); this.rtR = [0, 1].map(() => small(w >> 2, h >> 2));
+    const u = this.postMat.uniforms; u.tC.value = this.rtC.texture; u.tD.value = this.rtC.depthTexture; u.tN.value = this.rtN.texture; u.uRes.value.set(w, h); u.tB.value = this.rtG[0].texture; u.tB2.value = this.rtW[0].texture; u.tS.value = this.rtR[0].texture;
   }
 
-  /** Moves the sun toward the horizon and warms the grade. 0 is midday, 1 is sunset. */
-  setDusk(k: number) { if (Math.abs(k - DUSK.value) < .002 && k !== 0) return; DUSK.value = k; LIGHT.set(-.55 - k * .2, .62 - k * .22, .56).normalize(); FOG.set('#ecd2c2').lerp(DUSKFOG, k); }
+  /** Sets the light by the old dial: 0 is midday, about .7 sunset, 1 night. */
+  setDusk(k: number) { this.setSky(hourOf(k)); }
+  /** Sets the light for an hour of the day (0 to 24) under a weather at strength `w`. See light.ts. */
+  setSky(hour: number, wx = 'clear', w = 0) { setLight(hour, wx, w); this.light(); }
+  /** Hands the hour's light to everything that draws. */
+  private light() {
+    const e = ENV, S = SHARED, u = this.postMat.uniforms;
+    S.uSunT.value.fromArray(e.sun); S.uAmbT.value.fromArray(e.amb); S.uKey.value = e.key; S.uFogD.value = e.fogK; S.uMist.value = e.mist; FOG.fromArray(e.fog); FOGS.fromArray(e.fogS);
+    SKYU.uTop.value.fromArray(e.top); SKYU.uMid.value.fromArray(e.mid); SKYU.uCloud.value.fromArray(e.cloud); SKYU.uDisc.value.fromArray(e.disc); SKYU.uStars.value = e.stars; SKYU.uCover.value = e.cover;
+    u.uTint.value.fromArray(e.tint); u.uLift.value.fromArray(e.lift); u.uShaftC.value.fromArray(e.disc);
+    // by night the ringed planet is what lights the land, so it shines
+    if (M.planet) (M.planet as THREE.ShaderMaterial).uniforms.uEmis.value = e.stars * .5;
+  }
   /** Renders the scene with shadows centred on `focus`, covering `span` metres. */
   draw(scene: THREE.Scene, cam: THREE.PerspectiveCamera | THREE.OrthographicCamera, focus: THREE.Vector3, span: number, shadows = false) {
     const r = this.renderer, sun = this.sun;
+    // the dust in the air is placed round this view's camera before anything is drawn
+    { const dt = Math.min(.1, Math.max(0, this.time - this.lastT)), wd = ENV.wind, m = MOTEU, ortho = !!(cam as any).isOrthographicCamera; this.lastT = this.time; this.gust.x += dt * wd * 1.5; this.gust.z += dt * wd * .5; this.gust.y -= dt * (.04 + wd * .02);
+      m.uCam.value.copy(cam.position); m.uDrift.value.copy(this.gust); m.uPxH.value = this.h * cam.projectionMatrix.elements[5] * .5; m.uKey.value = ENV.key; m.uAmt.value = ortho || this.shafts <= 0 ? 0 : Math.min(.9, .42 + ENV.motes * .07);
+      { const nk = 1 - .5 * ENV.stars; m.uCol.value.set(Math.min(1, ENV.fog[0] * .4 + .62) * nk, Math.min(1, ENV.fog[1] * .4 + .6) * nk, Math.min(1, ENV.fog[2] * .4 + .56) * nk); }   // lighter than the air behind them, or they cannot be seen
+      if (moteGeo) moteGeo.setDrawRange(0, Math.min(MOTE_N, Math.round(220 * ENV.motes))); }
     if (this.frameN++ % this.shadowEvery === 0 || shadows) {
       sun.left = sun.bottom = -span / 2; sun.right = sun.top = span / 2; sun.updateProjectionMatrix();
       sun.position.copy(focus).addScaledVector(LIGHT, 220); sun.lookAt(focus); sun.updateMatrixWorld();
@@ -598,11 +689,24 @@ export class Pipeline {
     r.setRenderTarget(this.rtN); r.setClearColor(0x8080ff, 1); r.clear(); r.render(scene, cam); scene.overrideMaterial = null;
 
     const u = this.postMat.uniforms; u.uOrtho.value = (cam as any).isOrthographicCamera ? 1 : 0; u.uProj.value = cam.projectionMatrix.elements[5]; u.uBold.value = this.bold; u.uAO.value = this.ao; u.uNear.value = cam.near; u.uFar.value = cam.far; u.uSat.value = this.sat; u.uFlash.value = this.flash; u.uStatic.value = this.static; u.uTime.value = this.time;
-    SHARED.uGrit.value = this.grit; u.uGlow.value = this.glow * .9; SUNV.copy(LIGHT).transformDirection(cam.matrixWorldInverse); u.uSun.value.set(SUNV.x, SUNV.y); if (u.uSun.value.lengthSq() < 1e-4) u.uSun.value.set(0, 1); u.uSun.value.normalize();
+    SUNV.copy(LIGHT).transformDirection(cam.matrixWorldInverse); u.uSun.value.set(SUNV.x, SUNV.y); if (u.uSun.value.lengthSq() < 1e-4) u.uSun.value.set(0, 1); u.uSun.value.normalize();
+    SHARED.uGrit.value = this.grit; u.uGlow.value = this.glow * .9 * ENV.glow; SKYU.uTime.value = this.time;
     if (this.glow > 0) { const [a, b] = this.rtG, g = this.glowMat, bl = this.blurMat;
       this.fsq.material = g; g.uniforms.tC.value = this.rtC.texture; g.uniforms.uT.value.set(1 / this.w, 1 / this.h); r.setRenderTarget(a); r.render(this.postScene, this.postCam);
       this.fsq.material = bl; bl.uniforms.tC.value = a.texture; bl.uniforms.uT.value.set(1 / a.width, 0); r.setRenderTarget(b); r.render(this.postScene, this.postCam);
-      bl.uniforms.tC.value = b.texture; bl.uniforms.uT.value.set(0, 1 / a.height); r.setRenderTarget(a); r.render(this.postScene, this.postCam); this.fsq.material = this.postMat; }
+      bl.uniforms.tC.value = b.texture; bl.uniforms.uT.value.set(0, 1 / a.height); r.setRenderTarget(a); r.render(this.postScene, this.postCam);
+      // the wide halo: the same blur again at half the size
+      const [c, d] = this.rtW; bl.uniforms.tC.value = a.texture; bl.uniforms.uT.value.set(1 / c.width, 0); r.setRenderTarget(d); r.render(this.postScene, this.postCam);
+      bl.uniforms.tC.value = d.texture; bl.uniforms.uT.value.set(0, 1 / c.height); r.setRenderTarget(c); r.render(this.postScene, this.postCam); this.fsq.material = this.postMat; }
+    // Shafts are drawn only when the light is in front of you and somewhere near the picture.
+    u.uShaft.value = 0;
+    if (this.shafts > 0 && ENV.shaft > .02 && !(cam as any).isOrthographicCamera) {
+      SUNV.copy(NOW.hour > 5.4 && NOW.hour < 19.8 ? SUNDIR : LIGHT).transformDirection(cam.matrixWorldInverse);
+      if (SUNV.z < -.05) { const pe = cam.projectionMatrix.elements, sx = SUNV.x / -SUNV.z * pe[0], sy = SUNV.y / -SUNV.z * pe[5], off = Math.max(Math.abs(sx), Math.abs(sy)), k = this.shafts * ENV.shaft * Math.min(1, Math.max(0, (1.7 - off) / .7)) * Math.min(1, (-SUNV.z - .05) / .3);
+        if (k > .01) { const [a, b] = this.rtR, pk = this.pickMat, ry = this.rayMat; pk.uniforms.uSunUV.value.set(sx * .5 + .5, sy * .5 + .5); pk.uniforms.tD.value = this.rtC.depthTexture; pk.uniforms.uNear.value = cam.near; pk.uniforms.uFar.value = cam.far; pk.uniforms.uAsp.value = this.w / this.h;
+          this.fsq.material = pk; r.setRenderTarget(a); r.render(this.postScene, this.postCam);
+          this.fsq.material = ry; ry.uniforms.tC.value = a.texture; ry.uniforms.uLen.value = .9; ry.uniforms.uOpen.value = 1; r.setRenderTarget(b); r.render(this.postScene, this.postCam);
+          ry.uniforms.tC.value = b.texture; ry.uniforms.uLen.value = .16; ry.uniforms.uOpen.value = 0; r.setRenderTarget(a); r.render(this.postScene, this.postCam); this.fsq.material = this.postMat; u.uShaft.value = k; } } }
     r.setRenderTarget(null);
     if (this.rect) { const q = this.rect; r.setViewport(q[0], q[1], q[2], q[3]); r.setScissor(q[0], q[1], q[2], q[3]); r.setScissorTest(true); r.render(this.postScene, this.postCam); r.setScissorTest(false); r.setViewport(0, 0, this.cw, this.ch); }
     else r.render(this.postScene, this.postCam);
@@ -614,6 +718,7 @@ export class ViewPipe {
   constructor(public base: Pipeline) { }
   get w() { return this.base.w; } get h() { return this.base.h; }
   setDusk(k: number) { this.base.setDusk(k); }
+  setSky(hour: number, wx = 'clear', w = 0) { this.base.setSky(hour, wx, w); }
   draw(scene: THREE.Scene, cam: THREE.PerspectiveCamera | THREE.OrthographicCamera, focus: THREE.Vector3, span: number) {
     const b = this.base; b.time = this.time; b.flash = this.flash; b.static = this.static; b.sat = this.sat; b.rect = this.rect;
     b.draw(scene, cam, focus, span, true); b.rect = null;

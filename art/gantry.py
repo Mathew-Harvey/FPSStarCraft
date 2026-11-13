@@ -9,7 +9,7 @@ sys.path.insert(0, __file__.rsplit('/', 1)[0])
 from kit import sdf as S, build as B, human as Hu
 from kit.sdf import V, rot
 
-fig = B.Figure('gantry', lo=(-1.85, -.1, -1.5), hi=(1.85, 4.1, 2.0), coarse=.03, detail=.9, paint=1536, brush=2.0)
+fig = B.Figure('gantry', lo=(-1.85, -.1, -1.5), hi=(1.85, 4.6, 2.0), coarse=.03, detail=.9, paint=1536, brush=2.0)
 HIPY = 1.55
 fig.group('body', (0, 0, 0))
 fig.group('legL', (-.78, HIPY, 0))
@@ -220,6 +220,35 @@ belt = S.chain([AC + V(gx + .2, .03, .2), AC + V(gx + .3, -.08, .12), AC + V(gx 
 belt = S.bump(belt, lambda p: .012 * np.sin((p[..., 1] * 1.2 + p[..., 2]) * 90))
 fig.add('feedbelts', 'arms', 'nY', S.mirror(S.squash(belt, (.6, 1, 1), AC + V(gx + .25, -.1, .1))), 300, voxel=.006, uv=('side',))
 fig.point('muzzle', AC + V(gx, .02, 1.62), 'arms')
+
+# ---------------------------------------------------------------- the jib: it was a crane before it was a walker, and nobody took the crane off
+# A box boom off the right of the roof, raised by its own ram, a sheave at the tip and the hook block still hanging from it.
+JX = .64
+J0, J1 = V(JX, 2.9, -.62), V(JX, 4.12, 1.02)
+JB = S.basis(J1 - J0, (0, 1, 0))                                 # local z up the boom
+JL = float(np.linalg.norm(J1 - J0))
+jd = (J1 - J0) / JL
+boom = S.box((J0 + J1) / 2, (.055, .1, JL / 2), .02, JB)
+boom = S.cut(boom, S.plane(J1 - jd * .5, JB @ V(0, -1, -.16)))                                                    # tapering to the tip
+for i in range(6):                                                                                                # lightening holes down its length
+    c = J0 + jd * (.3 + i * .28)
+    boom = S.cut(boom, S.cyl(c - V(.2, 0, 0), c + V(.2, 0, 0), .06 - i * .005, .008))
+boom = dents(boom, 12.3, .01, 5)
+fig.add('jib', 'body', 'bY', boom, 900, voxel=.007, uv=('side',), sharp=38)
+fig.add('jibband', 'body', 'haz', S.box(J0 + jd * (JL - .42), (.062, .1, .16), .02, JB), 160, voxel=.007, uv=('side',), sharp=38)
+foot = S.union(S.box((JX, 2.84, -.6), (.12, .1, .2), .03), xcan(J0, .1, .1, .02), k=.01)
+fig.add('jibfoot', 'body', 'bD', foot, 300, voxel=.007, uv=('side',), sharp=40)
+r0, r1 = V(JX, 2.84, -.05), J0 + jd * JL * .5 + JB @ V(0, -.1, 0)
+fig.add('jibram', 'body', 'nS', S.cyl(r0, r1, .03, .006), 100, voxel=.006, uv=('side',), sharp=50)
+fig.add('jibsleeve', 'body', 'bD', S.union(S.cyl(r0, r0 + (r1 - r0) * .56, .055, .012), S.sphere(r0, .075), S.sphere(r1, .06), k=.01), 240, voxel=.006, uv=('side',), sharp=45)
+fig.add('sheave', 'body', 'nS', S.union(xcan(J1 - jd * .06, .13, .035, .012), xcan(J1 - jd * .06, .05, .09, .01)), 260, voxel=.006, uv=('side',), sharp=45)
+HK = J1 + V(0, -.86, .1)
+cable = S.union(S.cyl(J1 + V(0, -.1, .1), HK + V(0, .16, 0), .012), S.cyl(J0 + jd * .3 + JB @ V(0, .12, 0), J1 - jd * .1 + JB @ V(0, .12, 0), .01))
+fig.add('jibcable', 'body', 'rubber', cable, 90, voxel=.004, cull=False)
+block = S.union(S.box(HK + V(0, .06, 0), (.045, .1, .09), .03), xcan(HK + V(0, .08, 0), .075, .03, .01), k=.01)
+fig.add('hookblock', 'body', 'haz', dents(block, 2.9, .006, 9), 240, voxel=.005, uv=('side',), sharp=40)
+hookf = S.cut(S.torus(HK + V(0, -.16, 0), .075, .026, rot(0, 0, PI / 2)), S.box(HK + V(0, -.1, .09), (.1, .05, .05)))
+fig.add('hook', 'body', 'nD', S.union(hookf, S.cyl(HK + V(0, -.09, -.0), HK + V(0, -.02, 0), .024), k=.01), 220, voxel=.004, uv=('side',))
 
 if __name__ == '__main__':
     args = sys.argv[1:]

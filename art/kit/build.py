@@ -18,7 +18,7 @@ from . import sdf
 F = np.float32
 # flat stand-ins for the game's inked skins, so the .blend reads at a glance
 TINT = {'fabT': '#a8744a', 'fab': '#4d577c', 'fabG': '#6f7a55', 'fabR': '#b3362b', 'lea': '#6a4230', 'leaB': '#6a4230', 'leaN': '#6a4230', 'glove': '#f2b21c', 'gloveN': '#f2b21c',
-        'skinF': '#e2a680', 'stache': '#3a2a20', 'vestB': '#f08a1c', 'hard': '#f7b516', 'nY': '#f7b516', 'pY': '#f7b516', 'bY': '#f7b516', 'nS': '#8d95a6', 'bS': '#8d95a6', 'pS': '#8d95a6',
+        'skinF': '#e2a680', 'skinD': '#9c6444', 'hairG': '#8d8a88', 'stache': '#3a2a20', 'vestB': '#f08a1c', 'hard': '#f7b516', 'nY': '#f7b516', 'pY': '#f7b516', 'bY': '#f7b516', 'nS': '#8d95a6', 'bS': '#8d95a6', 'pS': '#8d95a6',
         'nD': '#4a4f60', 'bD': '#4a4f60', 'pD': '#4a4f60', 'gunm': '#3a3d4a', 'gunB': '#3a3d4a', 'sole': '#22222c', 'rib': '#2a2a34', 'lens': '#5fd0ff', 'visG': '#ffe27a', 'drill': '#9aa2b0',
         'nW': '#e8e2d0', 'pW': '#e8e2d0', 'haz': '#f7b516', 'hazB': '#f7b516', 'chest': '#f7b516', 'tank': '#d8452c', 'rubber': '#22222c', 'red': '#ff4b3a',
         'vD': '#4636b4', 'vDp': '#4636b4', 'vI': '#6a55e6', 'vIp': '#6a55e6', 'vL': '#d9d2f4', 'vG': '#f2c14a', 'vC': '#7ff0e4', 'vM': '#ff4f9a', 'teal': '#3fe0d0', 'mag': '#ff4fd0',
@@ -211,7 +211,7 @@ def crease(whole, pos, nrm, unit=1.0):
 
 
 class Figure:
-    def __init__(self, name, scale=1.0, lo=(-1.2, -.2, -1.2), hi=(1.2, 2.5, 1.2), coarse=.02, detail=1.0, unit=1.0, ink=1.0, paint=0, dust=(.78, .6, .44), grade=(.86, .9), brush=None, shade=0.0):
+    def __init__(self, name, scale=1.0, lo=(-1.2, -.2, -1.2), hi=(1.2, 2.5, 1.2), coarse=.02, detail=1.0, unit=1.0, ink=1.0, paint=0, dust=(.78, .6, .44), grade=(.86, .9), brush=None, shade=0.0, coat=0, look='yard'):
         """lo and hi box in everything the figure could reach; coarse is the grid that finds each part inside it.
         unit is how big the thing is next to a person (a building is 4 or 5): it widens the creases and the buried-face test to suit."""
         self.name, self.parts, self.groups, self.scale, self.points, self.unit = name, [], {}, scale, {}, unit
@@ -221,6 +221,7 @@ class Figure:
         self.texel = {}                        # group name: how much more of the painted picture its parts get (set before adding parts)
         self.grade = grade                     # (how much colour, how much light) the painted picture keeps of the game's skins
         self.paint, self.dust = paint, dust      # paint: the size of the figure's own painted picture (0 = wear the game's shared skins); dust: what settles on it
+        self.coat, self.look = (int(os.environ['COAT']) if 'COAT' in os.environ else coat), look      # buildings: the size of their own picture of wear, laid over the tiled skins (bake.coat), and what kind of wear
         self.shade = shade                     # buildings: how dark a corner goes for being shut in by eaves, neighbours and the ground (see bake.sky)
         self.ink = ink                         # how strongly creases are inked. Flat plate cut down to a few big triangles has corners only, and a corner is always tucked under its neighbour, so plate buildings turn it off
 
@@ -349,6 +350,7 @@ class Figure:
             t0 = time.time()
             for d, occ in zip(done, bake.sky(done)):
                 d['cav'] = np.maximum(d['cav'], np.clip((occ - .1) * 1.35, 0, 1) * self.shade).astype(F)
+                d['occ'] = occ
             log(f'shade from what stands around each corner in {time.time() - t0:.0f}s')
         if self.paint:                                # one painted picture for the whole figure; every part's UVs become its place in it
             from . import bake
@@ -391,11 +393,22 @@ class Figure:
             for d, u in zip(done, lay):
                 d['suv'] = u
             from PIL import Image
-            Image.fromarray(picture).save(out_bin[:-4] + '.webp', quality=88, method=6)
+            Image.fromarray(picture).save(out_bin[:-4] + '.webp', quality=78, method=6)       # the page that carries the game has a size limit, and 78 cannot be told from 88 in play
             head['tex'] = 1
             log(f'painted {self.paint}x{self.paint} in {time.time() - t0:.0f}s, {os.path.getsize(out_bin[:-4] + ".webp") / 1024:.0f} KB')
+        if self.coat and not self.paint:              # a building's own wear, on a second layout that covers the whole of it once
+            from . import bake
+            from PIL import Image
+            t0 = time.time()
+            picture, lay2 = bake.coat(self, done, self.coat, log, self.look)
+            for d, u in zip(done, lay2):
+                d['uv2'] = u
+            Image.fromarray(picture).save(out_bin[:-4] + '.wear.webp', quality=int(os.environ.get('COATQ', 72)), method=6)
+            head['wear'] = 1
+            log(f'wear {self.coat}x{self.coat} in {time.time() - t0:.0f}s, {os.path.getsize(out_bin[:-4] + ".wear.webp") / 1024:.0f} KB')
         for d in done:
             part, ob, me, pos, tri, cnrm, uv, cav, n, t0 = (d[k] for k in ('part', 'ob', 'me', 'pos', 'tri', 'cnrm', 'suv', 'cav', 'n', 't0'))
+            uv2 = d.get('uv2')
             T = len(tri)
             if me is not None:                        # the .blend keeps the UVs and the crease value too
                 layer = me.uv_layers.new(name='UVMap')
@@ -405,8 +418,8 @@ class Figure:
                 col.data.foreach_set('color', c4.ravel())
             # one record per distinct corner
             piv = np.asarray(self.abs_pivot(part.group), F)
-            rec = np.concatenate([(pos[tri] - piv).reshape(-1, 3), cnrm.reshape(-1, 3), uv.reshape(-1, 2), cav[tri].reshape(-1, 1)], 1)
-            key = np.round(rec * np.array([1e4, 1e4, 1e4, 60, 60, 60, 2e4, 2e4, 15], F))
+            rec = np.concatenate([(pos[tri] - piv).reshape(-1, 3), cnrm.reshape(-1, 3), uv.reshape(-1, 2), cav[tri].reshape(-1, 1)] + ([uv2.reshape(-1, 2)] if uv2 is not None else []), 1)
+            key = np.round(rec * np.array([1e4, 1e4, 1e4, 60, 60, 60, 2e4, 2e4, 15] + ([4e3, 4e3] if uv2 is not None else []), F))
             _, first, inv = np.unique(key, axis=0, return_index=True, return_inverse=True)
             rec = rec[first]
             idx = inv.reshape(-1).astype(np.uint32)
@@ -420,7 +433,7 @@ class Figure:
             m = {'part': part.name, 'group': part.group, 'mat': part.mat, 'nv': int(len(rec)), 'ni': int(len(idx)), 'lo': [float(x) for x in lo], 'hi': [float(x) for x in hi]}
             if part.glow is not None:
                 m['glow'] = float(part.glow)
-            for k, arr in (('pos', q), ('nrm', np.concatenate([nq, cq], 1)), ('uv', uq), ('idx', idx.astype(np.uint16))):
+            for k, arr in (('pos', q), ('nrm', np.concatenate([nq, cq], 1)), ('uv', uq), ('idx', idx.astype(np.uint16))) + ((('uv2', np.round(np.clip(rec[:, 9:11], 0, 1) * 65535).astype(np.uint16)),) if uv2 is not None else ()):
                 while len(blob) % 4:
                     blob.append(0)
                 m[k] = len(blob)

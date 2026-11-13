@@ -5,9 +5,9 @@ import sys
 from . import build as B
 
 
-def building(name, hx, hz, h, unit=4.0, detail=1.0, coarse=.09, ink=1.0, shade=.72):
+def building(name, hx, hz, h, unit=4.0, detail=1.0, coarse=.09, ink=1.0, shade=.72, coat=512, look='yard'):
     """A figure sized for a building that reaches hx and hz either side of its middle and h high."""
-    return B.Figure(name, lo=(-hx, -.3, -hz), hi=(hx, h, hz), coarse=coarse, detail=detail, unit=unit, ink=ink, shade=shade)
+    return B.Figure(name, lo=(-hx, -.3, -hz), hi=(hx, h, hz), coarse=coarse, detail=detail, unit=unit, ink=ink, shade=shade, coat=coat, look=look)
 
 
 def main(makers, file):

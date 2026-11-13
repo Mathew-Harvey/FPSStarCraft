@@ -177,3 +177,47 @@ def cluster(c, n, r, h, seed=1.0, spread=.5, sides=5):
         b = c + lean * r * 1.6
         fs.append(crystal(b - up * h * k * .15, b + up * h * k, r * k, sides + (i % 2), .25, a))
     return S.union(*fs)
+
+
+def petals(y0, y1, r0, r1, n, w, t=.016, sweep=None, skip=(), back=0.0, wave=0.0, phase=0.0, zs=1.0, belly=.5):
+    """A skirt of long shell plates hanging from a waist: n of them round a ring of radius r0 at height y0, their points at
+    radius r1 and height y1. Each is a leaf, `w` across and `t` thick, widest `belly` of the way down. `skip` leaves out plates
+    by number (0 is dead ahead, counting round to the left), `back` lets those behind hang that much lower, `wave` makes every
+    other one shorter. Returns the plates as separate shapes, so they can be split between two skins."""
+    out = []
+    for i in range(n):
+        if i in skip:
+            continue
+        a = phase + i * 2 * np.pi / n
+        sx, cz = np.sin(a), np.cos(a)
+        behind = (1 - cz) * .5
+        yb = y1 - back * behind + (wave if i % 2 else 0)
+        top = V(sx * r0, y0, cz * r0 * zs + (sweep(y0) if sweep else 0))
+        tip = V(sx * r1, yb, cz * r1 * zs + (sweep(yb) if sweep else 0))
+        ax = tip - top
+        L = float(np.linalg.norm(ax))
+        ax = ax / L
+        R = S.basis(V(sx, .0, cz), -ax)                           # local z out from the body, local y back up the plate
+        c = top + ax * L * belly
+        leaf = S.ellipsoid(c, (w / 2, L * max(belly, 1 - belly) * 1.04, t), R)
+        leaf = S.both(leaf, S.plane(top + ax * .0, -ax), k=.01)   # cut square where it hangs from
+        out.append(S.groove(leaf, [top + ax * L * .12 + R @ V(0, 0, t), tip - ax * L * .1 + R @ V(0, 0, t * .6)], .004, .005))   # a spine down the middle
+    return out
+
+
+def spine(y0, y1, r, n, sweep=None, zs=.9):
+    """A narrow waist of stacked knuckles, each a flattened bead."""
+    hs = np.linspace(y0, y1, n)
+    step = (y1 - y0) / max(1, n - 1)
+    return S.union(*[S.ellipsoid((0, y, (sweep(y) if sweep else 0)), (r * (1 + .12 * (i % 2)), step * .62, r * zs * (1 + .12 * (i % 2)))) for i, y in enumerate(hs)], k=step * .12)
+
+
+def vambrace(El, Wr, r0, r1, flare=1.5, spur=.0, side=1):
+    """A forearm shell: wide and lipped at the elbow, close at the wrist, with a spur standing off the elbow."""
+    El, Wr = V(El), V(Wr)
+    d = (Wr - El) / np.linalg.norm(Wr - El)
+    f = S.union(S.rcone(El - d * r0 * .2, Wr, r0, r1), S.torus(El + d * r0 * .1, r0 * flare * .82, r0 * .28, S.basis(V(1, 0, 0) - d * d[0], d)), k=r0 * .25)
+    if spur:
+        back = V(side * .35, .55, -.75)
+        f = S.union(f, crystal(El - d * r0 * .3, El + back / np.linalg.norm(back) * spur, r0 * .7, 4, .25))
+    return f

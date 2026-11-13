@@ -198,3 +198,64 @@ def armoured_arm(side, Sh, El, Wr, Rh, thumb, sleeve='fab', guard='bS', glove='l
     glove_ = S.union(glove_, S.box(Hl((0, .03, .05)), (.036 * HS, .007, .026 * HS), .006, Rh), k=.004)             # a knuckle plate
     out['glove'] = (glove, glove_, 1150, dict(voxel=.0023, uv=('cyl', Wr, fax)))
     return out, Hl
+
+
+def face(HC, s=1.0, jaw=1.0, long=0.0, cheek=1.0, nose=(1.0, 1.0, 0.0), brow=1.0, lip=1.0, lines=1.0, squint=(), sockets=(-1, 1), ears=True):
+    """A bare head about HC, the middle of the skull: jaw, cheeks, nose, brow, lips, ears and a neck. `s` sizes the whole of it.
+    jaw widens it, long drops the chin, cheek fills or hollows the cheeks, nose is (length, bulb, hook), lines deepens the creases,
+    squint lists the eyes (-1 left, 1 right) that are screwed shut, sockets the eyes hollowed for something to sit over them.
+    Returns (face, skull): the skull alone is for growing hair and straps off."""
+    HC = V(HC)
+    H = lambda x, y, z: HC + V(x, y, z) * s
+    r = lambda *a: tuple(q * s for q in a) if len(a) > 1 else a[0] * s
+    skull = S.ellipsoid(HC, r(.093, .112, .108))
+    jw = S.union(S.ellipsoid(H(0, -.075 - long * .5, .026), r(.086 * jaw, .08 + long * .5, .09)), S.box(H(0, -.109 - long, .024), r(.058 * jaw, .022, .05), r(.03)), k=r(.03))
+    jowl = S.mirror(S.sphere(H(.05 * jaw, -.097 - long * .6, .038), r(.046 * min(1.0, cheek))))
+    chin = S.ellipsoid(H(0, -.133 - long, .07), r(.05 * min(jaw, 1.0), .036, .038))
+    chk = S.mirror(S.ellipsoid(H(.054, -.047, .072), r(.034 * cheek, .03 * cheek, .03 * cheek)))
+    f = S.union(skull, jw, jowl, chin, chk, k=r(.035))
+    if cheek < 1:                                                # hollow under the cheekbones
+        f = S.cut(f, S.mirror(S.ellipsoid(H(.07, -.085, .075), r(.02, .034, .02))), k=r(.03 * (1 - cheek) * 3))
+    nl, nb, nh = nose
+    tip = H(0, -.035 - (nl - 1) * .02, .136 + (nl - 1) * .012)
+    nz = S.union(S.rcone(H(0, .02, .1), tip, r(.015), r(.019 * nb)), S.sphere(tip + V(0, -.01, .005) * s, r(.03 * nb)), S.mirror(S.sphere(H(.024 * nb, -.053 - (nl - 1) * .02, .12), r(.018 * nb))), k=r(.016))
+    if nh:                                                       # a bump on the bridge
+        nz = S.union(nz, S.sphere(H(0, -.002, .118), r(.017 * nh)), k=r(.014))
+    f = S.union(f, nz, k=r(.014))
+    f = S.union(f, S.rcone(H(-.052, .033, .09), H(.052, .033, .09), r(.02 * brow)), k=r(.02))
+    f = S.union(f, S.ellipsoid(H(0, -.103 - long * .5, .098), r(.03 * lip, .012 * lip, .014)), k=r(.01))
+    for sx in sockets:
+        f = S.cut(f, S.sphere(H(sx * .04, .001, .113), r(.03)), k=r(.012))
+    for sx in (-1, 1):
+        if sx in sockets:
+            continue
+        f = S.cut(f, S.ellipsoid(H(sx * .04, .003, .118), r(.024, .014, .02)), k=r(.014))                 # a shallow socket with the lids closed across it
+        f = S.union(f, S.ellipsoid(H(sx * .04, .0, .098), r(.02, .011, .016)), k=r(.006))
+        if sx in squint:
+            f = S.groove(f, [H(sx * .02, -.002, .112), H(sx * .04, -.004, .116), H(sx * .06, .0, .106)], r(.004), r(.005))
+            for k in (0, 1, 2):                                  # crow's feet
+                f = S.groove(f, [H(sx * .064, .0, .1), H(sx * .08, .012 - k * .012, .086)], r(.003), r(.003) * lines)
+    f = S.cut(f, S.mirror(S.sphere(H(.0245 * nb, -.06 - (nl - 1) * .02, .136 + (nl - 1) * .008), r(.0075))), k=r(.004))
+    if lines:
+        for sx in (-1, 1):
+            f = S.groove(f, [H(sx * .034, -.047, .12), H(sx * .058, -.075, .096), H(sx * .062, -.105 - long * .5, .078)], r(.0045), r(.006) * lines)
+            f = S.groove(f, [H(sx * .02, -.127 - long, .098), H(sx * .03, -.14 - long, .083)], r(.004), r(.004) * lines)
+        if lines > 1:                                            # and across the forehead
+            for y in (.058, .074):
+                f = S.groove(f, [H(-.05, y, .086), H(0, y + .004, .1), H(.05, y, .086)], r(.004), r(.004) * (lines - 1) * 2)
+    if ears:
+        for sx in (-1, 1):
+            Re = rot(0, sx * .5, sx * -.12)
+            ear = S.cut(S.ellipsoid(H(sx * .099, -.02, .004), r(.016, .036, .024), Re), S.ellipsoid(H(sx * .108, -.018, .012), r(.01, .022, .013), Re), k=r(.004))
+            f = S.union(f, ear, S.sphere(H(sx * .1, -.047, .008), r(.011)), k=r(.008))
+    neck = S.union(S.rcone(H(0, -.26, -.008), H(0, -.075, -.004), r(.056), r(.05)), S.ellipsoid(H(0, -.155, -.042), r(.052, .07, .036)), k=r(.02))
+    return S.union(f, neck, k=r(.012)), skull
+
+
+def cropped(skull, HC, s=1.0, top=.03, seed=4.2):
+    """Short hair off a skull: back and sides, up to `top` above the middle of the head."""
+    HC = V(HC)
+    hair = S.cut(S.cut(S.grow(skull, .008 * s), S.above(HC[1] + top * s)), lambda p: -(p[..., 2] - HC[2] - .02 * s + (p[..., 1] - HC[1] + .055 * s) * .25))
+    hair = S.cut(hair, skull)
+    hair = S.bump(hair, lambda p: (S.noise(p * V(1, .25, 1), 150, seed) - .5) * .004)
+    return S.cut(hair, S.mirror(S.ellipsoid(HC + V(.099, -.02, .004) * s, (.02 * s, .04 * s, .028 * s))))

@@ -25,7 +25,7 @@ export function bake<T extends THREE.Object3D>(root: T): T {
     const m = c as THREE.Mesh;
     if (m.isMesh && !c.userData.dyn && !c.children.length && !Array.isArray(m.material)) {
       c.updateMatrix(); const g = m.geometry.index ? m.geometry.toNonIndexed() : m.geometry.clone(); g.applyMatrix4(c.matrix);
-      for (const k of Object.keys(g.attributes)) if (k !== 'position' && k !== 'normal' && k !== 'uv' && k !== 'aEm') g.deleteAttribute(k);
+      for (const k of Object.keys(g.attributes)) if (k !== 'position' && k !== 'normal' && k !== 'uv' && k !== 'aEm' && k !== 'aWear') g.deleteAttribute(k);
       let e = by.get(m.material); if (!e) by.set(m.material, e = { g: [], mask: c.layers.mask }); e.g.push(g); rm.push(c);
     } else if (c.children.length) bake(c);
   }

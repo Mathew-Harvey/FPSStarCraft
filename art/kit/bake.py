@@ -374,7 +374,7 @@ def kind_of(mat, sk):
         return 'cloth'
     if mat.startswith(('lea', 'glove', 'sole', 'rubber', 'rib')):
         return 'hide'
-    if mat.startswith(('skin', 'stache')):
+    if mat.startswith(('skin', 'stache', 'hair')):
         return 'flesh'
     if mat[0] == 'v' and mat[1:2].isupper():        # the Veyl's skins are v and a capital, the Gloam's g and a capital (gunm and visG are neither)
         return 'shell'
@@ -541,3 +541,81 @@ def paint(fig, meshes, res=1024, log=print, unit=1.0):
     img = img[idx[0], idx[1]]
     out = np.clip(img * 255 + .5, 0, 255).astype(np.uint8)[::-1]            # row 0 of a picture is its top; v = 1 is up
     return out, [u.astype(F) for u in lay]
+
+
+# ---------------------------------------------------------------- a building's own wear
+# Buildings wear the game's tiled skins, which is what keeps a wall crisp from a hand's width away but also what makes two sheds look
+# like the same shed. A building's own picture is laid over those skins at a coarse grain: what years in one spot have done to it.
+# Mid grey leaves the skin alone, darker stains it, lighter bleaches it, and a tint rusts or mosses it.
+LOOKS = {
+    # scrap sheds: rust running down from every seam, soot up high, dust blown up the foot of the walls, roofs bleached and pooled
+    'yard': dict(streak=(.62, .42, .30), streaks=.5, soot=.22, foot=(1.3, 1.14, .94), foot_h=1.5, bleach=.2, pool=(.6, .56, .56), blotch=.16, tint=(1.08, .96, .86), corner=.5),
+    # sung stone: pale mineral runs, a bloom of verdigris low down, the tops bleached by the sky
+    'stone': dict(streak=(1.22, 1.2, 1.1), streaks=.35, soot=.06, foot=(.84, 1.02, .98), foot_h=2.2, bleach=.22, pool=(.78, .86, .9), blotch=.14, tint=(.92, 1.04, 1.06), corner=.42),
+    # growth: wet dark runs, pale spore dust settled on every ledge, the foot stained by the bloom it stands in
+    'growth': dict(streak=(.58, .66, .5), streaks=.42, soot=.1, foot=(.78, .98, .7), foot_h=1.8, bleach=.3, pool=(1.22, 1.24, 1.02), blotch=.2, tint=(1.06, 1.0, .88), corner=.5),
+}
+
+
+def coat(fig, meshes, res=512, log=print, look='yard', seed=0.0):
+    """meshes: one dict per part with pos, tri, cnrm and occ (how shut in each vertex is). Returns the picture (res,res,3 uint8,
+    128 = no change) and, per part, each corner's place in it (T,3,2)."""
+    L = dict(LOOKS[look if isinstance(look, str) else 'yard'])
+    if isinstance(look, dict):
+        L.update(look)
+    got = unwrap([(m['pos'], m['tri'], np.ones(len(m['tri']), F)) for m in meshes], res, pad=2, log=log)
+    lay = [u / res for u in got]
+    owner = np.concatenate([np.full(len(m['tri']), i, np.int32) for i, m in enumerate(meshes)])
+    local = np.concatenate([np.arange(len(m['tri']), dtype=np.int32) for m in meshes])
+    tid, bary = raster(np.concatenate(got), res)
+    filled = tid >= 0
+    ys, xs = np.nonzero(filled)
+    t, w = tid[ys, xs], bary[ys, xs]
+    N = len(t)
+    P, Nn, occ = np.zeros((N, 3), F), np.zeros((N, 3), F), np.zeros(N, F)
+    for i, m in enumerate(meshes):
+        sel = np.nonzero(owner[t] == i)[0]
+        if not len(sel):
+            continue
+        lt, lw = local[t[sel]], w[sel]
+        P[sel] = np.einsum('nk,nkd->nd', lw, m['pos'][m['tri'][lt]])
+        Nn[sel] = np.einsum('nk,nkd->nd', lw, m['cnrm'][lt])
+        o = m.get('occ')
+        if o is not None:
+            occ[sel] = np.einsum('nk,nk->n', lw, o[m['tri'][lt]])
+    Nn /= np.maximum(np.linalg.norm(Nn, axis=1), 1e-6)[:, None]
+    top = float(max(m['pos'][:, 1].max() for m in meshes))
+    up, wall = np.clip(Nn[:, 1], 0, 1), 1 - np.abs(Nn[:, 1])
+    sd = seed + (sum(ord(c) for c in fig.name) % 97) * 1.37
+    col = np.ones((N, 3), F)
+    # big slow patches: one sheet weathered more than its neighbour
+    b = S.noise(P, .28, sd) * .6 + S.noise(P, .75, sd + 9) * .4
+    col *= (1 + (b - .5) * 2 * L['blotch'])[:, None]
+    col *= 1 + (S.noise(P, .16, sd + 31)[:, None] - .5) * (np.array(L['tint'], F) - 1) * 2
+    # runs: whatever washes off the top comes down the wall in streaks, each its own length, strongest just under where it starts
+    h = P[:, 0] * Nn[:, 2] - P[:, 2] * Nn[:, 0]                       # along the wall
+    q = np.stack([h * 2.6, P[:, 1] * .16, np.zeros(N, F) + sd], -1)
+    run = smooth(.52, .8, S.noise(q, 1.0, 3.0) * .7 + S.noise(q * np.array([2.3, 1.0, 1.0], F), 1.0, 17.0) * .3)
+    run *= smooth(.25, .6, S.noise(np.stack([h * .5, P[:, 1] * .5, np.zeros(N, F) + sd], -1), 1.0, 40.0)) * smooth(.3, .75, wall)
+    k = (run * L['streaks'])[:, None]
+    col = col * (1 - k) + col * np.array(L['streak'], F) * k
+    # soot and weather settle on the upper part and under whatever overhangs
+    col *= (1 - L['soot'] * smooth(.45, 1.0, P[:, 1] / max(top, 1e-3)) * (.4 + .6 * S.noise(P, .5, sd + 50)) * wall)[:, None]
+    # the foot of the wall: dust blown up it or damp drawn up it, in a ragged line
+    fh = L['foot_h'] * (.55 + .9 * S.noise(np.stack([h * .7, np.zeros(N, F), np.zeros(N, F) + sd], -1), 1.0, 70.0))
+    k = ((1 - smooth(0, 1, P[:, 1] / np.maximum(fh, .05))) * (.5 + .5 * wall) * .75)[:, None]
+    col = col * (1 - k) + col * np.array(L['foot'], F) * k
+    # anything that looks at the sky is bleached, with pools where the wet sat
+    pool = smooth(.56, .74, S.noise(P, .55, sd + 80) * .65 + S.noise(P, 1.5, sd + 85) * .35)
+    k = up[:, None]
+    col = col * (1 - k) + col * ((1 + L['bleach']) * (1 - pool[:, None]) + np.array(L['pool'], F) * pool[:, None]) * k
+    # shut-in corners hold the dirt
+    col *= (1 - L['corner'] * smooth(.12, .8, occ))[:, None]
+    col *= 1 + (S.noise(P, 5.0, sd + 99)[:, None] - .5) * .08
+    img = np.full((res, res, 3), 1.0, F)
+    img[ys, xs] = col
+    idx = ndimage.distance_transform_edt(~filled, return_distances=False, return_indices=True)
+    img = img[idx[0], idx[1]]
+    img = ndimage.gaussian_filter(img, (.6, .6, 0))
+    log(f'wear: {N / res / res * 100:.0f}% of the picture used, mean {img.mean():.2f}')
+    return np.clip(img * 127.5 + .5, 0, 255).astype(np.uint8)[::-1], [u.astype(F) for u in lay]

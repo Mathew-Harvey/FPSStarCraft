@@ -8,6 +8,7 @@ import type { Hud } from './hud';
 import { Fog } from './fog';
 import { Kind, BKind, UNIT, BLD, BUILDABLE, UPGRADES, TRAINS, UNIT_NEEDS, UpKey, Unit, Building, Prop, OreNode, Difficulty, DIFFS, OUTPOST, GATE, MAP, MAPS, ROAD, VHOME, FACTION, SIDE, setMap, veylPt, isUnit, isSoldier, isWorker, isFighter, foeOf, fac, MIRROR, atHome, endPt, swapEnd , STORY } from './data';
 import { Director } from './director';
+import { ENV, hourOf, matchHour, matchWeather, lampsBegin, lamp, flashLamp, lampsCommit, flicker } from './light';
 import type { Mission } from './campaign';
 import type { Net } from './net';
 import { HitFx, Surface } from './hitfx';
@@ -31,6 +32,14 @@ const GREY = new THREE.Color(.86, .93, 1.08), greyed = new Map<THREE.Material, T
 /** The yard's home seams: x, z, crystals, size. */
 const YARD_SEAMS = [[17, -15, 9, 1.2], [21, -10, 7, 1.0], [23, -18, 8, 1.3], [15, -21, 6, .9], [-18, -24, 8, 1.1], [-24, -19, 7, 1.0]];
 export const beamMat = new THREE.MeshBasicMaterial({ color: 0x6dfff0, depthWrite: false });
+// Lamp colours, and where each kind of building and body carries its lamps.
+type C3 = [number, number, number];
+const WARM: C3 = [1, .6, .24], HEAD: C3 = [1, .78, .46], FLOOD: C3 = [1, .76, .42], FIRE: C3 = [1, .46, .12], TEAL: C3 = [.3, 1, .88], ROSE: C3 = [1, .36, .7], SICK: C3 = [.72, 1, .3], ORE: C3 = [.36, .9, 1], MUZZLE: C3 = [1, .82, .5];
+/** The cage lamps hung on the Ironhold sheds, in each building's own space: x, y, z and how far the light reaches. */
+const BLAMP: Record<string, [number, number, number, number][]> = { depot: [[3.42, 1.7, 1.5, 11]], assay: [[-1.6, 2.1, 3.2, 11]], machineshop: [[-3.2, 2.2, 3.5, 11], [-.6, 2.4, 2.8, 8]] };
+/** Bodies that carry a light: its height, how far ahead of the body it sits, its reach, colour and strength. */
+const ULAMP: Record<string, [number, number, number, C3, number]> = { rigger: [1.5, .5, 4.5, WARM, .6], linesman: [1.6, 1.2, 4, HEAD, .45], patch: [1.6, 1.2, 4, HEAD, .45], breacher: [1.6, 1.2, 4, HEAD, .45], gantry: [3, 2.4, 8, HEAD, .7],
+  tender: [1.3, .3, 4.5, TEAL, .6], cantor: [1.6, .4, 5, TEAL, .7], lancer: [1.4, .5, 4.5, ROSE, .55], warden: [3, .8, 8, TEAL, .85], blister: [.9, 0, 5, SICK, .7], mulcher: [3.4, 0, 7, SICK, .5] };
 const bubbleMat = new THREE.MeshBasicMaterial({ color: 0x6dfff0, transparent: true, opacity: .4, depthWrite: false, blending: THREE.AdditiveBlending });
 const warnMat = new THREE.MeshBasicMaterial({ color: 0xff4f9a, transparent: true, opacity: .9, depthWrite: false, side: THREE.DoubleSide });
 let nextId = 1;
@@ -68,7 +77,7 @@ export class Game {
   jaw = 0; chargeT = 0;
   time = 0; phase: 'menu' | 'play' | 'paused' | 'card' | 'over' | 'cut' = 'menu';
   /** A cut scene's camera: where it stands, what it looks at, and its lens. The world keeps moving under it when `cutSim` is on. */
-  shot: { pos: THREE.Vector3; look: THREE.Vector3; fov: number } | null = null; cutSim = false; cutSat = 1; /** Fixed light for a cut scene. */ duskFix: number | undefined = undefined; won = false;
+  shot: { pos: THREE.Vector3; look: THREE.Vector3; fov: number } | null = null; cutSim = false; cutSat = 1; /** Fixed light for a cut scene. */ duskFix: number | undefined = undefined; /** A fixed hour of the day (0 to 24) and weather, for looking at the light. */ hourFix: number | undefined = undefined; wxFix: string | undefined = undefined; /** Which run of weather this match gets. Everyone in a shared match has the same. */ wxSalt = 0; won = false;
   /** Research bought, by team. In a mirror match both sides have the same keys, so each team keeps its own list. */
   ups: Record<UpKey, boolean>[] = [0, 1, 2, 3, 4, 5].map(() => Object.fromEntries(UPGRADES.map(u => [u.key, false])) as Record<UpKey, boolean>);
   /** What a team has researched. */
@@ -99,6 +108,7 @@ export class Game {
     // anyone else at home always run a real economy on both sides.
     if (!(fac(SIDE.home) === 0 && fac(SIDE.out) === 1)) this.eco = true;
     setMap(mapI); (M.ground as any).uniforms.uColor.value.setRGB(MAP.ground[0], MAP.ground[1], MAP.ground[2]); (M.mesa as any).uniforms.uColor.value.setRGB(MAP.mesa[0], MAP.mesa[1], MAP.mesa[2]); (M.rock as any).uniforms.uColor.value.setRGB(MAP.rock[0], MAP.rock[1], MAP.rock[2]); 
+    this.wxSalt = mapI + (net ? 0 : Math.floor(Math.random() * 50));
     const s = this.scene; s.add(makeSky()); MD.buildWorld(s, this.props, this.anim); this.spires = this.props.filter(p => p.solid); s.add(this.cam);
     this.vm = { drill: MD.vmDrill(), rifle: MD.vmRifle(), scatter: MD.vmScatter(), shield: MD.vmShield(), cannon: MD.vmCannon(), long: MD.vmLong(), pistol: MD.vmPistol(), veyl: MD.vmVeyl() };
     if (fac(SIDE.home) === 2 || fac(SIDE.out) === 2) for (const k of ['grazer', 'snapper', 'quillback', 'blister', 'mulcher']) this.vm['g_' + k] = MD.vmG(k);
@@ -264,6 +274,7 @@ export class Game {
   tracer(a: THREE.Vector3, b: THREE.Vector3, mat: THREE.Material = tracerMat, w = .07) {
     if (this.evq) { this.evq.push(['tr', r1(a.x), r1(a.y), r1(a.z), r1(b.x), r1(b.y), r1(b.z), mat === tracerMat ? 0 : 1, w]); return; }
     if (this.net && !this.applying) this.net.cmd('tr', r1(a.x), r1(a.y), r1(a.z), r1(b.x), r1(b.y), r1(b.z), mat === tracerMat ? 0 : 1, w);
+    flashLamp(a.x, a.y, a.z, 4.5 + w * 22, mat === tracerMat ? MUZZLE : mat === beamMat ? TEAL : ROSE, .09);
     const tr = this.tracers.find(t => t.t <= 0); if (!tr) return; const d = TMP.copy(b).sub(a), len = d.length(); if (len < .1) return;
     tr.m.material = mat; tr.m.scale.set(w * 1.7, len, w * 1.7); tr.m.position.copy(a).addScaledVector(d, .5); tr.m.quaternion.setFromUnitVectors(UP, d.normalize()); tr.m.visible = true; tr.t = mat === tracerMat ? .06 : .16;
   }
@@ -289,6 +300,7 @@ export class Game {
     this.blastProps(p, radius, dmg, from); this.shove(p, radius * 1.6, 9);
     const g = V3(p.x, .6, p.z); this.puff(g, 5, radius * .62, acid ? M.gS : veyl ? M.teal : M.fire, 2.2, 1.5); this.puff(g, 3, radius * .5, acid ? M.gGlow : veyl ? M.cyan : M.fireD, 1.6, 2); this.puff(TMP2.set(p.x, 1.1, p.z), 5, radius * .7, acid ? M.gGlow : veyl ? M.indigoL : M.soot, 1.5, 1.7, 2.3); this.debris(g, 8, .3, acid ? M.gH : veyl ? M.crys : M.rock, 7); this.pow(g, radius * 1.5, acid ? 2 : veyl ? 1 : 0); this.scorchAt(p, radius * 1.5); if (radius >= 3.5) this.crater(p, radius * .55);
     const v = this.vol(p); this.shake = Math.max(this.shake, v * 1.1); if (!veyl) this.pipe.flash = Math.max(this.pipe.flash, v * .5); sfx.boom(v);
+    flashLamp(p.x, 1.4, p.z, radius * 3 + 7, acid ? SICK : veyl ? TEAL : FIRE, .4);
     this.hud.damage(V3(p.x, 2.2, p.z), acid ? 'SPLORCH!' : veyl ? 'WHUMM!' : 'BOOM!', team === this.myTeam || (team < 0 && !veyl) ? 'ko' : 'kobad');
   }
 
@@ -1176,7 +1188,8 @@ export class Game {
   // ------------------------------------------------------------ render
   render(dt: number) {
     const me = this.me, cam = this.cam, pipe = this.pipe, vm = this.vm; this.drawT = Math.max(0, this.drawT - dt);
-    cam.aspect = pipe.w / pipe.h; const fix = this.duskFix ?? this.story?.dusk; pipe.setDusk(fix !== undefined ? fix : Math.min(1, MAP.dusk + Math.max(0, (this.time - 120) / 780)));
+    cam.aspect = pipe.w / pipe.h; this.lampDt = dt;
+    { const fix = this.duskFix ?? this.story?.dusk, hour = this.hourFix ?? (fix !== undefined ? hourOf(fix) : matchHour(MAP.dusk, this.time)), wx: [string, number] = this.wxFix ? [this.wxFix, 1] : fix !== undefined || this.hourFix !== undefined ? ['clear', 0] : matchWeather(this.wxSalt, this.time, hour); pipe.setSky(hour, wx[0], wx[1]); }
     const build = this.phase !== 'menu' && this.tool === 2 && !!me && isWorker(me.kind) && me.alive && !this.tab && this.staticT <= 0, blist = FACTION[me?.team || 0].builds;
     for (const k in this.ghost) { const on = build && blist[this.buildSel] === k; this.ghost[k].visible = on && this.placeOK; this.ghostBad[k].visible = on && !this.placeOK; if (on) { const g = this.placeOK ? this.ghost[k] : this.ghostBad[k]; g.position.copy(this.placePos); g.rotation.y = this.buildRot ? Math.PI / 2 : 0; } }
     holoOK.opacity = .2 + Math.sin(pipe.time * 3) * .05; warnMat.opacity = .6 + Math.sin(pipe.time * 30) * .3;
@@ -1187,16 +1200,16 @@ export class Game {
     if (this.phase === 'menu') {
       const a = pipe.time * .07; cam.fov = 46; cam.position.set(Math.sin(a) * 36 + 4, 8 + Math.sin(a * 2) * 2, Math.cos(a) * 36); cam.lookAt(2, 5.5, 0); if (me) this.bodyLayer(me, false);
       this.menuPos.copy(cam.position); this.menuQuat.copy(cam.quaternion);
-      cam.updateProjectionMatrix(); cam.updateMatrixWorld(); pipe.draw(this.scene, cam, V3(0, 0, 0), 120); return;
+      cam.updateProjectionMatrix(); cam.updateMatrixWorld(); this.lamps(cam); pipe.draw(this.scene, cam, V3(0, 0, 0), 120); return;
     }
     if (this.phase === 'cut' && this.shot) {
       pipe.sat = this.cutSat; const sh = this.shake * .05; cam.fov = this.shot.fov; cam.position.copy(this.shot.pos).add(TMP2.set(R(-sh, sh), R(-sh, sh), R(-sh, sh))); cam.lookAt(this.shot.look); if (me) this.bodyLayer(me, false);
-      cam.updateProjectionMatrix(); cam.updateMatrixWorld(); pipe.draw(this.scene, cam, this.shot.look, 130); return;
+      cam.updateProjectionMatrix(); cam.updateMatrixWorld(); this.lamps(cam); pipe.draw(this.scene, cam, this.shot.look, 130); return;
     }
     if (this.tab && me) {
       const iso = this.iso, h = 30, w = h * pipe.w / pipe.h; iso.left = -w; iso.right = w; iso.top = h; iso.bottom = -h; iso.updateProjectionMatrix();
       const shift = w * .28; iso.position.set(me.pos.x + shift, 150, me.pos.z + 120); iso.lookAt(me.pos.x + shift, 0, me.pos.z); iso.updateMatrixWorld();
-      this.bodyLayer(me, false); pipe.draw(this.scene, iso, me.pos, 150); this.hud.update(this, iso); this.bodyLayer(me, true); return;
+      this.bodyLayer(me, false); this.lamps(iso); pipe.draw(this.scene, iso, me.pos, 150); this.hud.update(this, iso); this.bodyLayer(me, true); return;
     }
     if (me) {
       if (me.alive) this.bodyLayer(me, true);
@@ -1220,11 +1233,37 @@ export class Game {
         else { const pump = this.fireCd > 0 ? Math.sin(Math.min(1, (gun.cd - this.fireCd) / (gun.cd * .8)) * Math.PI) : 0; pose(vm.scatter, 0, this.recoil * .12, rl * .12 + this.ads * .16); vm.scatter.userData.mag.position.z = -.42 + pump * .12 + (rl > 0 ? Math.abs(Math.sin(this.reloadT * 9)) * .1 : 0); pose(vm.shield, this.ads, -this.bashT * 1.2, 0); }
       }
     }
-    cam.updateProjectionMatrix(); cam.updateMatrixWorld();
+    cam.updateProjectionMatrix(); cam.updateMatrixWorld(); this.lamps(cam);
     pipe.draw(this.scene, cam, me ? me.pos : V3(), 110);
     this.hud.update(this, cam);
     // music follows how hot things are around the player
     if (me) { let hot = this.time - me.lastHit < 6 ? 1 : 0; if (!hot) for (const u of this.units) if (u.team !== this.myTeam && u.alive && Math.abs(u.pos.x - me.pos.x) < 45 && Math.abs(u.pos.z - me.pos.z) < 45) { hot = 1; break; } this.mood += (hot - this.mood) * Math.min(1, dt * (hot ? 2 : .4)); setMood(this.phase === 'play' ? .25 + this.mood * .75 : .15); }
+  }
+  private lampDt = 0;
+  /** Every lamp, fire and glowing thing near the camera, handed to the renderer for this frame. All for show. */
+  private lamps(cam: THREE.Camera) {
+    lampsBegin(); const t = this.pipe.time, c = cam.position, me = this.me, far = 95 * 95;
+    if (ENV.pool >= .02) {
+      for (const b of this.buildings) {
+        if (!b.alive || (b.pos.x - c.x) ** 2 + (b.pos.z - c.z) ** 2 > far * 2) continue; const f = fac(b.team), big = Math.max(b.hx, b.hz);
+        if (!b.built) { if (f === 0) lamp(b.pos.x, 2.2, b.pos.z, big + 6, WARM, .5); continue; }
+        const at = BLAMP[b.kind];
+        if (at) for (const [x, y, z, r] of at) { TMP.set(x, y, z).applyMatrix4(b.obj.matrixWorld); lamp(TMP.x, TMP.y, TMP.z, r, WARM, flicker(t, b.id + x, .08)); }
+        else if (f === 0) { TMP.set(0, Math.min(3, b.h * .45), (b.rot ? b.hx : b.hz) + 1).applyMatrix4(b.obj.matrixWorld); lamp(TMP.x, TMP.y, TMP.z, big + 8, WARM, flicker(t, b.id, .08)); }
+        else lamp(b.pos.x, b.h * .55, b.pos.z, big * 1.3 + 9, f === 1 ? (b.id % 3 ? TEAL : ROSE) : SICK, f === 1 ? .85 + .15 * Math.sin(t * 1.3 + b.id) : .7 + .2 * Math.sin(t * 2.1 + b.id));
+        // a building on fire lights the yard round it
+        if (f === 0 && b.hp < b.maxHp * .5) lamp(b.pos.x, b.h * .8, b.pos.z, big + 12, FIRE, (b.hp < b.maxHp * .25 ? 1.3 : .7) * flicker(t, b.id * 3, .45));
+      }
+      for (const u of this.units) {
+        if (!u.alive || u === me || (u.pos.x - c.x) ** 2 + (u.pos.z - c.z) ** 2 > far * .35) continue; const L = ULAMP[u.kind]; if (!L) continue;
+        const s = Math.sin(u.obj.rotation.y), q = Math.cos(u.obj.rotation.y); lamp(u.pos.x + s * L[1], L[0], u.pos.z + q * L[1], L[2], L[3], L[4]);
+      }
+      // what you are driving carries a lamp that lights the ground ahead of it
+      if (me && me.alive && !this.tab && this.phase !== 'menu' && this.phase !== 'cut') { const f = fac(me.team), s = Math.sin(this.yaw), q = Math.cos(this.yaw); lamp(me.pos.x + s * 3.2, UNIT[me.kind].eye * .7, me.pos.z + q * 3.2, f === 2 ? 8 : 11, f === 0 ? HEAD : f === 1 ? TEAL : SICK, f === 2 ? .7 : 1.1); }
+      for (const o of this.ores) { if (o.amount <= 0 || (o.pos.x - c.x) ** 2 + (o.pos.z - c.z) ** 2 > far * .5) continue; lamp(o.pos.x, 1.6, o.pos.z, 7, ORE, .55 + .08 * Math.sin(t * 1.7 + o.pos.x)); }
+      for (const p of this.props) { if (!p.alive || (p.kind !== 'crystal' && p.name !== 'Floodlight') || (p.x - c.x) ** 2 + (p.z - c.z) ** 2 > far) continue; if (p.name === 'Floodlight') lamp(p.x, 6.8, p.z, 18, FLOOD, 1.1 * flicker(t, p.id, .05)); else lamp(p.x, p.y0 + Math.min(3, p.h * .5), p.z, p.r * 1.6 + 5, ORE, .5); }
+    }
+    lampsCommit(c, this.lampDt); this.lampDt = 0;
   }
   /** Split screen halves are very wide or very tall. This keeps the view from stretching in the first and from feeling boxed in in the second. */
   fitFov(fov: number) { const a = this.pipe.w / this.pipe.h; return a > 2.6 ? 2 * Math.atan(Math.tan(fov * Math.PI / 360) * 2.6 / a) * 180 / Math.PI : a < 1.2 ? fov + 9 : fov; }

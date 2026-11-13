@@ -1,6 +1,7 @@
 // Boot, input, the frame loop, and the menu screens.
 import * as THREE from 'three';
 import { Pipeline, ViewPipe, V3, makeSky, TX, M } from './gfx';
+import { LAMP_ON } from './light';
 import * as MD from './models';
 import { GLOAM_BUILDINGS, bloomPatch } from './gloam-art';
 import { Game } from './game';
@@ -352,7 +353,7 @@ const sens2 = $('sens2') as HTMLInputElement, vol2 = $('vol2') as HTMLInputEleme
 const aoFor = () => gfxI === 1 || (gfxI === 0 && quality < .75) ? 0 : 1;
 const glowFor = () => gfxI === 1 || (gfxI === 0 && quality < .6) ? 0 : 1;
 const aaFor = () => gfxI === 1 || (gfxI === 0 && quality < 1) ? 0 : 4;
-function applyOpts() { document.body.classList.toggle('cb', cbOn); hud.cb = hud2.cb = cbOn; pipe.shadowEvery = gfxI === 1 ? 3 : 1; pipe.aa = aaFor(); pipe.ao = aoFor(); pipe.glow = glowFor(); pipe.w = 0; hud.relabel(touchOn ? k => TOUCHKEYS[k] ?? k : Object.keys(binds).length ? k => keyText(keyOf(k === 'Tab' || k === 'Space' ? k : 'Key' + k)) : null); resize(); }
+function applyOpts() { document.body.classList.toggle('cb', cbOn); hud.cb = hud2.cb = cbOn; pipe.shadowEvery = gfxI === 1 ? 3 : 1; pipe.aa = aaFor(); pipe.ao = aoFor(); pipe.glow = pipe.shafts = glowFor(); LAMP_ON.value = (gfxI as number) !== 1; pipe.w = 0; hud.relabel(touchOn ? k => TOUCHKEYS[k] ?? k : Object.keys(binds).length ? k => keyText(keyOf(k === 'Tab' || k === 'Space' ? k : 'Key' + k)) : null); resize(); }
 /** On a touch screen the HUD names the on-screen buttons instead of keys. */
 const TOUCHKEYS: Record<string, string> = { RMB: 'Aim', MMB: 'Send', TAB: 'Jump', Tab: 'Jump', Space: 'Dash', C: 'Ability', Q: 'Back', V: 'Squad', G: 'QM', R: 'Reload' };
 function syncOpts() { sens2.value = sensEl.value = String(sens); vol2.value = volEl.value = String(vol); mus2.checked = musEl.checked = mus; cbEl.checked = cbOn; gfxB.forEach((b, i) => b.classList.toggle('on', i === gfxI)); }
@@ -405,12 +406,12 @@ function frame(now: number) {
   // A machine that is far behind should not have to suffer fifty frames before the picture gets lighter, so very slow frames count for more.
   if (dt > .034) { slow += dt > .15 ? 10 : dt > .07 ? 3 : 1; fast = 0; } else if (dt < .02) { fast++; slow = Math.max(0, slow - 1); }
   if (gfxI === 0)
-  if (slow > 50 && quality > .5) { quality = Math.max(.5, quality * .85); slow = 0; pipe.aa = aaFor(); pipe.ao = aoFor(); pipe.glow = glowFor(); resize(); }
+  if (slow > 50 && quality > .5) { quality = Math.max(.5, quality * .85); slow = 0; pipe.aa = aaFor(); pipe.ao = aoFor(); pipe.glow = pipe.shafts = glowFor(); LAMP_ON.value = (gfxI as number) !== 1; resize(); }
   // Resolution is the only thing the Auto setting gave up, but a phone that is still slow at half resolution is short of geometry, not pixels:
   // the shadow pass draws the whole scene a third time. At the floor, Auto redraws shadows every third frame, the same as Low.
   if (gfxI === 0) { const every = quality <= .5 ? 3 : 1; if (pipe.shadowEvery !== every && (every === 3 ? slow > 50 : fast > 900)) { pipe.shadowEvery = every; slow = fast = 0; } }
   if (gfxI === 0)
-  if (fast > 900 && quality < 1) { quality = Math.min(1, quality / .85); fast = 0; pipe.aa = aaFor(); pipe.ao = aoFor(); pipe.glow = glowFor(); resize(); }
+  if (fast > 900 && quality < 1) { quality = Math.min(1, quality / .85); fast = 0; pipe.aa = aaFor(); pipe.ao = aoFor(); pipe.glow = pipe.shafts = glowFor(); LAMP_ON.value = (gfxI as number) !== 1; resize(); }
   requestAnimationFrame(frame);
 }
 (window as any).__ore = { models: MD, tx: TX, mats: M, gloamB: GLOAM_BUILDINGS, gloamBloom: bloomPatch, sounds: { ready: soundsReady, sfx }, quit, atlasUsed: MD.atlasUsed, game, start, pipe, hud, hud2, startSplit, startVeyl, split: () => split, game2: () => game2, setFree: (v: boolean) => { freeMouse = v; }, hold: (v: boolean) => { still = v; }, pickMap, pickSize, pickSide: (s: number, f = 0) => { mode = "skirm"; sideI = s; foeI = s ? s - 1 : f; showSide(); fresh(); }, unlock: () => { camp = STORY_JOBS; mpOpen = true; mode = 'multi'; showMode(); }, net: () => net, pickJob: (i: number) => { mode = 'camp'; camp = Math.max(camp, Math.min(i, STORY_JOBS)); jobI = i; showMode(); fresh(); }, playCuts, cuts: CUTS, cutP, startStory: (i: number) => { mode = 'camp'; jobI = i; camp = Math.max(camp, Math.min(i, STORY_JOBS)); start(); } };

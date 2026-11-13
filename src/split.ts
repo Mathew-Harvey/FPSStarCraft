@@ -11,7 +11,7 @@ import { audioSeat } from './audio';
 
 const TICK = 1 / 30;
 const noHud: any = new Proxy({}, { get: () => () => undefined });
-const noPipe = (): any => ({ time: 0, flash: 0, w: 1280, h: 720, setDusk() { /* nothing to draw */ }, draw() { /* nothing to draw */ } });
+const noPipe = (): any => ({ time: 0, flash: 0, w: 1280, h: 720, setDusk() { /* nothing to draw */ }, setSky() { /* nothing to draw */ }, draw() { /* nothing to draw */ } });
 
 /** One player's line to the match. It looks like a network connection to the game, but delivers by hand. */
 export class Seat extends Net {

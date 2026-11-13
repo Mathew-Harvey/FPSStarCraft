@@ -77,7 +77,7 @@ def circle(n, phase=0.0):
 
 # ---------------------------------------------------------------- Mother Cap
 def mothercap():
-    fig = site.building('mothercap', 9.4, 7.4, 11.4, unit=5)
+    fig = site.building('mothercap', 9.4, 7.4, 11.4, unit=5, look='growth')
     fig.group('body')
     base = lumpy(S.ellipsoid((0, 0, 0), (4.5, 1.15, 3.7)), 2.2, .16, .8)
     stalk = Vk.lathe([(2.6, 0), (2.2, 1.6), (1.66, 3.4), (1.82, 5), (2.3, 6.0), (2.45, 6.5)])
@@ -110,7 +110,7 @@ def mothercap():
 
 # ---------------------------------------------------------------- Spore Sac
 def sporesac():
-    fig = site.building('sporesac', 3.2, 3.0, 5.6)
+    fig = site.building('sporesac', 3.2, 3.0, 5.6, look='growth')
     fig.group('body')
     fig.add('base', 'body', 'gHn', mound(2.35, .62, 2.15, 4.0), 500, voxel=.03, uv=('top',))
     fig.group('bulb', (0, .4, 0))
@@ -132,7 +132,7 @@ def sporesac():
 
 # ---------------------------------------------------------------- Warren
 def warren():
-    fig = site.building('warren', 4.6, 4.0, 5.2)
+    fig = site.building('warren', 4.6, 4.0, 5.2, look='growth')
     fig.group('body')
     hill = S.ellipsoid((0, 0, 0), (3.7, 2.1, 3.0))
     hill = S.bump(hill, lambda p: .22 * np.sin(p[..., 0] * 1.7) * np.cos(p[..., 2] * 1.5) * np.clip(p[..., 1], 0, 1))
@@ -159,7 +159,7 @@ def warren():
 
 # ---------------------------------------------------------------- Quill Garden
 def quillgarden():
-    fig = site.building('quillgarden', 4.8, 4.4, 7.6)
+    fig = site.building('quillgarden', 4.8, 4.4, 7.6, look='growth')
     fig.group('body')
     fig.add('bed', 'body', 'gHn', mound(3.65, .92, 3.15, 9.0), 800, voxel=.036, uv=('top',))
     quills, collars = [], []
@@ -190,7 +190,7 @@ def quillgarden():
 
 # ---------------------------------------------------------------- Blister Bed
 def blisterbed():
-    fig = site.building('blisterbed', 4.9, 4.9, 4.2)
+    fig = site.building('blisterbed', 4.9, 4.9, 4.2, look='growth')
     fig.group('body')
     dish = Vk.lathe([(3.25, 0), (3.66, .6), (3.5, 1.4), (3.1, 1.5), (2.8, 1.46)])
     dish = S.bump(dish, lambda p: .12 * np.sin(8 * np.arctan2(p[..., 0], p[..., 2]) + 1.0) * np.clip(p[..., 1] / 1.4, 0, 1))
@@ -216,7 +216,7 @@ def blisterbed():
 
 # ---------------------------------------------------------------- Tusk Hollow
 def tuskhollow():
-    fig = site.building('tuskhollow', 5.4, 6.2, 7.4)
+    fig = site.building('tuskhollow', 5.4, 6.2, 7.4, look='growth')
     fig.group('body')
     fig.add('bed', 'body', 'gHn', mound(4.75, 1.2, 3.75, 11.0), 800, voxel=.04, uv=('top',))
     den = S.ellipsoid((0, 1.2, 0), (2.35, 1.65, 2.75))
@@ -242,7 +242,7 @@ def tuskhollow():
 
 # ---------------------------------------------------------------- Old Growth
 def oldgrowth():
-    fig = site.building('oldgrowth', 4.6, 4.6, 11.2)
+    fig = site.building('oldgrowth', 4.6, 4.6, 11.2, look='growth')
     fig.group('body')
     fig.add('bed', 'body', 'gHn', mound(3.25, 1.0, 3.25, 13.0), 600, voxel=.036, uv=('top',))
     tp = Vk.curve([(0, 0, 0), (.4, 3, .2), (-.2, 6, 0), (.2, 9.1, -.2)], 14)
@@ -274,7 +274,7 @@ def oldgrowth():
 
 # ---------------------------------------------------------------- Stinger Stalk
 def stinger():
-    fig = site.building('stinger', 2.4, 3.0, 8.8)
+    fig = site.building('stinger', 2.4, 3.0, 8.8, look='growth')
     fig.group('body')
     fig.add('bed', 'body', 'gHn', mound(1.62, .62, 1.62, 15.0, .08), 360, voxel=.026, uv=('top',))
     sp = Vk.curve([(0, 0, 0), (.2, 2.4, 0), (-.1, 4.8, .1), (0, 6.45, 0)], 14)

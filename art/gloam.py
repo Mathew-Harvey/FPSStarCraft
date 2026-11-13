@@ -25,7 +25,7 @@ def eyes(pts, r, look=.4):
 
 
 def build_grazer():
-    fig = B.Figure('grazer', lo=(-1.2, -.1, -1.2), hi=(1.2, 1.6, 1.2), paint=768)
+    fig = B.Figure('grazer', lo=(-1.2, -.1, -1.2), hi=(1.2, 2.0, 1.2), paint=768)
     fig.group('body', (0, 0, 0))
     fig.group('head', (0, .5, .38), 'body')
     G.add_legs(fig, [(.22, .36, .15, .24), (-.04, .4, .02, .24), (-.28, .36, -.1, .24)], .062, .4)
@@ -35,17 +35,21 @@ def build_grazer():
     fig.add('hide', 'body', 'gH', G.hide(body, 1.1, .016, 8), 1500, voxel=.004, uv=('cyl', V(0, .5, -.05), (0, 0, 1)))
     belly = ribbed(S.ellipsoid((0, .37, -.02), (.34, .19, .42)), 0, 44, .008)
     fig.add('belly', 'body', 'gV', belly, 500, voxel=.004, uv=('side',))
-    cap, gill = G.mushroom((0, .72, -.12), .52, .34, (-.12, 0, 0), 1.1, 1.0)
-    cap = S.cut(cap, S.sphere((.4, .78, .32), .13), k=.02)                                                           # a bite out of the lip
+    stalk = S.chain([V(0, .66, -.1), V(0, .86, -.16), V(0, 1.0, -.24)], [.2, .15, .17])                               # the cap stands up off the back on a stalk of its own
+    fig.add('capstalk', 'body', 'gV', ribbed(stalk, 0, 60, .006, 1), 420, voxel=.004, uv=('cyl', V(0, .85, -.16)))
+    cap, gill = G.mushroom((0, 1.02, -.26), .6, .62, (-.3, 0, .06), 1.05, 1.0)
+    cap = S.cut(cap, S.sphere((.48, 1.02, .2), .15), k=.02)                                                          # a bite out of the lip
     fig.add('cap', 'body', 'gC', cap, 1500, voxel=.004, uv=('top',))
     fig.add('gills', 'body', 'gGb', gill, 600, voxel=.004, uv=('top',))
-    small, sg = G.mushroom((-.26, .68, -.52), .14, .12, (-.5, 0, .5), 1.0, 2.0)
+    small, sg = G.mushroom((-.3, .7, .12), .15, .13, (.3, 0, .6), 1.0, 2.0)
     fig.add('capsmall', 'body', 'gC', small, 260, voxel=.003, uv=('top',))
     fig.add('gillssmall', 'body', 'gGb', sg, 120, voxel=.003, uv=('top',))
-    fig.add('sacs', 'body', 'gS', G.sacs((0, .74, -.5), 4, .08, 3), 320, voxel=.003, uv=('top',))
+    fig.add('sacs', 'body', 'gS', G.sacs((.24, .7, .1), 3, .07, 3), 260, voxel=.003, uv=('top',))
     H0 = V(0, .5, .38)
     head = S.ellipsoid(H0 + V(0, .02, .08), (.23, .18, .21))
-    head = S.union(head, S.ellipsoid(H0 + V(0, -.05, .2), (.15, .1, .12)), k=.05)                                    # a blunt muzzle
+    trunk = S.chain([H0 + V(0, -.02, .2), H0 + V(0, -.1, .36), H0 + V(0, -.24, .46), H0 + V(0, -.36, .47)], [.13, .1, .075, .06])   # a trunk that hangs to the ground, for sucking ore off the rock
+    trunk = S.bump(trunk, lambda p: .008 * np.sin((p[..., 1] - p[..., 2]) * 70))
+    head = S.union(head, trunk, k=.05)
     for sx in (-1, 1):
         head = S.cut(head, S.sphere(H0 + V(sx * .15, .1, .23), .055), k=.012)
     fig.add('head', 'head', 'gHn', G.hide(head, 2.2, .01, 12), 900, voxel=.0032, uv=('cyl', H0 + V(0, 0, .08), (0, 0, 1)))
@@ -54,8 +58,7 @@ def build_grazer():
     fig.add('headshield', 'head', 'gBc', shield, 360, voxel=.003, uv=('top',))
     mand = []
     for sx in (-1, 1):                                                                                             # grinding plates that meet in the middle
-        m = S.cut(S.ellipsoid(H0 + V(sx * .07, -.09, .27), (.085, .035, .11), rot(0, sx * .3, sx * .2)), S.sphere(H0 + V(sx * .0, -.09, .36), .06))
-        mand.append(S.union(m, *[G.spine(H0 + V(sx * (.03 + i * .03), -.1, .33 + i * .01), (-sx * .4, -.6, .5), .035, .012) for i in range(3)], k=.006))
+        mand.append(S.union(S.torus(H0 + V(0, -.375, .47), .058, .016), *[G.spine(H0 + V(sx * .05, -.37, .47 + i * .035), (sx * .5, -1, i * .5), .06, .014) for i in (-1, 0, 1)], k=.006))   # a bone ring round the end of it, with rasps
     fig.add('mandibles', 'head', 'gBn', S.union(*mand), 420, voxel=.0028, uv=('top',))
     fig.add('eyes', 'head', 'gEye', eyes([H0 + V(sx * .14, .1, .22) for sx in (-1, 1)], .05), 160, voxel=.0028, uv=('front',))
     fe = S.union(*[S.chain(S.bez(H0 + V(sx * .08, .16, .2), H0 + V(sx * .18, .38, .28), H0 + V(sx * .27, .42, .5), 6), list(np.linspace(.018, .008, 7))) for sx in (-1, 1)])
@@ -65,22 +68,22 @@ def build_grazer():
 
 
 def build_snapper():
-    fig = B.Figure('snapper', lo=(-1.2, -.1, -1.5), hi=(1.2, 1.4, 1.4), paint=768)
+    fig = B.Figure('snapper', lo=(-1.2, -.1, -1.5), hi=(1.2, 1.7, 1.4), paint=768)
     fig.group('body', (0, 0, 0))
-    fig.group('head', (0, .6, .48), 'body')
-    G.add_legs(fig, [(.3, .3, .42, .17), (-.26, .34, -.34, .17)], .07, .44)
-    spinep = [V(0, .58, .36), V(0, .6, .05), V(0, .56, -.3), V(0, .46, -.66), V(0, .36, -1.0)]
-    body = S.chain(spinep, [.24, .27, .22, .12, .03])
+    fig.group('head', (0, .6, .48), 'body', scale=1.34)
+    G.add_legs(fig, [(.3, .36, .42, .19), (-.26, .3, -.3, .15)], .07, .44)
+    spinep = [V(0, .6, .36), V(0, .68, .08), V(0, .56, -.3), V(0, .56, -.62), V(0, .78, -.9), V(0, 1.08, -.92), V(0, 1.22, -.72)]
+    body = S.chain(spinep, [.25, .3, .2, .12, .085, .06, .035])
     body = S.squash(body, (.9, 1, 1))
     body = S.bump(body, lambda p: .012 * np.sin(p[..., 2] * 40) * np.clip((p[..., 1] - .55) * 8, 0, 1))
     fig.add('hide', 'body', 'gH', G.hide(body, 4.1, .014, 10), 1500, voxel=.0035, uv=('cyl', V(0, .55, -.3), (0, 0, 1)))
     belly = ribbed(S.squash(S.chain([V(0, .47, .32), V(0, .45, -.3), V(0, .38, -.6)], [.13, .15, .07]), (.8, 1, 1)), 0, 50, .007)
     fig.add('belly', 'body', 'gV', belly, 420, voxel=.0035, uv=('side',))
-    fig.add('plates', 'body', 'gBc', G.back_plates((0, .76, .3), (0, .52, -.76), 6, .36), 1100, voxel=.003, uv=('top',))
+    fig.add('plates', 'body', 'gBc', G.back_plates((0, .84, .26), (0, .6, -.6), 5, .42), 1100, voxel=.003, uv=('top',))
     fig.add('sacs', 'body', 'gS', S.union(*[S.sphere(((.07 if i % 2 else -.07), .74 - i * .06, -.12 - i * .2), .045) for i in range(3)]), 180, voxel=.003)
     frill = S.union(*[G.crescent_fin(V(sx * .1, .62, .34), .3, .012, rot(.2, sx * 1.2, sx * .5) @ rot(0, 0, -sx * 1.0)) for sx in (-1, 1)])
     fig.add('frill', 'body', 'gG', frill, 520, voxel=.003, uv=('side',))
-    tailsp = S.union(*[G.spine(spinep[3] + (spinep[4] - spinep[3]) * t + V(0, .06 - t * .04, 0), (0, 1, -.7), .12 - t * .05, .022) for t in (.0, .3, .6)])
+    tailsp = S.union(G.spine(spinep[6], (0, -.25, 1), .34, .05, .04), S.sphere(spinep[6], .055), *[G.spine(spinep[i] + V(0, 0, -.06), (0, .2, -1), .14, .024) for i in (3, 4, 5)], k=.01)   # a hook on the end of it, held over the back
     fig.add('tailspines', 'body', 'gBn', tailsp, 120, voxel=.003)
     H0 = V(0, .6, .48)
     skull = S.ellipsoid(H0 + V(0, .05, .06), (.17, .13, .22))
@@ -101,7 +104,7 @@ def build_snapper():
 
 
 def build_quillback():
-    fig = B.Figure('quillback', scale=1.22, lo=(-1.4, -.1, -1.6), hi=(1.4, 2.6, 1.5), paint=1024, brush=1.25)
+    fig = B.Figure('quillback', scale=1.22, lo=(-1.4, -.1, -1.9), hi=(1.4, 2.6, 1.5), paint=1024, brush=1.25)
     fig.group('body', (0, 0, 0))
     fig.group('head', (0, 1.64, .4), 'body')
     fig.group('arms', (0, 1.6, .5), 'body')
@@ -119,13 +122,17 @@ def build_quillback():
     for row in range(3):                                                                                           # the fan of quills, longest in the middle
         for i in range(7):
             a = (i - 3) * .26
-            ln = (.95 - abs(i - 3) * .1) * (1 - row * .2)
+            ln = (1.3 - abs(i - 3) * .15) * (1 - row * .2)
             d = rot(-.9 - row * .2, 0, -a * 1.4) @ V(0, 1, 0)
             q.append(G.spine(V(np.sin(a) * .2, 1.18 - row * .08, -.1 - row * .2), d, ln, .04, .04))
     fig.add('quills', 'body', 'gBn', S.union(*q), 1300, voxel=.004, uv=('side',))
     fig.add('sacs', 'body', 'gS', G.sacs((0, 1.2, -.34), 5, .12, 7), 380, voxel=.004)
+    tp = [V(0, .86, -.42), V(0, .62, -.8), V(0, .4, -1.12), V(0, .34, -1.42)]                                         # a heavy tail dragged behind to balance the neck
+    tailf = S.bump(S.chain(tp, [.24, .17, .1, .04]), lambda p: .012 * np.sin(p[..., 2] * 36))
+    fig.add('tail', 'body', 'gH', G.hide(tailf, 6.6, .014, 9), 700, voxel=.0045, uv=('cyl', V(0, .6, -.9), (0, 0, 1)))
+    fig.add('tailquills', 'body', 'gBn', S.union(*[G.spine(tp[i] + V(0, r * .7, 0), (0, 1, -.9), ln, .03, .05) for i, r, ln in ((1, .17, .34), (2, .1, .26), (3, .04, .2))]), 160, voxel=.004)
     H0 = V(0, 1.64, .4)
-    cap, gill = G.mushroom(H0 + V(0, .16, -.02), .3, .2, (-.3, 0, 0), 1.1, 3.0)
+    cap, gill = G.mushroom(H0 + V(0, .16, -.04), .4, .2, (-.34, 0, 0), 1.1, 3.0)
     fig.add('headcap', 'head', 'gC', cap, 900, voxel=.0035, uv=('top',))
     fig.add('headgills', 'head', 'gGb', gill, 360, voxel=.0035, uv=('top',))
     face = S.ellipsoid(H0 + V(0, .02, .06), (.15, .15, .17))
@@ -134,25 +141,25 @@ def build_quillback():
     fig.add('face', 'head', 'gHn', G.hide(face, 7.2, .008, 14), 520, voxel=.003, uv=('front',))
     fig.add('eyes', 'head', 'gEye', eyes([H0 + V(sx * .1, .08, .2) for sx in (-1, 1)], .045, .5), 140, voxel=.0028, uv=('front',))
     A = V(0, 1.6, .5)
-    tube = S.chain([A + V(0, -.06, -.02), A + V(0, -.08, .2), A + V(0, -.06, .4)], [.1, .085, .07])
-    tube = S.cut(tube, S.cyl(A + V(0, -.06, .3), A + V(0, -.06, .5), .04))                                           # bored through
+    tube = S.chain([A + V(0, -.06, -.02), A + V(0, -.09, .2), A + V(0, -.06, .46)], [.11, .09, .07])
+    tube = S.cut(tube, S.cyl(A + V(0, -.06, .34), A + V(0, -.06, .56), .04))                                           # bored through
     fig.add('spittube', 'arms', 'gH', G.hide(tube, 8.3, .006, 16), 320, voxel=.003, uv=('cyl', A, (0, 0, 1)))
     fig.add('tuberings', 'arms', 'gB', S.union(*[S.torus(A + V(0, -.07, z), .083 - z * .03, .022, rot(PI / 2, 0, 0)) for z in (.1, .22, .34)]), 300, voxel=.003)
-    fig.add('tubeglow', 'arms', 'gS', S.torus(A + V(0, -.06, .4), .058, .02, rot(PI / 2, 0, 0)), 100, voxel=.003)
-    fig.point('muzzle', A + V(0, -.06, .48), 'arms')
+    fig.add('tubeglow', 'arms', 'gS', S.torus(A + V(0, -.06, .46), .058, .02, rot(PI / 2, 0, 0)), 100, voxel=.003)
+    fig.point('muzzle', A + V(0, -.06, .54), 'arms')
     return fig, (0, 0, 1.1, 2.6)
 
 
 def build_blister():
     fig = B.Figure('blister', lo=(-1.0, -.1, -1.0), hi=(1.0, 1.5, 1.0), paint=768)
     fig.group('body', (0, 0, 0))
-    fig.group('halo', (0, .64, -.06), 'body')
-    fig.group('head', (0, .36, .28), 'body')
-    G.add_legs(fig, [(.16, .24, .13, .17), (-.04, .24, -.03, .17), (-.22, .24, -.18, .17)], .045, .3, detail=.8)
-    body = S.ellipsoid((0, .34, .02), (.2, .13, .25))
-    fig.add('hide', 'body', 'gH', G.hide(body, 9.1, .008, 14), 500, voxel=.003, uv=('cyl', V(0, .34, 0), (0, 0, 1)))
-    C = V(0, .64, -.06)
-    sac = S.ellipsoid(C, (.38, .35, .4))
+    fig.group('halo', (0, .86, -.08), 'body')
+    fig.group('head', (0, .5, .28), 'body')
+    G.add_legs(fig, [(.16, .34, .2, .15), (-.04, .36, -.03, .15), (-.22, .34, -.24, .15)], .04, .46, detail=.8)
+    body = S.ellipsoid((0, .49, .02), (.19, .12, .25))
+    fig.add('hide', 'body', 'gH', G.hide(body, 9.1, .008, 14), 500, voxel=.003, uv=('cyl', V(0, .49, 0), (0, 0, 1)))
+    C = V(0, .86, -.08)
+    sac = S.union(S.ellipsoid(C, (.36, .37, .4)), S.ellipsoid(C + V(0, -.3, .02), (.18, .16, .2)), k=.14)             # a pear, hung by its narrow end
     sac = S.bump(sac, lambda p: .02 * np.sin(p[..., 0] * 9) + .03 * (S.noise(p, 5, 3.3) - .5) + .025 * np.clip((S.noise(p, 9, 7.7) - .62) * 5, 0, 1))   # stretched tight and lumpy
     fig.add('sac', 'halo', 'gS', sac, 1300, voxel=.0045, uv=('cyl', C), glow=.46)
     veins = []
@@ -161,33 +168,45 @@ def build_blister():
         pts = [S.skin(sac, C, V(np.cos(a) * np.sin(t), np.cos(t), np.sin(a) * np.sin(t)), tmax=.7, n=300, out=.004) for t in np.linspace(.25, 2.3, 8)]
         veins.append(S.chain(pts, list(np.linspace(.02, .012, 8))))
     fig.add('veins', 'halo', 'gD', S.union(*veins), 520, voxel=.003)
-    knot = S.union(S.ellipsoid(C + V(0, .34, 0), (.1, .045, .1)), G.spine(C + V(0, .36, 0), (.2, 1, 0), .1, .03), k=.01)
+    buds = S.union(*[S.ellipsoid(C + V(x, y, z), (r, r * 1.08, r)) for x, y, z, r in ((.33, .1, -.2, .15), (-.3, .22, .12, .12), (-.12, -.12, -.4, .13))])   # smaller ones budding off it
+    buds = S.bump(buds, lambda p: .012 * (S.noise(p, 9, 5.1) - .5))
+    fig.add('buds', 'halo', 'gS', buds, 520, voxel=.004, uv=('cyl', C), glow=.46)
+    knot = S.union(S.ellipsoid(C + V(0, .36, 0), (.1, .045, .1)), G.spine(C + V(0, .38, 0), (.2, 1, 0), .1, .03), k=.01)
     fig.add('sacknot', 'halo', 'gBc', knot, 160, voxel=.003, uv=('top',))
-    H0 = V(0, .36, .28)
+    H0 = V(0, .5, .28)
     head = S.ellipsoid(H0, (.12, .1, .11))
     fig.add('head', 'head', 'gHn', G.hide(head, 9.6, .006, 16), 360, voxel=.0028, uv=('front',))
     fig.add('eyes', 'head', 'gEye', eyes([H0 + V(sx * .07, .05, .09) for sx in (-1, 1)], .03, .5), 110, voxel=.0022, uv=('front',))
     fig.add('fangs', 'head', 'gBn', S.union(*[G.spine(H0 + V(sx * .06, -.05, .09), (sx * -.2, -.8, .6), .1, .02) for sx in (-1, 1)]), 80, voxel=.0022)
-    return fig, (0, 0, .5, 1.3)
+    return fig, (0, 0, .65, 1.6)
 
 
 def build_mulcher():
-    fig = B.Figure('mulcher', lo=(-3.2, -.1, -3.4), hi=(3.2, 4.0, 4.6), coarse=.04, paint=1536, brush=2.6)
+    fig = B.Figure('mulcher', lo=(-3.2, -.1, -3.4), hi=(3.2, 4.8, 4.8), coarse=.04, paint=1536, brush=2.6)
     Y = -.42                                                     # the old figure's body hung this far below its own numbers
     fig.group('body', (0, 0, 0))
     fig.group('head', (0, 1.85 + Y, 1.62), 'body')
     fig.group('arms', (0, 1.75 + Y, 2.12), 'head')
     G.add_legs(fig, [(1.0, 1.5, 1.6, .9), (-.1, 1.7, .1, .9), (-1.1, 1.6, -1.6, .9)], .2, 1.25, thorn=.7, detail=1.3)
     body = S.ellipsoid((0, 1.9 + Y, -.1), (1.3, .8, 1.8))
-    body = S.union(body, S.ellipsoid((0, 2.05 + Y, .9), (1.05, .7, .9)), k=.3)                                       # humped over the shoulders
+    body = S.union(body, S.ellipsoid((0, 2.3 + Y, .8), (1.15, .95, 1.0)), k=.3)                                       # humped high over the shoulders, falling away to the rump
     body = S.bump(body, lambda p: .04 * np.sin(p[..., 2] * 9) * np.clip((p[..., 1] - 1.4) * 2, 0, 1))
     body = S.bump(body, lambda p: -.05 * np.clip(1 - np.abs(S.noise(p, 1.6, 2.2) - .5) * 5, 0, 1))                    # old scars
     fig.add('hide', 'body', 'gH', G.hide(body, 10.1, .05, 2.6, .012), 3000, voxel=.014, uv=('cyl', V(0, 1.45, 0), (0, 0, 1)))
     belly = ribbed(S.ellipsoid((0, 1.36 + Y, 0), (1.1, .5, 1.5)), 0, 12, .03)
     fig.add('belly', 'body', 'gV', belly, 700, voxel=.014, uv=('side',))
-    fig.add('plates', 'body', 'gBc', G.back_plates((0, 2.72 + Y, 1.1), (0, 2.12 + Y, -1.8), 6, 1.9), 2200, voxel=.012, uv=('top',))
-    cap, gill = G.mushroom((.1, 2.68 + Y, -.5), 1.15, .7, (-.18, 0, .08), 1.15, 5.0)
-    cap = S.cut(cap, S.sphere((1.1, 2.5 + Y, .3), .3), k=.04)
+    fig.add('plates', 'body', 'gBc', G.back_plates((0, 3.12 + Y, 1.0), (0, 2.12 + Y, -1.8), 6, 2.0), 2200, voxel=.012, uv=('top',))
+    cap, gill = G.mushroom((.1, 3.5 + Y, -.75), 1.25, .8, (-.26, 0, .08), 1.1, 5.0)                                   # the big cap, up on a trunk of its own
+    cap = S.cut(cap, S.sphere((1.2, 3.4 + Y, .1), .32), k=.04)
+    trunks = [S.chain([V(.05, 2.5 + Y, -.5), V(.12, 3.0 + Y, -.62), V(.1, 3.45 + Y, -.74)], [.42, .3, .34])]
+    tall = []
+    for (x, z, h, r, lean, sd) in ((-.75, .2, 1.5, .34, .22, 8.0), (.62, .7, 1.05, .26, -.2, 9.0), (-.2, -1.5, .8, .3, .1, 10.0)):   # tall thin ones standing up round it
+        base, top = V(x, 2.55 + Y - abs(x) * .2, z), V(x + lean * h, 2.55 + Y + h, z - .1 * h)
+        trunks.append(S.chain([base, (base + top) / 2 + V(lean * .1, 0, 0), top], [r * .42, r * .3, r * .36]))
+        tall.append(G.mushroom(top + V(0, r * .1, 0), r, r * .9, (-.2, 0, -lean * 1.2), 1.0, sd))
+    fig.add('trunks', 'body', 'gV', ribbed(S.union(*trunks), 0, 26, .014, 1), 900, voxel=.01, uv=('side',))
+    fig.add('capstall', 'body', 'gC', S.union(*[t[0] for t in tall]), 1100, voxel=.008, uv=('top',))
+    fig.add('gillstall', 'body', 'gGb', S.union(*[t[1] for t in tall]), 520, voxel=.008, uv=('top',))
     fig.add('cap', 'body', 'gC', cap, 2200, voxel=.011, uv=('top',))
     fig.add('gills', 'body', 'gGb', gill, 900, voxel=.011, uv=('top',))
     c2, g2 = G.mushroom((-.65, 2.45 + Y, -1.3), .48, .34, (-.3, 0, .5), 1.0, 6.0)
@@ -217,16 +236,16 @@ def build_mulcher():
     A = V(0, 1.75 + Y, 2.12)
     tusks, bands = [], []
     for sx in (-1, 1):                                                                                             # two raking tusks that sweep up and out
-        pts = [A + V(sx * .4, 0, 0), A + V(sx * .8, -.3, .5), A + V(sx * .95, -.1, 1.2), A + V(sx * .7, .4, 1.8)]
+        pts = [A + V(sx * .4, 0, 0), A + V(sx * .9, -.36, .5), A + V(sx * 1.15, -.14, 1.3), A + V(sx * .8, .62, 2.1)]
         dense = S.bez(pts[0], pts[1], pts[2], 5)[:-1] + S.bez(pts[2], (pts[2] + pts[3]) / 2 + V(sx * .05, -.08, 0), pts[3], 4)
-        tusks.append(S.chain(dense, list(np.linspace(.2, .02, len(dense)))))
+        tusks.append(S.chain(dense, list(np.linspace(.26, .02, len(dense)))))
         for t in (.25, .5):
             c = A + V(sx * (.5 + t * .5), -.24 + t * .1, .3 + t * .9)
             bands.append(S.torus(c, .19 - t * .1, .035, rot(PI / 2 - .4, 0, 0)))
     tk = S.bump(S.union(*tusks), lambda p: .012 * np.sin(p[..., 2] * 24))                                             # grown in rings
     fig.add('tusks', 'arms', 'gB', tk, 900, voxel=.008, uv=('side',))
     fig.add('tuskbands', 'arms', 'gD', S.union(*bands), 320, voxel=.007)
-    return fig, (0, 0, 1.5, 4.2)
+    return fig, (0, 0, 1.9, 5.0)
 
 
 if __name__ == '__main__':

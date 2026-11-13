@@ -4,6 +4,7 @@
 import { noHud, noPipe } from '../server/shim';
 import { Game } from '../src/game';
 import { initHeadless } from '../src/gfx';
+import { ENV, WEATHER, KEYDIR, setLight, matchHour, matchWeather } from '../src/light';
 import { DIFFS, SIDE, FACTION, BLD, MAP, VHOME, UPGRADES, NORTH_PATH, homeXZ, setMap, setSides, fac, Kind, BKind } from '../src/data';
 const UPGRADE_AT = Object.fromEntries(UPGRADES.map(u => [u.key, u.at]));
 
@@ -170,6 +171,24 @@ for (const map of [0, 1, 2]) for (const [home, out] of [[0, 0], [0, 1], [1, 0], 
     check(d(road, base) < d(road, foeBase) && d(north, base) < d(north, foeBase), `${tag}: the squad's rally points are on its own half`);
     check(d(north, ridge) < d(base, ridge), `${tag}: the ridge rally sits between the base and the ridge path (${Math.round(d(north, ridge))} m from the path's end, base ${Math.round(d(base, ridge))} m)`);
   }
+}
+
+// The light of the world (src/light.ts) is for show, but a hole in its table would black out a match at that hour, and a clock that
+// ran backwards would flick the sun about.
+{
+  let bad = '';
+  for (const wx of Object.keys(WEATHER)) for (let h = 0; h <= 24; h += .1) {
+    setLight(h, wx, 1);
+    for (const k in ENV) { const v = (ENV as any)[k]; for (const x of Array.isArray(v) ? v : [v]) if (!(x >= 0 && x < 8)) bad = `${k} at ${h.toFixed(1)} in ${wx}`; }
+    if (!(KEYDIR.y > .1 && Math.abs(KEYDIR.length() - 1) < 1e-3)) bad = `key light at ${h.toFixed(1)}`;
+  }
+  check(!bad, 'the light table gives a whole row for every hour of the day in every weather' + (bad ? ` (${bad})` : ''));
+  let prev = matchHour(0, 0), wraps = 0, jump = 0, night = 0;
+  for (let t = 0; t <= 3600; t += 2) { const h = matchHour(0, t); if (h < prev - 12) wraps++; else jump = Math.max(jump, Math.abs(h - prev)); prev = h; if (h > 20.5 || h < 4.7) night += 2; }
+  check(matchHour(0, 60) === 12 && matchHour(.55, 0) === 17.5 && wraps === 2 && jump < .06 && night > 500 && night < 800, `the match clock starts at the map's hour, only runs forward, and spends about a fifth of the time in the dark (${wraps} midnights and ${night} s of night in an hour)`);
+  let wbad = ''; const seen = new Set<string>();
+  for (let t = 0; t < 6000; t += 5) { const [wx, w] = matchWeather(3, t, matchHour(0, t)), [wx2, w2] = matchWeather(3, t, matchHour(0, t)); seen.add(wx); if (!WEATHER[wx] || !(w >= 0 && w <= 1) || wx !== wx2 || w !== w2 || (t < 150 && w > 0) || (t % 150 === 0 && w > 0)) wbad = `${wx} ${w} at ${t}`; }
+  check(!wbad && seen.size >= 3, 'weather opens clear, is the same for everyone in a match, and always clears between spells' + (wbad ? ` (${wbad})` : ''));
 }
 
 console.log(fail.length ? `\n${fail.length} FAILED` : '\nALL PASS'); process.exit(fail.length ? 1 : 0);

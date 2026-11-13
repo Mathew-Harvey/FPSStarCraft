@@ -17,7 +17,7 @@ sys.path.insert(0, __file__.rsplit('/', 1)[0])
 from kit import sdf as S, build as B, gloam as G
 from kit.sdf import V, rot
 
-KINDS = ('keeper', 'shellback', 'lobber', 'needler', 'digmound', 'smother', 'seeder', 'husk', 'pup')
+KINDS = ('keeper', 'shellback', 'lobber', 'needler', 'digmound', 'smother', 'seeder', 'husk', 'pup', 'gnatwing', 'bloater', 'sower', 'hooksail', 'drifter')
 KIND = next((a for a in sys.argv[1:] if a in KINDS), 'keeper')
 PI = np.pi
 
@@ -143,7 +143,7 @@ def build_shellback():
 
 def build_lobber():
     s = 1.3
-    fig = B.Figure('lobber', lo=(-1.8, -.1, -1.8), hi=(1.8, 2.9, 1.9), paint=1024, brush=1.4)
+    fig = B.Figure('lobber', scale=1.25, lo=(-1.8, -.1, -1.8), hi=(1.8, 2.9, 1.9), paint=1024, brush=1.4)
     fig.group('body', (0, 0, 0))
     fig.group('head', (0, .66, .92), 'body')
     fig.group('halo', (0, 1.25, -.1), 'body')
@@ -154,7 +154,7 @@ def build_lobber():
     sac = S.union(S.ellipsoid(C, (.5, .56, .58)), S.ellipsoid(C + V(0, -.42, .04), (.32, .3, .4)), k=.18)
     sac = S.union(sac, S.rcone(C + V(0, .42, .1), C + V(0, .78, .3), .22, .13), k=.12)
     sac = S.bump(sac, lambda p: .025 * (S.noise(p, 4.5, 41.1) - .5) + .02 * np.clip((S.noise(p, 9, 4.7) - .62) * 5, 0, 1))
-    fig.add('sac', 'halo', 'gS', sac, 1600, voxel=.005, uv=('cyl', C), glow=.46)
+    fig.add('sac', 'halo', 'gS', sac, 1600, voxel=.005, uv=('cyl', C), glow=.26)
     veins = []
     for i in range(6):
         a = i / 6 * 2 * PI + .4
@@ -186,7 +186,7 @@ def build_lobber():
 
 
 def build_needler():
-    fig = B.Figure('needler', lo=(-1.6, -.1, -2.2), hi=(1.6, 2.4, 2.0), paint=1024, brush=1.3)
+    fig = B.Figure('needler', scale=1.3, lo=(-1.6, -.1, -2.2), hi=(1.6, 2.4, 2.0), paint=1024, brush=1.3)
     fig.group('body', (0, 0, 0))
     fig.group('head', (0, .58, 1.0), 'body')
     fig.group('arms', (0, .9, -.1), 'body')                                                                         # the crest: tips forward to fire
@@ -280,9 +280,10 @@ def build_smother():
     ball = S.cut(ball, *[S.sphere(q, .075) for q in pores], k=.03)
     fig.add('ball', 'halo', 'gC', ball, 2200, voxel=.005, uv=('top',))
     fig.add('pores', 'halo', 'gS', S.union(*[S.sphere(q - (q - C) * .04, .06) for q in pores]), 400, voxel=.004, glow=.7)
-    veil = S.shell(S.ellipsoid(C + V(0, -.32, 0), (.7, .72, .7)), .018)                                              # a lace skirt hanging from under the ball
-    veil = S.both(veil, S.below(C[1] - .3))
-    veil = S.both(veil, S.above(C[1] - 1.0))
+    veil = S.shell(S.ellipsoid(C + V(0, -.2, 0), (.66, 1.15, .66)), .022)                                              # a lace skirt hanging from under the ball
+    veil = S.both(veil, S.below(C[1] - .32))
+    veil = S.both(veil, lambda p: (C[1] - 1.12 + .06 * np.sin(np.arctan2(p[..., 0], p[..., 2]) * 9)) - p[..., 1])      # a ragged hem
+    veil = S.cut(veil, S.ellipsoid(C + V(0, -.75, .62), (.26, .5, .3)), k=.03)                                         # open at the front for the snout
     def holes(p):
         a = np.arctan2(p[..., 0] - C[0], p[..., 2] - C[2]) * 7
         y = (p[..., 1] - C[1]) * 14
@@ -383,8 +384,200 @@ def build_pup():
     return fig, (0, 0, .3, 1.0)
 
 
+def wing(root, tip, w, t, vein=7, seed=0.0):
+    """A membrane wing from root to tip, a leaf shape w wide and t thick, veined, with a torn notch. Thick enough to survive the thinning."""
+    root, tip = V(root), V(tip)
+    d = tip - root
+    L = float(np.linalg.norm(d))
+    R = S.basis(d, (0, 1, 0))
+    mem = S.ellipsoid(root + d * .5, (w * .5, t, L * .52), R)
+    mem = S.cut(mem, S.sphere(root + d * .78 + R @ V(w * .42, 0, 0), w * .12), k=t)                                 # a tear in the trailing edge
+    def veins(p):
+        q = (p - root) @ R
+        return t * .8 * np.clip(np.cos(q[..., 0] / (w * .5) * vein + q[..., 2] / L * 3 + seed) * 4 - 3, 0, 1)
+    return S.bump(mem, veins)
+
+
+def flier_legs(fig, n, z0, z1, y, r):
+    """Small legs folded up under a flier, on the lg groups so the walk code and the deaths still find them."""
+    fig_legs = [((z0 + (z1 - z0) * i / max(1, n - 1)), .18, .1, .1) for i in range(n)]
+    G.add_legs(fig, fig_legs, r, y, detail=.5)
+
+
+def build_gnatwing():
+    """The fast flier: a slim stinging gnat as long as a man, two pairs of veined wings, big eyes and a hooked bite; a glowing sting at the tail
+    that arcs the bite on to the next body."""
+    fig = B.Figure('gnatwing', lo=(-1.8, -.3, -1.6), hi=(1.8, 1.6, 1.6), paint=1024, brush=1.0)
+    fig.group('body', (0, 0, 0))
+    fig.group('head', (0, .62, .62), 'body', scale=1.15)
+    fig.group('wingL', (-.1, .8, .22), 'body')
+    fig.group('wingR', (.1, .8, .22), 'body')
+    flier_legs(fig, 3, .3, -.05, .36, .025)
+    thorax = S.ellipsoid((0, .66, .26), (.2, .2, .28))
+    abdomen = S.chain([V(0, .64, 0), V(0, .58, -.4), V(0, .52, -.8), V(0, .58, -1.12)], [.17, .15, .11, .05])
+    abdomen = S.bump(abdomen, lambda p: .012 * np.sin(p[..., 2] * 28))
+    body = S.union(thorax, abdomen, k=.06)
+    fig.add('hide', 'body', 'gH', G.hide(body, 101.1, .01, 12), 1600, voxel=.003, uv=('cyl', V(0, .6, -.3), (0, 0, 1)))
+    fig.add('bands', 'body', 'gBc', S.union(*[S.both(S.torus(V(0, .6 - z * .05, z), .15 - abs(z) * .05, .03, rot(PI / 2 - .1, 0, 0)), S.above(.58 - z * .05)) for z in (-.2, -.45, -.7)]), 600, voxel=.0028)
+    fig.add('sting', 'body', 'gS', S.union(S.ellipsoid(V(0, .6, -1.12), (.07, .07, .1)), G.spine(V(0, .6, -1.18), (0, .3, -1), .2, .035)), 260, voxel=.0025, glow=.8)
+    fig.add('plate', 'body', 'gC', S.both(S.ellipsoid((0, .74, .26), (.22, .16, .26)), S.above(.78)), 500, voxel=.003, uv=('top',))
+    for g, sx in (('wingL', -1), ('wingR', 1)):
+        W0 = V(sx * .1, .8, .22)
+        ws = S.union(wing(W0, W0 + V(sx * 1.4, .16, .2), .42, .016, seed=sx), wing(W0 + V(0, -.02, -.12), W0 + V(sx * 1.1, .06, -.42), .34, .015, seed=2 + sx))
+        fig.add('wings' + g[4], g, 'gG', ws, 1400, voxel=.0028, uv=('top',))
+    H0 = V(0, .62, .62)
+    head = S.ellipsoid(H0, (.15, .13, .14))
+    fig.add('head', 'head', 'gHn', G.hide(head, 102.2, .006, 18), 500, voxel=.0025, uv=('cyl', H0, (0, 0, 1)))
+    fig.add('eyes', 'head', 'gEye', S.union(*[S.ellipsoid(H0 + V(sx * .11, .05, .04), (.08, .09, .08)) for sx in (-1, 1)]), 300, voxel=.0025, uv=('front',))
+    fig.add('mandibles', 'head', 'gBn', S.union(*[S.chain(S.bez(H0 + V(sx * .06, -.08, .1), H0 + V(sx * .12, -.12, .24), H0 + V(sx * .02, -.12, .32), 4), list(np.linspace(.03, .008, 5))) for sx in (-1, 1)]), 200, voxel=.002)
+    fig.add('feelers', 'head', 'gD', S.union(*[S.chain(S.bez(H0 + V(sx * .05, .1, .1), H0 + V(sx * .14, .3, .2), H0 + V(sx * .24, .32, .4), 5), list(np.linspace(.012, .006, 6))) for sx in (-1, 1)]), 120, voxel=.002)
+    fig.point('muzzle', H0 + V(0, -.12, .32), 'head')
+    return fig, (0, 0, .5, 3.4)
+
+
+def bladder(c, r, seed):
+    """A floating gas bladder: a squashed ball, lumpy, ribbed with dark seams top to bottom."""
+    c = V(c)
+    b = S.ellipsoid(c, (r, r * .78, r * 1.05))
+    b = S.bump(b, lambda p: r * .03 * np.clip(np.cos(np.arctan2(p[..., 0] - c[0], p[..., 2] - c[2]) * 9) * 3 - 2, 0, 1) * -1 + r * .03 * (S.noise(p, 3 / r, seed) - .5))
+    return b
+
+
+def build_bloater():
+    """The air fighter: a great gas bladder with a small hard body slung under it, four acid feelers hanging that drip, two fins to steer."""
+    fig = B.Figure('bloater', lo=(-1.8, -.6, -1.8), hi=(1.8, 2.6, 1.8), paint=1024, brush=1.3)
+    fig.group('body', (0, 0, 0))
+    fig.group('halo', (0, 1.4, 0), 'body')
+    fig.group('head', (0, .55, .5), 'body')
+    fig.group('arms', (0, .45, .1), 'body')
+    flier_legs(fig, 2, .2, -.2, .5, .03)
+    C = V(0, 1.4, 0)
+    fig.add('bladder', 'halo', 'gC', bladder(C, .95, 111.1), 2400, voxel=.006, uv=('top',))
+    fig.add('spots', 'halo', 'gS', S.union(*[S.ellipsoid(C + V(np.cos(a) * .8, .3 + np.sin(a * 3) * .1, np.sin(a) * .85), (.1, .06, .1)) for a in np.linspace(0, 2 * PI, 9)[:-1]]), 400, voxel=.004, glow=.55)
+    fins = S.union(*[S.ellipsoid(C + V(sx * .9, -.1, -.6), (.06, .28, .42), rot(.3, sx * .3, sx * .4)) for sx in (-1, 1)], S.ellipsoid(C + V(0, .55, -.85), (.05, .36, .4), rot(.5, 0, 0)))
+    fig.add('fins', 'halo', 'gG', fins, 800, voxel=.004, uv=('side',))
+    hb = S.union(S.ellipsoid((0, .6, .1), (.36, .28, .5)), S.chain([V(0, .7, -.1), V(0, .95, -.05), V(0, 1.0, 0)], [.2, .16, .2]), k=.08)
+    fig.add('hide', 'body', 'gH', G.hide(hb, 112.2, .014, 10), 1000, voxel=.004, uv=('cyl', V(0, .6, 0), (0, 0, 1)))
+    fig.add('plates', 'body', 'gBc', G.back_plates((0, .62, .5), (0, .55, -.35), 4, .6, tilt=.4), 600, voxel=.0035, uv=('top',))
+    feel = []
+    for i, (x, z) in enumerate(((.18, .3), (-.18, .3), (.2, -.12), (-.2, -.12))):
+        p0 = V(x, .42, z)
+        feel.append(S.chain(S.bez(p0, p0 + V(x * .6, -.4, .1), p0 + V(x * .2, -.85, -.05), 6), list(np.linspace(.05, .015, 7))))
+    fig.add('feelers', 'arms', 'gD', S.union(*feel), 700, voxel=.003)
+    fig.add('drips', 'arms', 'gS', S.union(*[S.ellipsoid(V(x * 1.2, -.44, z - .05), (.035, .06, .035)) for x, z in ((.18, .3), (-.18, .3), (.2, -.12), (-.2, -.12))]), 160, voxel=.0025, glow=.8)
+    H0 = V(0, .55, .5)
+    head = S.ellipsoid(H0 + V(0, 0, .06), (.2, .16, .18))
+    fig.add('head', 'head', 'gHn', G.hide(head, 113.3, .008, 14), 500, voxel=.003, uv=('cyl', H0, (0, 0, 1)))
+    fig.add('mouth', 'head', 'gS', S.torus(H0 + V(0, -.04, .22), .06, .02, rot(PI / 2, 0, 0)), 100, voxel=.0025, glow=.6)
+    fig.add('eyes', 'head', 'gEye', G.eyes([H0 + V(sx * .12, .06, .16) for sx in (-1, 1)], .035, .6), 100, voxel=.0025, uv=('front',))
+    fig.point('muzzle', H0 + V(0, -.04, .26), 'head')
+    return fig, (0, 0, 1.0, 3.6)
+
+
+def build_sower():
+    """A Bloater ripened: the bladder grown huge and split into two lobes, and under it a brood bag full of glowing Pups it drops on the foe."""
+    fig = B.Figure('sower', lo=(-2.6, -1.0, -2.6), hi=(2.6, 3.8, 2.6), paint=1536, brush=2.0)
+    fig.group('body', (0, 0, 0))
+    fig.group('halo', (0, 2.1, 0), 'body')
+    fig.group('head', (0, .9, 1.0), 'body')
+    fig.group('pack', (0, .5, -.1), 'body')                                                                         # the brood bag: opens to drop Pups
+    flier_legs(fig, 3, .5, -.4, .7, .045)
+    C = V(0, 2.1, 0)
+    lobes = S.union(bladder(C + V(-.55, 0, 0), 1.15, 121.1), bladder(C + V(.6, .1, -.1), 1.05, 122.2), k=.3)
+    fig.add('bladder', 'halo', 'gC', lobes, 3200, voxel=.008, uv=('top',))
+    fig.add('spots', 'halo', 'gS', S.union(*[S.ellipsoid(C + V(np.cos(a) * 1.5, .5 + np.sin(a * 2) * .2, np.sin(a) * 1.0), (.14, .08, .14)) for a in np.linspace(0, 2 * PI, 11)[:-1]]), 500, voxel=.006, glow=.55)
+    fringe = S.both(S.shell(S.ellipsoid(C + V(0, -.3, 0), (1.7, 1.1, 1.25)), .025), S.both(S.below(C[1] - .55), S.above(C[1] - 1.1)))
+    fringe = S.cut(fringe, lambda p: .04 - np.abs(np.sin(np.arctan2(p[..., 0], p[..., 2]) * 14)) * .1 - np.clip((C[1] - .9 - p[..., 1]) * 2, 0, 1) * .2)
+    fig.add('fringe', 'halo', 'gG', fringe, 1800, voxel=.006, uv=('cyl', C + V(0, -.8, 0)))
+    hb = S.union(S.ellipsoid((0, 1.0, .3), (.55, .4, .8)), S.chain([V(0, 1.1, 0), V(0, 1.45, .05), V(0, 1.6, 0)], [.34, .3, .36]), k=.1)
+    fig.add('hide', 'body', 'gH', G.hide(hb, 123.3, .02, 7), 1400, voxel=.006, uv=('cyl', V(0, 1.0, 0), (0, 0, 1)))
+    fig.add('plates', 'body', 'gBc', G.back_plates((0, 1.0, 1.0), (0, .9, -.45), 5, .9, tilt=.4), 900, voxel=.005, uv=('top',))
+    bag = S.union(S.ellipsoid((0, .4, -.1), (.62, .5, .7)), S.chain([V(0, .7, -.1), V(0, .95, 0)], [.3, .3]), k=.12)
+    bag = S.bump(bag, lambda p: .03 * np.clip(np.cos(np.arctan2(p[..., 0], p[..., 2] + .1) * 6) * 3 - 2, 0, 1))
+    fig.add('bag', 'pack', 'gV', bag, 1200, voxel=.005, uv=('cyl', V(0, .4, -.1)))
+    pups = S.union(*[S.ellipsoid(V(np.cos(a) * .5, .35 + np.sin(a * 2) * .1, np.sin(a) * .58 - .1), (.12, .1, .16), rot(0, -a, 0)) for a in np.linspace(0, 2 * PI, 7)[:-1]])
+    fig.add('pups', 'pack', 'gS', pups, 500, voxel=.004, glow=.6)
+    H0 = V(0, .9, 1.0)
+    head = S.union(S.ellipsoid(H0 + V(0, 0, .1), (.3, .24, .28)), S.ellipsoid(H0 + V(0, -.12, .3), (.2, .12, .16)), k=.06)
+    fig.add('head', 'head', 'gHn', G.hide(head, 124.4, .01, 12), 700, voxel=.0035, uv=('cyl', H0, (0, 0, 1)))
+    fig.add('eyes', 'head', 'gEye', S.union(G.eyes([H0 + V(sx * .2, .1, .3) for sx in (-1, 1)], .05, .5), G.eyes([H0 + V(sx * .12, .17, .32) for sx in (-1, 1)], .03, .4)), 160, voxel=.003, uv=('front',))
+    feel = [S.chain(S.bez(H0 + V(sx * .12, -.14, .3), H0 + V(sx * .3, -.5, .5), H0 + V(sx * .2, -.9, .4), 6), list(np.linspace(.05, .015, 7))) for sx in (-1, 1)]
+    fig.add('feelers', 'head', 'gD', S.union(*feel), 400, voxel=.003)
+    fig.point('muzzle', V(0, -.1, -.1), 'pack')
+    return fig, (0, 0, 1.4, 5.2)
+
+
+def build_hooksail():
+    """The flying caster: a broad sail of cap flesh carried flat like a ray, a long line of a tail with a bone hook at the end (Reel), and a
+    drinking tube under the head (Drink). Spore Cloud comes out of the pores along the sail's edge."""
+    fig = B.Figure('hooksail', lo=(-2.4, -1.4, -2.8), hi=(2.4, 1.6, 2.0), paint=1024, brush=1.5)
+    fig.group('body', (0, 0, 0))
+    fig.group('head', (0, .5, .8), 'body')
+    fig.group('wingL', (-.3, .55, .1), 'body')
+    fig.group('wingR', (.3, .55, .1), 'body')
+    fig.group('arms', (0, .5, -.7), 'body')                                                                         # the tail line and its hook
+    flier_legs(fig, 2, .3, -.2, .35, .03)
+    body = S.union(S.ellipsoid((0, .52, .1), (.4, .2, .75)), S.chain([V(0, .5, -.5), V(0, .48, -.8)], [.2, .1]), k=.1)
+    fig.add('hide', 'body', 'gH', G.hide(body, 131.1, .012, 10), 1200, voxel=.004, uv=('cyl', V(0, .5, 0), (0, 0, 1)))
+    fig.add('keel', 'body', 'gBc', G.back_plates((0, .7, .55), (0, .66, -.5), 5, .44), 700, voxel=.0035, uv=('top',))
+    for g, sx in (('wingL', -1), ('wingR', 1)):
+        A = V(sx * .3, .55, .1)
+        sail = S.ellipsoid(A + V(sx * .95, .02, -.1), (1.0, .05, .72), rot(0, sx * .25, sx * -.12))
+        sail = S.cut(sail, S.sphere(A + V(sx * 1.6, 0, -.85), .45), k=.06)                                              # swept back to a point
+        sail = S.bump(sail, lambda p, sx=sx, A=A: .02 * np.clip(np.cos((p[..., 0] - A[0]) * sx * 9) * 3 - 2, 0, 1) + .01 * (S.noise(p, 8, 4.4 + sx) - .5))
+        top = S.both(sail, S.above(A[1] + .01))
+        und = S.both(sail, S.below(A[1] + .01))
+        fig.add('sail' + g[4], g, 'gC', top, 1400, voxel=.0035, uv=('top',))
+        fig.add('under' + g[4], g, 'gG', und, 900, voxel=.0035, uv=('top',))
+        fig.add('pores' + g[4], g, 'gS', S.union(*[S.sphere(A + V(sx * (.3 + i * .32), .05, .45 - i * .22), .045) for i in range(5)]), 200, voxel=.003, glow=.7)
+    T0 = V(0, .5, -.7)
+    tail = S.chain(S.bez(T0, T0 + V(0, -.3, -1.0), T0 + V(0, -1.2, -1.4), 8), list(np.linspace(.07, .025, 9)))
+    tail = S.bump(tail, lambda p: .006 * np.sin(p[..., 2] * 60))
+    fig.add('tail', 'arms', 'gD', tail, 600, voxel=.0028)
+    hook = S.chain(S.bez(T0 + V(0, -1.2, -1.4), T0 + V(0, -1.5, -1.3), T0 + V(0, -1.4, -1.0), 5), list(np.linspace(.05, .01, 6)))
+    fig.add('hook', 'arms', 'gBn', S.union(hook, S.sphere(T0 + V(0, -1.2, -1.4), .06), k=.02), 300, voxel=.0025)
+    fig.point('muzzle', T0 + V(0, -1.35, -1.2), 'arms')
+    H0 = V(0, .5, .8)
+    head = S.ellipsoid(H0 + V(0, 0, .05), (.22, .14, .2))
+    fig.add('head', 'head', 'gHn', G.hide(head, 132.2, .008, 14), 500, voxel=.003, uv=('cyl', H0, (0, 0, 1)))
+    tube = S.chain(S.bez(H0 + V(0, -.08, .14), H0 + V(0, -.3, .26), H0 + V(0, -.46, .2), 5), list(np.linspace(.045, .02, 6)))
+    fig.add('tube', 'head', 'gB', tube, 260, voxel=.0025)
+    fig.add('eyes', 'head', 'gEye', G.eyes([H0 + V(sx * .16, .05, .14) for sx in (-1, 1)], .04, .8), 100, voxel=.0025, uv=('front',))
+    return fig, (0, -.3, .3, 4.6)
+
+
+def build_drifter():
+    """A Spore Sac afloat: the ribbed bulb pulled up out of the ground, its roots hanging loose under it, two gill fins to steer by and a
+    ring of glowing vents round its crown."""
+    fig = B.Figure('drifter', lo=(-2.8, -2.2, -2.8), hi=(2.8, 3.4, 2.8), paint=1536, brush=2.2)
+    fig.group('body', (0, 0, 0))
+    fig.group('halo', (0, 1.2, 0), 'body')                                                                          # the bulb: breathes
+    fig.group('arms', (0, -.2, 0), 'body')                                                                          # the roots
+    C = V(0, 1.2, 0)
+    bulb = S.ellipsoid(C, (1.7, 1.65, 1.6))
+    bulb = S.union(bulb, S.ellipsoid(C + V(0, -1.15, 0), (.9, .6, .9)), k=.4)
+    bulb = S.bump(bulb, lambda p: .06 * np.clip(np.cos(np.arctan2(p[..., 0], p[..., 2]) * 6) * 3 - 2.2, 0, 1) + .04 * (S.noise(p, 2, 141.1) - .5))
+    fig.add('bulb', 'halo', 'gH', G.hide(bulb, 141.4, .04, 3, .01), 3000, voxel=.01, uv=('cyl', C))
+    ribs = [S.chain(S.bez(C + V(np.cos(a) * .3, 1.62, np.sin(a) * .3), C + V(np.cos(a) * 1.9, .4, np.sin(a) * 1.8), C + V(np.cos(a) * .9, -1.5, np.sin(a) * .9), 8), .08) for a in np.linspace(0, 2 * PI, 7)[:-1]]
+    fig.add('ribs', 'halo', 'gB', S.union(*ribs), 1400, voxel=.008)
+    vents, glows = [], []
+    for a in np.linspace(0, 2 * PI, 6)[:-1] + .3:
+        q = C + V(np.cos(a) * .7, 1.45, np.sin(a) * .7)
+        vents.append(S.cut(S.rcone(q + V(0, -.1, 0), q + V(0, .3, 0), .28, .2), S.cyl(q + V(0, .1, 0), q + V(0, .5, 0), .14)))
+        glows.append(S.sphere(q + V(0, .16, 0), .15))
+    fig.add('vents', 'halo', 'gD', S.union(*vents), 900, voxel=.007)
+    fig.add('ventglow', 'halo', 'gS', S.union(*glows), 300, voxel=.006, glow=.7)
+    fig.add('fins', 'halo', 'gG', S.union(*[G.crescent_fin(C + V(sx * 1.55, -.1, -.3), .9, .05, rot(0, sx * 1.3, 0) @ rot(0, 0, -sx * 1.5), n=6) for sx in (-1, 1)]), 1200, voxel=.007, uv=('side',))
+    roots = []
+    for i, a in enumerate(np.linspace(0, 2 * PI, 8)[:-1]):
+        p0 = V(np.cos(a) * .55, 0, np.sin(a) * .55)
+        roots.append(S.chain(S.bez(p0, p0 + V(np.cos(a) * .6, -.8, np.sin(a) * .6), p0 + V(np.cos(a + .6) * .3, -1.8 - (i % 3) * .2, np.sin(a + .6) * .3), 7), list(np.linspace(.13, .02, 8))))
+    fig.add('roots', 'arms', 'gD', S.union(*roots), 1400, voxel=.007)
+    return fig, (0, 0, .6, 6.2)
+
+
 if __name__ == '__main__':
-    fig, look_at = {'keeper': build_keeper, 'shellback': build_shellback, 'lobber': build_lobber, 'needler': build_needler, 'digmound': build_digmound, 'smother': build_smother, 'seeder': build_seeder, 'husk': build_husk, 'pup': build_pup}[KIND]()
+    fig, look_at = {'keeper': build_keeper, 'shellback': build_shellback, 'lobber': build_lobber, 'needler': build_needler, 'digmound': build_digmound, 'smother': build_smother, 'seeder': build_seeder, 'husk': build_husk, 'pup': build_pup, 'gnatwing': build_gnatwing, 'bloater': build_bloater, 'sower': build_sower, 'hooksail': build_hooksail, 'drifter': build_drifter}[KIND]()
     args = [a for a in sys.argv[1:] if a != KIND]
     png = args[0] if args and args[0].endswith('.png') else None
     only = [a for a in args if not a.endswith('.png')]

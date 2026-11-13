@@ -412,6 +412,7 @@ export function vmGloam(kind: string, bake: (g: THREE.Group) => THREE.Group, L_V
     put(tube([[0, -.05, .35], [0, -.02, 0], [0, .0, -.32]], [.1, .085, .07], 9), M.gH, sn); for (const z of [.1, -.06, -.22]) put(ring(.082, .02), M.gB, sn, [0, -.01, z]);
     put(ring(.062, .02), M.gS, sn, [0, 0, -.34]);
   }
+  if (kind === 'keeper') put(lathe(spl([[.95, 0], [.9, .06], [.5, .12]], 6), 26, PI * .8), M.gG, g, [0, .62, -.1], [PI + .35, 0, 0]);   // the underside of the gill hood, arching over the top of the view
   if (kind === 'needler') for (let i = 0; i < 5; i++) spine(g, [(i - 2) * .09, .34, -.2 - Math.abs(i - 2) * .05], .5 - Math.abs(i - 2) * .08, .02, [-H + .5, 0, (i - 2) * .12]);   // the crest tips, laid forward over the view
   if (kind === 'shellback' || kind === 'lobber') put(lathe(spl([[.7, 0], [.62, .05], [.3, .08]], 6), 20, PI * .9), M.gBc, g, [0, .42, -.2], [.25 + PI, 0, 0]);   // the brow of the shell along the top of the view
   if (kind === 'blister') put(lathe(spl([[.6, -.2], [.5, .05], [.2, .14]], 6), 20, PI * .9), M.gS, g, [0, -.55, -.35], [-.3, 0, 0]);

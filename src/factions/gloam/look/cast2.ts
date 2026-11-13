@@ -37,11 +37,11 @@ const needler = () => sculpt('needler', .9) || stub(.9, 3, 1.6);
 
 export const GLOAM_UNITS2: Record<string, () => THREE.Group> = { keeper, shellback, lobber, needler };
 /** Height of the top of each body in metres, for health bars, picking and the camera. */
-export const GLOAM_HEIGHT2: Record<string, number> = { keeper: 2.6, shellback: 1.15, lobber: 2.4, needler: 1.5 };
+export const GLOAM_HEIGHT2: Record<string, number> = { keeper: 2.6, shellback: 1.15, lobber: 3.0, needler: 2.0 };
 /** How far below the ground a body sits when dug in (metres), and how wide its mound is. What shows above ground is what is left. */
 export const DIG: Record<string, { sink: number; mound: number }> = {
   grazer: { sink: 1.1, mound: .9 }, snapper: { sink: 1.0, mound: .8 }, quillback: { sink: 2.1, mound: 1.1 }, blister: { sink: .55, mound: .7 }, mulcher: { sink: 2.6, mound: 2.6 },
-  keeper: { sink: 2.7, mound: 1.2 }, shellback: { sink: .55, mound: 1.1 }, lobber: { sink: .9, mound: 1.5 }, needler: { sink: .78, mound: 1.4 },
+  keeper: { sink: 2.7, mound: 1.2 }, shellback: { sink: .55, mound: 1.1 }, lobber: { sink: 1.1, mound: 1.9 }, needler: { sink: 1.0, mound: 1.8 },
 };
 export type { P3 };
 
@@ -99,10 +99,13 @@ export function actPose(L: Overlay, obj: THREE.Object3D, kind: string, act: stri
       const sq = p < .7 ? smooth(p / .7) : 1 - smooth((p - .7) / .3) * 1.4; L.add(halo?.scale, 'y', -.22 * sq); L.add(halo?.scale, 'x', .12 * sq); L.add(halo?.scale, 'z', .12 * sq);
       L.add(obj.position, 'y', -.12 * up); for (const l of legs) L.add(l.rotation, 'z', (l.name[3] === 'L' ? -1 : 1) * .25 * up); L.add(halo?.rotation, 'x', -.2 * up); break; }
     case 'needler:fire':      // tips the crest forward over the head and shudders as the spines go
-      L.add(arms?.rotation, 'x', .9 * smooth(Math.min(1, p * 2))); L.add(arms?.rotation, 'z', Math.sin(t * 40) * .04 * up); L.add(head?.rotation, 'x', .2 * up); break;
+      L.add(arms?.rotation, 'x', 1.55 * smooth(Math.min(1, p * 2))); L.add(arms?.rotation, 'z', Math.sin(t * 40) * .04 * up); L.add(head?.rotation, 'x', .2 * up); break;
     case 'shellback:curl':    // tucks the head in under the brow and pulls the legs close (heals faster)
       L.add(head?.position, 'z', -.18 * up); L.add(head?.rotation, 'x', .4 * up); for (const l of legs) L.add(l.rotation, 'z', (l.name[3] === 'L' ? -1 : 1) * .7 * up); L.add(obj.position, 'y', -.2 * up); break;
   }
 }
 /** The ability names actPose knows for each kind, for the HUD and for tests. */
 export const ACTS: Record<string, string[]> = { keeper: ['mend', 'seed', 'pod', 'spit'], shellback: ['spit', 'curl'], lobber: ['lob', 'bite'], needler: ['fire'] };
+
+// For the capture bench and the art review pages: the look functions on the page, so a staged shot can dig a body in or pose an ability.
+if (typeof window !== 'undefined') (window as any).__gloamLook = { Overlay, digPose, digMound, mound, actPose, ACTS, DIG };

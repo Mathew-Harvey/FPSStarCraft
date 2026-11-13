@@ -64,6 +64,10 @@ async function bundle(minify) {
   if (INLINE) rmSync('dist/art', { recursive: true, force: true });
   // The match server: the same game code, bundled for Node, with the page beside it.
   await build({ entryPoints: ['server/main.ts'], bundle: true, minify: false, platform: 'node', format: 'esm', target: 'node20', outfile: 'dist/server.mjs', legalComments: 'none', plugins: [sfxBank(true), artModules('none')], banner: { js: "import { createRequire as __cr } from 'node:module'; const require = __cr(import.meta.url);" }, logLevel: 'warning' });
+  // ---- stream K: the replay player (src/replay-worker.ts), a Web Worker the page starts beside itself to play a replay. It is the match
+  // server's code, built the same way (no art, no sound), so a replay rolls the same dice in the page as the match did on the server.
+  // A file of its own, dist/replay-worker.js, so it adds nothing to the page's size; the match server serves it too.
+  await build({ entryPoints: ['src/replay-worker.ts'], bundle: true, minify, format: 'iife', target: 'es2020', outfile: 'dist/replay-worker.js', legalComments: 'none', plugins: [sfxBank(true), artModules('none')], logLevel: 'warning' });
   const art = (listed || []).reduce((s, f) => s + f.bytes, 0);
   return { inl: wrap(inl), side, art, files: (listed || []).length };
 }

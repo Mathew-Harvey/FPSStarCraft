@@ -15,6 +15,7 @@ import { UNIT, BLD, UPGRADES, TRAINS, UNIT_NEEDS, DIFFS, Kind, BKind, mapCode, v
 import { MISSIONS, STORY_JOBS, ACTS, missionSides, charterTeam, Mission } from './campaign';
 import { CUTS, CutPlayer } from './cutscene';
 import { Net, Lobby } from './net';
+import { watchInit, watchFrame } from './watch';
 import { TouchPad, TouchPref, touchDevice, touchWords } from './touch';
 
 THREE.ColorManagement.enabled = false;
@@ -316,13 +317,17 @@ function showLobby(l: Lobby) {
   $('mCodeShow').textContent = l.code; $('mHint').textContent = host ? 'Read the code out to your crew. You pick the map and start the shift when everyone is ready.' : 'Waiting for the host to start. Hit Ready when you are.';
   // The lobby's match code says who holds each end: yard faction * 3 + outpost faction (1 and 2 are the classic Ironhold matches).
   const code = l.out ?? 1, lh = Math.floor(code / 3), lf = code % 3, outT = lf === lh ? lf + 3 : lf, onOut = (p: { team: number }) => p.team === outT, FN = ['Ironhold', 'Veyl Chorus', 'The Gloam'];
-  $('mPlayers').innerHTML = l.players.map(p => `<button type="button" disabled class="${p.ready || p.id === l.host ? 'dn' : ''}${onOut(p) ? ' v' : ''}">${onOut(p) ? FN[lf] + (lf === lh ? ' (outpost)' : '') : lh ? FN[lh] + (lf === lh ? ' (yard)' : '') : p.id === l.host ? 'Host' : 'Crew'}<b>${p.name.replace(/[<>&]/g, '')}</b><small>${p.id === l.host ? 'Runs the shift' : p.ready ? 'Ready' : 'Not ready'}</small></button>`).join('');
+  $('mPlayers').innerHTML = l.players.map(p => `<button type="button" disabled class="${p.ready || p.id === l.host || p.team < 0 ? 'dn' : ''}${onOut(p) ? ' v' : ''}">${p.team < 0 ? 'Watching' : onOut(p) ? FN[lf] + (lf === lh ? ' (outpost)' : '') : lh ? FN[lh] + (lf === lh ? ' (yard)' : '') : p.id === l.host ? 'Host' : 'Crew'}<b>${p.name.replace(/[<>&]/g, '')}</b><small>${p.id === l.host ? 'Runs the shift' : p.ready ? 'Ready' : 'Not ready'}</small></button>`).join('');
   mDiffB.forEach((b, i) => { b.classList.toggle('on', i === l.diff); b.disabled = !host; }); lobMap = l.map; { const mb = $('mMade') as HTMLButtonElement; mb.classList.toggle('on', !!l.plan); mb.disabled = !host || (!MADE.code && !l.plan); } mMapB.forEach((b, i) => { b.classList.toggle('on', !l.plan && +(b.dataset.b ?? i) === baseOf(l.map)); b.disabled = !host; }); mSizeB.forEach(b => { b.classList.toggle('on', +(b.dataset.s || 0) === sizeOf(l.map)); b.disabled = !host; });
   const nm = ['Ironhold', 'the Veyl', 'the Gloam'], foeName = nm[lf] + (lf === lh ? ' at the outpost' : ''), homeName = nm[lh] + (lf === lh ? ' at the yard' : '');
   mFoeB.forEach((b, i) => { b.classList.toggle('on', FOE_FAC[i] === lf); b.disabled = !host; }); mHomeB.forEach((b, i) => { b.classList.toggle('on', i === lh); b.disabled = !host; });
   $('mSide').textContent = me && onOut(me) ? 'Play as ' + homeName : 'Play as ' + foeName; { const v = l.players.filter(onOut).length, c = l.players.length - v; if (v) $('mHint').textContent = (c ? 'Versus shift. Both sides dig, build and train, and any side with nobody on it is run by bots. ' : `Everyone is on ${foeName}. ${homeName[0].toUpperCase() + homeName.slice(1)} will be bots. `) + (host ? 'You start it when everyone is ready.' : 'Hit Ready when you are.'); }
-  $('mStart').hidden = !host; $('mReady').hidden = host; $('mReady').textContent = me && me.ready ? 'Not ready' : 'Ready'; ($('mStart') as HTMLButtonElement).disabled = !l.players.every(p => p.ready || p.id === l.host);
+  $('mStart').hidden = !host; $('mReady').hidden = host; $('mReady').textContent = me && me.ready ? 'Not ready' : 'Ready'; ($('mStart') as HTMLButtonElement).disabled = !l.players.every(p => p.ready || p.id === l.host || p.team < 0);
 }
+/** A match starts on the server (or a replay starts in the page): the page's game becomes a copy of it. */
+function netBegin(n: Net, m: any) {
+    endSplit(); mode = 'multi'; hud.reset(); game.dispose(); usePlan(m.plan || null); setSidesCode(m.out ?? 1); setTeamGame(m.mt || null); STORY.charter = -1; game = new Game(pipe, hud, DIFFS[m.diff], m.map, null, n, !!m.eco); game.sens = sens; game.names = m.names; game.myTeam = (m.team ?? 0) >= 0 ? m.team ?? SIDE.home : SIDE.home; game.teams = m.teams || {}; if (m.ph) { game.applying = true; for (const r of m.ph) { const q = game.props[r[0]]; if (q && q.alive && q.hp > r[1]) game.damageProp(q, q.hp - r[1], null); } game.applying = false; } ended = false; (window as any).__ore.game = game;
+    initAudio(); setVolume(vol); setMusic(mus); $('menu').hidden = true; $('pause').hidden = true; $('end').hidden = true; hud.show(true); game.phase = 'play'; game.introT = 1.8; if (!m.watch) lock(); /* a watcher keeps the mouse for the watching bar */}
 async function mpConnect(then: (n: Net) => void) {
   pname = mName.value.trim().slice(0, 14) || 'Rigger'; srv = mServer.value.trim(); save(); mErr('');
   if (!srv) { mErr('This copy of the game is not on a game server, so there is nobody to connect to. Open the game from its server address, or paste a server address above.'); return; }
@@ -330,12 +335,11 @@ async function mpConnect(then: (n: Net) => void) {
   mErr('Connecting...'); const n = new Net();
   n.onLobby = l => { showLobby(l); if (l.code) { mErr(''); lastCode = l.code; } }; n.onError = m => mErr(m);
   n.onClose = () => { net = null; if (game.net === n) { game.net = null; toMenu(); } showMode(); if (lastCode) { mCode.value = lastCode; mErr('Lost the connection. Press Join to get back into lobby ' + lastCode + '.'); } else mErr('Lost the connection to the server.'); };
-  n.onBegin = m => {
-    endSplit(); mode = 'multi'; hud.reset(); game.dispose(); usePlan(m.plan || null); setSidesCode(m.out ?? 1); setTeamGame(m.mt || null); STORY.charter = -1; game = new Game(pipe, hud, DIFFS[m.diff], m.map, null, n, !!m.eco); game.sens = sens; game.names = m.names; game.myTeam = m.team ?? SIDE.home; game.teams = m.teams || {}; if (m.ph) { game.applying = true; for (const r of m.ph) { const q = game.props[r[0]]; if (q && q.alive && q.hp > r[1]) game.damageProp(q, q.hp - r[1], null); } game.applying = false; } ended = false; (window as any).__ore.game = game;
-    initAudio(); setVolume(vol); setMusic(mus); $('menu').hidden = true; $('pause').hidden = true; $('end').hidden = true; hud.show(true); game.phase = 'play'; game.introT = 1.8; lock();
-  };
+  n.onBegin = m => netBegin(n, m);
+
   try { await n.connect(srv); net = n; mErr(''); then(n); } catch (e) { mErr(String((e as Error).message || e) + ' Check the server address.'); }
 }
+watchInit({ begin: netBegin, connect: mpConnect, server: () => mServer.value.trim() || defaultServer(), name: () => mName.value.trim().slice(0, 14) || 'Rigger', code: () => mCode.value, net: () => net, err: mErr });
 $('mCreate').addEventListener('click', () => mpConnect(n => n.send({ t: 'create', name: pname })));
 $('mJoinBtn').addEventListener('click', () => { const c = mCode.value.trim().toUpperCase(); if (c.length !== 5) { mErr('Lobby codes are five letters.'); return; } mpConnect(n => n.send({ t: 'join', code: c, name: pname })); });
 mCode.addEventListener('keydown', e => { if (e.key === 'Enter') $('mJoinBtn').click(); });
@@ -402,7 +406,7 @@ let last = performance.now(), freeShown = false;
 /** Tests that only care about the rules hold the picture still: no game on this page draws until they let go. */
 let still = false;
 function frame(now: number) {
-  const dt = (now - last) / 1000; last = now; if (still) { game.noRender = true; if (game2) game2.noRender = true; }
+  const dt = (now - last) / 1000; last = now; watchFrame(game, dt); if (still) { game.noRender = true; if (game2) game2.noRender = true; }
   // Without mouse capture, holding the cursor near a screen edge turns the view.
   pad.frame(); if (touchOn) document.body.classList.toggle('playing', live());
   if (freeMouse && !touchOn && moved && live() && !game.tab) { const ex = curX < .1 ? (curX - .1) / .1 : curX > .9 ? (curX - .9) / .1 : 0; game.mdx += ex * 900 * dt; }

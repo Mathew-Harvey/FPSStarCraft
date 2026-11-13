@@ -37,7 +37,16 @@ try {
     // so a trip can come back empty: she keeps going until the scoreboard has her 60 ore, nine trips at most.
     const mined = () => (g.score[g.net.id] || [0, 0])[1];
     for (let trip = 0; trip < 9 && (trip < 5 || mined() < 60); trip++) { g.me.pos.x = n.pos.x + 3; g.me.pos.z = n.pos.z; await sleep(2500); for (let i = 0; i < 5; i++) { g.net.cmd('mn', 0, 3); await sleep(250); } g.me.pos.x = 0; g.me.pos.z = 7; await sleep(2500); }
-    g.net.cmd('pl', 'bunkhouse', -14, 10, 0); return g.me.pos.x; });
+    // The spot must be free when the server gets the order: a bot Rigger walking past, or a vent, would refuse it. So she picks the first
+    // free spot near (-14, 10) as her own screen sees it, waits for the ore, and asks again if a body stepped onto it in the meantime.
+    const cost = __ore.reg.BLD.bunkhouse.cost, has = () => g.buildings.some(b => b.alive && b.kind === 'bunkhouse' && b.team === g.me.team);
+    for (let t = 0; t < 40 && g.cash(g.me.team) < cost; t++) await sleep(250);
+    for (let go = 0; go < 6 && !has(); go++) {
+      let at = null; for (let r = 0; r < 12 && !at; r += 2) for (let k = 0; k < 8 && !at; k++) { const x = Math.round(-14 + Math.cos(k * .785) * r), z = Math.round(10 + Math.sin(k * .785) * r); if (g.canPlace('bunkhouse', x, z, false, g.me.team)) at = [x, z]; }
+      if (!at) { console.log('no free spot for the Bunkhouse near (-14, 10)'); break; }
+      g.net.cmd('pl', 'bunkhouse', at[0], at[1], 0); for (let t = 0; t < 12 && !has(); t++) await sleep(250);
+    }
+    return g.me.pos.x; });
   const bo = await B.evaluate(() => { const g = __ore.game; const u = g.units.find(u => u.team === 0 && !u.pilot && u.kind === 'rigger'); g.possess(u, true); return u.id; });
   const built = () => __ore.game.buildings.filter(b => b.alive).length === 11;
   check(await until(A, built) && await until(B, built), "Ada's Bunkhouse reached both players"); a = await state(A); c = await state(B);

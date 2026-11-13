@@ -28,6 +28,8 @@ export interface Faction { name: string; short: string; hq: BKind; worker: Kind;
 export const FACTION: Record<number, Faction> = { 0: I_FACTION, 1: V_FACTION, 2: G_FACTION };
 // Teams 3 to 5 are the second side of a mirror match: the same faction as team - 3, holding the other end of the map.
 FACTION[3] = FACTION[0]; FACTION[4] = FACTION[1]; FACTION[5] = FACTION[2];
+// Team games use more copies of a faction (team = faction + 3 per copy, up to 24 teams; see core/sides.ts TEAM_SLOTS).
+for (let t = 6; t < 24; t++) FACTION[t] = FACTION[t % 3];
 /** The faction a team plays: 0 Ironhold, 1 Veyl, 2 Gloam. */
 export const fac = (team: number) => team % 3;
 /** The team that plays a faction at the other end in a mirror match. */

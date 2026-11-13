@@ -142,8 +142,8 @@ function aiMulcher(g: Game, u: Unit, dt: number) {
 /** The tusk sweep: everything in a wide arc in front. */
 export function sweep(g: Game, u: Unit, dmg: number, by: Unit | null = u) {
   const fx = Math.sin(u.yaw), fz = Math.cos(u.yaw); let n = 0;
-  for (const o of g.units) { if (!o.alive || o.team === u.team) continue; const dx = o.pos.x - u.pos.x, dz = o.pos.z - u.pos.z, d = Math.hypot(dx, dz); if (d > 4.2 + UNIT[o.kind].rad || (dx * fx + dz * fz) / (d || 1) < -.1) continue; g.damage(o, dmg, by); if (!g.net && d > .1) { o.kx += dx / d * 8; o.kz += dz / d * 8; } n++; }
-  for (const b of g.buildings) { if (!b.alive || b.team === u.team || g.distToBox(b, u.pos.x + fx * 2, u.pos.z + fz * 2) > 2.6) continue; g.damage(b, dmg * .8, by); n++; }
+  for (const o of g.units) { if (!o.alive || !isEnemy(o.team, u.team)) continue; const dx = o.pos.x - u.pos.x, dz = o.pos.z - u.pos.z, d = Math.hypot(dx, dz); if (d > 4.2 + UNIT[o.kind].rad || (dx * fx + dz * fz) / (d || 1) < -.1) continue; g.damage(o, dmg, by); if (!g.net && d > .1) { o.kx += dx / d * 8; o.kz += dz / d * 8; } n++; }
+  for (const b of g.buildings) { if (!b.alive || !isEnemy(b.team, u.team) || g.distToBox(b, u.pos.x + fx * 2, u.pos.z + fz * 2) > 2.6) continue; g.damage(b, dmg * .8, by); n++; }
   g.puff(TMP.set(u.pos.x + fx * 2.6, .5, u.pos.z + fz * 2.6), 4, 1.2, M.dust, .6, 1.4); sfx.clang(); if (g.vol(u.pos) > .3) g.shake = Math.max(g.shake, g.vol(u.pos) * .3);
   return n;
 }
@@ -151,8 +151,8 @@ export function sweep(g: Game, u: Unit, dmg: number, by: Unit | null = u) {
 export function charge(g: Game, u: Unit, dt: number, by: Unit | null = u) {
   u.dashT -= dt; const v = G_TUNE.charge.v * dt; u.pos.x += u.windX * v; u.pos.z += u.windZ * v; u.moving = true; g.collide(u, u.pos.x, u.pos.z);
   const hit: Set<number> = (u as any).hitSet || ((u as any).hitSet = new Set<number>());
-  for (const o of g.units) { if (!o.alive || o.team === u.team || hit.has(o.id)) continue; const dx = o.pos.x - u.pos.x, dz = o.pos.z - u.pos.z, d = Math.hypot(dx, dz); if (d > 2.4 + UNIT[o.kind].rad) continue; hit.add(o.id); g.damage(o, G_TUNE.charge.dmg * gMul(g, u.team), by); if (!g.net) { const s = d > .1 ? 1 / d : 0; o.kx += (dx * s + u.windX) * 9; o.kz += (dz * s + u.windZ) * 9; } sfx.clang(); }
-  for (const b of g.buildings) { if (!b.alive || b.team === u.team || hit.has(b.id) || g.distToBox(b, u.pos.x, u.pos.z) > 1.8) continue; hit.add(b.id); g.damage(b, G_TUNE.charge.dmg * gMul(g, u.team), by); u.dashT = 0; g.shake = Math.max(g.shake, g.vol(u.pos) * .6); sfx.boom(g.vol(u.pos) * .6); }
+  for (const o of g.units) { if (!o.alive || !isEnemy(o.team, u.team) || hit.has(o.id)) continue; const dx = o.pos.x - u.pos.x, dz = o.pos.z - u.pos.z, d = Math.hypot(dx, dz); if (d > 2.4 + UNIT[o.kind].rad) continue; hit.add(o.id); g.damage(o, G_TUNE.charge.dmg * gMul(g, u.team), by); if (!g.net) { const s = d > .1 ? 1 / d : 0; o.kx += (dx * s + u.windX) * 9; o.kz += (dz * s + u.windZ) * 9; } sfx.clang(); }
+  for (const b of g.buildings) { if (!b.alive || !isEnemy(b.team, u.team) || hit.has(b.id) || g.distToBox(b, u.pos.x, u.pos.z) > 1.8) continue; hit.add(b.id); g.damage(b, G_TUNE.charge.dmg * gMul(g, u.team), by); u.dashT = 0; g.shake = Math.max(g.shake, g.vol(u.pos) * .6); sfx.boom(g.vol(u.pos) * .6); }
   if (u.dashT <= 0) { u.dashT = 0; (u as any).hitSet = null; }
   if (Math.random() < .5) g.puff(TMP.set(u.pos.x, .2, u.pos.z), 1, .8, M.dust, .4, 1);
 }
@@ -163,8 +163,8 @@ export function playerGloam(g: Game, dt: number, P: Set<string>, eye: THREE.Vect
   g.vCd = Math.max(0, g.vCd - dt); g.jaw = Math.max(0, g.jaw - dt * 5);
   const bite = (reach: number, dmg: number, bdmg: number, cone = .4) => {
     let any = false;
-    for (const u of g.units) { if (!u.alive || u.team === me.team) continue; const dx = u.pos.x - me.pos.x, dz = u.pos.z - me.pos.z, d = Math.hypot(dx, dz); if (d > reach + UNIT[u.kind].rad || (dx * dir.x + dz * dir.z) / (d || 1) < cone) continue; g.damage(u, dmg, me); any = true; }
-    for (const b of g.buildings) { if (!b.alive || b.team === me.team || g.distToBox(b, me.pos.x, me.pos.z) > reach - .3) continue; const dx = b.pos.x - me.pos.x, dz = b.pos.z - me.pos.z; if (dx * dir.x + dz * dir.z < 0) continue; g.damage(b, bdmg, me); any = true; }
+    for (const u of g.units) { if (!u.alive || !isEnemy(u.team, me.team)) continue; const dx = u.pos.x - me.pos.x, dz = u.pos.z - me.pos.z, d = Math.hypot(dx, dz); if (d > reach + UNIT[u.kind].rad || (dx * dir.x + dz * dir.z) / (d || 1) < cone) continue; g.damage(u, dmg, me); any = true; }
+    for (const b of g.buildings) { if (!b.alive || !isEnemy(b.team, me.team) || g.distToBox(b, me.pos.x, me.pos.z) > reach - .3) continue; const dx = b.pos.x - me.pos.x, dz = b.pos.z - me.pos.z; if (dx * dir.x + dz * dir.z < 0) continue; g.damage(b, bdmg, me); any = true; }
     if (any) { g.hud.hitmark(false); sfx.hit(); }
     return any;
   };

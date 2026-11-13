@@ -94,7 +94,7 @@ export function updateCannon(g: Game, dt: number, P: Set<string>, eye: THREE.Vec
 }
 export function stomp(g: Game, u: Unit) {
   const p = V3(u.pos.x, 0, u.pos.z); let any = false;
-  for (const e of g.units) { if (!e.alive || e.team === u.team) continue; const dx = e.pos.x - p.x, dz = e.pos.z - p.z, d = Math.hypot(dx, dz); if (d > 6.5 + UNIT[e.kind].rad) continue; g.damage(e, 46 * (1 - .5 * Math.min(1, d / 6.5)), u); const k = e.kind === 'warden' ? 3 : 16; e.kx += dx / (d || 1) * k; e.kz += dz / (d || 1) * k; any = true; }
+  for (const e of g.units) { if (!e.alive || !isEnemy(e.team, u.team)) continue; const dx = e.pos.x - p.x, dz = e.pos.z - p.z, d = Math.hypot(dx, dz); if (d > 6.5 + UNIT[e.kind].rad) continue; g.damage(e, 46 * (1 - .5 * Math.min(1, d / 6.5)), u); const k = e.kind === 'warden' ? 3 : 16; e.kx += dx / (d || 1) * k; e.kz += dz / (d || 1) * k; any = true; }
   g.blastProps(p, 6.5, 60, u); g.shove(p, 9, 10);
   for (let i = 0; i < 10; i++) { const a = i / 10 * 6.283; g.puff(TMP.set(p.x + Math.cos(a) * 2.6, .3, p.z + Math.sin(a) * 2.6), 1, 1.1, M.dust, 1.6, .5); }
   g.debris(TMP.set(p.x, .3, p.z), 8, .22, M.rock, 7); g.scorchAt(p, 5); g.warn(p.x, p.z, 6.5, .35);

@@ -75,7 +75,7 @@ export function aiCantor(g: Game, u: Unit, dt: number) {
     else { u.yaw = Math.atan2(t.pos.x - u.pos.x, t.pos.z - u.pos.z); if (u.cd <= 0) { u.cd = .95; u.swing = 1; sfx.slash(g.vol(u.pos)); const d = (isB ? 10 : 13) * g.vMul(u.team); g.damage(t, d, u);
       // The sweep carries on through whatever is pressed up against the target: half the cut to two more bodies inside the arc. Against a spread
       // rifle line it finds nobody; against a swarm at its ankles it is the only thing that keeps a Cantor worth its ore.
-      if (!isB) { let n = 0; for (const o of g.units) { if (n >= CLEAVE.n) break; if (o === t || !o.alive || o.team === u.team || Math.hypot(o.pos.x - t.pos.x, o.pos.z - t.pos.z) > 1.9 || Math.hypot(o.pos.x - u.pos.x, o.pos.z - u.pos.z) > 3.4) continue; n++; g.damage(o, d * .5, u); } } } }
+      if (!isB) { let n = 0; for (const o of g.units) { if (n >= CLEAVE.n) break; if (o === t || !o.alive || !isEnemy(o.team, u.team) || Math.hypot(o.pos.x - t.pos.x, o.pos.z - t.pos.z) > 1.9 || Math.hypot(o.pos.x - u.pos.x, o.pos.z - u.pos.z) > 3.4) continue; n++; g.damage(o, d * .5, u); } } } }
     return;
   }
   g.vIdle(u, dt, u.order.type === 'raid' ? 3 : 1.5, u.order.type !== 'guard' || g.dir.alarmT > 0 ? 1 : .6);

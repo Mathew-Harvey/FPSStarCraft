@@ -2,7 +2,7 @@
 // Run: npm test, or node tools/test-all.mjs [name filter ...]   (e.g. node tools/test-all.mjs split server)
 // Each file runs on its own, so one that hangs or fails does not hide the rest. Browser tests take one browser at a time.
 import { spawn } from 'node:child_process';
-import { writeFileSync, mkdirSync } from 'node:fs';
+import { writeFileSync, mkdirSync, existsSync } from 'node:fs';
 
 /** Every test, in the order they run. The slow bot-match tests come after the quick ones. */
 export const TESTS = [
@@ -10,7 +10,7 @@ export const TESTS = [
   'test/server.mjs', 'test/teamserver.mjs', 'tools/run-ts.mjs test/online/claims.ts', 'test/online/fog.mjs', 'test/online/fog-page.mjs',
   'test/coop.mjs', 'test/versus.mjs', 'test/split.mjs', 'test/touch.mjs', 'test/veyl.mjs', 'test/gloam.mjs', 'test/artfiles.mjs', 'test/fx.mjs',
   'test/command.mjs', 'test/controls.mjs', 'test/story.mjs', 'test/sweep.mjs',
-  'tools/run-ts.mjs test/scouting.ts', 'tools/run-ts.mjs test/terrain.ts', 'tools/run-ts.mjs test/story.ts 1', 'tools/run-ts.mjs test/playthrough.ts', 'tools/run-ts.mjs test/matchups.ts',
+  'tools/run-ts.mjs test/scouting.ts', 'tools/run-ts.mjs test/terrain.ts', 'tools/run-ts.mjs test/teammaps-play.ts', 'tools/run-ts.mjs test/story.ts 1', 'tools/run-ts.mjs test/playthrough.ts', 'tools/run-ts.mjs test/matchups.ts',
 ];
 /** Longest any one file may run before it counts as hung. */
 const LIMIT = 30 * 60 * 1000;
@@ -18,6 +18,7 @@ const want = process.argv.slice(2), list = want.length ? TESTS.filter(t => want.
 mkdirSync('dist/test-logs', { recursive: true });
 const results = [];
 for (const t of list) {
+  const file = t.split(' ').find(a => a.startsWith('test/')); if (!existsSync(file)) { console.log(`${t} ... not here yet, skipped`); continue; }
   const t0 = Date.now(), args = t.split(' '), log = 'dist/test-logs/' + args.find(a => a.startsWith('test/')).replace(/[/.]/g, '_') + '.log';
   process.stdout.write(`${t} ... `);
   const { code, out } = await new Promise(done => {

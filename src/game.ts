@@ -41,8 +41,11 @@ const UP = V3(0, 1, 0), QT = new THREE.Quaternion();
 /** The far side of a mirror match wears different colours, so two Ironhold crews (or two Choruses, or two swarms) can tell each other apart.
  *  Every material on the body is swapped for a copy with its colour shifted; the copies share every other uniform (shadows, fog, time). */
 const MIRROR_TINT = [new THREE.Color(.62, .82, 1.35), new THREE.Color(1.35, .78, .7), new THREE.Color(1.15, .68, 1.3)], tinted = new Map<THREE.Material, THREE.Material>();
+/** Team games can hold a faction three or more times: the third copy on wears these, one each, so every copy looks different. */
+const COPY_TINT = [new THREE.Color(1.3, 1.25, .62), new THREE.Color(.7, 1.3, .8), new THREE.Color(1.35, 1, 1.35), new THREE.Color(.75, .75, .75), new THREE.Color(1.25, .95, .6), new THREE.Color(.6, 1.15, 1.25)], copyTinted = new Map<number, Map<THREE.Material, THREE.Material>>();
+const copyCache = (copy: number) => { let m = copyTinted.get(copy); if (!m) copyTinted.set(copy, m = new Map()); return m; };
 function tintMirror(obj: THREE.Object3D, team: number) {
-  const corp = team === STORY.charter; if ((team < MIRROR || STORY.charter >= 0) && !corp) return; const tint = MIRROR_TINT[fac(team)], cache = corp ? greyed : tinted;
+  const corp = team === STORY.charter; if ((team < MIRROR || STORY.charter >= 0) && !corp) return; const copy = Math.floor(team / MIRROR), tint = copy <= 1 ? MIRROR_TINT[fac(team)] : COPY_TINT[(copy - 2) % COPY_TINT.length], cache = corp ? greyed : copy <= 1 ? tinted : copyCache(copy);
   // Charter Security wear company grey: the same kit with most of the colour taken out and a cold blue left in.
   const shift = (c: THREE.Color) => { if (!corp) return c.clone().multiply(tint); const l = c.r * .3 + c.g * .59 + c.b * .11; return new THREE.Color(l, l, l).lerp(c, .18).multiply(GREY); };
   obj.traverse(o => { const m = o as THREE.Mesh; if (!m.isMesh) return; const swap = (mat: THREE.Material) => { const sm = mat as THREE.ShaderMaterial; if (!sm.uniforms?.uColor) return mat; let c = cache.get(mat); if (!c) { const t = sm.clone(); t.uniforms = { ...sm.uniforms, uColor: { value: shift(sm.uniforms.uColor.value as THREE.Color) } }; cache.set(mat, c = t); } return c; }; m.material = Array.isArray(m.material) ? m.material.map(swap) : swap(m.material); });
@@ -391,8 +394,8 @@ export class Game {
   explode(p: THREE.Vector3, team: number, dmg: number, radius: number, from: Unit | null, mode: boolean | number = false) {
     const veyl = !!mode, acid = mode === 2; this.fx.blastAt(p, radius);
     if (this.evq) this.evq.push(['ex', r1(p.x), r1(p.y), r1(p.z), radius, +mode]);
-    for (const u of this.units) { if (!u.alive || u.team === team) continue; const d = Math.hypot(u.pos.x - p.x, u.pos.z - p.z); if (d > radius + UNIT[u.kind].rad) continue; const k = 1 - .6 * Math.min(1, d / radius); this.damage(u, dmg * k, from); if (d > .1) { u.kx += (u.pos.x - p.x) / d * 9 * k; u.kz += (u.pos.z - p.z) / d * 9 * k; } }
-    for (const b of this.buildings) { if (!b.alive || b.team === team) continue; if (this.distToBox(b, p.x, p.z) < radius * .7) this.damage(b, dmg * 1.4, from); }
+    for (const u of this.units) { if (!u.alive || !isEnemy(u.team, team)) continue; const d = Math.hypot(u.pos.x - p.x, u.pos.z - p.z); if (d > radius + UNIT[u.kind].rad) continue; const k = 1 - .6 * Math.min(1, d / radius); this.damage(u, dmg * k, from); if (d > .1) { u.kx += (u.pos.x - p.x) / d * 9 * k; u.kz += (u.pos.z - p.z) / d * 9 * k; } }
+    for (const b of this.buildings) { if (!b.alive || !isEnemy(b.team, team)) continue; if (this.distToBox(b, p.x, p.z) < radius * .7) this.damage(b, dmg * 1.4, from); }
     this.blastProps(p, radius, dmg, from); this.shove(p, radius * 1.6, 9);
     const g = V3(p.x, .6, p.z); this.puff(g, 5, radius * .62, acid ? M.gS : veyl ? M.teal : M.fire, 2.2, 1.5); this.puff(g, 3, radius * .5, acid ? M.gGlow : veyl ? M.cyan : M.fireD, 1.6, 2); this.puff(TMP2.set(p.x, 1.1, p.z), 5, radius * .7, acid ? M.gGlow : veyl ? M.indigoL : M.soot, 1.5, 1.7, 2.3); this.debris(g, 8, .3, acid ? M.gH : veyl ? M.crys : M.rock, 7); this.pow(g, radius * 1.5, acid ? 2 : veyl ? 1 : 0); this.scorchAt(p, radius * 1.5); if (radius >= 3.5) this.crater(p, radius * .55);
     const v = this.vol(p); this.shake = Math.max(this.shake, v * 1.1); if (!veyl) this.pipe.flash = Math.max(this.pipe.flash, v * .5); sfx.boom(v);
@@ -939,8 +942,8 @@ export class Game {
       const p = this.projs[i]; p.life -= dt; if (p.nade) p.vel.y -= 20 * dt; p.pos.addScaledVector(p.vel, dt); p.obj.position.copy(p.pos);
       if (p.nade) { p.obj.rotation.x += dt * 9; p.obj.rotation.z += dt * 5; } else { p.obj.lookAt(TMP.copy(p.pos).add(p.vel)); p.obj.rotateZ(this.time * 12); }
       let hit = p.life <= 0 || p.pos.y <= .12, tgt: Unit | Building | null = null;
-      if (!hit) for (const u of this.units) { if (!u.alive || u.team === p.team) continue; const st = UNIT[u.kind]; if (Math.abs(u.pos.x - p.pos.x) > 3) continue; if (Math.hypot(u.pos.x - p.pos.x, u.pos.z - p.pos.z) < st.rad + .3 && p.pos.y < st.headY + .5) { hit = true; tgt = u; break; } }
-      if (!hit) for (const b of this.buildings) { if (!b.alive || (b.team === p.team && !p.nade)) continue; if (Math.abs(p.pos.x - b.pos.x) < b.hx && Math.abs(p.pos.z - b.pos.z) < b.hz && p.pos.y < b.h) { hit = true; if (b.team !== p.team) tgt = b; break; } }
+      if (!hit) for (const u of this.units) { if (!u.alive || !isEnemy(u.team, p.team)) continue; const st = UNIT[u.kind]; if (Math.abs(u.pos.x - p.pos.x) > 3) continue; if (Math.hypot(u.pos.x - p.pos.x, u.pos.z - p.pos.z) < st.rad + .3 && p.pos.y < st.headY + .5) { hit = true; tgt = u; break; } }
+      if (!hit) for (const b of this.buildings) { if (!b.alive || (b.team === p.team && !p.nade)) continue; if (Math.abs(p.pos.x - b.pos.x) < b.hx && Math.abs(p.pos.z - b.pos.z) < b.hz && p.pos.y < b.h) { hit = true; if (isEnemy(b.team, p.team)) tgt = b; break; } }
       if (!hit) for (const s of this.spires) if (Math.abs(p.pos.x - s.x) < s.r && Math.abs(p.pos.z - s.z) < s.r && p.pos.y < s.h) { hit = true; if (!p.nade) this.damageProp(s, p.dmg, p.from); break; }
       if (!hit) continue;
       if (p.ghost === 1) { /* the server's own shot: it sends the result */ if (!p.nade) this.puff(p.pos, 3, .5, M.cyan, .8); }

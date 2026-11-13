@@ -23,7 +23,7 @@ export const V_BUILDABLE: VBKind[] = ['broodpit', 'hushwell', 'thornspire', 'war
 export const V_FACTION: Faction = { name: 'Veyl Chorus', short: 'Veyl', hq: 'choir', worker: 'tender', supply: 'hushwell', builds: V_BUILDABLE, voice: 'Conductor', squad: 'Chorus Lead', lead: 'cantor', ore: 'ore', barracks: 'broodpit' };
 export const V_TRAINS: Partial<Record<VBKind, VKind[]>> = { choir: ['tender'], broodpit: ['cantor', 'lancer'], reedgate: ['warden'] };
 /** Songs are learned at the buildings that sing them. */
-export const V_UPGRADES: { key: VUpKey; name: string; cost: number; blurb: string; at: VBKind; say: string; needs?: VUpKey; line?: 'atk' | 'arm' | 'shd'; lvl?: number; pct?: number; flux?: number }[] = [
+export const V_UPGRADES: { key: VUpKey; name: string; cost: number; blurb: string; at: VBKind; say: string; needs?: VUpKey; line?: 'atk' | 'arm' | 'shd'; lvl?: number; pct?: number; flux?: number; cat?: string }[] = [
   { key: 'vedge', line: 'atk', lvl: 1, name: 'Keener Edges', cost: 150, blurb: '+25% Veyl damage', at: 'wardpylon', say: 'Keener Edges. The blades hum a half step higher.' },
   { key: 'vglass', line: 'arm', lvl: 1, name: 'Thicker Glass', cost: 150, blurb: '+25% health and shields', at: 'wardpylon', say: 'Thicker Glass. Every shell rings a little lower.' },
   { key: 'vstep', name: 'Quick Step', cost: 100, blurb: 'Veyl move 12% faster', at: 'wardpylon', say: 'Quick Step. The Chorus learns to hurry.' },

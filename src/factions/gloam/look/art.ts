@@ -7,6 +7,7 @@ import type { Ctx } from '../../../gfx';
 import { pen, hatch, brush, frame, sky, nicks, cellular, sstep } from '../../../skins';
 import { lathe, hard, spl, rbox, blob, tube, plate, ring, shard, warp, crescent, capsule } from '../../../sculpt';
 import { grp, put } from '../../../units';
+import { GLOAM_UNITS2, GLOAM_HEIGHT2 } from './cast2';
 
 type P3 = [number, number, number];
 type Mat = THREE.Material;
@@ -237,8 +238,8 @@ function mulcher(): THREE.Group {
   return obj;
 }
 
-export const GLOAM_UNITS: Record<string, () => THREE.Group> = { grazer, snapper, quillback, blister, mulcher };
-export const GLOAM_HEIGHT: Record<string, number> = { grazer: 1.0, snapper: .9, quillback: 2.0, blister: 1.0, mulcher: 3.2 };
+export const GLOAM_UNITS: Record<string, () => THREE.Group> = { grazer, snapper, quillback, blister, mulcher, ...GLOAM_UNITS2 };
+export const GLOAM_HEIGHT: Record<string, number> = { grazer: 1.0, snapper: .9, quillback: 2.0, blister: 1.0, mulcher: 3.2, ...GLOAM_HEIGHT2 };
 
 // ---------------------------------------------------------------- structures
 /** A thick root running over the ground from `a` to `b`. */
@@ -379,12 +380,23 @@ export function bloomPatch(seed: number, rad: number) {
 // ---------------------------------------------------------------- first person
 /** What a player sees as a Gloam body: a pair of mandibles, claws or tusks either side of the view, plus a spit snout for the Quillback. `L` and `R` snap shut on a bite. */
 export function vmGloam(kind: string, bake: (g: THREE.Group) => THREE.Group, L_VM: number) {
-  const g = new THREE.Group(), big = kind === 'mulcher', s = big ? 1.5 : kind === 'grazer' ? .8 : 1;
+  const g = new THREE.Group(), big = kind === 'mulcher', s = big ? 1.5 : kind === 'grazer' ? .8 : kind === 'lobber' ? 1.25 : 1;
   for (const sx of [-1, 1]) {
     const side = grp(sx < 0 ? 'L' : 'R', g, [sx * .3 * s, -.2 * s, -.3]);
     if (big) {
       put(tube([[0, -.1, .2], [sx * .08, -.12, -.25], [-sx * .02, .02, -.7], [-sx * .2, .2, -.9]], [.12, .11, .07, .01], 10), M.gB, side);
       for (const t of [.2, .45]) put(ring(.11 - t * .06, .025), M.gD, side, [sx * .05, -.1 + t * .1, -.2 - t * .8], [-.2, 0, 0]);
+    } else if (kind === 'keeper') {
+      // a thin feeding arm either side, a glowing mending gland at the tip and a bone hook beside it
+      put(tube([[sx * .05, -.2, .25], [sx * .12, -.12, -.05], [sx * .04, -.1, -.38]], [.04, .035, .026], 9), M.gD, side);
+      put(blob(.09, .11, .09), M.gS, side, [sx * .04, -.13, -.42]); spine(side, [-sx * .01, -.1, -.4], .1, .016, [-H - .2, 0, sx * .5]);
+    } else if (kind === 'needler') {
+      // spade claws low either side
+      put(blob(.16, .05, .3), M.gB, side, [sx * .04, -.14, -.2], [.25, 0, sx * .2]); spine(side, [sx * .02, -.16, -.36], .12, .03, [-H - .5, 0, 0]);
+    } else if (kind === 'lobber' || kind === 'shellback') {
+      // a short heavy jaw plate, toothed on the inside
+      put(blob(.2, .1, .3, v => { if (v.y > 0) v.y *= .4; }, 'vmjaw'), M.gHn, side, [0, -.12, -.12]);
+      for (let i = 0; i < 3; i++) spine(side, [-sx * .05, -.08, -.04 - i * .08], .06, .016, [0, 0, sx * H]);
     } else if (kind === 'quillback') {
       put(tube([[0, -.12, .2], [sx * .04, -.08, -.1], [-sx * .03, -.06, -.26]], [.06, .05, .03], 8), M.gH, side);
       spine(side, [-sx * .03, -.06, -.26], .14, .025, [-H - .3, 0, sx * .6]);
@@ -400,6 +412,9 @@ export function vmGloam(kind: string, bake: (g: THREE.Group) => THREE.Group, L_V
     put(tube([[0, -.05, .35], [0, -.02, 0], [0, .0, -.32]], [.1, .085, .07], 9), M.gH, sn); for (const z of [.1, -.06, -.22]) put(ring(.082, .02), M.gB, sn, [0, -.01, z]);
     put(ring(.062, .02), M.gS, sn, [0, 0, -.34]);
   }
+  if (kind === 'keeper') put(lathe(spl([[.95, 0], [.9, .06], [.5, .12]], 6), 26, PI * .8), M.gG, g, [0, .62, -.1], [PI + .35, 0, 0]);   // the underside of the gill hood, arching over the top of the view
+  if (kind === 'needler') for (let i = 0; i < 5; i++) spine(g, [(i - 2) * .09, .34, -.2 - Math.abs(i - 2) * .05], .5 - Math.abs(i - 2) * .08, .02, [-H + .5, 0, (i - 2) * .12]);   // the crest tips, laid forward over the view
+  if (kind === 'shellback' || kind === 'lobber') put(lathe(spl([[.7, 0], [.62, .05], [.3, .08]], 6), 20, PI * .9), M.gBc, g, [0, .42, -.2], [.25 + PI, 0, 0]);   // the brow of the shell along the top of the view
   if (kind === 'blister') put(lathe(spl([[.6, -.2], [.5, .05], [.2, .14]], 6), 20, PI * .9), M.gS, g, [0, -.55, -.35], [-.3, 0, 0]);
   if (kind === 'grazer') sacs(g, [0, -.3, -.4], 3, .04, 2);
   const flash = grp('flash', g, kind === 'quillback' ? [0, -.2, -.7] : [0, -.18, -.75]); mk(G.sph, M.gSpit, [0, 0, 0], [.14, .14, .14], 0, flash); mk(G.oct, M.gSpit, [0, 0, -.06], [.05, .05, .3], 0, flash); flash.visible = false;

@@ -137,6 +137,13 @@ export interface BldRules {
   detect?(g: Game, b: Building): number;
   /** Snaps a spot to where this building has to go (an add-on beside a free host). Returns null when there is no such spot near. */
   spot?(g: Game, team: number, x: number, z: number): [number, number] | null;
+  /** This kind also counts as these for needs, research and training (an Elder Cap is still a Mother Cap). */
+  counts?: BKind[];
+  /** Placing it uses up no worker (the Gloam Tunnel Root takes no Grazer). */
+  free?: boolean;
+  /** Goes up away from home: canPlace skips the near-a-home-building rule and lets it within 12 m of the enemy instead of 45.
+   *  The faction's placeOK still decides (a spot the side can see, say). */
+  far?: boolean;
 }
 /** A command on a building (BldRules.actions). `ok` returns '' or the plain reason it cannot run now. */
 export interface BldAction { key: string; name: string; hotkey: string; cost?: [number, number]; blurb?: string; ok?(g: Game, b: Building): string; run(g: Game, b: Building): void }
@@ -209,6 +216,12 @@ export function defineFaction(f: number, rules: FactionRules) { FACTIONS[f] = { 
 export const unitRule = (k: string): UnitRules => UNITS[k] || NONE_U;
 export const bldRule = (k: string): BldRules => BLDS[k] || NONE_B;
 export const factionRule = (f: number): FactionRules => FACTIONS[f % 3] || NONE_F;
+
+/** Filters every hit passes through (host), after the reach check and before armour: a faction's area effects (acid adds to hits, a spore
+ *  cloud spoils shots from inside it). Return the new damage; 0 or less stops the hit. */
+export type HitFilter = (g: Game, t: Unit | Building, amt: number, from: Unit | Building | null) => number;
+export const HIT_FILTERS: HitFilter[] = [];
+export const addHitFilter = (f: HitFilter) => { HIT_FILTERS.push(f); };
 
 /** The brain and first-person controls for a body whose kind and faction give none: a plain gun soldier. Set once by the Ironhold rules. */
 export const DEFAULTS: { ai?: (g: Game, u: Unit, dt: number) => void; drive?: UnitRules['drive'] } = {};

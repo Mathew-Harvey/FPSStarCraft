@@ -15,7 +15,7 @@ export interface UnitDef { name: string; team: number; hp: number; shield: numbe
   /** Flies (src/core/air.ts): over cliffs and buildings, hit only by weapons that reach the air. */ air?: boolean; /** Energy for abilities, up to this. */ energy?: number;
   /** Unseen until detected (always, not just when an ability says so), and how far it sees unseen bodies. */ cloak?: boolean; detect?: number;
   /** Cargo slots it carries, and the slots it takes up inside one. */ cargo?: number; slots?: number;
-  /** Mines and builds like a Rigger (the Haul Drone). */ worker?: boolean; /** Walks up cliffs (the Reedwalker; read by the terrain). */ climb?: boolean;
+  /** Mines and builds like a Rigger (the Haul Drone). */ worker?: boolean; /** Left behind (a mine, a turret): not a fighter, never enlisted or ordered. */ ward?: boolean; /** Walks up cliffs (the Reedwalker; read by the terrain). */ climb?: boolean;
   /** A driven body's attack, for the server's checks (stream K's net-arms): reach in metres, most damage one hit can do, hits a second. */ reach?: number; hit?: number; rate?: number }
 export interface UnitDef extends FightDef {}
 export const UNIT: Record<Kind, UnitDef> = { ...I_UNIT, ...V_UNIT, ...(G_UNIT as Record<GKind, UnitDef>) };
@@ -60,7 +60,7 @@ export const TRAINS: Partial<Record<BKind, Kind[]>> = { ...I_TRAINS, ...V_TRAINS
 export const UNIT_NEEDS: Partial<Record<Kind, BKind>> = { ...I_NEEDS, ...V_NEEDS, ...Object.fromEntries(Object.entries(G_UNLOCK).filter(([k]) => k !== 'grazer')) };
 export type UpKey = IUpKey | VUpKey | GUpKey;
 /** Research. `at` is the building that sells it, and `needs` is the research that has to be bought first. */
-export interface UpDef { key: UpKey; /** A research level: its line (attack, armour, shields) and level 1 to 3 (src/core/combat.ts). */ line?: Line; lvl?: number; /** Percent mode: what this level multiplies by (default 25%, 20%, 15%). */ pct?: number; name: string; cost: number; /** Flux on top of the ore cost. */ flux?: number; blurb: string; at: BKind; say: string; needs?: UpKey; /** The side that can buy it. Ironhold when left out. */ team?: number }
+export interface UpDef { key: UpKey; /** A research level for one category of body only (see UnitDef.cat). */ cat?: string; /** A research level: its line (attack, armour, shields) and level 1 to 3 (src/core/combat.ts). */ line?: Line; lvl?: number; /** Percent mode: what this level multiplies by (default 25%, 20%, 15%). */ pct?: number; name: string; cost: number; /** Flux on top of the ore cost. */ flux?: number; blurb: string; at: BKind; say: string; needs?: UpKey; /** The side that can buy it. Ironhold when left out. */ team?: number }
 export const UPGRADES: UpDef[] = [...I_UPGRADES, ...V_UPGRADES.map(u => ({ ...u, team: 1 })), ...G_UPGRADES.map(u => ({ ...u, team: 2 }))];
 /** Research a side can buy. */
 export const upsOf = (team: number) => UPGRADES.filter(u => (u.team || 0) === fac(team));
@@ -91,7 +91,7 @@ export interface Unit {
 }
 /** One effect on a body: its key, seconds left, a strength (a slow's fraction, a shield's points, burning's damage a second) and who put it there. */
 export interface Status { k: StatusKey; t: number; n?: number; from?: number }
-export type StatusKey = 'slow' | 'stun' | 'root' | 'unseen' | 'revealed' | 'dug' | 'lifted' | 'shielded' | 'burning' | 'borrowed';
+export type StatusKey = 'slow' | 'stun' | 'root' | 'unseen' | 'revealed' | 'dug' | 'lifted' | 'shielded' | 'burning' | 'borrowed' | 'blind';
 export interface Building {
   id: number; kind: BKind; team: number; pos: THREE.Vector3; hx: number; hz: number; h: number; hp: number; maxHp: number; obj: THREE.Group; holo: THREE.Group | null;
   built: boolean; progress: number; /** progress already paid out as health, so damage to a site sticks */ pdone: number; queue: { kind: Kind; t: number }[]; alive: boolean; cd: number; builder: Unit | null; lastHit: number; rot: boolean; smokeT: number; stage: number;
@@ -147,4 +147,4 @@ export const OVERTIME = { start: 0, perMin: .1 };
 export const isUnit = (t: any): t is Unit => !!t && t.rig !== undefined;
 export const isSoldier = (u: Unit) => u.kind === 'linesman' || u.kind === 'breacher' || u.kind === 'gantry' || u.kind === 'longshot' || u.kind === 'patch';
 /** A fighting body on either side: anything that is not a worker. */
-export const isFighter = (u: Unit) => !isWorker(u.kind);
+export const isFighter = (u: Unit) => !isWorker(u.kind) && !UNIT[u.kind]?.ward;

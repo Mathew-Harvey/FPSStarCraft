@@ -11,6 +11,7 @@ import { isEnemy } from '../../core/sides';
 import { defineUnits, defineBuildings, defineFaction } from '../../core/registry';
 import { defineAbilities } from '../../core/ability';
 import { gloamShowTick } from './show';
+import './arms';
 
 const TMP = V3();
 export const quillMat = new THREE.MeshBasicMaterial({ color: 0xe9dab2 });

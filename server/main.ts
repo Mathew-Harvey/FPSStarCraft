@@ -26,7 +26,7 @@ function newCode() { const A = 'ABCDEFGHJKLMNPQRSTUVWXYZ'; for (;;) { let c = ''
 function tell(l: Lobby) { for (const p of l.players) send(p, { t: 'lobby', code: l.code, you: p.id, host: l.host, map: l.map, diff: l.diff, out: l.out, state: l.game ? 'play' : 'lobby', players: l.players.map(x => ({ id: x.id, name: x.name, ready: x.ready, team: x.team })) }); }
 
 function leave(p: Player) {
-  const l = p.lobby; if (!l) return; p.lobby = null; if (l.game) { setMap(l.map); setSidesCode(l.out); }
+  const l = p.lobby; if (!l) return; p.lobby = null; if (l.game) { setMap(l.map); setSidesCode(l.out); l.game.pin(); }
   if (p.unit && l.game) release(l.game, p);
   l.players = l.players.filter(x => x !== p); if (l.game) { delete l.game.names[p.id]; delete l.game.teams[p.id]; l.game.evq!.push(['nm', l.game.names, l.game.teams]); l.game.coop = Math.max(1, l.players.filter(x => x.team === SIDE.home).length); sides(l); if (p.team !== SIDE.home) l.gone[p.name] = p.team; }
   if (l.game && l.players.length) l.game.feed('Signal', `${p.name} clocked off. Their crew is back on the roster.`, 'al');
@@ -63,7 +63,7 @@ function begin(l: Lobby) {
 }
 /** A player arrives while the shift is running: a late start, or coming back after a dropped connection. */
 function joinLive(l: Lobby, p: Player) {
-  const g = l.game!; setMap(l.map); setSidesCode(l.out); p.inbox = []; p.unit = null; l.players.push(p); p.lobby = l; p.ready = true;
+  const g = l.game!; setMap(l.map); setSidesCode(l.out); g.pin(); p.inbox = []; p.unit = null; l.players.push(p); p.lobby = l; p.ready = true;
   if (p.team !== SIDE.home && p.team !== SIDE.out) p.team = SIDE.home;
   if (p.team !== SIDE.home && !g.eco) p.team = SIDE.home;   // a Chorus that breeds for free has no seats for players
   g.names[p.id] = p.name; g.teams[p.id] = p.team; if (!g.score[p.id]) g.score[p.id] = [0, 0, 0]; g.coop = Math.max(1, l.players.filter(x => x.team === SIDE.home).length); sides(l);
@@ -73,7 +73,7 @@ function joinLive(l: Lobby, p: Player) {
   g.evq!.push(['nm', g.names, g.teams]); g.feed('Signal', `${p.name} clocked in late. Docked accordingly.`, 'in'); tell(l);
 }
 function step(l: Lobby) {
-  const g = l.game!; setMap(l.map); setSidesCode(l.out);
+  const g = l.game!; setMap(l.map); setSidesCode(l.out); g.pin();
   for (const p of l.players) {
     if (p.unit && !p.unit.alive) p.unit = null;
     for (const m of p.inbox) {

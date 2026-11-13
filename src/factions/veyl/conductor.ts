@@ -118,7 +118,7 @@ export function conductor(D: Director, dt: number, V0: Side = D.vs) {
     if (!any('wardpylon') && has('broodpit') && army.length >= 5 + DOC.tech) { put('wardpylon', 'A Ward Pylon. It keeps the buildings near it whole, and it teaches the ground levels.'); return; }
     const spires = own('thornspire').length, wantSpires = Math.max(0, (army.length >= 3 || g.human[foe] ? 1 + (now > 420 ? 1 : 0) + (now > 840 ? 1 : 0) : 0) + DOC.towers + (cloakSeen ? 1 : 0) + (fAir >= 3 ? 1 : 0));
     if (has('wardpylon') && spires < Math.min(wantSpires, 1 + stones.length * 2)) { put('thornspire', cloakSeen ? 'A Thorn Spire: it sees the unseen ones that keep hitting us.' : 'A Thorn Spire, to hit what comes down the road, on foot or in the air.'); return; }
-    if (pits.length === 1 && has('broodpit') && now > DOC.prodT) { put('broodpit', 'A second Brood Pit. Twice the voices.'); return; }
+    if (pits.length === 1 && has('broodpit') && (now > DOC.prodT || (now > 150 && foes.filter(o => !o.air).length >= 6))) { put('broodpit', 'A second Brood Pit. Twice the voices.'); return; }
     if (techStep()) return;
     if (pits.length === 2 && now > DOC.prodT + 420) { put('broodpit', 'A third Brood Pit.'); return; }
     // ore piling up with nowhere to go: more Brood Pits (Cantors need no Flux)
@@ -127,13 +127,17 @@ export function conductor(D: Director, dt: number, V0: Side = D.vs) {
     if (has('skyloft') && own('skyloft').length === 1 && now > 900 && air) { put('skyloft', 'A second Skyloft.'); return; }
     if (exp.bare) { const [bx, bz] = exp.bare; if (canPay(g, T, costOf('thornspire'))) for (const [ox, oz] of [[5, 5], [-5, 5], [5, -5], [-5, -5]]) if (g.canPlace('thornspire', bx + ox, bz + oz, false, T)) { g.place('thornspire', bx + ox, bz + oz, false, T); say('A Thorn Spire to keep the new Stone company.'); break; } }
   };
-  step();
+  // An early rush at the door: no new buildings or songs until it is beaten, every coin into Cantors, and the Pits quickened.
+  const rushed = now < 720 && foes.filter(o => !o.air && Math.hypot(o.pos.x - HX, o.pos.z - HZ) < 45).length >= Math.max(3, army.length);
+  if (!rushed || !pits.length) step();
+  if (rushed) for (const p of up('broodpit')) { quicken(g, p, T); if (p.queue.length < 2 && g.rate(p) > 0 && canPay(g, T, costOf('cantor')) && free >= 2) g.train(p, 'cantor'); }
 
   // ---- songs: the levels first, then what the army is using
   const L = (keys: UpKey[], keep = 0) => { for (const k of keys) if (learn(k, keep)) return true; return false; };
+  if (!rushed) {
   if (army.length >= 5) L(['vedge', 'vglass', 'vshell'], 100);
   // Low Hum is the Tenders' song (the Ironhold buy their drill early too): first thing once the line is working.
-  if (has('broodpit') && g.own('tender', T).length >= 9) L(['vhum']);
+  if (has('broodpit') && g.own('tender', T).length >= 9 && (army.length >= 2 || now > 240)) L(['vhum']);
   if (has('reedgate')) L(['vfar'], 80);
   if (has('duskhall')) L(['vrush', 'vbloom', 'vbreath', 'vskip', 'vstep'], 150);
   if (army.length >= 8) L(['vedge2', 'vglass2', 'vshell2', 'vaedge', 'vaglass'], 150);
@@ -144,6 +148,7 @@ export function conductor(D: Director, dt: number, V0: Side = D.vs) {
   if (has('skyloft')) L(['vomen'], 200);
   if (has('highbeacon')) L(['vshard', 'vswift'], 200);
   if (army.length >= 12) L(['vedge3', 'vglass3', 'vshell3', 'vaedge2', 'vaglass2', 'vaedge3', 'vaglass3'], 200);
+  }
 
   // ---- Quicken: a Stone with energy speeds up a busy building
   for (const s of up('choir')) if (energyOf(s) >= 50) { const b = g.ownB(undefined, true, T).filter(b => b.queue.length && g.rate(b) === 1).sort((a, c) => UNIT[c.queue[0].kind].cost - UNIT[a.queue[0].kind].cost)[0]; if (b) quicken(g, b, T); break; }
@@ -153,7 +158,9 @@ export function conductor(D: Director, dt: number, V0: Side = D.vs) {
   const onFlux = tend.filter(u => u.vent), wantFlux = tapsUp.length * (flux() > 700 ? 1 : flux() > 400 ? 2 : ore() > 300 || has('kiln') || has('skyloft') ? 4 : 3);
   if (onFlux.length < wantFlux) { const v = g.vents.filter(v => v.tap && tapsUp.includes(v.tap) && tapped(g, v, T)).sort((a, b) => tend.filter(u => u.vent === a).length - tend.filter(u => u.vent === b).length)[0]; const w = v && tend.filter(u => !u.vent && !u.site && !u.pilot && u !== g.me && u.carrying === 0).sort((a, b) => Math.hypot(a.pos.x - v.pos.x, a.pos.z - v.pos.z) - Math.hypot(b.pos.x - v.pos.x, b.pos.z - v.pos.z))[0]; if (v && w) sendToVent(g, w, v); }
   else if (onFlux.length > wantFlux + 1) { const w = onFlux.find(u => !(u.fluxing! > 0)); if (w) sendToVent(g, w, null); }
-  const wantTend = 12 + DOC.crew + 7 * (hqs.length - 1) + tapsUp.length * 3;
+  // the enemy already fields a crowd before seven minutes (a swarm, a rush): fewer Tenders for now, more Cantors
+  const early = now < 420 && foes.filter(o => !o.air).length >= Math.max(6, army.length * 2);
+  const wantTend = early ? Math.min(9, 12 + DOC.crew) : 12 + DOC.crew + 7 * (hqs.length - 1) + tapsUp.length * 3;
   if (tend.length < wantTend && free > 0 && canPay(g, T, costOf('tender')) && (pits.length || tend.length < 6)) {
     const crew = (h: Building) => tend.filter(u => !u.vent && g.nearHQ((u.node || u).pos.x, (u.node || u).pos.z, T) === h).length + h.queue.filter(q => q.kind === 'tender').length;
     const h = hqs.filter(b => !b.queue.length && crew(b) < (b === home ? 12 + DOC.crew : 7)).sort((a, b) => crew(a) - crew(b))[0] || (tend.length < wantTend ? hqs.find(b => !b.queue.length) : undefined); if (h) g.train(h, 'tender');
@@ -182,7 +189,7 @@ export function conductor(D: Director, dt: number, V0: Side = D.vs) {
   };
   const RANK: Partial<Record<BKind, number>> = { skyloft: 0, kiln: 1, reedgate: 2, choir: 3, broodpit: 4 };
   // the share of ore a building may spend this second, so the Tender line and the next building are never starved for long
-  const keep = saving > 0 && army.length >= 3 + Math.max(0, DOC.tech) ? Math.min(saving, army.length >= 8 ? 400 : 150) : 0;
+  const keep = saving > 0 && army.length >= 6 + Math.max(0, DOC.tech) ? Math.min(saving, army.length >= 8 ? 400 : 150) : 0;
   // a deeper building short of the price of the body it wants holds that much back from the Brood Pits, once there is an army to stand on
   let hold: [number, number] = [0, 0];
   const tryTrain = (b: Building, k: Kind) => { const nb = V_NEEDS[k as VKind]; if (nb && !has(nb)) return false; const c = costOf(k), deep = (RANK[b.kind] ?? 5) <= 2;

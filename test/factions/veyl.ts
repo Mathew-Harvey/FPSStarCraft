@@ -200,8 +200,8 @@ const spawnI = (g: Game, k: Kind, x: number, z: number) => { const u = g.spawn(k
 
 // ---------------------------------------------------------------- 4. bot matches: every kind gets made
 if (process.argv[2] === 'use') {
-  const jobs: any[] = []; for (let s = 1; s <= 10; s++) jobs.push({ home: s % 2 ? 1 : (s % 4 === 0 ? 2 : 0), out: s % 2 ? (s % 3 ? 0 : 2) : 1, map: s % 3, seed: 500 + s * 13, mins: 40 });
-  const rows = jobs.map(j => { const r = spawnSync('node', ['dist/veyl-match.mjs', JSON.stringify(j)], { encoding: 'utf8' }); return JSON.parse(r.stdout.trim().split('\n').pop()!); });
+  const jobs: any[] = []; for (let s = 1; s <= 10; s++) jobs.push({ home: s % 2 ? 1 : (s % 4 === 0 ? 2 : 0), out: s % 2 ? (s % 3 ? 0 : 2) : 1, map: s % 3, seed: 500 + s * 13, mins: 40, plan: ['ground', 'tech', 'air'][s % 3] });   // the three Conductor plans in turn
+  const rows = jobs.map(j => { const r = spawnSync('node', ['dist/veyl-match.mjs', JSON.stringify(j)], { encoding: 'utf8' }); const row = JSON.parse(r.stdout.trim().split('\n').pop()!); console.log(`  ${JSON.stringify(j.plan)} ${row.home}v${row.out} map ${row.map}: ${row.res} at ${Math.round(row.t / 60)} min`); return row; });
   const made: Record<string, number> = {}, spend: Record<string, number> = {}; let errors = 0;
   for (const r of rows) { errors += r.errors; for (const k in r.made) made[k] = (made[k] || 0) + r.made[k]; for (const k in r.spend) spend[k] = (spend[k] || 0) + r.spend[k]; }
   const all = Object.values(spend).reduce((a, b) => a + b, 0);

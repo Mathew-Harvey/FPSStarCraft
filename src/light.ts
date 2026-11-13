@@ -19,27 +19,29 @@ export interface Env {
   cloud: C3; /** How much of the sky the clouds take, 0 to 1. */ cover: number; stars: number;
   /** Colour of the sun's disc and of the shafts it throws through the air, and how strong those shafts are. */ disc: C3; shaft: number;
   /** How far glowing things spill, against midday. */ glow: number;
+  /** How much sunlit sand, bright sky and lamp-lit ground glow of their own accord. */ hot: number;
+  /** The bright line the key light draws down the edge of a body that turns toward it. */ rim: number;
   /** How strongly lamps, fires and crystals light the ground round them. */ pool: number;
   /** The last grade over the whole picture: a multiply and a lift. */ tint: C3; lift: C3;
   /** Dust in the air: how much, and how hard the wind drives it. */ motes: number; wind: number;
 }
-const NIGHT: Env = { sun: [.36, .48, .86], amb: [.86, 1.08, 1.8], key: .62, fog: [.07, .1, .2], fogS: [.14, .19, .34], fogK: 1.3, mist: .006, top: [.016, .03, .09], mid: [.045, .085, .2], cloud: [.16, .22, .38], cover: .4, stars: 1, disc: [.6, .75, 1], shaft: .3, glow: 1.5, pool: 1, tint: [.97, 1, 1.07], lift: [0, .004, .018], motes: .5, wind: .5 };
+const NIGHT: Env = { sun: [.42, .55, 1], amb: [.68, .9, 1.62], key: .62, fog: [.07, .1, .2], fogS: [.14, .19, .34], fogK: 1.3, mist: .006, top: [.016, .03, .09], mid: [.045, .085, .2], cloud: [.16, .22, .38], cover: .4, stars: 1, disc: [.6, .75, 1], shaft: .5, glow: 2.2, hot: .2, rim: .75, pool: 1.2, tint: [.96, 1, 1.08], lift: [0, .004, .018], motes: .5, wind: .5 };
 /** The day, hour by hour. Anything between two rows is a blend of them. */
 const DAY: [number, Env][] = [
   [0, NIGHT], [4.7, NIGHT],
   // first light: the key light is out, the sky is already going pink at one end, mist is rising
-  [5.4, { sun: [.6, .6, .85], amb: [1.12, 1.18, 1.5], key: 0, fog: [.3, .29, .42], fogS: [.78, .46, .42], fogK: 1.5, mist: .016, top: [.06, .09, .23], mid: [.28, .26, .42], cloud: [.78, .44, .46], cover: .5, stars: .3, disc: [1, .6, .4], shaft: .25, glow: 1.35, pool: .75, tint: [1, 1, 1.03], lift: [.004, 0, .012], motes: .5, wind: .4 }],
+  [5.4, { sun: [.6, .6, .85], amb: [1.12, 1.18, 1.5], key: 0, fog: [.3, .29, .42], fogS: [.78, .46, .42], fogK: 1.5, mist: .016, top: [.06, .09, .23], mid: [.28, .26, .42], cloud: [.78, .44, .46], cover: .5, stars: .3, disc: [1, .6, .4], shaft: .3, glow: 1.9, hot: .6, rim: 0, pool: 1.05, tint: [1, 1, 1.03], lift: [.004, 0, .012], motes: .5, wind: .4 }],
   // dawn: a low pink sun through thick mist, long shafts
-  [6.4, { sun: [1.2, .84, .68], amb: [1.05, .98, 1.1], key: .8, fog: [.8, .67, .7], fogS: [1, .76, .54], fogK: 1.7, mist: .024, top: [.2, .35, .58], mid: [.76, .62, .66], cloud: [1, .74, .62], cover: .55, stars: 0, disc: [1, .8, .55], shaft: 1.05, glow: 1.2, pool: .32, tint: [1.02, 1, .99], lift: [.01, 0, .006], motes: .9, wind: .4 }],
-  [8, { sun: [1.07, .99, .87], amb: [.96, 1, 1.13], key: 1, fog: [.88, .85, .82], fogS: [1, .93, .77], fogK: 1.2, mist: .006, top: [.09, .36, .57], mid: [.42, .77, .81], cloud: [1, .97, .88], cover: .5, stars: 0, disc: [1, .95, .72], shaft: .55, glow: 1.05, pool: .08, tint: [1, 1, 1], lift: [0, 0, 0], motes: .7, wind: .6 }],
-  // noon: the picture as it has always been drawn
-  [12, { sun: [1, 1, 1], amb: [1, 1, 1], key: 1, fog: [.925, .824, .76], fogS: [1, .9, .74], fogK: 1, mist: 0, top: [.07, .33, .5], mid: [.36, .78, .76], cloud: [1, .93, .78], cover: .5, stars: 0, disc: [1, .95, .7], shaft: .3, glow: 1, pool: 0, tint: [1, 1, 1], lift: [0, 0, 0], motes: .6, wind: .7 }],
-  [16, { sun: [1.05, .97, .86], amb: [.97, .97, 1.1], key: 1, fog: [.93, .8, .72], fogS: [1, .86, .64], fogK: 1.05, mist: 0, top: [.08, .3, .5], mid: [.45, .72, .74], cloud: [1, .9, .72], cover: .5, stars: 0, disc: [1, .92, .66], shaft: .42, glow: 1, pool: .04, tint: [1, 1, 1], lift: [0, 0, 0], motes: .7, wind: .7 }],
+  [6.4, { sun: [1.2, .84, .68], amb: [1.05, .98, 1.1], key: .8, fog: [.8, .67, .7], fogS: [1, .76, .54], fogK: 1.7, mist: .024, top: [.2, .35, .58], mid: [.76, .62, .66], cloud: [1, .74, .62], cover: .55, stars: 0, disc: [1, .8, .55], shaft: 1.7, glow: 1.65, hot: .7, rim: .9, pool: .4, tint: [1.02, 1, .99], lift: [.01, 0, .006], motes: .9, wind: .4 }],
+  [8, { sun: [1.07, .99, .87], amb: [.96, 1, 1.13], key: 1, fog: [.88, .85, .82], fogS: [1, .93, .77], fogK: 1.4, mist: .008, top: [.09, .36, .57], mid: [.42, .77, .81], cloud: [1, .97, .88], cover: .5, stars: 0, disc: [1, .95, .72], shaft: .85, glow: 1.3, hot: .55, rim: .45, pool: .08, tint: [1, 1, 1], lift: [0, 0, 0], motes: .7, wind: .6 }],
+  // noon: hard white light, short shadows, pale haze over the far rock
+  [12, { sun: [1.03, 1, .95], amb: [.96, .98, 1.08], key: 1, fog: [.87, .84, .82], fogS: [1, .92, .78], fogK: 1.12, mist: .003, top: [.07, .33, .5], mid: [.36, .78, .76], cloud: [1, .93, .78], cover: .5, stars: 0, disc: [1, .95, .7], shaft: .6, glow: 1.2, hot: .4, rim: .25, pool: 0, tint: [1, 1, 1], lift: [0, 0, 0], motes: .6, wind: .7 }],
+  [16, { sun: [1.05, .97, .86], amb: [.97, .97, 1.1], key: 1, fog: [.93, .8, .72], fogS: [1, .86, .64], fogK: 1.32, mist: .002, top: [.08, .3, .5], mid: [.45, .72, .74], cloud: [1, .9, .72], cover: .5, stars: 0, disc: [1, .92, .66], shaft: .8, glow: 1.25, hot: .5, rim: .45, pool: .04, tint: [1, 1, 1], lift: [0, 0, 0], motes: .7, wind: .7 }],
   // golden hour: orange light, violet shade, the air lit up toward the sun
-  [17.8, { sun: [1.2, .89, .61], amb: [.9, .86, 1.08], key: 1, fog: [.9, .66, .58], fogS: [1, .75, .43], fogK: 1.3, mist: .003, top: [.12, .2, .46], mid: [.86, .57, .5], cloud: [1, .72, .46], cover: .5, stars: 0, disc: [1, .82, .5], shaft: 1, glow: 1.15, pool: .2, tint: [1.03, 1, .97], lift: [.01, 0, .01], motes: 1, wind: .5 }],
-  [19, { sun: [1.26, .63, .43], amb: [.86, .79, 1.13], key: .78, fog: [.7, .43, .5], fogS: [1, .5, .3], fogK: 1.45, mist: .006, top: [.13, .1, .36], mid: [.7, .34, .46], cloud: [1, .5, .4], cover: .5, stars: .15, disc: [1, .6, .34], shaft: .9, glow: 1.3, pool: .55, tint: [1.04, .97, .97], lift: [.015, 0, .02], motes: .9, wind: .4 }],
+  [17.8, { sun: [1.3, .88, .54], amb: [.9, .85, 1.18], key: 1, fog: [.9, .66, .58], fogS: [1, .75, .43], fogK: 1.55, mist: .003, top: [.12, .2, .46], mid: [.86, .57, .5], cloud: [1, .72, .46], cover: .5, stars: 0, disc: [1, .82, .5], shaft: 1.7, glow: 1.6, hot: .7, rim: 1, pool: .25, tint: [1.03, 1, .97], lift: [.01, 0, .01], motes: 1, wind: .5 }],
+  [19, { sun: [1.34, .6, .4], amb: [.78, .74, 1.16], key: .78, fog: [.7, .43, .5], fogS: [1, .5, .3], fogK: 1.45, mist: .006, top: [.13, .1, .36], mid: [.7, .34, .46], cloud: [1, .5, .4], cover: .5, stars: .15, disc: [1, .6, .34], shaft: 1.6, glow: 1.85, hot: 1, rim: 1, pool: .8, tint: [1.04, .97, .97], lift: [.015, 0, .02], motes: .9, wind: .4 }],
   // the blue hour: the sun is down and the planet has not taken over yet, an ember band at one end of the sky
-  [19.8, { sun: [.7, .6, .9], amb: [1.2, 1.25, 1.45], key: 0, fog: [.25, .21, .41], fogS: [.62, .3, .36], fogK: 1.4, mist: .008, top: [.045, .055, .19], mid: [.19, .15, .35], cloud: [.5, .3, .45], cover: .45, stars: .6, disc: [1, .5, .3], shaft: .1, glow: 1.45, pool: .9, tint: [1, .99, 1.04], lift: [.004, 0, .018], motes: .6, wind: .4 }],
+  [19.8, { sun: [.7, .6, .9], amb: [1.2, 1.25, 1.45], key: 0, fog: [.25, .21, .41], fogS: [.62, .3, .36], fogK: 1.4, mist: .008, top: [.045, .055, .19], mid: [.19, .15, .35], cloud: [.5, .3, .45], cover: .45, stars: .6, disc: [1, .5, .3], shaft: .15, glow: 2.05, hot: .3, rim: 0, pool: 1.1, tint: [1, .99, 1.04], lift: [.004, 0, .018], motes: .6, wind: .4 }],
   [21, NIGHT], [24, NIGHT],
 ];
 /** What a weather does to the row it is laid over. */
@@ -53,14 +55,14 @@ export const WEATHER: Record<string, Wx> = {
   // a lid of cloud: no shadows to speak of, cool even light
   overcast: { fogK: 1.45, mist: .003, key: .3, shaft: .15, pull: .5, hue: [.86, .9, 1], dim: .74, blot: .75, sun: [.94, .97, 1.04], amb: [1.45, 1.34, 1.1], cover: .9, motes: .8, wind: 1.4 },
   // mist off the ground: thick below the knee, thin above the rooftops
-  mist: { fogK: 1.5, mist: .04, key: .72, shaft: 1.3, pull: .3, hue: [.9, .96, 1], dim: 1, blot: .3, sun: [1, 1, 1], amb: [1.06, 1.06, 1.06], cover: .1, motes: .4, wind: .3 },
+  mist: { fogK: 1.3, mist: .03, key: .72, shaft: 1.3, pull: .3, hue: [.9, .96, 1], dim: 1, blot: .3, sun: [1, 1, 1], amb: [1.06, 1.06, 1.06], cover: .1, motes: .4, wind: .3 },
 };
 const lerp = (a: number, b: number, k: number) => a + (b - a) * k;
 const mix3 = (o: C3, a: C3, b: C3, k: number) => { o[0] = lerp(a[0], b[0], k); o[1] = lerp(a[1], b[1], k); o[2] = lerp(a[2], b[2], k); return o; };
 const lum = (c: C3) => c[0] * .3 + c[1] * .59 + c[2] * .11;
 const hash = (a: number, b: number) => { const v = Math.sin(a * 127.1 + b * 311.7) * 43758.5453; return v - Math.floor(v); };
-const blank = (): Env => ({ sun: [1, 1, 1], amb: [1, 1, 1], key: 1, fog: [1, 1, 1], fogS: [1, 1, 1], fogK: 1, mist: 0, top: [0, 0, 0], mid: [0, 0, 0], cloud: [1, 1, 1], cover: .5, stars: 0, disc: [1, 1, 1], shaft: 0, glow: 1, pool: 0, tint: [1, 1, 1], lift: [0, 0, 0], motes: 1, wind: 1 });
-const TRI: (keyof Env)[] = ['sun', 'amb', 'fog', 'fogS', 'top', 'mid', 'cloud', 'disc', 'tint', 'lift'], ONE: (keyof Env)[] = ['key', 'fogK', 'mist', 'cover', 'stars', 'shaft', 'glow', 'pool', 'motes', 'wind'];
+const blank = (): Env => ({ sun: [1, 1, 1], amb: [1, 1, 1], key: 1, fog: [1, 1, 1], fogS: [1, 1, 1], fogK: 1, mist: 0, top: [0, 0, 0], mid: [0, 0, 0], cloud: [1, 1, 1], cover: .5, stars: 0, disc: [1, 1, 1], shaft: 0, glow: 1, hot: .4, rim: 0, pool: 0, tint: [1, 1, 1], lift: [0, 0, 0], motes: 1, wind: 1 });
+const TRI: (keyof Env)[] = ['sun', 'amb', 'fog', 'fogS', 'top', 'mid', 'cloud', 'disc', 'tint', 'lift'], ONE: (keyof Env)[] = ['key', 'fogK', 'mist', 'cover', 'stars', 'shaft', 'glow', 'hot', 'rim', 'pool', 'motes', 'wind'];
 
 /** The row the renderer is reading this frame. */
 export const ENV: Env = blank();
@@ -72,9 +74,9 @@ const NOON_AZ = Math.atan2(.56, -.55), NOON_EL = Math.asin(KEYDIR.y), PLANET = n
 
 /** The old dial (0 midday, 1 night) as an hour of the day. Maps, story jobs and cut scenes still speak in it. */
 export const hourOf = (dusk: number) => 12 + dusk * 10;
-/** The hour a match has reached: it starts at the map's own hour, the day runs at about a minute and a quarter to the hour, and the night at twice that. */
+/** The hour a match has reached: it starts at the map's own hour, the day runs at a little under a minute to the hour, and the night at twice that. */
 export function matchHour(dusk0: number, time: number) {
-  let h = hourOf(dusk0), t = Math.max(0, time - 120) / 78;
+  let h = hourOf(dusk0), t = Math.max(0, time - 40) / 52;
   for (let i = 0; i < 64 && t > 0; i++) { h %= 24; const night = h >= 20.5 || h < 4.7, rate = night ? 2 : 1, end = night ? (h >= 20.5 ? 28.7 : 4.7) : 20.5, room = (end - h) / rate; if (t < room) { h += t * rate; t = 0; } else { h = end; t -= room; } }
   return h % 24;
 }
@@ -125,7 +127,7 @@ export function lampsCommit(cam: THREE.Vector3, dt: number) {
   if (!LAMP_ON.value || !pn) { LAMP_N.value = 0; return; }
   const score = (l: Lamp) => l.k * l.r * l.r / ((l.x - cam.x) ** 2 + (l.y - cam.y) ** 2 + (l.z - cam.z) ** 2 + l.r * l.r * 4);
   let n = 0; const used: Lamp[] = [];
-  for (; n < LAMPS; n++) { let best: Lamp | null = null, bs = 2e-4; for (let i = 0; i < pn; i++) { const l = pile[i]; if (used.includes(l)) continue; const s = score(l); if (s > bs) { bs = s; best = l; } } if (!best) break; used.push(best); const p = (best.f ? Math.max(ENV.pool, .4) : ENV.pool) * best.k; LAMP_P[n].set(best.x, best.y, best.z, best.r); LAMP_C[n].set(best.c[0] * p, best.c[1] * p, best.c[2] * p); }
+  for (; n < LAMPS; n++) { let best: Lamp | null = null, bs = 2e-4; for (let i = 0; i < pn; i++) { const l = pile[i]; if (used.includes(l)) continue; const s = score(l); if (s > bs) { bs = s; best = l; } } if (!best) break; used.push(best); const p = (best.f ? Math.max(ENV.pool, .75) : ENV.pool) * best.k; LAMP_P[n].set(best.x, best.y, best.z, best.r); LAMP_C[n].set(best.c[0] * p, best.c[1] * p, best.c[2] * p); }
   LAMP_N.value = n;
 }
 /** A lamp's flicker: a fire gutters, a tube hums. Plain arithmetic on the clock, no dice. */

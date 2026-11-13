@@ -240,7 +240,7 @@ const run = (g: Game, secs: number, each?: () => boolean | void) => { for (let i
 {
   const g = world(), H = SIDE.home, O = SIDE.out; const ghost = g.spawn('xcloak' as Kind, O, 40, 140), pal = g.spawn('xcaster' as Kind, H, 40, 120);
   g.evq!.push(['test']); const snaps = buildSnaps(g, [H, O]), sh = JSON.parse(snaps.get(H)!), so = JSON.parse(snaps.get(O)!);
-  check(!sh.u.some((r: any[]) => r[0] === ghost.id) && !JSON.stringify(sh).includes(String(ghost.id) + ',') && so.u.some((r: any[]) => r[0] === ghost.id), 'online: a hidden body is left out of the enemy\'s snapshot entirely and sent to its own side');
+  check(!sh.u.some((r: any[]) => r[0] === ghost.id) && !JSON.stringify(sh).includes(`[${ghost.id},`) && so.u.some((r: any[]) => r[0] === ghost.id), 'online: a hidden body is left out of the enemy\'s snapshot entirely (fog on the wire, test/online) and sent to its own side');
   check(sh.e.length === 1 && so.e.length === 1 && g.evq!.length === 0, 'online: both sides\' snapshots carry the tick\'s events once');
   const one = buildSnap(g); check(one.u.some((r: any[]) => r[0] === ghost.id) && one.ux.some((r: any[]) => r[0] === pal.id && r[1] === Math.floor(pal.energy!)) && Array.isArray(one.fl), 'online: the full snapshot carries energy, Flux and every body');
 }

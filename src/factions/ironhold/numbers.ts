@@ -26,9 +26,9 @@ export const I_UNIT: Record<IKind, UnitDef> = {
   rigger: { name: 'Rigger', team: 0, hp: 45, shield: 0, speed: 4.6, eye: 1.5, headY: 1.52, bodyY: .9, rad: .66, cost: 50, time: 8, supply: 1, tags: ['soft'], quip: '"I dig holes. You point at where."', ack: ['Drill\'s warm, boss.', 'Back in the dirt.', 'Hard hat on. Mostly.'] },
   // Plan cost 50 (was 60). Health and gun unchanged: the plan made it cheaper, the cheapest rifle should stay the baseline.
   linesman: { name: 'Linesman', team: 0, hp: 60, shield: 0, speed: 4.8, eye: 1.58, headY: 1.56, bodyY: .9, rad: .66, cost: 50, time: 11, supply: 1, tags: ['soft'], hits: 'both', quip: '"Paid by the bullet. Tips welcome."', ack: ['Boss is in my head again.', 'Point me at something purple.', 'Safety\'s off. So is my shift.'] },
-  // Beats plated: +6 a pellet volley against plated (about +40% against a Warden or a Pile Driver).
-  breacher: { name: 'Breacher', team: 0, hp: 150, shield: 0, speed: 4.2, eye: 1.78, headY: 1.78, bodyY: 1.02, rad: .8, cost: 100, flux: 25, time: 15, supply: 2, tags: ['plated'], armour: 1, bonus: { plated: 6 }, quip: '"I knock. Then there is no door."', ack: ['Shield up. Manners down.', 'Somebody order a wall?', 'Big gun, short walk.'] },
-  gantry: { name: 'Gantry', team: 0, hp: 500, shield: 0, speed: 3.9, eye: 2.95, headY: 3.2, bodyY: 2.1, rad: 1.25, cost: 300, flux: 200, time: 30, supply: 6, tags: ['plated', 'machine', 'huge'], armour: 1, hits: 'both', quip: '"Two legs, two cannons, zero paperwork."', ack: ['Walker\'s yours. Mind the paint.', 'Stomping on your say-so.', 'Big rig, bigger invoice.'] },
+  // Beats plated: +6 a volley against plated (rules.ts adds it, split over the pellets in first person), about +40% against a Warden.
+  breacher: { name: 'Breacher', team: 0, hp: 150, shield: 0, speed: 4.2, eye: 1.78, headY: 1.78, bodyY: 1.02, rad: .8, cost: 100, flux: 25, time: 15, supply: 2, tags: ['plated'], quip: '"I knock. Then there is no door."', ack: ['Shield up. Manners down.', 'Somebody order a wall?', 'Big gun, short walk.'] },
+  gantry: { name: 'Gantry', team: 0, hp: 500, shield: 0, speed: 3.9, eye: 2.95, headY: 3.2, bodyY: 2.1, rad: 1.25, cost: 300, flux: 200, time: 30, supply: 6, tags: ['plated', 'machine', 'huge'], hits: 'both', quip: '"Two legs, two cannons, zero paperwork."', ack: ['Walker\'s yours. Mind the paint.', 'Stomping on your say-so.', 'Big rig, bigger invoice.'] },
   longshot: { name: 'Longshot', team: 0, hp: 60, shield: 0, speed: 4.7, eye: 1.58, headY: 1.56, bodyY: .9, rad: .66, cost: 150, flux: 125, time: 20, supply: 2, energy: 200, tags: ['soft'], hits: 'both', quip: '"I bill by the mile."', ack: ['Scope\'s yours. Breathe out first.', 'One round, one invoice.', 'I was comfortable back there.'] },
   patch: { name: 'Patch', team: 0, hp: 70, shield: 0, speed: 5.0, eye: 1.55, headY: 1.56, bodyY: .9, rad: .66, cost: 75, flux: 50, time: 13, supply: 1, energy: 200, tags: ['soft'], quip: '"Hold still. This is mostly glue."', ack: ['Clinic is open.', 'Who\'s leaking?', 'I do stitches and rivets.'] },
 
@@ -53,7 +53,7 @@ export const I_UNIT: Record<IKind, UnitDef> = {
   // Capital ship: thick, armoured, two gun decks (ground and air), and two big spells.
   claimbarge: { name: 'Claim Barge', team: 0, hp: 550, shield: 0, speed: 3.0, eye: 4.0, headY: 4.2, bodyY: 3.0, rad: 2.6, cost: 400, flux: 300, time: 50, supply: 6, air: true, energy: 200, tags: ['plated', 'machine', 'huge'], armour: 3, hits: 'both', quip: '"This land is now under new management."', ack: ['Barge is moving.', 'Paperwork\'s ready.', 'Reading them their rights.'] },
   // Gantry in flak mode: the cannons swap to bursting shells that reach the air and nothing on the ground.
-  gantryflak: { name: 'Gantry (flak)', team: 0, hp: 500, shield: 0, speed: 3.9, eye: 2.95, headY: 3.2, bodyY: 2.1, rad: 1.25, cost: 300, flux: 200, time: 30, supply: 6, tags: ['plated', 'machine', 'huge'], armour: 1, hits: 'air', quip: '', ack: ['Flak loaded.', 'Watching the sky.', 'Air guns up.'] },
+  gantryflak: { name: 'Gantry (flak)', team: 0, hp: 500, shield: 0, speed: 3.9, eye: 2.95, headY: 3.2, bodyY: 2.1, rad: 1.25, cost: 300, flux: 200, time: 30, supply: 6, tags: ['plated', 'machine', 'huge'], hits: 'air', quip: '', ack: ['Flak loaded.', 'Watching the sky.', 'Air guns up.'] },
   // A Sapper's mine: dug in, unseen, goes off at the first foe within 5 m. Not trained.
   shaftmine: { name: 'Shaft Mine', team: 0, hp: 30, shield: 0, speed: 0, eye: .3, headY: .3, bodyY: .15, rad: .5, cost: 0, time: 0, supply: 0, cloak: true, tags: ['machine'], quip: '', ack: [''] },
   // A Surveyor's Stake Gun turret: 10 s of fire, then it falls over.
@@ -62,7 +62,7 @@ export const I_UNIT: Record<IKind, UnitDef> = {
 
 export const I_BLD: Record<IBKind, BldDef> = {
   headframe: { name: 'Headframe', hp: 2400, hx: 6.6, hz: 4.6, h: 5, cost: 400, time: 50, blurb: 'A new base: Riggers bank ore here' },
-  bunkhouse: { name: 'Bunkhouse', hp: 1500, hx: 3.9, hz: 3.0, h: 2.8, cost: 150, time: 14, blurb: 'Trains your soldiers', needs: ['headframe'] },
+  bunkhouse: { name: 'Bunkhouse', hp: 1500, hx: 3.9, hz: 3.0, h: 2.8, cost: 150, time: 14, blurb: 'Trains your soldiers' },
   depot: { name: 'Depot', hp: 800, hx: 2.8, hz: 2.6, h: 4.6, cost: 100, time: 9, blurb: 'Eight more beds. Sinks into the ground so your own crew walk over it' },
   pumpjack: { name: 'Pump Jack', hp: 750, hx: 1.6, hz: 1.6, h: 5.5, cost: 75, time: 10, blurb: 'Goes on a Flux vent: Riggers carry Flux from it' },
   twinbay: { name: 'Twin Bay', hp: 500, hx: 1.6, hz: 1.6, h: 2.6, cost: 50, flux: 50, time: 8, blurb: 'Add-on: the building trains two at once' },

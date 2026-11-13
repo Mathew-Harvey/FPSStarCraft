@@ -291,6 +291,10 @@ body.cb{--grn:#4da3ff;--mag:#ff9d1a}
 
 /* tech tree on the pause screen */
 .treeh{font-family:var(--display);font-weight:400;font-size:24px;letter-spacing:.04em;text-transform:uppercase;color:var(--yel);margin:14px 0 4px}
+.ttabs{display:flex;gap:6px;margin:0 0 8px;flex-wrap:wrap;justify-content:center}
+.ttab{font-family:var(--display);font-size:18px;letter-spacing:.04em;text-transform:uppercase;background:rgba(14,13,20,.78);color:var(--muted);border:3px solid var(--ink);padding:3px 14px;cursor:pointer}
+.ttab.on{color:var(--ink);background:var(--yel)}
+.tree .note{color:var(--paper);text-transform:none;letter-spacing:0;font-weight:600}
 .tree{display:flex;flex-direction:column;gap:8px;width:100%;max-width:1040px}
 #intel{width:100%;max-width:1040px}
 .intel{background:rgba(14,13,20,.78);border:3px solid var(--ink);box-shadow:4px 4px 0 var(--teal);padding:8px 12px 10px;font-family:var(--cond);font-size:18px;font-weight:600;line-height:1.3}

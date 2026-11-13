@@ -12,6 +12,7 @@ import { UNIT, BLD, UPGRADES, TRAINS, UNIT_NEEDS, DIFFS, Kind, BKind, mapCode, v
 import { MISSIONS, STORY_JOBS, ACTS, missionSides, charterTeam, Mission } from './campaign';
 import { CUTS, CutPlayer } from './cutscene';
 import { Net, Lobby } from './net';
+import { treeHtml, treeTabs } from './tree';
 import { TouchPad, TouchPref, touchDevice, touchWords } from './touch';
 
 THREE.ColorManagement.enabled = false;
@@ -148,21 +149,18 @@ document.addEventListener('pointerlockchange', () => { if (!locked() && live() &
 function fresh() { endSplit(); hush(); hud.reset(); reroll(); const w = want(); game.dispose(); game = new Game(pipe, hud, w.d, w.map, w.m); game.sens = sens; ended = false; (window as any).__ore.game = game; }
 function start() { if (mode === 'skirm' && sideI) { startVeyl(); return; } if (mode !== 'skirm' && MISSIONS[jobI].out) { startStory(MISSIONS[jobI]); return; } if (sidesCode() !== wantCode()) fresh(); initAudio(); setVolume(vol); setMusic(mus); { const w = want(); if (game.diff !== w.d || game.mapI !== w.map || game.mission !== w.m || game.time > 0) fresh(); } $('menu').hidden = true; $('pause').hidden = true; $('end').hidden = true; hud.show(true); game.phase = 'play'; game.introT = 1.8; lock(); }
 /** The pause screen shows the whole tech tree: what is standing, what can be built next and what each building sells. */
+let treeF = -1;
 function showTree() {
-  const g = game, t = g.myTeam, tiers: BKind[][] = fac(t) === 2 ? [['mothercap'], ['sporesac', 'warren'], ['stinger', 'quillgarden', 'blisterbed'], ['tuskhollow'], ['oldgrowth']] : t ? [['choir'], ['hushwell', 'broodpit'], ['thornspire', 'wardpylon'], ['reedgate']] : [['headframe'], ['bunkhouse', 'depot'], ['watchpost', 'machineshop', 'assay'], ['foundry'], ['mast']], hq = FACTION[t].hq;
-  $('tree').innerHTML = tiers.map(row => `<div class="tier">${row.map(k => {
-    const have = g.ownB(k, true, t).length > 0, miss = g.missing(k, t), off = !!g.paper(t) && k !== FACTION[t].hq && !g.paper(t)!.allow.includes(k);
-    const units = (TRAINS[k] || []).map(u => { const nb = UNIT_NEEDS[u], ok = have && (!nb || g.ownB(nb, true, t).length > 0); return `<li class="${ok ? 'ok' : ''}"><b>${UNIT[u].name}</b><small>${nb ? 'Needs ' + BLD[nb].name : 'Unit'} · ${UNIT[u].cost}</small></li>`; }).join('');
-    const ups = UPGRADES.filter(u => u.at === k).map(u => { const nu = u.needs ? UPGRADES.find(x => x.key === u.needs)! : null; return `<li class="${g.upOf(t)[u.key] ? 'dn' : have && (!nu || g.upOf(t)[nu.key]) ? 'ok' : ''}"><b>${u.name}</b><small>${g.upOf(t)[u.key] ? 'Bought' : u.blurb + ' · ' + u.cost}${nu && !g.upOf(t)[u.key] ? ' · after ' + nu.name : ''}</small></li>`; }).join('');
-    return `<div class="node ${have ? 'have' : off || miss.length ? 'lock' : 'can'}"><h4>${BLD[k].name}</h4><p>${have ? 'Standing' : off ? 'Not on this job' : miss.length ? 'Needs ' + miss.map(n => BLD[n].name).join(' and ') : k === hq ? '' : 'Ready to build · ' + BLD[k].cost}</p>${units || ups ? `<ul>${units}${ups}</ul>` : `<ul><li class="${have ? 'ok' : ''}"><small>${BLD[k].blurb}</small></li></ul>`}</div>`;
-  }).join('')}</div>`).join('');
+  const g = game, t = g.myTeam, mine = fac(t); if (treeF < 0) treeF = mine;
+  $('ttabs').innerHTML = treeTabs(mine, treeF);
+  $('tree').innerHTML = treeF === mine ? treeHtml(mine, g, t) : treeHtml(treeF);
   // What the scouts have seen of the other side: the buildings, how long ago, and what that says about their plan. Not shown on story jobs.
   const I = g.intel, show = !g.mission; $('intel').hidden = !show; if (!show) return;
   const tl = I.tally(t), rd = I.read(t), recs = [...I.seen[I.ix(t)].values()], ago = recs.length ? Math.max(0, Math.round(g.time - Math.max(...recs.map(r => r.t)))) : 0, when = ago < 8 ? 'in sight now' : ago < 90 ? ago + ' seconds ago' : Math.round(ago / 60) + ' minutes ago';
   $('intelBody').innerHTML = !tl.length ? `<p><b>Not found yet.</b> ${MAP.hid ? 'One of the roads out of your base ends at theirs. Press H to send a scout down one, or walk it yourself.' : 'Nobody has looked at their base. Press H to send a scout.'}</p>`
     : `<p><b>${rd.short}.</b> ${rd.line}</p><ul>${tl.map(([k, n]) => `<li>${n > 1 ? n + ' × ' : ''}${BLD[k].name}</li>`).join('')}</ul><p><small>Last seen ${when}. Press H to send a scout for another look.</small></p>`;
 }
-function pause() { if (game.phase !== 'play' && game.phase !== 'card') return; hush(); showTree(); for (const g of [game, game2]) if (g && g.phase === 'card') g.hud.titleCard('', '', ''); if (game2) { game2.phase = 'paused'; game2.keys.clear(); game2.lmb = game2.rmb = false; look2.clear(); } if (game.net) { game.phase = 'paused'; game.keys.clear(); game.lmb = game.rmb = false; $('pause').hidden = false; return; } game.phase = 'paused'; game.keys.clear(); game.lmb = game.rmb = false; $('pause').hidden = false; }
+function pause() { if (game.phase !== 'play' && game.phase !== 'card') return; hush(); treeF = -1; showTree(); for (const g of [game, game2]) if (g && g.phase === 'card') g.hud.titleCard('', '', ''); if (game2) { game2.phase = 'paused'; game2.keys.clear(); game2.lmb = game2.rmb = false; look2.clear(); } if (game.net) { game.phase = 'paused'; game.keys.clear(); game.lmb = game.rmb = false; $('pause').hidden = false; return; } game.phase = 'paused'; game.keys.clear(); game.lmb = game.rmb = false; $('pause').hidden = false; }
 function resume(byPad = false) { if (game.phase !== 'paused') return; initAudio(); $('pause').hidden = true; game.phase = 'play'; if (game2) game2.phase = 'play'; if (!byPad) lock(); }
 $('start').addEventListener('click', start);
 $('resume').addEventListener('click', () => resume());
@@ -268,6 +266,7 @@ $('cut').addEventListener('click', e => { e.preventDefault(); if ((e.target as H
 /** Starts the selected job, with its opening scenes the first time through. */
 function startJob() { const m = MISSIONS[jobI]; if (mode !== 'skirm' && m.cutIn && !jobDone(jobI)) playCuts(m.cutIn, () => { fresh(); start(); }); else start(); }
 function endSplit() { if (!split && !game2) return; split?.host.dispose(); game2?.dispose(); split = null; game2 = null; hud2.show(false); $('game').classList.remove('split', 'stack'); pipe.w = 0; resize(); }
+$('ttabs').addEventListener('click', e => { const b = (e.target as HTMLElement).closest('[data-f]') as HTMLElement | null; if (!b) return; treeF = +b.dataset.f!; showTree(); });
 $('startSplit').addEventListener('click', () => startSplit(sideI ? 'veyl' : 'coop')); $('startSplitVs').addEventListener('click', () => startSplit(true));
 const splitBtns = Array.from($('splitDir').querySelectorAll('button')) as HTMLButtonElement[];
 const showSplit = () => splitBtns.forEach((b, i) => { const on = (i === 0) === splitSide; b.classList.toggle('on', on); b.setAttribute('aria-pressed', String(on)); });
@@ -424,5 +423,5 @@ function frame(now: number) {
   if (fast > 900 && quality < 1) { quality = Math.min(1, quality / .85); fast = 0; pipe.aa = aaFor(); pipe.ao = aoFor(); pipe.glow = pipe.shafts = glowFor(); LAMP_ON.value = (gfxI as number) !== 1; resize(); }
   requestAnimationFrame(frame);
 }
-(window as any).__ore = { MAP: () => MAP, models: MD, tx: TX, mats: M, gloamB: GLOAM_BUILDINGS, gloamBloom: bloomPatch, sounds: { ready: soundsReady, sfx }, quit, atlasUsed: MD.atlasUsed, game, start, pipe, hud, hud2, startSplit, startVeyl, split: () => split, game2: () => game2, setFree: (v: boolean) => { freeMouse = v; }, hold: (v: boolean) => { still = v; }, pickMap, pickSize, pickSide: (s: number, f = 0) => { mode = "skirm"; sideI = s; foeI = s ? s - 1 : f; showSide(); fresh(); }, unlock: () => { camp = STORY_JOBS; mpOpen = true; mode = 'multi'; showMode(); }, net: () => net, pickJob: (i: number) => { mode = 'camp'; camp = Math.max(camp, Math.min(i, STORY_JOBS)); jobI = i; showMode(); fresh(); }, playCuts, cuts: CUTS, cutP, startStory: (i: number) => { mode = 'camp'; jobI = i; camp = Math.max(camp, Math.min(i, STORY_JOBS)); start(); } };
+(window as any).__ore = { MAP: () => MAP, models: MD, tx: TX, mats: M, gloamB: GLOAM_BUILDINGS, gloamBloom: bloomPatch, sounds: { ready: soundsReady, sfx }, quit, atlasUsed: MD.atlasUsed, game, start, pipe, hud, hud2, startSplit, startVeyl, pause, resume, split: () => split, game2: () => game2, setFree: (v: boolean) => { freeMouse = v; }, hold: (v: boolean) => { still = v; }, pickMap, pickSize, pickSide: (s: number, f = 0) => { mode = "skirm"; sideI = s; foeI = s ? s - 1 : f; showSide(); fresh(); }, unlock: () => { camp = STORY_JOBS; mpOpen = true; mode = 'multi'; showMode(); }, net: () => net, pickJob: (i: number) => { mode = 'camp'; camp = Math.max(camp, Math.min(i, STORY_JOBS)); jobI = i; showMode(); fresh(); }, playCuts, cuts: CUTS, cutP, startStory: (i: number) => { mode = 'camp'; jobI = i; camp = Math.max(camp, Math.min(i, STORY_JOBS)); start(); } };
 requestAnimationFrame(frame);

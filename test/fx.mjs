@@ -73,5 +73,15 @@ try {
     return { shim, back, n: mats0.length, tinted }; });
   check(vb.shim > 0 && vb.back === vb.n, `a hidden body shimmers and gets its own paint back after (${vb.shim} parts)`);
   check(vb.tinted > 0, `a taken-over body wears the other side's colour (${vb.tinted} parts)`);
+
+  // ---- a flier gets a shadow on the ground and a height line, and loses them when it lands
+  const air = await p.evaluate(() => { const g = __ore.game, F = window.__oreFx, u = g.units.find(x => x.alive && x !== g.me && !x.air);
+    u.air = true; u.alt = 7; step(20); const up = F.airShadows(g.scene), y = u.obj.position.y;
+    const sh = g.scene.children.find(o => o.isGroup && o.children.length === 2 && o.children[1].geometry?.type === 'CylinderGeometry');
+    const line = sh ? sh.children[1].scale.y : 0; window.__flier = u; return { up, y, line }; });
+  await shot('flier');
+  air.down = await p.evaluate(() => { const u = window.__flier; u.air = false; u.alt = 0; step(30); return window.__oreFx.airShadows(__ore.game.scene); });
+  check(air.up === 1 && air.line > 3, `a body in the air has a ground shadow and a line down to it (${air.up} shadow, line ${air.line.toFixed(1)} m, body at ${air.y.toFixed(1)} m)`);
+  check(air.down === 0, 'the shadow goes when the body lands');
 } finally { await b.close(); }
 console.log(fail.length ? `${fail.length} failed` : 'all passed'); process.exit(fail.length ? 1 : 0);

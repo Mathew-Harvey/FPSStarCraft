@@ -81,7 +81,7 @@ try {
   await p.close();
 
   // ---- 3. online: Vex leads the Gloam against Ada's crew
-  srv = spawn('node', ['dist/server.mjs'], { env: { ...process.env, PORT: String(PORT) }, stdio: ['ignore', 'pipe', 'pipe'] }); let log = ''; srv.stdout.on('data', d => { log += d; }); srv.stderr.on('data', d => { log += d; });
+  srv = spawn('node', ['dist/server.mjs'], { env: { ...process.env, PORT: String(PORT), ORE_TRUST_HITS: '1', ORE_WIRE_FOG: '0' /* both screens must agree on the whole world here; fog is tested in test/online */ }, stdio: ['ignore', 'pipe', 'pipe'] }); let log = ''; srv.stdout.on('data', d => { log += d; }); srv.stderr.on('data', d => { log += d; });
   await sleep(1200);
   // Two pages drawing at once starve each other under software rendering: a menu alone made the next page load five times slower, and a kick-off could stall long enough to drop the connection. Both hold still until a check needs a picture.
   const A = await open(URL, 'Ada'); await A.evaluate(() => { __ore.hold(true); }); const V = await open(URL, 'Vex'); await V.evaluate(() => { __ore.hold(true); });

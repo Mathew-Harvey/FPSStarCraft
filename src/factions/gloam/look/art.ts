@@ -7,7 +7,7 @@ import type { Ctx } from '../../../gfx';
 import { pen, hatch, brush, frame, sky, nicks, cellular, sstep } from '../../../skins';
 import { lathe, hard, spl, rbox, blob, tube, plate, ring, shard, warp, crescent, capsule } from '../../../sculpt';
 import { grp, put } from '../../../units';
-import { GLOAM_UNITS2, GLOAM_HEIGHT2 } from './cast2';
+import { GLOAM_UNITS2, GLOAM_HEIGHT2, GLOAM_BUILDINGS2 } from './cast2';
 
 type P3 = [number, number, number];
 type Mat = THREE.Material;
@@ -356,7 +356,7 @@ export function stinger(anim: ((t: number) => void)[]) {
   anim.push(t => { tip.rotation.x = Math.sin(t * 1.3) * .12; tip.rotation.y = Math.sin(t * .7) * .3; });
   return g;
 }
-export const GLOAM_BUILDINGS: Record<string, (anim: ((t: number) => void)[]) => THREE.Group> = { mothercap, sporesac, warren, quillgarden, blisterbed, tuskhollow, oldgrowth, stinger };
+export const GLOAM_BUILDINGS: Record<string, (anim: ((t: number) => void)[]) => THREE.Group> = { mothercap, sporesac, warren, quillgarden, blisterbed, tuskhollow, oldgrowth, stinger, ...GLOAM_BUILDINGS2 };
 export { capsule, warp };
 
 /** A patch of Bloom, the living carpet: a ragged disc of radius `rad` with a dark rim and root threads running past its edge. The game scales the `grow` group from small to 1 as it spreads. */
@@ -393,7 +393,10 @@ export function vmGloam(kind: string, bake: (g: THREE.Group) => THREE.Group, L_V
     } else if (kind === 'needler') {
       // spade claws low either side
       put(blob(.16, .05, .3), M.gB, side, [sx * .04, -.14, -.2], [.25, 0, sx * .2]); spine(side, [sx * .02, -.16, -.36], .12, .03, [-H - .5, 0, 0]);
-    } else if (kind === 'lobber' || kind === 'shellback') {
+    } else if (kind === 'bloater' || kind === 'drifter' || kind === 'sower') {
+      // feelers or roots hanging down into the view, a lime drop at each tip
+      for (let i = 0; i < 2; i++) { const x = sx * (.12 + i * .14), z = -.42 - i * .12; put(tube([[x, .12, z], [x + sx * .02, -.05, z - .03], [x - sx * .01, -.2, z - .02]], [.014, .011, .005], 8), kind === 'drifter' ? M.gD : M.gG, side); put(blob(.016, .024, .016), M.gS, side, [x - sx * .01, -.21, z - .02]); }
+    } else if (kind === 'lobber' || kind === 'shellback' || kind === 'seeder') {
       // a short heavy jaw plate, toothed on the inside
       put(blob(.2, .1, .3, v => { if (v.y > 0) v.y *= .4; }, 'vmjaw'), M.gHn, side, [0, -.12, -.12]);
       for (let i = 0; i < 3; i++) spine(side, [-sx * .05, -.08, -.04 - i * .08], .06, .016, [0, 0, sx * H]);
@@ -415,6 +418,10 @@ export function vmGloam(kind: string, bake: (g: THREE.Group) => THREE.Group, L_V
   if (kind === 'keeper') put(lathe(spl([[.95, 0], [.9, .06], [.5, .12]], 6), 26, PI * .8), M.gG, g, [0, .62, -.1], [PI + .35, 0, 0]);   // the underside of the gill hood, arching over the top of the view
   if (kind === 'needler') for (let i = 0; i < 5; i++) spine(g, [(i - 2) * .09, .34, -.2 - Math.abs(i - 2) * .05], .5 - Math.abs(i - 2) * .08, .02, [-H + .5, 0, (i - 2) * .12]);   // the crest tips, laid forward over the view
   if (kind === 'shellback' || kind === 'lobber') put(lathe(spl([[.7, 0], [.62, .05], [.3, .08]], 6), 20, PI * .9), M.gBc, g, [0, .42, -.2], [.25 + PI, 0, 0]);   // the brow of the shell along the top of the view
+  if (kind === 'smother') { put(lathe(spl([[.85, -.25], [.8, .02], [.45, .1]], 6), 24, PI * .8), M.gV, g, [0, .55, -.15], [PI + .3, 0, 0]); sacs(g, [0, .5, -.5], 4, .03, 7); }   // the lace veil's hem over the view
+  if (kind === 'bloater' || kind === 'sower' || kind === 'drifter') put(lathe(spl([[1.1, 0], [1.0, .1], [.5, .2]], 6), 26, PI * .8), kind === 'drifter' ? M.gHn : M.gH, g, [0, .7, -.15], [PI + .25, 0, 0]);   // the underside of the bladder
+  if (kind === 'gnatwing' || kind === 'hooksail') for (const sx of [-1, 1]) put(plate(crescent(kind === 'hooksail' ? .7 : .45, -.6, 1.2, .25), .01, .004), M.gG, g, [sx * .55, .12, -.25], [0, sx * .9, sx * (H - .4)]);   // the wing or sail edges at the sides
+  if (kind === 'seeder') put(blob(.16, .2, .16), M.gD, g, [-.42, .3, -.3]);   // a husk from the pack, over the shoulder
   if (kind === 'blister') put(lathe(spl([[.6, -.2], [.5, .05], [.2, .14]], 6), 20, PI * .9), M.gS, g, [0, -.55, -.35], [-.3, 0, 0]);
   if (kind === 'grazer') sacs(g, [0, -.3, -.4], 3, .04, 2);
   const flash = grp('flash', g, kind === 'quillback' ? [0, -.2, -.7] : [0, -.18, -.75]); mk(G.sph, M.gSpit, [0, 0, 0], [.14, .14, .14], 0, flash); mk(G.oct, M.gSpit, [0, 0, -.06], [.05, .05, .3], 0, flash); flash.visible = false;

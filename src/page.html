@@ -15,7 +15,7 @@
       <div class="mini"><canvas id="mini" width="260" height="180"></canvas></div>
       <div class="play" id="play"><b>Yard Push</b><span>Open</span><span>Muster</span><span>Push</span></div>
       <div class="goal c out" id="goal"></div>
-      <div class="res"><span id="resOre"><i style="background:var(--ore);transform:rotate(45deg) scale(.8)"></i><em id="ore" style="font-style:normal">0</em></span><span id="resSup"><i style="background:var(--yel);border-radius:10px 10px 0 0"></i><em id="sup" style="font-style:normal">0/0</em></span></div>
+      <div class="res"><span id="resOre"><i style="background:var(--ore);transform:rotate(45deg) scale(.8)"></i><em id="ore" style="font-style:normal">0</em></span><span id="resFlux" title="Flux, the second resource"><i style="background:#c58bff;border-radius:50%"></i><em id="flux" style="font-style:normal">0</em></span><span id="resSup" title="Supply used out of what you have room for, 200 at most"><i style="background:var(--yel);border-radius:10px 10px 0 0"></i><em id="sup" style="font-style:normal">0/0</em></span></div>
       <div class="clock d out" id="clock">00:00</div>
       <div class="qm c out" id="qm"></div>
       <div class="feed" id="feed"></div>
@@ -36,6 +36,17 @@
       <div class="edge c out" id="edgeNote" hidden>Cursor at the screen edge turns you</div>
       <div class="objs" id="objs" hidden></div>
       <div class="boss" id="boss" hidden><div class="nm d out">Warden</div><div class="bar"><i id="bossHp"></i></div><div class="bar sh"><i id="bossSh"></i></div></div>
+    </div>
+
+    <div class="cmdui" id="cmdUI" hidden>
+      <div class="cnote c out" id="cnote"></div>
+      <div class="cbox" id="cbox" hidden></div>
+      <div class="cpan pan ht" id="cpan"></div>
+      <div class="ccard" id="ccard" hidden></div>
+      <div class="caim c out" id="caim" hidden></div>
+      <div class="hint ckeysbar" id="ckeysBar"></div>
+      <div class="bigmap" id="bigmap" hidden><canvas id="bigmapC" width="1040" height="720"></canvas><div class="legend c"><span><i style="background:#ffc21a"></i>Yours</span><span><i style="background:#35e0c8"></i>Theirs, where found</span><span><i style="background:#b8f58c"></i>Ore</span><span><i style="background:#ff4f9a;border-radius:50%"></i>Enemy in sight</span><span><i class="hatch"></i>Nobody has been there</span></div></div>
+      <div class="ccur" id="ccur"><i></i></div>
     </div>
 
     <div class="jump" id="jump" hidden>
@@ -86,7 +97,10 @@
             <button type="button">Needle's Eye<small>One road east, one ridge north</small></button>
             <button type="button">Switchback<small>Tight canyon at sunset</small></button>
             <button type="button">Glass Flats<small>Wide open, nowhere to hide</small></button>
+            <button type="button" data-b="6">Crossing<small>Four bases round a crossroads, two left empty to take</small></button>
+            <button type="button" data-b="7">Wheel<small>Eight bases round a hub, six left empty to take</small></button>
           </div>
+          <div class="diff" id="maker"><button type="button" id="makerBtn">Map maker<small id="makerNote">Lay out your own map and share it as a code</small></button></div>
           <div class="diff" id="sizes" role="group" aria-label="Map size">
             <button type="button" data-s="1">Small<small>Close quarters, three fields</small></button>
             <button type="button" data-s="0">Medium<small>Four ore fields to take</small></button>
@@ -155,7 +169,7 @@
           <div class="jobs" id="mPlayers"></div>
           <div class="row">
             <div class="diff" id="mDiff" role="group" aria-label="Difficulty"><button type="button">Day shift</button><button type="button">Night shift</button><button type="button">Double shift</button></div>
-            <div class="diff" id="mMaps" role="group" aria-label="Map"><button type="button">Needle's Eye</button><button type="button">Switchback</button><button type="button">Glass Flats</button></div>
+            <div class="diff" id="mMaps" role="group" aria-label="Map"><button type="button">Needle's Eye</button><button type="button">Switchback</button><button type="button">Glass Flats</button><button type="button" data-b="6">Crossing</button><button type="button" data-b="7">Wheel</button></div><div class="diff"><button type="button" id="mMade" title="Load the map you last played from the map maker">My made map</button></div>
             <div class="diff" id="mSizes" role="group" aria-label="Map size"><button type="button" data-s="1">Small</button><button type="button" data-s="0">Medium</button><button type="button" data-s="2">Large</button><button type="button" data-s="3">Vast</button></div>
             <div class="diff" id="mHome" role="group" aria-label="Who holds the yard"><button type="button">Yard: Ironhold</button><button type="button">Yard: Veyl</button><button type="button">Yard: Gloam</button></div>
             <div class="diff" id="mFoes" role="group" aria-label="Who holds the outpost"><button type="button">The Veyl</button><button type="button">The Gloam</button><button type="button">Ironhold</button></div>

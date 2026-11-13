@@ -3,8 +3,9 @@
 // everyone a snapshot of the world about fifteen times a second, plus a list of things to draw and say.
 import * as THREE from 'three';
 import { Game, beamMat } from './game';
-import { UNIT, BLD, BUILDABLE, UPGRADES, TRAINS, UNIT_NEEDS, FACTION, VOICE_SIDE, SIDE, fac, atHome, Kind, BKind, Unit, Building, UpKey, isSoldier, isWorker } from './data';
+import { UNIT, BLD, BUILDABLE, UPGRADES, TRAINS, UNIT_NEEDS, FACTION, VOICE_SIDE, SIDE, fac, atHome, Kind, BKind, Unit, Building, UpKey, isSoldier, isWorker, type StatusKey } from './data';
 import { useAbility } from './core/ability';
+import { seenBy, isHidden } from './core/sight';
 import type { Side } from './director';
 import { V3, M, R, tracerMat } from './gfx';
 import { sfx, babble } from './audio';
@@ -14,17 +15,23 @@ const r1 = (v: number) => Math.round(v * 10) / 10;
 const F_MOVE = 1, F_TGT = 2, F_WORK = 4, F_CARRY = 8, F_FIRE = 16, F_BRACE = 128;
 
 // ---------------------------------------------------------------- server: world to snapshot
-export function buildSnap(g: Game) {
-  const D = g.dir;
-  const u = g.units.filter(x => x.alive).map(x => [x.id, KINDS.indexOf(x.kind), x.team, r1(x.pos.x), r1(x.pos.z), Math.round(x.yaw * 100), Math.ceil(x.hp), Math.ceil(x.maxHp), Math.floor(x.shield),
+/** The world as one side may see it. `team` -1 is everything (nothing hidden on the map, or split screen); a side's own snapshot leaves out
+ *  enemy bodies it cannot see (src/core/sight.ts), listing only their ids under `hz` so the browser hides them instead of killing them.
+ *  `ev` is the event list when several sides' snapshots share one tick's events. */
+export function buildSnap(g: Game, team = -1, ev?: any[]) {
+  const D = g.dir, vis = (x: Unit) => team < 0 || seenBy(g, team, x);
+  const hz = team < 0 ? [] : g.units.filter(x => x.alive && !vis(x)).map(x => x.id);
+  // Extra fields only some bodies have: energy, effects, height and the carrier it rides in.
+  const ux = g.units.filter(x => x.alive && vis(x) && (x.maxEnergy || x.status?.length || x.alt || x.inside)).map(x => [x.id, Math.floor(x.energy || 0), statusBits(x), Math.round((x.alt || 0) * 10), x.inside ? x.inside.id : 0]);
+  const u = g.units.filter(x => x.alive && vis(x)).map(x => [x.id, KINDS.indexOf(x.kind), x.team, r1(x.pos.x), r1(x.pos.z), Math.round(x.yaw * 100), Math.ceil(x.hp), Math.ceil(x.maxHp), Math.floor(x.shield),
     (x.moving ? F_MOVE : 0) | (x.target ? F_TGT : 0) | (x.state === 'mining' || x.state === 'build' || x.state === 'repair' ? F_WORK : 0) | (x.carrying ? F_CARRY : 0) | (x.swing > .6 || x.flashT > 0 ? F_FIRE : 0) | (ORD.indexOf(x.order.type === 'scout' ? 'amove' : x.order.type) << 5)   /* two bits on the wire: a scout goes as a body on the march */ | (x.brace ? F_BRACE : 0),
     x.pilot, Math.round(x.pitch * 100), Math.round(x.wind * 10)]);
   const b = g.buildings.filter(x => x.alive).map(x => [x.id, BKINDS.indexOf(x.kind), x.team, x.pos.x, x.pos.z, x.rot ? 1 : 0, Math.ceil(x.hp), x.built ? 1 : 0, Math.round(x.progress * 100), x.queue.length, x.queue[0] ? KINDS.indexOf(x.queue[0].kind) : 0, x.queue[0] ? r1(x.queue[0].t) : 0, x.buds || 0]);
-  const st = g.stats, e = g.evq || []; g.evq = [];
+  const st = g.stats, e = ev || g.evq || []; if (!ev) g.evq = [];
   return {
     t: 's', time: r1(g.time), ore: Math.floor(g.cash(SIDE.home)), up: UPS.map((k, i) => g.upOf(SIDE.home)[k] ? i : -1).filter(i => i >= 0), uo: UPS.map((k, i) => g.upOf(SIDE.out)[k] ? i : -1).filter(i => i >= 0), o: g.ores.map(n => Math.round(n.amount)), u, b,
     d: [r1(D.raidIn), D.raidDir === 'north' ? 1 : 0, D.raidLive ? 1 : 0, D.auto ? 1 : 0, D.plan ? [D.plan.phase, r1(D.plan.t), D.plan.label, D.plan.book] : 0, D.callout ? [D.callout.who, D.callout.text, r1(D.callout.t), D.callout.dur, D.callout.keys] : 0, [D.playbook.name, D.playbook.steps, D.playbook.idx]],
-    v: g.eco ? sideSnap(D.vs) : 0, vo: Math.floor(g.cash(SIDE.out)),
+    v: g.eco ? sideSnap(D.vs) : 0, vo: Math.floor(g.cash(SIDE.out)), fl: [Math.floor(g.flux(SIDE.home)), Math.floor(g.flux(SIDE.out))], ux, hz,
     st: [Math.floor(st.mined), st.built, st.kills, st.lost, Math.floor(st.minedV)], e, mo: g.mission ? D.objectives() : 0, mc: g.mission && g.ms.clock !== undefined ? r1(g.ms.clock) : -1, sc: Object.keys(g.score).map(k => [+k, g.score[+k][0], Math.floor(g.score[+k][1]), g.score[+k][2]]),
   };
 }
@@ -35,6 +42,15 @@ function sideApply(g: Game, S: Side, d: any[]) {
   S.raidLive = !!d[0]; S.auto = !!d[1]; S.plan = d[2] ? { phase: d[2][0], t: d[2][1], target: null, book: d[2][3], label: d[2][2] } : null;
   if (d[3]) { if (!S.callout || S.callout.text !== d[3][1]) sfx.callout(); S.callout = { who: d[3][0], text: d[3][1], t: d[3][2], dur: d[3][3], keys: d[3][4] }; } else S.callout = null;
   S.playbook.name = d[4][0]; S.playbook.steps = d[4][1]; S.playbook.idx = d[4][2];
+}
+
+const SBITS: StatusKey[] = ['slow', 'stun', 'root', 'unseen', 'revealed', 'borrowed', 'lifted', 'shielded', 'burning'];
+const statusBits = (u: Unit) => (u.status || []).reduce((n, s) => s.t > 0 ? n | (1 << SBITS.indexOf(s.k)) : n, 0);
+/** Snapshots for every side with a player, sharing one tick's events. One snapshot for all when nobody on the map is hidden. */
+export function buildSnaps(g: Game, teams: number[]): Map<number, string> {
+  const out = new Map<number, string>(), hidden = g.units.some(x => x.alive && isHidden(x));
+  if (!hidden) { const s = JSON.stringify(buildSnap(g)); for (const t of teams) out.set(t, s); return out; }
+  const ev = g.evq || []; g.evq = []; for (const t of new Set(teams)) out.set(t, JSON.stringify(buildSnap(g, t, ev))); return out;
 }
 
 // ---------------------------------------------------------------- server: one player's actions
@@ -121,7 +137,7 @@ function event(g: Game, e: any[]) {
 export function applySnap(g: Game, s: any) {
   const net = g.net!; g.applying = true;
   for (const e of s.e) event(g, e);
-  g.time = s.time; g.purse[SIDE.home] = s.ore; if (s.vo !== undefined) g.purse[SIDE.out] = s.vo;
+  g.time = s.time; g.purse[SIDE.home] = s.ore; if (s.vo !== undefined) g.purse[SIDE.out] = s.vo; if (s.fl) { g.fluxPurse[SIDE.home] = s.fl[0]; g.fluxPurse[SIDE.out] = s.fl[1]; }
   for (const [t, list] of [[SIDE.home, s.up], [SIDE.out, s.uo || []]] as [number, number[]][]) { const on = new Set<number>(list), U = g.upOf(t); UPS.forEach((k, i) => { const was = U[k]; U[k] = on.has(i); if (k === 'gbloom' && U[k] && !was) g.carpet.deepen(t); }); }
   g.ores.forEach((n, i) => { const a = s.o[i]; if (a !== undefined && a !== n.amount) { n.amount = a; g.oreCheck(n); } });
   if (s.sc) { g.score = {}; for (const r of s.sc) g.score[r[0]] = [r[1], r[2], r[3]]; }
@@ -135,7 +151,13 @@ export function applySnap(g: Game, s: any) {
     if (r[8] < u.shield - 1) g.bubble(u); if (r[6] < u.hp - .5 || r[8] < u.shield - 1) g.fx.remote(u, Math.max(1, u.hp - r[6], u.shield - r[8]), r[8] < u.shield - 1); u.hp = r[6]; u.shield = u.maxShield ? Math.min(r[8], u.maxShield) : r[8]; (u as any).nf = r[9]; u.wind = r[12] / 10;
     if (u !== g.me) { u.yaw = r[5] / 100; u.pitch = r[11] / 100; u.pilot = r[10]; } else if (r[10] === net.id || s.time > g.possT + 1.5) u.pilot = r[10];
   }
+  // Bodies the server says are there but hidden from this side: kept, and not drawn. Anything else missing is gone.
+  const hid = new Set<number>(s.hz || []); for (const id of hid) { const u = g.uById.get(id); if (u && u.alive) { u.obj.visible = false; u.obj.userData.netHid = true; seen.add(id); } }
   for (const u of g.units) if (u.alive && !seen.has(u.id)) { u.alive = false; g.scene.remove(u.obj); if (u === g.me) g.staticT = .2; }
+  const ext = new Map<number, any[]>(); for (const r of s.ux || []) ext.set(r[0], r);
+  for (const u of g.units) { if (!u.alive || hid.has(u.id)) continue; const r = ext.get(u.id);
+    if (u.maxEnergy) u.energy = r ? r[1] : u.energy; u.status = r && r[2] ? SBITS.filter((_, i) => r[2] & (1 << i)).map(k => ({ k, t: 1 })) : undefined;
+    if (r) u.alt = r[3] / 10; else if (!u.air) u.alt = 0; const c = r && r[4] ? (g.uById.get(r[4]) || g.bById.get(r[4]) || null) : null; u.inside = c; if (c) { u.obj.visible = false; u.obj.userData.netHid = true; } else if (u.obj.userData.netHid) { u.obj.visible = true; u.obj.userData.netHid = false; } }
   const seenB = new Set<number>();
   for (const r of s.b) {
     let b = g.bById.get(r[0]); if (b && !b.alive) continue;

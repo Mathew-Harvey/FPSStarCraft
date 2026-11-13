@@ -9,7 +9,7 @@ import { WebSocketServer, WebSocket } from 'ws';
 import { Game } from '../src/game';
 import { initHeadless } from '../src/gfx';
 import { DIFFS, MAPS, SIDE, FACTION, BLD, setMap, setSidesCode, fac, validMap, rollMap, Unit, isWorker } from '../src/data';
-import { buildSnap, serverCmd, serverMove } from '../src/netgame';
+import { buildSnaps, serverCmd, serverMove } from '../src/netgame';
 
 initHeadless();
 const PORT = +(process.env.PORT || 8080), TICK = 1 / 30, MAX_PLAYERS = 4, MAX_LOBBIES = 40;
@@ -92,7 +92,8 @@ function step(l: Lobby) {
     p.inbox.length = 0;
   }
   g.update(TICK); l.tick++;
-  if (l.tick % 2 === 0) { const s = JSON.stringify(buildSnap(g)); for (const p of l.players) if (p.ws.readyState === 1) p.ws.send(s); }
+  // Each side gets its own snapshot when something on the map is hidden from the other (src/core/sight.ts), else one for everyone.
+  if (l.tick % 2 === 0) { const snaps = buildSnaps(g, l.players.map(p => p.team)); for (const p of l.players) if (p.ws.readyState === 1) p.ws.send(snaps.get(p.team)!); }
   if (g.phase === 'over') {
     const st = g.stats; for (const p of l.players) { send(p, { t: 'over', won: g.won, stats: [Math.floor(st.mined), st.built, st.kills, st.lost, Math.floor(st.minedV)], time: g.time }); p.unit = null; p.ready = false; }
     l.game = null; tell(l);

@@ -937,7 +937,7 @@ export class Game {
     let bs = 1e9;
     for (const o of this.units) {
       if (!o.alive || !isEnemy(o.team, u.team) || o.inside) continue; const dx = o.pos.x - u.pos.x, dz = o.pos.z - u.pos.z; if (dx > range || dx < -range || dz > range || dz < -range) continue; const d = Math.hypot(dx, dz); if (d >= range) continue;
-      if ((o.air || o.status || o.alt) && (!canHit(u, o) || !seenBy(this, u.team, o))) continue;
+      if ((o.air || o.status || UNIT[o.kind].cloak) && (!canHit(u, o) || !seenBy(this, u.team, o))) continue;
       const w = (unitRule(o.kind).threat ?? 1) * (o.hp < o.maxHp * .4 ? .75 : 1) * (o === u.target ? .85 : 1);
       const sc = (d + 4) * w; if (sc < bs) { bs = sc; bd = d; best = o; }
     }

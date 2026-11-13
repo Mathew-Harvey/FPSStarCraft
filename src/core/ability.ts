@@ -79,7 +79,7 @@ export function tickAbilities(g: Game, dt: number) {
     if (u.cast) { if (!canAct(u)) { u.cast = null; continue; } u.cast.t -= dt; if (u.cast.t <= 0) { const c = u.cast, a = abilityOf(u.kind, c.key); u.cast = null; if (a) fire(g, u, a, { x: c.x, z: c.z, id: c.id }); } continue; }
     if (!think || u === g.me || u.pilot) continue;
     const list = ABS[u.kind]; if (!list) continue;
-    const bot = u.team !== g.myTeam || !!g.dir?.side(u.team)?.auto;   // a player's own side casts only what is set to cast by itself
+    const bot = !g.human[u.team] || !!g.dir?.side(u.team)?.auto;   // a player's own side casts only what is set to cast by itself
     for (const a of list) { if (!a.ai || (!bot && !a.autocast) || (u.energy ?? 0) < a.energy || (u.abCd?.[a.key] ?? 0) > 0) continue; const t = a.ai(g, u); if (t && useAbility(g, u, a.key, t)) break; }
   }
 }

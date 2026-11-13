@@ -52,5 +52,12 @@ for i, (n, t) in enumerate(small):
     x, y = (i % 4) * 320, top + rows_b * 360 + (i // 4) * 180
     sheet.paste(load(n).resize((320, 180)), (x, y))
     label(dr, x, y, t)
+ic = load('icon')
+if ic:                                                     # the portrait, cut square and sized as the HUD shows it, set in the top right corner
+    w, h = ic.size
+    ic = ic.crop(((w - h) // 2, 0, (w + h) // 2, h)).resize((236, 236))
+    ic.save(f'{d}/{k}-icon-236.png')
+    sheet.paste(ic, (W - 240, 4))
+    label(dr, W - 240, 4, 'portrait')
 sheet.save(out, quality=86)
 print(out, sheet.size)

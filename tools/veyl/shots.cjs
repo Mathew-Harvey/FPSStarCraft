@@ -71,8 +71,8 @@ const W = +(process.env.PX || 1280), H = Math.round(W * 9 / 16);
     // every sketched ability effect in a row, each caught part way through, seen near and from the command view
     await p.evaluate(() => {
       const V = window.__veyl, g = window.__ore.game, [X, Z] = window.__spot, P = g.cam.position.constructor; window.__fx = [];
-      const at = (i) => new P(X + (i % 5 - 2) * 7.5, 0, Z - Math.floor(i / 5) * 9 + 4);
-      const mk = [['glassWall', () => V.glassWall(), 3], ['wardHum', () => V.wardHum(), 1.2], ['falseVoice', () => { const b = V.veylBody('tuner'); const f = V.falseVoice(b); f.obj.add(b); return f; }, 1], ['stepThrough', () => V.stepThrough(4), .2], ['shatterNote', () => V.shatterNote(), 2.1], ['drain', () => V.drain(new P(-2.5, 1.2, 0), new P(2.5, 2.2, 0)), .4], ['join', () => V.join(new P(-2.5, 0, 0), new P(2.5, 0, 0)), 1.2], ['ringShell', () => V.ringShell(), 1], ['toll', () => V.toll(new P(1, 0, 0), 3), 3.2], ['settle', () => V.settle(3), 1], ['unfold', () => V.unfold(3), 2], ['lift', () => V.lift(4), 1], ['burnBright', () => V.burnBright(6), 2], ['shrill', () => V.shrill(5), .5], ['reveal', () => V.reveal(3), 1.5], ['stillStone', () => V.stillStone(2.5), 2.5], ['songField', () => V.songField(3), 3]];
+      const at = (i) => new P(X + (i % 6 - 2.5) * 7, 0, Z - Math.floor(i / 6) * 8 + 6);
+      const mk = [['rush', () => V.rush(4), .3], ['skip', () => V.skip(4), .2], ['glassWall', () => V.glassWall(), 3], ['wardHum', () => V.wardHum(), 1.2], ['falseVoice', () => { const b = V.veylBody('tuner'); const f = V.falseVoice(b); f.obj.add(b); return f; }, 1], ['stepThrough', () => V.stepThrough(4), .2], ['shatterNote', () => V.shatterNote(), 2.1], ['drain', () => V.drain(new P(-2.5, 1.2, 0), new P(2.5, 2.2, 0)), .4], ['join', () => V.join(new P(-2.5, 0, 0), new P(2.5, 0, 0)), 1.2], ['ringShell', () => V.ringShell(), 1], ['toll', () => V.toll(new P(1, 0, 0), 3), 3.2], ['settle', () => V.settle(3), 1], ['unfold', () => V.unfold(3), 2], ['lift', () => V.lift(4), 1], ['burnBright', () => V.burnBright(6), 2], ['shrill', () => V.shrill(5), .5], ['reveal', () => V.reveal(3), 1.5], ['stillStone', () => V.stillStone(2.5), 2.5], ['songField', () => V.songField(3), 3], ['shardLaunch', () => V.shardLaunch(undefined, 4), .3], ['gather', () => V.gather(3.5), .8], ['holdTime', () => V.holdTime(3), 2], ['quicken', () => V.quicken(), .9], ['farSinging', () => V.farSinging(), 1]];
       mk.forEach(([n, f, t], i) => { const e = f(); e.obj.position.copy(at(i)); g.scene.add(e.obj); e.tick(t); window.__fx.push(e.obj); });
     });
     await shoot('fx-near', { at: [0, 6, 24], look: [0, 1.5, 0], fov: 60 });
@@ -86,8 +86,13 @@ const W = +(process.env.PX || 1280), H = Math.round(W * 9 / 16);
     if (!h) { console.log(kind, 'has no sculpt on this page'); continue; }
     await stand(kind, 0, 0);
     await poseAll('rest1', 0, 0);
-    const m = h / 2.6;           // sizes the close shots to the figure
+    const isHall = await p.evaluate(k => window.__veyl.VEYL_HALLS.includes(k), kind);
+    const m = h / 2.6 * (isHall ? 1.5 : 1);           // sizes the close shots to the figure (buildings are framed wider)
     await shoot(`${kind}-paint`, { at: [2.4 * m, h * .6, 3.6 * m], look: [0, h * .52, 0], fov: 34 });
+    {                                                  // the HUD portrait: head and shoulders, turned half a radian, cropped square by sheet.py
+      const pr = await p.evaluate(k => window.__veyl.PORTRAIT[k] || null, kind);
+      if (pr) { await p.evaluate(() => { window.__stood[0].root.rotation.y = .5; }); await shoot(`${kind}-icon`, { at: [0, pr.y + .15, pr.dist], look: [0, pr.y, 0], fov: 30 }); await p.evaluate(() => { window.__stood[0].root.rotation.y = 0; }); }
+    }
     if (process.env.QUICK) { await clear(); continue; }
     const hall = await p.evaluate(k => window.__veyl.VEYL_HALLS.includes(k), kind);
     if (hall) {                                        // a building: also in a song field, and silent (out of any field)

@@ -8,7 +8,7 @@ import { figure } from '../../../meshes';
 import { M } from '../../../gfx';
 
 /** The Veyl figures this file dresses, in the plan's roster order. A kind is drawn from its sculpt when the page carries one. */
-export const VEYL_NEW = ['tuner', 'mute', 'choirmaster', 'chord', 'bell', 'reedwalker', 'knell', 'listener', 'ferry', 'swift', 'prism', 'omen'] as const;
+export const VEYL_NEW = ['tuner', 'mute', 'choirmaster', 'chord', 'bell', 'reedwalker', 'knell', 'listener', 'ferry', 'swift', 'prism', 'omen', 'lyre', 'shard', 'cantus'] as const;
 export type VKind = typeof VEYL_NEW[number];
 
 export type Rig = Record<string, THREE.Object3D | undefined>;
@@ -46,17 +46,18 @@ export function standIn(kind: string): THREE.Group {
     const halo = group('halo', root, [0, 3.75, -.5]); part(halo, geo.ring, 'teal', [0, 0, 0], [1.25, 1.25, 1.25]);
     return root;
   }
-  if (kind === 'ferry' || kind === 'swift' || kind === 'prism') {        // the flyers with no upper body: a long hull nose forward, a halo, wings or leaves
-    const y = kind === 'ferry' ? 2.1 : kind === 'swift' ? 1.7 : 2.4, len = kind === 'ferry' ? 4.6 : kind === 'swift' ? 2 : 4, w = kind === 'ferry' ? .78 : kind === 'swift' ? .19 : .7;
-    const body = group('body', root, [0, 0, 0]); part(body, geo.sph, kind === 'prism' ? 'vC' : 'vI', [0, y, 0], [w, w, len / 2]);
+  if (kind === 'ferry' || kind === 'swift' || kind === 'prism' || kind === 'lyre' || kind === 'shard') {        // the flyers with no upper body: a long hull nose forward, a halo, wings or leaves
+    const y = { ferry: 2.1, swift: 1.7, prism: 2.4, lyre: 2.6, shard: 1.2 }[kind]!, len = { ferry: 4.6, swift: 2, prism: 4, lyre: 6.8, shard: 1.1 }[kind]!, w = { ferry: .78, swift: .19, prism: .7, lyre: .95, shard: .2 }[kind]!;
+    const body = group('body', root, [0, 0, 0]); part(body, geo.sph, kind === 'prism' || kind === 'shard' ? 'vC' : 'vI', [0, y, 0], [w, w, len / 2]);
+    if (kind === 'lyre') for (const sx of [-1, 1]) part(body, geo.cyl, 'vG', [sx * .7, y + 2, -1], [.1, 4, .1], [.4, 0, 0]);
     const head = group('head', body, [0, y, len / 2]); part(head, geo.sph, kind === 'prism' ? 'vM' : 'vL', [0, 0, 0], [w * .4, w * .4, w * .3]);
     const halo = group('halo', body, kind === 'ferry' ? [0, y - .95, 0] : [0, y, -len / 2]); part(halo, geo.ring, 'teal', [0, 0, 0], kind === 'ferry' ? [1.35, 1.35, 1.35] : [w * 1.4, w * 1.4, w * 1.4], kind === 'ferry' ? [PI / 2, 0, 0] : [0, 0, 0]);
     if (kind === 'ferry') for (let i = 0; i < 6; i++) { const sx = i % 2 ? 1 : -1, z = 1 - Math.floor(i / 2); const l = group('leaf' + i, body, [sx * .5, y + .55, z]); part(l, geo.box, 'vD', [sx * .4, -.45, 0], [.06, 1.1, .9], [0, 0, sx * .6]); }
     else for (const [n, sx] of [['wingL', -1], ['wingR', 1]] as [string, number][]) { const wg = group(n, body, [sx * w * .6, y + .1, 0]); part(wg, geo.box, kind === 'swift' ? 'vC' : 'vD', [sx * .8, 0, -.3], [1.6, .02, .5], [0, sx * .4, 0]); }
     return root;
   }
-  const y = kind === 'choirmaster' ? 1.4 : kind === 'mute' ? 1.05 : kind === 'omen' ? 1.3 : 1.2;
-  r = torso(root, y, 1);
+  const y = kind === 'choirmaster' ? 1.4 : kind === 'mute' ? 1.05 : kind === 'omen' ? 1.3 : kind === 'cantus' ? 3.2 : 1.2;
+  r = torso(root, y, kind === 'cantus' ? 2.6 : 1);
   const halo = group('halo', r.body!, [0, y + 1.0, -.3]); part(halo, geo.ring, kind === 'mute' ? 'vD' : 'teal', [0, 0, 0], [.32, .32, .32]);
   if (kind === 'tuner') { part(r.head!, geo.cyl, 'vC', [-.1, .55, 0], [.02, .5, .02]); part(r.head!, geo.cyl, 'vC', [.1, .55, 0], [.02, .5, .02]); part(r.armL!, geo.box, 'vC', [-.1, -.35, .45], [.34, .54, .02]); }
   if (kind === 'mute') for (const a of [r.armL!, r.armR!]) part(a, geo.cone, 'vC', [0, -.2, .6], [.04, .8, .01], [Math.PI / 2, 0, 0]);
@@ -341,6 +342,44 @@ export const POSES: Record<VKind, Record<string, PoseFn>> = {
       if (r.body) add(r.body.position, 'y', .2 * w * k);
     },
   },
+  lyre: {
+    rest1: (r, t, k, add) => { if (r.body) { add(r.body.position, 'y', S(t * .7) * .15 * k); add(r.body.rotation, 'z', S(t * .5) * .03 * k); } for (const [n, sx] of [['wingL', -1], ['wingR', 1]] as [string, number][]) if (r[n]) add(r[n]!.rotation, 'z', sx * S(t * .9) * .06 * k); if (r.halo) add(r.halo.rotation, 'y', t * .4 * k); },
+    walk: (r, t, k, add) => { if (r.body) add(r.body.rotation, 'x', .05 * k); for (const [n, sx] of [['wingL', -1], ['wingR', 1]] as [string, number][]) if (r[n]) add(r[n]!.rotation, 'y', sx * .15 * k); if (r.halo) add(r.halo.rotation, 'y', t * 1.2 * k); },
+    run: (r, t, k, add) => { if (r.body) add(r.body.rotation, 'x', .1 * k); for (const [n, sx] of [['wingL', -1], ['wingR', 1]] as [string, number][]) if (r[n]) add(r[n]!.rotation, 'y', sx * .35 * k); if (r.halo) add(r.halo.rotation, 'y', t * 2.5 * k); },
+    attack: (r, t, k, add) => {                      // Shard Launch: the hull dips and the fins flare as the Shards leave the strings
+      const [w, s2] = beats(t, .3, .55);
+      if (r.body) { add(r.body.rotation, 'x', (.08 * w - .06 * s2) * k); add(r.body.position, 'y', -.2 * w * k); }
+      for (const [n, sx] of [['wingL', -1], ['wingR', 1]] as [string, number][]) if (r[n]) add(r[n]!.rotation, 'z', sx * .3 * s2 * k);
+      if (r.head) add(r.head.rotation, 'x', -.2 * s2 * k);
+    },
+  },
+  shard: {
+    rest1: (r, t, k, add) => { if (r.body) { add(r.body.position, 'y', S(t * 3) * .1 * k); add(r.body.rotation, 'z', t * .8 * k); } if (r.halo) add(r.halo.rotation, 'z', -t * 3 * k); },
+    walk: (r, t, k, add) => { if (r.body) add(r.body.rotation, 'z', t * 2 * k); for (const [n, sx] of [['wingL', -1], ['wingR', 1]] as [string, number][]) if (r[n]) add(r[n]!.rotation, 'y', sx * .3 * k); },
+    run: (r, t, k, add) => { if (r.body) { add(r.body.rotation, 'z', t * 5 * k); add(r.body.rotation, 'x', .2 * k); } for (const [n, sx] of [['wingL', -1], ['wingR', 1]] as [string, number][]) if (r[n]) add(r[n]!.rotation, 'y', sx * .6 * k); },
+    attack: (r, t, k, add) => { const [w, s2] = beats(t, .25, .45); if (r.body) { add(r.body.position, 'z', (-.3 * w + .6 * s2) * k); add(r.body.rotation, 'x', .3 * s2 * k); } },
+  },
+  cantus: {
+    rest1: (r, t, k, add) => {                       // conducting slowly, arms rising and falling, the clock hand turning
+      if (r.armL) add(r.armL.rotation, 'z', (-.15 + S(t * .8) * .2) * k); if (r.armR) add(r.armR.rotation, 'z', (.15 - S(t * .8 + .6) * .2) * k);
+      if (r.body) add(r.body.position, 'y', S(t * .5) * .15 * k); if (r.halo) add(r.halo.rotation, 'z', -t * .2 * k);
+    },
+    rest2: (r, t, k, add) => {                       // arms lowered and crossed, head bowed: listening
+      if (r.armL) { add(r.armL.rotation, 'x', .9 * k); add(r.armL.rotation, 'z', .9 * k); } if (r.armR) { add(r.armR.rotation, 'x', .9 * k); add(r.armR.rotation, 'z', -.9 * k); }
+      if (r.head) add(r.head.rotation, 'x', .3 * k); if (r.halo) add(r.halo.rotation, 'z', -t * .1 * k);
+    },
+    walk: glide(.1, .3, .05), run: glide(.2, .6, .08),
+    attack: (r, t, k, add) => { const [w, s2] = beats(t, .35, .55); if (r.armR) add(r.armR.rotation, 'x', (.4 * w - 1.0 * s2) * k); if (r.head) add(r.head.rotation, 'x', -.2 * s2 * k); },
+    gather: (r, t, k, add) => {                      // both arms swept in toward the chest, calling the others to it
+      const [w, s2] = beats(t, .4, .7);
+      if (r.armL) { add(r.armL.rotation, 'z', (-.8 * w + .6 * s2) * k); add(r.armL.rotation, 'y', .6 * s2 * k); } if (r.armR) { add(r.armR.rotation, 'z', (.8 * w - .6 * s2) * k); add(r.armR.rotation, 'y', -.6 * s2 * k); }
+      if (r.body) add(r.body.rotation, 'x', .15 * s2 * k);
+    },
+    holdtime: (r, t, k, add) => {                    // one hand held up flat and still; the clock halo stops, then turns back
+      if (r.armR) { add(r.armR.rotation, 'x', -1.0 * k); add(r.armR.rotation, 'z', -.3 * k); } if (r.halo) add(r.halo.rotation, 'z', S(t * 2) * .3 * k);
+      if (r.head) add(r.head.rotation, 'x', -.2 * k);
+    },
+  },
 };
 
 /** Lays one pose on a rig and returns a function that takes it off again. For benches and the stance layer. */
@@ -500,8 +539,52 @@ export function stillStone(r = 3, armT = 1.5, life = 20): Fx {
     return t < armT + life;
   } };
 }
+/** Shard Launch: a Shard leaves the Lyre's strings with a bright twang: a teal streak and a small ring where it left. */
+export function shardLaunch(dir = new THREE.Vector3(0, .3, 1), len = 5, life = .6): Fx {
+  const obj = new THREE.Group(), streak = new THREE.Mesh(FXG.line, add('#9ffff0', .9)), ring = new THREE.Mesh(FXG.ring, add('#ffffff', .9)), d = dir.clone().normalize();
+  streak.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), d); ring.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), d); obj.add(streak, ring);
+  return { obj, tick: t => { const k = Math.min(1, t / life); streak.scale.set(.04 * (1 - k), len * ease(k), .04 * (1 - k)); streak.position.copy(d).multiplyScalar(len * ease(k) / 2); ring.scale.setScalar(.2 + k * .8); fade(ring, 1 - k); fade(streak, 1 - k * .7); return t < life; } };
+}
+/** Gather: the Cantus calls a group to it. A wide gold circle closes in toward it while gold motes stream in from the edge. */
+export function gather(r = 12, life = 2.5): Fx {
+  const obj = new THREE.Group(), edge = new THREE.Mesh(FXG.ring, add('#ffd35a', .9)); edge.rotation.x = -Math.PI / 2; edge.position.y = .08; obj.add(edge);
+  const motes = Array.from({ length: 24 }, (_, i) => { const m = new THREE.Mesh(FXG.sph, add('#fff0a8', 1)); m.scale.setScalar(.09); m.userData.a = i * 2.39996; m.userData.o = (i * .41) % 1; obj.add(m); return m; });
+  return { obj, tick: t => { const k = Math.min(1, t / life); edge.scale.set(r * (1 - ease(k) * .85), r * (1 - ease(k) * .85), 4); fade(edge, 1 - k * .8); motes.forEach(m => { const q = (k * 1.6 + m.userData.o) % 1, d = r * (1 - q); m.position.set(Math.cos(m.userData.a) * d, .4 + q * 2.5, Math.sin(m.userData.a) * d); fade(m, S(q * Math.PI)); }); return t < life; } };
+}
+/** Hold Time: a pale clock face laid on the ground (a ring with twelve marks and a hand that crawls backwards), everything in it slowed. */
+export function holdTime(r = 4, life = 10): Fx {
+  const obj = new THREE.Group(), face = new THREE.Mesh(FXG.disc, add('#cfd8ff', .14)), rim = new THREE.Mesh(FXG.ring, add('#e8eeff', .9)), hand = new THREE.Mesh(FXG.plane, add('#ffd35a', .9));
+  face.rotation.x = rim.rotation.x = hand.rotation.x = -Math.PI / 2; face.position.y = .05; rim.position.y = .07; hand.position.y = .08; face.scale.set(r, r, 1); rim.scale.set(r, r, 4); obj.add(face, rim);
+  const pivot = new THREE.Group(); hand.scale.set(.12, r * .8, 1); hand.position.set(0, .08, -r * .4); pivot.add(hand); obj.add(pivot);
+  const marks = Array.from({ length: 12 }, (_, i) => { const m = new THREE.Mesh(FXG.plane, add('#e8eeff', .9)); const a = i / 12 * Math.PI * 2; m.rotation.set(-Math.PI / 2, 0, -a); m.position.set(Math.sin(a) * r * .88, .08, -Math.cos(a) * r * .88); m.scale.set(.08, i % 3 ? .3 : .6, 1); obj.add(m); return m; });
+  return { obj, tick: t => { const end = Math.min(1, t * 3, life - t); pivot.rotation.y = t * .25; fade(face, .14 * end); fade(rim, .9 * end); fade(hand, .9 * end); marks.forEach(m => fade(m, .9 * end)); return t < life; } };
+}
+/** Quicken: the Choir Stone pours energy into a body: a teal spiral climbing round it and a bright flash at its head. */
+export function quicken(h = 2.4, life = 1.2): Fx {
+  const obj = new THREE.Group(), motes = Array.from({ length: 16 }, (_, i) => { const m = new THREE.Mesh(FXG.sph, add('#3fe0d0', 1)); m.scale.setScalar(.08); m.userData.o = i / 16; obj.add(m); return m; }), flash = new THREE.Mesh(FXG.sph, add('#e8fffb', .9));
+  flash.position.y = h; obj.add(flash);
+  return { obj, tick: t => { const k = t / life; motes.forEach(m => { const q = Math.min(1, k * 1.4 - m.userData.o * .4); m.visible = q > 0 && q < 1; const a = q * 12 + m.userData.o * 6.28; m.position.set(Math.cos(a) * .7 * (1 - q * .5), q * h, Math.sin(a) * .7 * (1 - q * .5)); }); const f = Math.max(0, (k - .7) / .3); flash.scale.setScalar(.1 + f * .8); fade(flash, f > 0 ? 1 - f : 0); return t < life; } };
+}
+/** Far Singing: a body sung in at a far field. A column of light, a ring opening on the ground, the body drawn up out of the light. */
+export function farSinging(h = 6, life = 2): Fx {
+  const obj = new THREE.Group(), col = new THREE.Mesh(FXG.line, add('#b8fff4', .5)), ring = new THREE.Mesh(FXG.ring, add('#ff4fd0', .9)), ring2 = new THREE.Mesh(FXG.ring, add('#3fe0d0', .9));
+  ring.rotation.x = ring2.rotation.x = -Math.PI / 2; ring.position.y = .07; ring2.position.y = .07; col.position.y = h / 2; obj.add(col, ring, ring2);
+  return { obj, tick: t => { const k = Math.min(1, t / life), w = S(k * Math.PI); col.scale.set(1.1 * w, h, 1.1 * w); fade(col, .5 * w); ring.scale.set(.4 + ease(k) * 2, .4 + ease(k) * 2, 3); fade(ring, 1 - k); ring2.scale.set(1.6 * w, 1.6 * w, 3); fade(ring2, w); return t < life; } };
+}
+/** Rush: the Cantor closes the gap. Three teal after-images streak behind it along the path, and a white ring bursts where it lands. */
+export function rush(dist = 7, life = .7): Fx {
+  const obj = new THREE.Group(), trail = [0, 1, 2].map(i => { const m = new THREE.Mesh(FXG.plane, add('#3fe0d0', .6)); m.position.y = 1.2; m.userData.o = i * .12; obj.add(m); return m; }), hit = new THREE.Mesh(FXG.ring, add('#ffffff', 1));
+  hit.position.set(0, 1.2, dist); obj.add(hit);
+  return { obj, tick: t => { const k = Math.min(1, t / (life * .5)); trail.forEach(m => { const q = Math.max(0, k - m.userData.o); m.position.z = dist * q; m.scale.set(.9, 2.2, 1); fade(m, .6 * (1 - q) * (k < 1 ? 1 : Math.max(0, 1 - (t - life * .5) * 4))); }); const b = Math.max(0, (t - life * .45) / (life * .55)); hit.visible = b > 0; hit.scale.setScalar(.3 + b * 1.6); fade(hit, 1 - b); return t < life; } };
+}
+/** Skip: the Lancer blinks 8 m. A violet flash folds shut where it was and opens where it lands, a thin line between for an instant. */
+export function skip(dist = 8, life = .5): Fx {
+  const obj = new THREE.Group(), a = new THREE.Mesh(FXG.sph, add('#b48cff', .9)), b = new THREE.Mesh(FXG.sph, add('#e8e0ff', .9)), line = new THREE.Mesh(FXG.line, add('#d9c4ff', .7));
+  a.position.y = b.position.y = 1.2; b.position.z = dist; line.rotation.x = Math.PI / 2; line.position.set(0, 1.2, dist / 2); obj.add(a, b, line);
+  return { obj, tick: t => { const k = t / life; a.scale.set(.6 * (1 - k), 1.4 * (1 - k), .6 * (1 - k)); b.scale.set(.6 * S(k * Math.PI), 1.4 * S(k * Math.PI), .6 * S(k * Math.PI)); line.scale.set(.02, dist, .02); fade(line, k < .3 ? .7 : 0); return t < life; } };
+}
 /** Every sketched effect, by ability name, for the bench. */
-export const FX_NAMES = ['glassWall', 'wardHum', 'falseVoice', 'stepThrough', 'shatterNote', 'drain', 'join', 'ringShell', 'toll', 'settle', 'unfold', 'lift', 'burnBright', 'shrill', 'reveal', 'stillStone', 'songField'] as const;
+export const FX_NAMES = ['rush', 'skip', 'glassWall', 'wardHum', 'falseVoice', 'stepThrough', 'shatterNote', 'drain', 'join', 'ringShell', 'toll', 'settle', 'unfold', 'lift', 'burnBright', 'shrill', 'reveal', 'stillStone', 'songField', 'shardLaunch', 'gather', 'holdTime', 'quicken', 'farSinging'] as const;
 
 // ------------------------------------------------------------------------------------------------------------------- first person
 // What a player sees driving one of these bodies: its own sculpted arms (and what they hold) copied out of the figure and hung in
@@ -556,6 +639,14 @@ export const VM: Record<string, Record<string, ArmVM[]>> = {
     hands: [{ g: 'armL', at: L_(-.4, -.6, .05), dir: L_(.35, .2, -1), roll: .2, s: .55 }, { g: 'armR', at: L_(.4, -.6, .05), dir: L_(-.35, .2, -1), roll: -.2, s: .55 }, { g: 'orb', at: L_(0, -.48, -.45), dir: L_(0, 0, -1), s: .6 }],
     still: [{ g: 'armL', at: L_(-.4, -.6, .05), dir: L_(.3, -.1, -1), roll: .2, s: .55 }, { g: 'armR', at: L_(.4, -.6, .05), dir: L_(-.3, -.1, -1), roll: -.2, s: .55 }, { g: 'orb', at: L_(0, -.85, -.6), dir: L_(0, 0, -1), s: .6 }],
   },
+  // from the figurehead: the two broad fins standing off either side of the view
+  lyre: { fins: [{ g: 'wingL', at: L_(-.6, -.35, 0), dir: L_(-1, -.2, -.3), s: .3 }, { g: 'wingR', at: L_(.6, -.35, 0), dir: L_(1, -.2, -.3), s: .3 }] },
+  shard: { fins: [{ g: 'wingL', at: L_(-.2, -.3, 0), dir: L_(-1, -.1, -.3), s: .7 }, { g: 'wingR', at: L_(.2, -.3, 0), dir: L_(1, -.1, -.3), s: .7 }] },
+  // the great raised hands, far apart; 'holdtime' brings the right one up flat ahead
+  cantus: {
+    hands: [{ g: 'armL', at: L_(-.6, -.62, .05), dir: L_(.1, .7, -1), roll: .3, s: .3 }, { g: 'armR', at: L_(.6, -.62, .05), dir: L_(-.1, .7, -1), roll: -.3, s: .3 }],
+    holdtime: [{ g: 'armL', at: L_(-.6, -.7, .05), dir: L_(.1, .2, -1), roll: .3, s: .3 }, { g: 'armR', at: L_(.45, -.55, 0), dir: L_(-.35, .55, -1), roll: -1.2, s: .3 }],
+  },
 };
 
 /** A first person view model for a new Veyl body in one of its modes (see VM), or null when the page has no sculpt or the kind has none.
@@ -599,18 +690,25 @@ export function songField(r = 6.5): Fx {
     return true;
   } };
 }
-const ASH = new THREE.MeshBasicMaterial({ color: '#8d8698', blending: THREE.MultiplyBlending, transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1 });
-const ASH_RING = new THREE.MeshBasicMaterial({ color: '#77707f' });
-/** Draws a building silent (on) or sung again (off). Silent: every mesh gets an ashen twin multiplied over it, glowing parts are dimmed
- *  and a broken grey ring hangs over the roof. `top` is the building's height. Safe to call every frame: it only changes on a change. */
+/** Draws a building silent (on) or sung again (off). Silent: every part is drawn in grey ash (the game's own toon soot, so it is inked and lit
+ *  like everything else), the lit parts gone dark, and a broken grey ring hangs over the roof. `top` is the building's height.
+ *  Safe to call every frame: it only changes on a change. The materials it wore are kept on each mesh and put back when sung again. */
 export function silentLook(root: THREE.Object3D, on: boolean, top = 6) {
   if (!!root.userData.silent === on) return; root.userData.silent = on;
   if (on) {
-    const twins: THREE.Object3D[] = [];
-    root.traverse(o => { const m = o as THREE.Mesh; if (!m.isMesh || m.userData.ash) return; const c = new THREE.Mesh(m.geometry, ASH); c.userData.ash = true; c.renderOrder = 2; m.add(c); twins.push(c); });
-    const ring = new THREE.Mesh(new THREE.TorusGeometry(1.2, .07, 6, 28, Math.PI * 1.55), ASH_RING); ring.rotation.set(Math.PI / 2 + .35, 0, .8); ring.position.y = top + .8; ring.userData.ash = true; root.add(ring); twins.push(ring);
-    root.userData.ashTwins = twins;
-  } else { for (const c of (root.userData.ashTwins || []) as THREE.Object3D[]) c.removeFromParent(); root.userData.ashTwins = []; }
+    root.traverse(o => { const m = o as THREE.Mesh; if (!m.isMesh || m.userData.ash) return; m.userData.loudMat = m.material; const glow = /flux|water|clapper|mouth|window|lantern|tablet|lens|note|drop|crystal|crown|eye|cap|perch|tip|heart|orb|pts|halo|ring/.test(m.name); m.material = glow ? M.scorch : M.soot; });
+    const ring = new THREE.Mesh(new THREE.TorusGeometry(1.2, .08, 6, 28, Math.PI * 1.55), M.soot); ring.rotation.set(Math.PI / 2 + .35, 0, .8); ring.position.y = top * .85; ring.userData.ash = true; root.add(ring); root.userData.ashRing = ring;
+  } else {
+    root.traverse(o => { const m = o as THREE.Mesh; if (m.isMesh && m.userData.loudMat) { m.material = m.userData.loudMat; delete m.userData.loudMat; } });
+    (root.userData.ashRing as THREE.Object3D | undefined)?.removeFromParent(); root.userData.ashRing = null;
+  }
 }
 /** The new Veyl buildings (art/halls.py), each a sculpt with its own groups: rings, a bell, a drop, a note, a lens, pages. */
 export const VEYL_HALLS = ['siphonbell', 'mendingpool', 'duskhall', 'kiln', 'skyloft', 'tuningfork', 'quiethouse', 'songarchive', 'highbeacon'] as const;
+/** Where the HUD's portrait camera looks for each new kind (see portraits() in main.ts): the height it aims at and how far back it
+ *  stands, in metres, with the figure turned half a radian to its left as the old portraits are. */
+export const PORTRAIT: Record<string, { y: number; dist: number }> = {
+  tuner: { y: 2.3, dist: 3.4 }, mute: { y: 1.9, dist: 2.8 }, choirmaster: { y: 2.6, dist: 4.2 }, chord: { y: 2.6, dist: 6 }, bell: { y: 2.4, dist: 5.2 },
+  reedwalker: { y: 5.1, dist: 5.4 }, knell: { y: 2.0, dist: 3.8 }, listener: { y: 1.4, dist: 3.6 }, ferry: { y: 2.2, dist: 7 }, swift: { y: 1.7, dist: 3.4 },
+  prism: { y: 2.4, dist: 6.5 }, omen: { y: 2.3, dist: 4.4 }, lyre: { y: 3.4, dist: 11 }, shard: { y: 1.2, dist: 2.4 }, cantus: { y: 5.8, dist: 9 },
+};

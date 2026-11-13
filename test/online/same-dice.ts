@@ -3,12 +3,14 @@
 import '../../server/shim';
 import { initHeadless } from '../../src/gfx';
 import { Match, worldHash, Seat } from '../../src/match';
+import { planCode, starterPlan, planMap, checkPlan, usePlan } from '../../src/mapcode';
 initHeadless();
 const seats = (): Seat[] => [{ id: 1, name: 'A', team: 0, unit: null, inbox: [] }, { id: 2, name: 'V', team: 1, unit: null, inbox: [] }];
-const setup = { map: 0, diff: 1, out: 1, seed: 1234, clock: 1700000000000 };
+// Switchback has ground: ridges, ramps and Flux vents
+const setup = { map: 1, diff: 1, out: 1, seed: 1234, clock: 1700000000000 };
 /** Ninety seconds of a bot match, with a world fingerprint every second. */
 const run = (other: boolean, n = 2700) => {
-  const m = new Match(setup, seats(), () => { /* nobody watching */ }, 'test', true), o = other ? new Match({ ...setup, seed: 99, map: 1, out: 2 }, seats(), () => { /* nobody */ }, 'test', true) : null;
+  const m = new Match(setup, seats(), () => { /* nobody watching */ }, 'test', true), o = other ? new Match({ ...setup, seed: 99, map: 0, out: 2 }, seats(), () => { /* nobody */ }, 'test', true) : null;
   const hs: string[] = [];
   for (let i = 0; i < n; i++) { if (o) o.step(); if (m.step()) break; if (i % 30 === 29) hs.push(worldHash(m.g)); }
   return hs;
@@ -19,9 +21,17 @@ check(a.length >= 90 && a.join() === b.join(), `the same match run twice in one 
 check(a.join() === c.join(), `and the same again with a Gloam match on another map stepping beside it${at(c) >= 0 ? ' (first differs at ' + (at(c) + 1) + ' s)' : ''}`);
 // a two-against-two team game, with one player on each of two sides, run twice with a one-on-one in between
 {
-  const mt = { n: 4, groups: [[0, 1], [2, 3]], facs: [0, 1, 2, 0] }, ts = { ...setup, mt, seed: 77 };
+  const mt = { n: 4, groups: [[0, 1], [2, 3]], facs: [0, 1, 2, 0] }, ts = { ...setup, map: 6, mt, seed: 77 };   // Crossing: four starts round a crossroads
   const team = () => { const m = new Match(ts, [{ id: 1, name: 'A', team: 0, unit: null, inbox: [] }], () => { /* nobody */ }, 'test', true), hs: string[] = []; for (let i = 0; i < 1800; i++) { if (m.step()) break; if (i % 30 === 29) hs.push(worldHash(m.g)); } return { hs, n: m.g.buildings.filter(b => b.alive).length }; };
   const x = team(); run(false, 300); const y = team();
-  check(x.hs.length >= 60 && x.hs.join() === y.hs.join(), `a two-against-two team game is the same world every second for ${x.hs.length} s, run twice with another match between (${x.n} buildings standing)`);
+  check(x.hs.length >= 60 && x.hs.join() === y.hs.join(), `a two-against-two team game on Crossing is the same world every second for ${x.hs.length} s, run twice with another match between (${x.n} buildings standing)`);
+}
+// a made map (src/mapcode.ts): the plan is part of the setup, and the match lays it out itself every time it runs
+{
+  const P = starterPlan(2, 0), plan = planCode(P), ok = checkPlan(P).ok; usePlan(null);
+  const ms = { ...setup, map: planMap(P), plan, seed: 31 };
+  const made = () => { const m = new Match(ms, seats(), () => { /* nobody */ }, 'test', true), hs: string[] = []; for (let i = 0; i < 1200; i++) { if (m.step()) break; if (i % 30 === 29) hs.push(worldHash(m.g)); } return hs; };
+  const x = made(); run(false, 300); const y = made();
+  check(ok && x.length >= 40 && x.join() === y.join(), `a match on a made map is the same world every second for ${x.length} s, run twice with another match between`);
 }
 console.log(fail.length ? `\n${fail.length} FAILED` : '\nall same dice checks passed'); process.exit(fail.length ? 1 : 0);

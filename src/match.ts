@@ -9,6 +9,7 @@ import type { Game } from './game';
 import * as GAME from './game';
 import { DIFFS, SIDE, FACTION, BLD, UNIT, setMap, setSidesCode, setTeamGame, fac, Unit, isWorker, Kind, BKind } from './data';
 import { multi, MATCH, isFriend, type TeamPlan } from './core/sides';
+import { usePlan } from './mapcode';
 import { reseed } from './gfx';
 import { Wire, serverCmd, serverMove } from './netgame';
 
@@ -18,7 +19,7 @@ export const REPLAY_V = 1;
 
 /** One player in the match. `team` -1 is an observer, who sees both sides and cannot act. */
 export interface Seat { id: number; name: string; team: number; unit: Unit | null; inbox: any[] }
-export interface Setup { map: number; diff: number; /** Who holds each end (see setSidesCode). */ out: number; /** A team game or free-for-all (see setTeamGame); unset for a one-on-one. */ mt?: TeamPlan | null; seed: number; /** The clock at the start (Date.now), which sets the weather. */ clock: number }
+export interface Setup { map: number; /** A made map's code (src/mapcode.ts), or '' for the map as it comes. */ plan?: string; diff: number; /** Who holds each end (see setSidesCode). */ out: number; /** A team game or free-for-all (see setTeamGame); unset for a one-on-one. */ mt?: TeamPlan | null; seed: number; /** The clock at the start (Date.now), which sets the weather. */ clock: number }
 /** A recorded match: the setup, who was in it, and every input in tick order. */
 export interface Replay {
   v: number; /** The server build the match ran on, so an old file is not played on new rules without a warning. */ build: string; at: string;
@@ -75,7 +76,7 @@ export class Match {
   }
   /** Runs `fn` inside this match: its map and sides, its dice and its ids. */
   run<T>(fn: () => T, first = false): T {
-    const L = this.setup; setMap(L.map); setSidesCode(L.out); setTeamGame(L.mt || null); if (!first) this.g.pin();
+    const L = this.setup; usePlan(L.plan || null); setMap(L.map); setSidesCode(L.out); setTeamGame(L.mt || null); if (!first) this.g.pin();
     const r = Math.random, ids = (GAME as any).ids as { next: number } | undefined, saved = ids ? ids.next : 0;
     Math.random = this.rnd; if (ids) ids.next = this.nextId;
     // The world's own dice (gfx.ts R and rnd) are one sequence for the whole process. Each match starts them again from its own dice every time it runs.
@@ -84,7 +85,7 @@ export class Match {
   }
   get players() { return this.seats.filter(s => s.team >= 0); }
   private crew() { const g = this.g, P = this.players; g.coop = Math.max(1, P.filter(p => p.team === SIDE.home).length); g.human = g.human.map((_, t) => P.some(p => p.team === t)); }
-  beginMsg(s: Seat, ph?: number[][]) { const g = this.g, L = this.setup; return { t: 'begin', map: L.map, diff: L.diff, unit: s.unit ? s.unit.id : 0, names: g.names, ph, team: s.team, teams: g.teams, eco: g.eco ? 1 : 0, out: L.out, mt: L.mt || null, watch: s.team < 0 ? 1 : 0 }; }
+  beginMsg(s: Seat, ph?: number[][]) { const g = this.g, L = this.setup; return { t: 'begin', plan: L.plan || '', map: L.map, diff: L.diff, unit: s.unit ? s.unit.id : 0, names: g.names, ph, team: s.team, teams: g.teams, eco: g.eco ? 1 : 0, out: L.out, mt: L.mt || null, watch: s.team < 0 ? 1 : 0 }; }
 
   /** Hands a body back to the AI. */
   release(p: Seat) {
@@ -212,20 +213,20 @@ export function playBack(rec: Replay) { const p = new Playback(rec); while (!p.s
 const warmed = new Set<string>();
 /** With no setup, every one-on-one pairing; with one, that match's pairing and sides (a team game has more of them). */
 export function warm(setup?: Setup) {
-  const todo = (setup ? [{ out: setup.out, mt: setup.mt || null }] : [0, 1, 2, 3, 4, 5, 6, 7, 8].map(out => ({ out, mt: null as TeamPlan | null }))).filter(x => !warmed.has(JSON.stringify(x)));
+  const todo = (setup ? [{ out: setup.out, mt: setup.mt || null, plan: setup.plan || '', map: setup.map }] : [0, 1, 2, 3, 4, 5, 6, 7, 8].map(out => ({ out, mt: null as TeamPlan | null, plan: '', map: 0 }))).filter(x => !warmed.has(JSON.stringify(x)));
   if (!todo.length) return; for (const x of todo) warmed.add(JSON.stringify(x));
   const r = Math.random, now = Date.now; let s = 1; Math.random = () => (s = (s * 16807) % 2147483647) / 2147483647; Date.now = () => 0;
   try {
     for (const x of todo) {
-      setMap(0); setSidesCode(x.out); setTeamGame(x.mt);
-      const g = new GAME.Game(noPipe(), noHud, DIFFS[1], 0, null, null, true); g.noRender = true;
+      usePlan(x.plan || null); setMap(x.map); setSidesCode(x.out); setTeamGame(x.mt);
+      const g = new GAME.Game(noPipe(), noHud, DIFFS[1], x.map, null, null, true); g.noRender = true;
       for (const t of multi() ? MATCH.teams : [SIDE.home, SIDE.out]) {
         for (const k of Object.keys(UNIT) as Kind[]) try { g.spawn(k, t, 0, 0); } catch (e) { /* a kind this side cannot field */ }
         for (const k of Object.keys(BLD) as BKind[]) for (const built of [true, false]) try { g.addBuilding(k, t, 0, 0, built); } catch (e) { /* a kind this side cannot build */ }
       }
       g.dispose?.();
     }
-  } finally { Math.random = r; Date.now = now; setTeamGame(null); }
+  } finally { Math.random = r; Date.now = now; setTeamGame(null); usePlan(null); }
 }
 
 // The match runs with nothing to draw on and nobody to show a HUD to, wherever it runs.

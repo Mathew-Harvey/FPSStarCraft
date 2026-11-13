@@ -15,6 +15,7 @@ import { planTeams, multi, isFriend, type TeamPlan } from '../src/core/sides';
 import { WIRE } from '../src/netgame';
 import { dropped } from '../src/net-arms';
 import { Match, Seat, Replay, playBack } from '../src/match';
+import { usePlan, parsePlan, checkPlan, planMap } from '../src/mapcode';
 void noHud; void noPipe;   // the shim's stand-ins: importing it is what matters, it gives the game a page to call into
 
 initHeadless();
@@ -38,16 +39,16 @@ let page = pagePath ? readFileSync(pagePath) : Buffer.from('Ore Else server is r
 
 /** A connection. In a lobby `team` is the side they will play, or -1 to watch. */
 interface Player extends Seat { ready: boolean; ws: WebSocket; lobby: Lobby | null; alive: boolean }
-interface Lobby { /** A team game or free-for-all (see TeamPlan); unset for a one-on-one. */ mt?: TeamPlan | null; code: string; host: number; map: number; diff: number; /** Who holds each end, as a match code: yard faction * 3 + outpost faction (see setSidesCode). 1 and 2 are Ironhold against the Veyl or the Gloam. */ out: number; players: Player[]; match: Match | null; /** Sides of players who dropped out of the running match, by name, so a Veyl player who reconnects sings for the Veyl again. */ gone: Record<string, number> }
+interface Lobby { /** A made map's code (mapcode.ts), or '' for the map as it comes. */ plan: string; /** A team game or free-for-all (see TeamPlan); unset for a one-on-one. */ mt?: TeamPlan | null; code: string; host: number; map: number; diff: number; /** Who holds each end, as a match code: yard faction * 3 + outpost faction (see setSidesCode). 1 and 2 are Ironhold against the Veyl or the Gloam. */ out: number; players: Player[]; match: Match | null; /** Sides of players who dropped out of the running match, by name, so a Veyl player who reconnects sings for the Veyl again. */ gone: Record<string, number> }
 const lobbies = new Map<string, Lobby>(); let nextPid = 1;
 const send = (p: Player, o: any) => { if (p.ws.readyState === 1) p.ws.send(typeof o === 'string' ? o : JSON.stringify(o)); };
 const say = (s: Seat, o: any) => send(s as Player, o);
 const cleanName = (s: any) => String(s || '').replace(/[^\w \-'.]/g, '').trim().slice(0, 14) || 'Rigger';
 const playing = (l: Lobby) => l.players.filter(p => p.team >= 0), watching = (l: Lobby) => l.players.filter(p => p.team < 0);
 /** Puts this lobby's map, ends and sides into the shared rules (one server runs many matches; a running match does this itself, see Match.run). */
-function use(l: Lobby) { setMap(l.map); setSidesCode(l.out); setTeamGame(l.mt || null); }
+function use(l: Lobby) { usePlan(l.plan || null); setMap(l.map); setSidesCode(l.out); setTeamGame(l.mt || null); }
 function newCode() { const A = 'ABCDEFGHJKLMNPQRSTUVWXYZ'; for (;;) { let c = ''; for (let i = 0; i < 5; i++) c += A[Math.floor(Math.random() * A.length)]; if (!lobbies.has(c)) return c; } }
-function tell(l: Lobby) { for (const p of l.players) send(p, { t: 'lobby', code: l.code, you: p.id, host: l.host, map: l.map, diff: l.diff, out: l.out, mt: l.mt || null, state: l.match ? 'play' : 'lobby', players: l.players.map(x => ({ id: x.id, name: x.name, ready: x.ready, team: x.team })) }); }
+function tell(l: Lobby) { for (const p of l.players) send(p, { t: 'lobby', code: l.code, you: p.id, host: l.host, map: l.map, diff: l.diff, out: l.out, plan: l.plan, mt: l.mt || null, state: l.match ? 'play' : 'lobby', players: l.players.map(x => ({ id: x.id, name: x.name, ready: x.ready, team: x.team })) }); }
 
 // ---------------------------------------------------------------- replays
 // Kept in memory (the last 40), and written to REPLAY_DIR as <id>.json.gz when that is set.
@@ -77,7 +78,7 @@ function leave(p: Player) {
 function begin(l: Lobby) {
   l.map = rollMap(l.map);   // a Vast map is turned a new way for every match, so nobody knows where the far base is
   l.gone = {};
-  l.match = new Match({ map: l.map, diff: l.diff, out: l.out, mt: l.mt || null, seed: (Math.random() * 2 ** 32) >>> 0, clock: Date.now() }, [...l.players], say, BUILD);
+  l.match = new Match({ map: l.map, plan: l.plan || '', diff: l.diff, out: l.out, mt: l.mt || null, seed: (Math.random() * 2 ** 32) >>> 0, clock: Date.now() }, [...l.players], say, BUILD);
   tell(l);
 }
 /** A player arrives while the match is running: a late start, coming back after a dropped connection, or somebody come to watch. */
@@ -114,7 +115,7 @@ wss.on('connection', ws => {
     if (m.t === 'in') { if (l && l.match && p.team >= 0 && p.inbox.length < 30) p.inbox.push(m); return; }
     if (m.t === 'create') {
       if (l) leave(p); if (lobbies.size >= MAX_LOBBIES) { send(p, { t: 'err', msg: 'The server is full. Try again in a few minutes.' }); return; }
-      p.name = cleanName(m.name); p.ready = false; p.team = 0; const nl: Lobby = { code: newCode(), host: p.id, map: 0, diff: 1, out: 1, players: [p], match: null, gone: {} }; lobbies.set(nl.code, nl); p.lobby = nl; tell(nl);
+      p.name = cleanName(m.name); p.ready = false; p.team = 0; const nl: Lobby = { code: newCode(), host: p.id, map: 0, plan: '', diff: 1, out: 1, players: [p], match: null, gone: {} }; lobbies.set(nl.code, nl); p.lobby = nl; tell(nl);
     } else if (m.t === 'join') {
       if (l) leave(p); const jl = lobbies.get(String(m.code || '').toUpperCase().trim());
       if (!jl) { send(p, { t: 'err', msg: 'No lobby with that code. Check the five letters.' }); return; }
@@ -135,7 +136,9 @@ wss.on('connection', ws => {
       else p.team = m.v ? O : H;
       tell(l);
     }
-    else if (m.t === 'set' && l.host === p.id && !l.match) { if (validMap(m.map)) l.map = m.map % 100; if (m.diff >= 0 && m.diff < DIFFS.length) l.diff = m.diff | 0; if (Number.isInteger(m.out) && m.out >= 0 && m.out < 9) { const [, O0] = setSidesCode(l.out); l.out = m.out; const [H1, O1] = setSidesCode(l.out); for (const x of l.players) if (x.team >= 0) x.team = x.team === O0 ? O1 : H1; }
+    else if (m.t === 'set' && l.host === p.id && !l.match) { if (validMap(m.map)) { l.map = m.map % 100; l.plan = ''; }
+      // A made map: only one that passes the fairness check is taken. The check lays the map out, so the plan is put away again after.
+      if (typeof m.plan === 'string') { const P = parsePlan(m.plan); if (P && checkPlan(P).ok) { l.plan = m.plan; l.map = planMap(P); } else send(p, { t: 'err', msg: 'That made map did not pass the fairness check.' }); usePlan(null); } if (m.diff >= 0 && m.diff < DIFFS.length) l.diff = m.diff | 0; if (Number.isInteger(m.out) && m.out >= 0 && m.out < 9) { const [, O0] = setSidesCode(l.out); l.out = m.out; const [H1, O1] = setSidesCode(l.out); for (const x of l.players) if (x.team >= 0) x.team = x.team === O0 ? O1 : H1; }
       // A team game: a plan that holds, or null for a one-on-one again. Anyone whose start went away goes to the yard.
       if (m.mt !== undefined && (m.mt === null || planTeams(m.mt))) { l.mt = m.mt; if (l.mt) { const t = planTeams(l.mt)!; l.out = fac(t.home) * 3 + fac(t.out); } use(l); const ok = l.mt ? planTeams(l.mt)!.teams : [SIDE.home, SIDE.out]; for (const x of l.players) if (x.team >= 0 && !ok.includes(x.team)) x.team = SIDE.home; }
       tell(l); }

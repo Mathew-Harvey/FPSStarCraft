@@ -14,8 +14,8 @@ const dir = mkdtempSync(join(tmpdir(), 'ore-replays-'));
 const srv = await server(8153, { REPLAY_DIR: dir });
 try {
   // a second match on the same server, started first, so the two share the process the whole time
-  const other = await versus(srv.url, { set: { out: 2, map: 1 } });   // a different pairing and map, so the two share nothing but the process
-  const { A, V, code, bA, bV } = await versus(srv.url);
+  const other = await versus(srv.url, { set: { out: 2, map: 6 } });   // a different pairing and map, so the two share nothing but the process
+  const { A, V, code, bA, bV } = await versus(srv.url, { set: { map: 1 } });   // a map with ground: ridges and Flux vents
   // somebody comes to watch the running match
   const W = await client(srv.url, 'Wen'); W.send({ t: 'join', code, name: 'Wen', watch: 1 });
   const bW = await W.wait(m => m.t === 'begin');

@@ -1,4 +1,5 @@
 // The heads-up display: plain HTML over the canvas, laid out in a 900-unit-tall space and scaled to fit.
+import { drawMap as drawGround } from './terrain';
 import * as THREE from 'three';
 import type { Game } from './game';
 import { UNIT, BLD, FACTION, SIDE, fac, foeOf, atHome, homeXZ, Kind, Unit, Building, MAP, MAPS, OUTPOST, VHOME, ROAD, NORTH_PATH, roadPt, isWorker } from './data';
@@ -262,6 +263,7 @@ export class Hud {
     if (!hid) { c.fillStyle = 'rgba(53,224,200,.16)'; c.beginPath(); c.arc(X(OUTPOST.x - 2 * ROAD.dx), Z(OUTPOST.z - 2 * ROAD.dz), 20 * k, 0, 7); c.fill(); }
     c.fillStyle = 'rgba(255,194,26,.13)'; c.beginPath(); c.arc(X(hid ? mhx : 0), Z(hid ? mhz : 0), 30 * k, 0, 7); c.fill();
     for (const s of g.spires) { c.fillStyle = '#2a1a18'; c.beginPath(); c.arc(X(s.x), Z(s.z), Math.max(1.5, s.r * k), 0, 7); c.fill(); }
+    drawGround(c, X, Z, k, g.myTeam, (x, z) => fog.seen(x, z));   // terrain (J): high ground, ramps, rock walls, vents, beacons
     // the fog: black where nobody has been, dimmed where nobody is looking now
     { const n = fog.n, cv = this.fogCv || (this.fogCv = document.createElement('canvas')); if (cv.width !== n) { cv.width = cv.height = n; this.fogImg = null; } const cx = cv.getContext('2d')!, img = this.fogImg || (this.fogImg = cx.createImageData(n, n)), d = img.data;
       for (let i = 0; i < fog.cells.length; i++) { const v = fog.cells[i]; d[i * 4] = 22; d[i * 4 + 1] = 15; d[i * 4 + 2] = 14; d[i * 4 + 3] = v === 2 ? 0 : v === 1 ? 105 : 236; }

@@ -12,6 +12,7 @@ import { DIFFS, MAPS, SIDE, FACTION, BLD, setMap, setSidesCode, setTeamGame, fac
 import { planTeams, multi, MATCH, isFriend, type TeamPlan } from '../src/core/sides';
 import { Wire, WIRE, serverCmd, serverMove } from '../src/netgame';
 import { dropped } from '../src/net-arms';
+import { usePlan, parsePlan, checkPlan, planMap } from '../src/mapcode';
 
 initHeadless();
 if (process.env.ORE_TRUST_HITS === '1') { WIRE.trustHits = true; console.log('test server: hit claims are not checked (ORE_TRUST_HITS)'); }
@@ -22,14 +23,14 @@ const pagePath = [join(here, 'index.html'), join(here, '..', 'dist', 'index.html
 let page = pagePath ? readFileSync(pagePath) : Buffer.from('Ore Else server is running, but the game page was not built. Run npm run build.');
 
 interface Player { id: number; name: string; ready: boolean; team: number; ws: WebSocket; lobby: Lobby | null; unit: Unit | null; inbox: any[]; alive: boolean }
-interface Lobby { /** A team game or free-for-all (see TeamPlan); unset for a one-on-one. */ mt?: TeamPlan | null; code: string; host: number; map: number; diff: number; /** Who holds each end, as a match code: yard faction * 3 + outpost faction (see setSidesCode). 1 and 2 are Ironhold against the Veyl or the Gloam. */ out: number; players: Player[]; game: Game | null; /** What each side is sent: fog on the wire. */ wire: Wire | null; tick: number; idle: number; hp0: number[]; /** Sides of players who dropped out of the running match, by name, so a Veyl player who reconnects sings for the Veyl again. */ gone: Record<string, number> }
+interface Lobby { /** A made map's code (mapcode.ts), or '' for the map as it comes. */ plan: string; /** A team game or free-for-all (see TeamPlan); unset for a one-on-one. */ mt?: TeamPlan | null; code: string; host: number; map: number; diff: number; /** Who holds each end, as a match code: yard faction * 3 + outpost faction (see setSidesCode). 1 and 2 are Ironhold against the Veyl or the Gloam. */ out: number; players: Player[]; game: Game | null; /** What each side is sent: fog on the wire. */ wire: Wire | null; tick: number; idle: number; hp0: number[]; /** Sides of players who dropped out of the running match, by name, so a Veyl player who reconnects sings for the Veyl again. */ gone: Record<string, number> }
 const lobbies = new Map<string, Lobby>(); let nextPid = 1;
 const send = (p: Player, o: any) => { if (p.ws.readyState === 1) p.ws.send(JSON.stringify(o)); };
 const cleanName = (s: any) => String(s || '').replace(/[^\w \-'.]/g, '').trim().slice(0, 14) || 'Rigger';
 /** Puts this lobby's map, ends and sides into the shared rules before anything of its match runs (one server runs many matches). */
-function use(l: Lobby) { setMap(l.map); setSidesCode(l.out); if (l.mt) setTeamGame(l.mt); else setTeamGame(null); }
+function use(l: Lobby) { usePlan(l.plan); setMap(l.map); setSidesCode(l.out); if (l.mt) setTeamGame(l.mt); else setTeamGame(null); }
 function newCode() { const A = 'ABCDEFGHJKLMNPQRSTUVWXYZ'; for (;;) { let c = ''; for (let i = 0; i < 5; i++) c += A[Math.floor(Math.random() * A.length)]; if (!lobbies.has(c)) return c; } }
-function tell(l: Lobby) { for (const p of l.players) send(p, { t: 'lobby', code: l.code, you: p.id, host: l.host, map: l.map, diff: l.diff, out: l.out, mt: l.mt || null, state: l.game ? 'play' : 'lobby', players: l.players.map(x => ({ id: x.id, name: x.name, ready: x.ready, team: x.team })) }); }
+function tell(l: Lobby) { for (const p of l.players) send(p, { t: 'lobby', code: l.code, you: p.id, host: l.host, map: l.map, diff: l.diff, out: l.out, plan: l.plan, mt: l.mt || null, state: l.game ? 'play' : 'lobby', players: l.players.map(x => ({ id: x.id, name: x.name, ready: x.ready, team: x.team })) }); }
 
 function leave(p: Player) {
   const l = p.lobby; if (!l) return; p.lobby = null; if (l.game) { use(l); l.game.pin(); }
@@ -53,7 +54,7 @@ function begin(l: Lobby) {
   use(l); const eco = l.players.some(p => p.team !== SIDE.home) || l.out === 2 || multi(), g = new Game(noPipe(), noHud, DIFFS[l.diff], l.map, null, null, eco); g.noRender = true; g.evq = []; g.coop = l.players.length; g.me = null; g.phase = 'play';
   l.game = g; l.wire = new Wire(g); l.gone = {}; l.tick = 0; sides(l); l.hp0 = g.props.map(q => q.hp); const names: Record<number, string> = {}; for (const p of l.players) { names[p.id] = p.name; g.score[p.id] = [0, 0, 0]; g.teams[p.id] = p.team; } g.names = names; g.coop = Math.max(1, l.players.filter(p => p.team === SIDE.home).length);
   const riggers = g.own(FACTION[SIDE.home].worker, SIDE.home); let ri = 0; l.players.forEach(p => { p.inbox = []; p.unit = null; const u = p.team !== SIDE.home ? g.freshBody(p.team) : riggers[ri++ % riggers.length]; if (u) pilot(g, p, u); });
-  for (const p of l.players) send(p, { t: 'begin', map: l.map, diff: l.diff, unit: p.unit ? p.unit.id : 0, names, team: p.team, teams: g.teams, eco: g.eco ? 1 : 0, out: l.out, mt: l.mt || null });
+  for (const p of l.players) send(p, { t: 'begin', plan: l.plan, map: l.map, diff: l.diff, unit: p.unit ? p.unit.id : 0, names, team: p.team, teams: g.teams, eco: g.eco ? 1 : 0, out: l.out, mt: l.mt || null });
   if (multi()) for (const t of MATCH.teams) { const n = l.players.filter(p => p.team === t).length; if (!n) continue;
     const pals = MATCH.teams.filter(o => o !== t && isFriend(o, t)).length, foes = MATCH.teams.filter(o => !isFriend(o, t)).length;
     g.feed(FACTION[t].voice, `${n > 1 ? n + ' of you lead' : 'You lead'} the ${FACTION[t].short} tonight${pals ? `, with ${pals === 1 ? 'one friendly side' : pals + ' friendly sides'}` : ''}, against ${foes === 1 ? 'one other side' : foes + ' other sides'}. Break every home building they have.`, 'in', t); }
@@ -78,7 +79,7 @@ function joinLive(l: Lobby, p: Player) {
   g.names[p.id] = p.name; g.teams[p.id] = p.team; if (!g.score[p.id]) g.score[p.id] = [0, 0, 0]; g.coop = Math.max(1, l.players.filter(x => x.team === SIDE.home).length); sides(l);
   const H = SIDE.home, u = p.team !== H ? g.freshBody(p.team) : g.own(FACTION[H].worker, H).find(x => !x.pilot) || g.soldiers().find(x => !x.pilot) || g.spawn(FACTION[H].worker, H, ...g.hqSpot(H)); if (u) pilot(g, p, u);
   const ph: number[][] = []; g.props.forEach((q, i) => { if (!q.alive) ph.push([i, 0]); else if (q.hp < l.hp0[i]) ph.push([i, Math.ceil(q.hp)]); });
-  send(p, { t: 'begin', map: l.map, diff: l.diff, unit: u ? u.id : 0, names: g.names, ph, team: p.team, teams: g.teams, eco: g.eco ? 1 : 0, out: l.out });
+  send(p, { t: 'begin', plan: l.plan, map: l.map, diff: l.diff, unit: u ? u.id : 0, names: g.names, ph, team: p.team, teams: g.teams, eco: g.eco ? 1 : 0, out: l.out });
   g.evq!.push(['nm', g.names, g.teams]); g.feed('Signal', `${p.name} clocked in late. Docked accordingly.`, 'in'); tell(l);
 }
 function step(l: Lobby) {
@@ -125,7 +126,7 @@ wss.on('connection', ws => {
     if (m.t === 'in') { if (l && l.game && p.inbox.length < 30) p.inbox.push(m); return; }
     if (m.t === 'create') {
       if (l) leave(p); if (lobbies.size >= MAX_LOBBIES) { send(p, { t: 'err', msg: 'The server is full. Try again in a few minutes.' }); return; }
-      p.name = cleanName(m.name); p.ready = false; p.team = 0; const nl: Lobby = { code: newCode(), host: p.id, map: 0, diff: 1, out: 1, players: [p], game: null, wire: null, tick: 0, idle: 0, hp0: [], gone: {} }; lobbies.set(nl.code, nl); p.lobby = nl; tell(nl);
+      p.name = cleanName(m.name); p.ready = false; p.team = 0; const nl: Lobby = { code: newCode(), host: p.id, map: 0, plan: '', diff: 1, out: 1, players: [p], game: null, wire: null, tick: 0, idle: 0, hp0: [], gone: {} }; lobbies.set(nl.code, nl); p.lobby = nl; tell(nl);
     } else if (m.t === 'join') {
       if (l) leave(p); const jl = lobbies.get(String(m.code || '').toUpperCase().trim());
       if (!jl) { send(p, { t: 'err', msg: 'No lobby with that code. Check the five letters.' }); return; }
@@ -138,7 +139,9 @@ wss.on('connection', ws => {
     else if (m.t === 'team' && !l.game) { use(l); const t = l.mt ? planTeams(l.mt) : null;
       // In a team game the player names a start (m.s); in a one-on-one, the far end (m.v) or the yard.
       if (t) { const i = t.at.indexOf(m.s | 0); if (i >= 0) p.team = t.teams[i]; } else { const [H, O] = setSidesCode(l.out); p.team = m.v ? O : H; } tell(l); }
-    else if (m.t === 'set' && l.host === p.id && !l.game) { if (validMap(m.map)) l.map = m.map % 100; if (m.diff >= 0 && m.diff < DIFFS.length) l.diff = m.diff | 0; if (Number.isInteger(m.out) && m.out >= 0 && m.out < 9) { const [, O0] = setSidesCode(l.out); l.out = m.out; const [H1, O1] = setSidesCode(l.out); for (const x of l.players) x.team = x.team === O0 ? O1 : H1; }
+    else if (m.t === 'set' && l.host === p.id && !l.game) { if (validMap(m.map)) { l.map = m.map % 100; l.plan = ''; }
+      // A made map: only one that passes the fairness check is taken. The check lays the map out, so the plan is put away again after.
+      if (typeof m.plan === 'string') { const P = parsePlan(m.plan); if (P && checkPlan(P).ok) { l.plan = m.plan; l.map = planMap(P); } else send(p, { t: 'err', msg: 'That made map did not pass the fairness check.' }); usePlan(null); } if (m.diff >= 0 && m.diff < DIFFS.length) l.diff = m.diff | 0; if (Number.isInteger(m.out) && m.out >= 0 && m.out < 9) { const [, O0] = setSidesCode(l.out); l.out = m.out; const [H1, O1] = setSidesCode(l.out); for (const x of l.players) x.team = x.team === O0 ? O1 : H1; }
       // A team game: a plan that holds, or null for a one-on-one again. Anyone whose start went away goes to the yard.
       if (m.mt !== undefined && (m.mt === null || planTeams(m.mt))) { l.mt = m.mt; if (l.mt) { const t = planTeams(l.mt)!; l.out = fac(t.home) * 3 + fac(t.out); } use(l); const ok = l.mt ? planTeams(l.mt)!.teams : [SIDE.home, SIDE.out]; for (const x of l.players) if (!ok.includes(x.team)) x.team = SIDE.home; } tell(l); }
     else if (m.t === 'start' && l.host === p.id && !l.game) { if (l.players.every(x => x.ready || x.id === l.host)) begin(l); else send(p, { t: 'err', msg: 'Not everyone is ready.' }); }

@@ -25,8 +25,9 @@ export type Aim = { k: 'move' } | { k: 'patrol' } | { k: 'gather' } | { k: 'rall
 /** Keys for the card, by the code the keyboard sends. None of them pans the view (W A S D), lifts or drops it (M N), jumps (F) or is a number. */
 export const KEYS = {
   move: 'KeyQ', stop: 'KeyH', patrol: 'KeyP', release: 'KeyR', jump: 'KeyF', gather: 'KeyO', build: 'KeyB', rally: 'KeyL', cancel: 'Backspace',
-  /** Train and research slots on a building, in order: E T Y U are the keys the first-person shop already uses. */
-  slots: ['KeyE', 'KeyT', 'KeyY', 'KeyU', 'KeyI', 'KeyO', 'KeyP', 'KeyJ', 'KeyK', 'KeyQ'],
+  /** Train and research slots on a building, in order: E T Y U are the keys the first-person shop already uses. Fourteen, so a Cap's
+   *  eleven kinds all fit; V is left out because the squad orders use it. */
+  slots: ['KeyE', 'KeyT', 'KeyY', 'KeyU', 'KeyI', 'KeyO', 'KeyP', 'KeyJ', 'KeyK', 'KeyQ', 'KeyZ', 'KeyX', 'KeyC', 'KeyG'],
   /** Buildings in the build list, in order. */
   builds: ['KeyQ', 'KeyE', 'KeyT', 'KeyY', 'KeyU', 'KeyI', 'KeyO', 'KeyP', 'KeyH', 'KeyJ', 'KeyK', 'KeyL'],
 };

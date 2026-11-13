@@ -188,5 +188,32 @@ try {
   check(r.f === 0 && r.lit === 'tr:rigger' && r.n1 === r.n0 + 1, `D-pad right steps onto the card (outlined: ${r.lit}) and A presses it (queue ${r.n0} → ${r.n1})`);
   r = await p.evaluate(() => { const g = __ore.game, C = g.cmd; C.selB = null; step(1); ptap(3); const army = C.sel.size; ptap(8); step(25); return { army, on: C.on }; });
   check(r.army >= 5 && !r.on, `Y picks the whole army (${r.army}) and a tap of View drops back into the body`);
+
+  // ---- page four: abilities, building commands and status on the card and HUD (test-only content where the factions have none yet)
+  await p.close(); p = await open();
+  await p.evaluate(() => { const R = __ore.reg, g = __ore.game;
+    R.defineAbilities('longshot', [{ key: 'flare', name: 'Test Flare', hotkey: 'E', energy: 25, cd: 10, cast: 0, range: 30, target: 'point', blurb: 'test only', effect: (g, u, t) => { window.flared = (window.flared || []).concat([[u.id, t.x, t.z]]); } }]);
+    R.defineAbilities('linesman', [{ key: 'brace', name: 'Test Brace', hotkey: 'C', energy: 0, cd: 8, cast: 0, range: 0, target: 'self', effect: (g, u) => { window.braced = (window.braced || []).concat([u.id]); } }]);
+    R.defineBuildings({ headframe: { actions: (g, b) => [{ key: 'horn', name: 'Test Horn', hotkey: 'N', cost: [30, 0], blurb: 'test only', ok: () => window.hornBlock || '', run: () => { window.horned = (window.horned || 0) + 1; } }] } });
+    for (let i = 0; i < 2; i++) { const u = g.spawn('longshot', 0, 4 + i * 2, 18); u.maxEnergy = 100; u.energy = 30 - i * 20; }
+    step(2); });
+  r = await p.evaluate(() => { const g = __ore.game, C = g.cmd, ls = g.own('linesman').filter(u => !u.pilot).slice(0, 4); pickAll(ls); const b = C.card.find(x => x.id === 'ab:linesman:brace'); key(b.key); return { key: b.key, n: (window.braced || []).length, cds: ls.map(u => +(u.abCd?.brace || 0).toFixed(1)) }; });
+  check(r.n === 4 && r.cds.every(c => c > 7), `a self ability on the card goes off on every picked body of that kind (${r.key}: ${r.n} braced)`);
+  r = await p.evaluate(() => { const g = __ore.game, C = g.cmd; step(1); const b = C.card.find(x => x.id === 'ab:linesman:brace'); return b.off; });
+  check(/^Ready in \d+ s$/.test(r), `while it recharges the button is greyed with the wait ("${r}")`);
+  r = await p.evaluate(() => { const g = __ore.game, C = g.cmd, ls = g.own('longshot').slice(-2); pickAll(ls); const b = C.card.find(x => x.id === 'ab:longshot:flare'); key(b.key); const lit = C.aim && C.aim.k === 'ab';
+    const far = ls[0], tx = far.pos.x + 6, tz = far.pos.z - 6; look(tx, tz); aim(tx, tz, 0); click(0); return { lit, sub: b.sub, f: window.flared || [], who: [ls[0].id, ls[1].id], e: ls.map(u => Math.round(u.energy)) }; });
+  check(r.lit && r.f.length === 1 && r.f[0][0] === r.who[0], `an aimed ability waits for a click, then only one caster goes: the one with the energy (${r.sub}; energy now ${r.e.join(', ')})`);
+  r = await p.evaluate(() => { const g = __ore.game, C = g.cmd, ls = g.own('longshot').slice(-2); pickAll(ls); const b = C.card.find(x => x.id === 'ab:longshot:flare'); return b.off; });
+  check(/^Needs 25 energy/.test(r), `with no picked body able to pay, the button says how much energy it needs ("${r}")`);
+  r = await p.evaluate(() => { const g = __ore.game, C = g.cmd, hf = g.ownB('headframe')[0]; C.sel.clear(); C.selB = hf; C.menu = ''; C.aim = null; step(1); const b = C.card.find(x => x.id === 'ba:horn'); const o0 = g.purse[0]; key(b.key); const ok = { n: window.horned || 0, paid: o0 - g.purse[0] }; window.hornBlock = 'Not now.'; step(1); const b2 = C.card.find(x => x.id === 'ba:horn'); key(b2.key); window.hornBlock = ''; return { label: b.label, ...ok, off: b2.off, n2: window.horned || 0 }; });
+  check(r.n === 1 && r.paid === 30 && r.off === 'Not now' && r.n2 === 1, `a building's own commands are on its card, paid for, and greyed with their reason ("${r.label}", then "${r.off}")`);
+  r = await p.evaluate(() => { const g = __ore.game, C = g.cmd, u = g.own('linesman')[0]; C.selB = null; pickAll([u]); u.status = [{ k: 'slow', t: 5 }, { k: 'shielded', t: 5 }]; look(u.pos.x, u.pos.z); step(2); const t = [...document.querySelectorAll('#anchors .st')].filter(e => !e.hidden).map(e => e.textContent); u.status = []; return t; });
+  check(r.includes('Slowed +1'), `a body under a status shows it over its head in plain words (${r.join(', ')})`);
+  await p.evaluate(() => { const u = __ore.game.own('linesman')[0]; u.status = [{ k: 'slow', t: 5 }]; step(2); });
+  await shot('card-abilities');
+  r = await p.evaluate(() => { const g = __ore.game, C = g.cmd, u = g.own('longshot').slice(-1)[0]; pickAll([u]); key('KeyF'); step(30); u.energy = 5; step(3); if (g.me !== u) return { shown: false, text: 'not driving it' }; const e = document.getElementById('abil'); return { shown: !e.hidden, text: e.textContent }; });
+  check(r.shown && /Test Flare/.test(r.text) && /Needs 25 energy/.test(r.text), `in first person the driven body's abilities sit over its name with key, cost and what stops them ("${r.text}")`);
+  await shot('fp-abilities');
 } finally { await b.close(); }
 console.log(fail.length ? `\n${fail.length} FAILED` : '\nall passed'); process.exit(fail.length ? 1 : 0);

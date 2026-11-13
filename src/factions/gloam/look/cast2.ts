@@ -203,6 +203,34 @@ function growth(kind: string, anim: Anim): THREE.Group {
 export function ripens(root: THREE.Object3D, anim: Anim) { anim.push(t => { const k = root.userData.ripen; if (k !== undefined || root.userData.ripenSeen) { root.userData.ripenSeen = true; ripen(root, k || 0, t); } }); return root; }
 export const GLOAM_BUILDINGS2: Record<string, (anim: Anim) => THREE.Group> = Object.fromEntries(Object.keys(BLD_SIZE).map(k => [k, (a: Anim) => growth(k, a)]));
 
+// ---------------------------------------------------------------- first-person views
+// What you see of yourself from inside each second-brood body, laid into vmGloam (art.ts). VM_SIDE builds one side (sx -1 left, 1 right)
+// in a side group that sits at (±.3, -.2, -.3) from the eye; VM_TOP adds the parts across the view. Nothing here is the old jaws.
+const T = (pts: P3[], r: number[], mat: THREE.Material, g: THREE.Object3D, seg = 8) => put(tube(pts, r, seg), mat, g);
+export const VM_SIDE: Record<string, (side: THREE.Group, sx: number) => void> = {
+  smother: (s, sx) => { T([[sx * .12, -.3, 0], [sx * .1, -.12, -.3], [sx * .04, -.02, -.5]], [.03, .025, .012], M.gD, s); put(blob(.05, .05, .05), M.gB, s, [sx * .1, -.12, -.3]); },   // stilt legs reaching forward under the ball
+  husk: (s, sx) => { T([[0, -.15, .05], [sx * .03, -.06, -.25], [-sx * .09, -.02, -.4]], [.035, .025, .006], M.gBc, s); },   // dry hooked feelers
+  pup: (s, sx) => { put(blob(.17, .11, .22), M.gHn, s, [-sx * .04, -.1, -.12]); for (let i = 0; i < 3; i++) T([[-sx * (.1 + i * .02), -.06, -.05 - i * .08], [-sx * (.17 + i * .02), -.02, -.07 - i * .08]], [.016, .003], M.gB, s, 5); },   // fat grub jaws, teeth inward
+  gnatwing: (s, sx) => { T([[0, -.1, .02], [-sx * .07, -.06, -.42]], [.018, .004], M.gB, s, 6); },   // two needle mouthparts closing on the aim
+  hooksail: (s, sx) => { T([[sx * .02, -.02, -.05], [sx * .05, -.18, -.28], [-sx * .02, -.24, -.42]], [.025, .02, .01], M.gD, s); T([[-sx * .02, -.24, -.42], [-sx * .07, -.17, -.47]], [.012, .003], M.gB, s, 5); },   // clawed feet tucked under
+  bloater: (s, sx) => feelers(s, sx, M.gG), sower: (s, sx) => feelers(s, sx, M.gG), drifter: (s, sx) => feelers(s, sx, M.gD),
+};
+function feelers(s: THREE.Object3D, sx: number, mat: THREE.Material) {   // feelers or roots hanging down into the view, a lime drop at each tip
+  for (let i = 0; i < 2; i++) { const x = sx * (.1 + i * .16), z = -.25 - i * .12; T([[x, .25, z], [x + sx * .03, .02, z - .04], [x - sx * .01, -.16, z - .03]], [.018, .014, .007], mat, s); put(blob(.022, .03, .022), M.gS, s, [x - sx * .01, -.17, z - .03]); }
+}
+export const VM_TOP: Record<string, (g: THREE.Group) => void> = {
+  smother: g => {   // the pale snout down the middle, a glowing pore at its tip, and the lace hem of the veil along the top
+    T([[0, -.5, -.15], [0, -.36, -.45], [0, -.3, -.62]], [.08, .065, .05], M.gV, g); put(blob(.05, .05, .03), M.gS, g, [0, -.3, -.64]);
+    T([[-.75, .38, -.6], [0, .43, -.65], [.75, .38, -.6]], [.022, .022, .022], M.gV, g);
+    for (let i = -5; i <= 5; i++) T([[i * .13, .41 - Math.abs(i) * .005, -.62], [i * .13 + .01, .3 - (i & 1) * .04, -.63]], [.012, .006], M.gV, g, 5);
+  },
+  husk: g => { put(blob(1.3, .14, .5, v => { v.y -= Math.abs(v.x) * .1; }, 'vmhusk'), M.gBc, g, [0, .43, -.55]); },   // the split lip of the dry pod overhead
+  gnatwing: g => { for (const sx of [-1, 1]) { const w = grp('vw', g, [sx * .52, .3, -.55]); w.rotation.z = sx * .3; put(blob(.75, .015, .26), M.gG, w); T([[-sx * .35, 0, 0], [sx * .35, .005, 0]], [.01, .006], M.gD, w, 5); } },   // wing edges at the top corners
+  hooksail: g => { for (const sx of [-1, 1]) put(blob(1.0, .02, .55), M.gG, g, [sx * .62, .34, -.5], [0, 0, sx * .22]); T([[0, .55, -.7], [0, .05, -.82]], [.01, .008], M.gD, g, 5); put(blob(.03, .05, .03), M.gB, g, [0, .03, -.82]); },   // sails at the sides, the tail line hanging in front
+  bloater: g => bladder(g, M.gH), sower: g => { bladder(g, M.gH); for (let i = -4; i <= 4; i++) T([[i * .16, .36, -.6], [i * .16, .24 - (i & 1) * .05, -.6]], [.016, .006], M.gG, g, 5); }, drifter: g => { bladder(g, M.gHn); T([[-.7, .37, -.58], [0, .33, -.62], [.7, .37, -.58]], [.03, .03, .03], M.gB, g); },
+};
+function bladder(g: THREE.Object3D, mat: THREE.Material) { put(blob(1.8, .55, 1.1), mat, g, [0, .64, -.6]); }   // the bladder's underside filling the top of the view
+
 // ---------------------------------------------------------------- ripening
 /** The cocoon a body or growth grows over itself while it ripens into the next form: hide vines spiralling up from the ground and
  *  meeting over the top, beaded with glowing sap, and a skin that closes between them as it nears the end. Sized to the thing's

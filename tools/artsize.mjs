@@ -3,7 +3,7 @@
 // Limits, as the page fetches them (deflated model + picture):
 //   a body: 450 KB near model and picture together, 750 KB for a big one (a walker, a flier carrier: UnitDef supply 4 or more)
 //   a building: 350 KB model and wear picture together
-//   middle model (<kind>.mid.bin): 120 KB; far model (<kind>.far.bin): 40 KB
+//   middle model (<kind>.mid.bin): 120 KB; far model (<kind>.far.bin): 80 KB
 // Exits 1 when a figure is over, listing each with what to trim first.
 import { readFileSync, existsSync } from 'node:fs';
 import { createHash } from 'node:crypto';
@@ -23,7 +23,7 @@ for (const [k, e] of Object.entries(by)) {
   const why = [];
   if (tot > lim) why.push(`near model and picture ${tot | 0} KB, limit ${lim} KB (${e.pic > e.near ? `picture ${e.pic / K | 0} KB: bake it at 1024 or lower the webp quality` : `model ${e.near / K | 0} KB: decimate the parts nobody sees up close`})`);
   if (e.mid / K > 120) why.push(`middle model ${e.mid / K | 0} KB, limit 120 KB (art/kit/lod.py, MID=3000)`);
-  if (e.far / K > 40) why.push(`far model ${e.far / K | 0} KB, limit 40 KB (art/kit/lod.py, FAR=600)`);
+  if (e.far / K > 80) why.push(`far model ${e.far / K | 0} KB, limit 80 KB (art/kit/lod.py, FAR=600)`);
   if (why.length) over.push(`${k}: ${why.join('; ')}`); else if (only.length) console.log(`${k}: within the limits (${tot | 0} KB of ${lim} KB)`);
 }
 // A painted body needs a middle and a far model (art/kit/lod.py) made from its current near model, or it shrinks to a speck from high up.

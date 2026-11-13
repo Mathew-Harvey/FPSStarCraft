@@ -10,7 +10,7 @@ import { UNIT, BLD, MAP, FACTION, Unit, Building, BKind, isWorker, fac } from '.
 import { cardFor, Btn, Aim, KEYS } from './card';
 import { bldRule } from './core/registry';
 import { costOf, canPay } from './core/econ';
-import { V3, L_FX } from './gfx';
+import { V3, L_FX, fogSheetMaterial } from './gfx';
 import { sfx, drillSound } from './audio';
 
 /** Leading in person. Fighters the game is driving, within `reach` metres of a body one of their own side's players is driving, deal `dmg`
@@ -431,7 +431,7 @@ export class Command {
       // One flat sheet over the whole world, three times the size of the survey so the dark runs past its edge.
       const sz = n * 4, x0 = fog.x0 - sz, z0 = fog.z0 - sz, x1 = fog.x0 + sz * 2, z1 = fog.z0 + sz * 2, geo = new THREE.BufferGeometry();
       geo.setAttribute('position', new THREE.Float32BufferAttribute([x0, .3, z0, x1, .3, z0, x0, .3, z1, x1, .3, z1], 3)); geo.setAttribute('uv', new THREE.Float32BufferAttribute([-1, -1, 2, -1, -1, 2, 2, 2], 2)); geo.setIndex([0, 2, 1, 1, 2, 3]);
-      const m = this.fogMesh = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthTest: false, depthWrite: false, fog: false, toneMapped: false })); m.frustumCulled = false; m.renderOrder = 40; m.layers.set(L_FX); g.scene.add(m); this.fogT = 0;
+      const m = this.fogMesh = new THREE.Mesh(geo, fogSheetMaterial(tex, n)); m.frustumCulled = false; m.renderOrder = 40; m.layers.set(L_FX); g.scene.add(m); this.fogT = 0;
     }
     // The dark eases in and out as the crew's sight moves, and is right at once when the view first opens.
     this.fogMesh.visible = true; this.fogT += dt;

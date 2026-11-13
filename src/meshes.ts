@@ -8,6 +8,7 @@ import { M, toonMaterial, PRE_DRAW, SHADOW_SWAP, farInkOf, L_FX } from './gfx';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import * as FX from './fx/kit';
 import { airShadows } from './fx/air';
+import './fx/hide';
 /** The effect kit (src/fx/kit.ts), re-exported so it is in the bundle and tests can reach it as __oreFx. */
 export { FX };
 (globalThis as any).__oreFx = { ...FX, airShadows };
@@ -105,8 +106,8 @@ function lodState(root: THREE.Object3D, kind: string): LodState {
   let s = STATE.get(root);
   if (!s) {
     const near: THREE.Mesh[] = [];
-    root.traverse(o => { const m = o as THREE.Mesh; if (m.isMesh && !o.userData.lv && (m.material as THREE.Material).userData?.fig === kind) near.push(m); });
-    const wear = near[0] ? near[0].material as THREE.Material : null;   // the body's own copy (tinted in a mirror match), worn by every level
+    root.traverse(o => { const m = o as THREE.Mesh; if (m.isMesh && !o.userData.lv && ((m.userData.veilWas || m.material) as THREE.Material).userData?.fig === kind) near.push(m); });
+    const wear = near[0] ? (near[0].userData.veilWas || near[0].material) as THREE.Material : null;   // the body's own copy (tinted in a mirror match), worn by every level
     const groups: Record<string, THREE.Object3D> = {}; root.traverse(o => { if (o.name && !groups[o.name] && !(o as THREE.Mesh).isMesh) groups[o.name] = o; });
     s = { lv: 0, meshes: [near, near, near], real: [true, false, false], wear, groups, v: -1 }; STATE.set(root, s);
   }
@@ -115,7 +116,7 @@ function lodState(root: THREE.Object3D, kind: string): LodState {
   if (s.v !== artVersion() && !(s.real[1] && s.real[2])) {
     s.v = artVersion(); const near = s.meshes[0], st = s; let changed = false;
     for (const lv of [1, 2]) if (!st.real[lv] && levelData(kind, lv)) {
-      st.meshes[lv] = mergedLevel(kind, lv).map(e => { const m = new THREE.Mesh(e.geo, st.wear || e.mat); m.userData.lv = lv; m.visible = false; m.layers.mask = near[0] ? near[0].layers.mask : 1; (st.groups[e.group] || root).add(m); return m; });
+      st.meshes[lv] = mergedLevel(kind, lv).map(e => { const m = new THREE.Mesh(e.geo, st.wear || e.mat); m.userData.lv = lv; m.visible = false; m.layers.mask = near[0] ? near[0].layers.mask : 1; (st.groups[e.group] || root).add(m); if (root.userData.veiled && root.userData.veilSeen !== false) FX.veilPart(m); return m; });
       st.real[lv] = changed = true;
     }
     if (changed) {
@@ -133,7 +134,7 @@ export const LOD = { nearPx: 260, midPx: 70, on: true, force: -1, counts: [0, 0,
   shadowLv: 1,
   /** Far bodies of a kind are drawn together in one call (instanced), in their standing pose. */
   crowd: true };
-(globalThis as any).__oreLOD = LOD;
+(globalThis as any).__oreLOD = LOD; (globalThis as any).__oreFigure = (k: string) => figure(k);   // for the zoom benches
 const WP = new THREE.Vector3(), CP = new THREE.Vector3();
 /** Picks a level for every body with levels in the scene's top layer, from how tall it stands on screen. `h` is the picture height in pixels. */
 const SEEN: LodState[] = [];
@@ -176,7 +177,7 @@ export function lodPass(scene: THREE.Scene, cam: THREE.Camera, h: number) {
     if (!LOD.on) lv = 0; else if (LOD.force >= 0) lv = LOD.force; else if (lv === 0 && px < up) lv = px < LOD.midPx ? 2 : 1; else if (lv === 1) { if (px > dn) lv = 0; else if (px < up) lv = 2; } else if (lv === 2 && px > dn) lv = px > LOD.nearPx ? 0 : 1;
     if (lv !== s.lv) { const was = s.meshes[s.lv], now = s.meshes[lv]; if (was !== now) { for (const m of was) m.visible = false; for (const m of now) m.visible = true; } s.lv = lv; }
     c[lv]++; SEEN.push(s);
-    if (lv === 2 && LOD.crowd && s.meshes[2] !== s.meshes[1] && s.meshes[2][0]) {
+    if (lv === 2 && LOD.crowd && !o.userData.veiled && s.meshes[2] !== s.meshes[1] && s.meshes[2][0]) {
       const cr = crowdOf(scene, kind, s.meshes[2][0].material as THREE.Material);
       if (cr) { for (const m of s.meshes[2]) m.visible = false; s.crowd = true; o.updateMatrix(); cr.mesh.setMatrixAt(cr.n++, o.matrix); continue; }
     }

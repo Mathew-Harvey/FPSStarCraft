@@ -68,10 +68,14 @@ try {
 
   // ---- veil and borrow on a body
   const vb = await p.evaluate(() => { const g = __ore.game, F = window.__oreFx, u = g.units.find(x => x.alive && x !== g.me); const mats0 = []; u.obj.traverse(o => { if (o.isMesh) mats0.push(o.material); });
-    const off = F.veil(u.obj); let shim = 0; u.obj.traverse(o => { if (o.isMesh && o.material.blending === 2) shim++; }); off(); let back = 0, i = 0; u.obj.traverse(o => { if (o.isMesh) { if (o.material === mats0[i]) back++; i++; } });
+    const vis0 = []; u.obj.traverse(o => { if (o.isMesh) vis0.push(o.visible); });
+    const off = F.veil(u.obj), off2 = F.veil(u.obj); let shim = 0; u.obj.traverse(o => { if (o.isMesh && o.material.blending === 2) shim++; });
+    off(); let still = 0; u.obj.traverse(o => { if (o.isMesh && o.material.blending === 2) still++; }); off2();
+    let back = 0, i = 0, vis = 0; u.obj.traverse(o => { if (o.isMesh) { if (o.material === mats0[i]) back++; if (o.visible === vis0[i]) vis++; i++; } }); window.vbStill = still === shim; window.vbVis = vis === mats0.length;
     const bo = F.borrow(u.obj, '#ff4fd0'); bo.update(1); let tinted = 0; u.obj.traverse(o => { if (o.isMesh && o.material.uniforms?.uColor && o.material.uniforms.uColor.value.r > .9 && o.material.uniforms.uColor.value.g < .8) tinted++; }); bo.off();
-    return { shim, back, n: mats0.length, tinted }; });
-  check(vb.shim > 0 && vb.back === vb.n, `a hidden body shimmers and gets its own paint back after (${vb.shim} parts)`);
+    return { shim, back, n: mats0.length, tinted, still: window.vbStill, vis: window.vbVis }; });
+  check(vb.shim > 0 && vb.back === vb.n && vb.vis, `a hidden body shimmers and gets its own paint and detail levels back after (${vb.shim} parts)`);
+  check(vb.still, 'two hiders on one body: it stays hidden until both let go');
   check(vb.tinted > 0, `a taken-over body wears the other side's colour (${vb.tinted} parts)`);
 
   // ---- a flier gets a shadow on the ground and a height line, and loses them when it lands

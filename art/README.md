@@ -47,3 +47,17 @@ Rules:
 The published page is about 1.5 MB without art (cap 16 MB, target under 8 MB). Each art file can be up to 15 MB. One publish sends at most 255
 files and a version holds up to 511, so the full roster (about 70 kinds, three models and one or two pictures each, about 300 files)
 fits, but goes up in two publishes to the same artifact.
+
+## Size limits
+
+A match fetches its two factions' near models and pictures before it starts, so every figure adds to the wait. Run `node tools/artsize.mjs [kind ...]` after `npm run build`. It exits 1 and says what to trim when a figure is over a limit:
+
+| What | Limit |
+|---|---|
+| A body: near model and picture | 450 KB |
+| A big body (supply 4 or more): near model and picture | 750 KB |
+| A building: model and wear picture | 350 KB |
+| Middle model | 120 KB |
+| Far model | 80 KB |
+
+Every painted body also needs `<kind>.mid.bin` and `<kind>.far.bin`, made from its current near model. Running `python art/kit/lod.py <kind>` makes them. It stamps each with the near model's hash, and makes them again once the near model changes. The checker reports a body whose levels are missing or out of date. Each file's faction comes from the faction code that names the kind, so put a new kind in `src/factions/<faction>/` and it is fetched only for that faction's matches.

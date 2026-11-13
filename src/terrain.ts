@@ -8,6 +8,7 @@
 // The engine asks this file five things: how high the ground is (h), whether a step a body just took went up or down a cliff (block), which
 // way to walk to reach ground at another level (via), whether a side can see a body standing above it (sees), and what to draw on the map.
 import { MAP, ROAD, VHOME, OUTPOST, LAYOUT, roadPt, swapEnd } from './data';
+import { turn, turnDir, ringSite } from './teammaps';
 
 /** A ramp up the side of a stretch of high ground: `t` is where it meets the top, `f` its foot on the ground below, `w` its width. */
 export interface Ramp { tx: number; tz: number; fx: number; fz: number; w: number; /** From the top toward the foot, unit length. */ ux: number; uz: number; len: number }
@@ -209,6 +210,7 @@ function twin(R: Ridge): Ridge { const [ax, az] = swapEnd(R.ax, R.az), [bx, bz] 
 const CACHE = new Map<string, Terrain>();
 /** The paths everyone needs kept open: the road, the flank and every decoy road, as segments. */
 function paths() {
+  if (MAP.ring) return (MAP.roads || []).map(r => [...r]);   // a team map keeps its spokes open; the far road and the flank run along them
   const segs: number[][] = []; const a = roadPt(-25), b = roadPt(ROAD.len + 41); segs.push([a[0], a[1], b[0], b[1]]);
   let qx = OUTPOST.x, qz = OUTPOST.z; for (const [fx, fz] of MAP.flank) { segs.push([qx, qz, fx, fz]); qx = fx; qz = fz; } segs.push([qx, qz, 0, 0]);
   for (const r of (MAP.roads || []).slice(1)) segs.push(r); return segs;
@@ -233,6 +235,7 @@ export function layoutTerrain() {
     return true;
   };
   const both = (R: Ridge) => { T.ridges.push(R, twin(R)); };
+  if (MAP.starts) { ringGround(T, D, room); for (const R of T.ridges) box(R); T.ridges.forEach((R, i) => R.id = i); CACHE.set(key, T); Object.assign(TER, T); MAP.vents = T.vents; settle(); return; }
 
   // 1. Ledges beside the road: high ground with one ramp down to the road, so whoever holds it shoots down on anyone passing.
   let ledges = 0;
@@ -320,4 +323,48 @@ export function drawMap(c: CanvasRenderingContext2D, X: (x: number) => number, Z
   for (const B of TER.beacons) { if (!seen(B.x, B.z)) continue; const mine = B.alive && B.held & (1 << team); c.strokeStyle = !B.alive ? '#5a463e' : mine ? '#ffe36a' : B.held ? '#ff6a4a' : '#d8c7b0'; c.lineWidth = 1.6; c.beginPath(); c.arc(X(B.x), Z(B.z), Math.max(3, BEACON.REACH * k), 0, 7); c.stroke();
     if (mine) { c.strokeStyle = 'rgba(255,227,106,.35)'; c.beginPath(); c.arc(X(B.x), Z(B.z), BEACON.SEE * k, 0, 7); c.stroke(); } }
   c.restore();
+}
+
+/** The ground of a team map: everything for start 0's share of the map, then the same turned round to every other start. */
+function ringGround(T: Terrain, D: (a?: number, b?: number) => number, room0: (x: number, z: number, r: number, pathGap?: number, siteGap?: number) => boolean) {
+  const n = MAP.ring!, k = MAP.k || 1, [cx, cz] = MAP.mid!, sites = MAP.sites || [], starts = MAP.starts!, R = Math.hypot(cx, cz), gapA = (a: number, b: number) => Math.abs(Math.atan2(Math.sin(a - b), Math.cos(a - b)));
+  const spin = (R0: Ridge, i: number): Ridge => { const [ax, az] = turn(MAP, i, R0.ax, R0.az), [bx, bz] = turn(MAP, i, R0.bx, R0.bz), Q = ridge(ax, az, bx, bz, R0.r, R0.h, R0.kind);
+    for (const m of R0.ramps) { const [tx, tz] = turn(MAP, i, m.tx, m.tz), [fx, fz] = turn(MAP, i, m.fx, m.fz), [ux, uz] = turnDir(MAP, i, m.ux, m.uz); Q.ramps.push({ tx, tz, fx, fz, w: m.w, ux, uz, len: m.len }); } return Q; };
+  const all = (x: number, z: number) => Array.from({ length: n }, (_, i) => turn(MAP, i, x, z));
+  // Room for a piece in start 0's share, and for each of its copies: clear of every start's base, every road and every field.
+  const mine: Ridge[] = [], walls: Wall[] = [], apart = (px: number, pz: number, r: number) => mine.every(Q => segD(px, pz, Q.ax, Q.az, Q.bx, Q.bz) > Q.r + r + 7);
+  const room = (x: number, z: number, r: number, pathGap = 8, siteGap = 18) => all(x, z).every(([px, pz]) => room0(px, pz, r, pathGap, siteGap) && apart(px, pz, r) && starts.every(([sx, sz]) => Math.hypot(px - sx, pz - sz) > 50 + r));
+  // Start 0's natural in its horseshoe: open toward start 0, the choke toward the middle, a rock wall across the back way.
+  const si = sites.findIndex((_, i) => ringSite(i)?.kind === 'natural' && ringSite(i).step === 0);
+  if (si >= 0) { const [nx0, nz0] = sites[si], R0 = 27 * Math.min(1.15, Math.max(.75, k)), gap = k < .9 ? 38 : 46, N = 24, homeA = Math.atan2(-nz0, -nx0), chokeA = Math.atan2(cz - nz0, cx - nx0);
+    const roads = MAP.roads || [], keep: boolean[] = [], own = all(nx0, nz0);
+    for (let i = 0; i < N; i++) { const a = (i + .5) / N * 6.2832, x = nx0 + Math.cos(a) * R0, z = nz0 + Math.sin(a) * R0; keep.push(gapA(a, homeA) > .95 && gapA(a, chokeA) > .42 && all(x, z).every(([px, pz], c) => starts.every(([sx, sz]) => Math.hypot(px - sx, pz - sz) > gap) && !roads.some(q => segD(px, pz, q[0], q[1], q[2], q[3]) < 8) && !sites.some(q => Math.hypot(q[0] - own[c][0], q[1] - own[c][1]) > 3 && Math.hypot(px - q[0], pz - q[1]) < 22))); }
+    const cut = keep.map((v, i) => v && keep[(i + 1) % N] && keep[(i + N - 1) % N]);
+    let door = -1, dd = 0; for (let i = 0; i < N; i++) { const a = (i + 1) / N * 6.2832; if (cut[i] && cut[(i + 1) % N] && cut[(i + N - 1) % N] && cut[(i + 2) % N]) { const g = Math.min(gapA(a, chokeA), gapA(a, homeA)); if (g > dd) { dd = g; door = i; } } }
+    if (door >= 0 && dd > .9) { cut[door] = cut[(door + 1) % N] = false; const a = (door + 1) / N * 6.2832; walls.push([nx0 + Math.cos(a) * R0, nz0 + Math.sin(a) * R0, a, 2 * R0 * Math.sin(3.1416 / N) * 2 - 2 * RIDGE_R + 1.6]); }
+    let rampOn: Ridge | null = null, rd = 9;
+    for (let i = 0; i < N; i++) { if (!cut[i]) continue; const a0 = i / N * 6.2832, a1 = (i + 1) / N * 6.2832, Q = ridge(nx0 + Math.cos(a0) * R0, nz0 + Math.sin(a0) * R0, nx0 + Math.cos(a1) * R0, nz0 + Math.sin(a1) * R0, RIDGE_R, RIDGE_H, 'ridge'); mine.push(Q); const g = gapA((a0 + a1) / 2, chokeA); if (g < rd && g > .42) { rd = g; rampOn = Q; } }
+    if (rampOn) { const Q = rampOn, mxr = (Q.ax + Q.bx) / 2, mzr = (Q.az + Q.bz) / 2, l = Math.hypot(nx0 - mxr, nz0 - mzr), ux = (nx0 - mxr) / l, uz = (nz0 - mzr) / l; ramp(Q, mxr + ux * 3, mzr + uz * 3, ux, uz, 9, 4.8); } }
+  // Ledge beside start 0's road to the middle, ramp down to the road.
+  { const [sx, sz] = starts[0], dx = cx - sx, dz = cz - sz, L = Math.hypot(dx, dz), ux = dx / L, uz = dz / L;
+    let done = false; for (const f of [.45, .38, .55, .3, .62]) { const r = Math.round(9 * Math.min(1.2, k)); for (const side of [1, -1]) for (const off of [r + 14, r + 19, r + 25]) { if (done) break; const x = sx + ux * L * f - uz * side * off, z = sz + uz * L * f + ux * side * off; if (!room(x, z, r, 0, 14)) continue;
+      const Q = ridge(x - ux * 4, z - uz * 4, x + ux * 4, z + uz * 4, r, LEDGE_H, 'ledge'), nx = uz * side, nz = -ux * side; ramp(Q, x + nx * r, z + nz * r, nx, nz, 10, 5.2); mine.push(Q); done = true; } if (done) break; } }
+  // Island field on Large and Vast: between start 0's road and the next start's, out from the middle.
+  const half = 3.1416 / n, ab = Math.atan2(-cz, -cx) + half, islands: [number, number][] = [];
+  if (k >= 1.35) for (const ir of [15, 12]) for (const f of [.62, .7, .55, .78, .48, .85]) for (const da of [0, .12, -.12, .22, -.22]) { if (islands.length) break; const x = cx + Math.cos(ab + da) * R * f, z = cz + Math.sin(ab + da) * R * f; if (!room(x, z, ir, 8, 26)) continue; mine.push(ridge(x, z, x, z, ir, ISLAND_H, 'island')); islands.push([x, z]); }
+  // Copies for every start.
+  for (let i = 0; i < n; i++) { for (const Q of mine) T.ridges.push(i ? spin(Q, i) : Q); for (const [x, z, a, len] of walls) { const [px, pz] = turn(MAP, i, x, z); T.walls.push([px, pz, a + i * 2 * Math.PI / n, len]); }
+    for (const [x, z] of islands) { const [px, pz] = turn(MAP, i, x, z); T.fields.push({ x: px, z: pz, seams: [[-5, -3, 9, 1.3], [4, -5, 8, 1.2], [6, 3, 9, 1.3], [-3, 6, 8, 1.2], [-7, 3, 7, 1.1]].map(([sx, sz, a, b]) => { const [dx, dz] = turnDir(MAP, i, sx, sz); return [dx, dz, a, b]; }), amount: 1200, rich: 1, island: true }); } }
+  // Vents: two by each start, two by every field, laid for start 0 and turned with it.
+  const vents: [number, number][] = [], vent = (p: [number, number]) => vents.push([Math.round(p[0] * 10) / 10, Math.round(p[1] * 10) / 10]);
+  for (let i = 0; i < n; i++) for (const v of [[-17, 14], [-22, -5]]) { const [dx, dz] = turnDir(MAP, i, v[0], v[1]), [sx, sz] = starts[i]; vent([sx + dx, sz + dz]); }
+  sites.forEach(([x, z], i) => { const S = ringSite(i); if (!S || S.kind === 'main' || S.step) return; const ox = x - starts[S.step][0], oz = z - starts[S.step][1], l = Math.hypot(ox, oz) || 1; const [dx, dz] = S.kind === 'outer' ? [(x - cx) / Math.hypot(x - cx, z - cz), (z - cz) / Math.hypot(x - cx, z - cz)] : [ox / l, oz / l];
+    for (const a of [-1.15, 1.15]) { const c = Math.cos(a), s = Math.sin(a); for (const p of all(x + (dx * c - dz * s) * 13, z + (dx * s + dz * c) * 13)) vent(p); } });
+  for (const f of T.fields) { const [dx, dz] = [(f.x - cx) / Math.hypot(f.x - cx, f.z - cz), (f.z - cz) / Math.hypot(f.x - cx, f.z - cz)]; vent([f.x - dz * 10, f.z + dx * 10]); vent([f.x + dz * 10, f.z - dx * 10]); }
+  T.vents = vents;
+  // The fields out on the rim between starts are the bright ones; a Survey Beacon in the middle, and one between each pair of roads.
+  sites.forEach((_, i) => { if (ringSite(i)?.kind === 'outer') T.bright.push(i); });
+  T.beacons.push({ x: cx, z: cz, held: 0, alive: true });
+  let lit = false; for (const f of [.42, .36, .5, .3, .56, .25, .64]) for (const da of [0, .15, -.15, .3, -.3]) { if (lit) break; const x = cx + Math.cos(ab + da) * R * f, z = cz + Math.sin(ab + da) * R * f; if (!room(x, z, 3, 5, 12)) continue; for (const [px, pz] of all(x, z)) T.beacons.push({ x: px, z: pz, held: 0, alive: true }); lit = true; }
+  void D;
 }

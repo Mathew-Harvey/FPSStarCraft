@@ -1,5 +1,6 @@
 // Shared types, stat tables and map constants.
 import { layoutTerrain } from './terrain';
+import { startsOf, ringSites } from './teammaps';
 import type * as THREE from 'three';
 import type { Rig } from './models';
 
@@ -166,6 +167,9 @@ export interface MapDef {
   /** A story map's set piece, built on top of the base layout: the split canyon, the glass field round the First Stone, or the Charter drill site. */
   set?: 'crack' | 'stone' | 'drill'; /** The base map whose layout a story map borrows. */ like?: number;
   /** Where Flux comes out of the ground, two by each base and each field: laid out with the rest of the ground (see terrain.ts). */ vents?: [number, number][];
+  /** A map with more than two starts (see teammaps.ts): how many, the radius of the circle they stand on at Medium size, and the bearing from
+   *  the yard to the middle. `starts` is filled in by setMap; `mains` lists the sites that are empty main bases (a game with more sides drops them). */
+  ring?: number; ringR?: number; ringA?: number; starts?: [number, number][]; mains?: number[];
 }
 export const MAPS: MapDef[] = [
   { name: 'Needle\'s Eye', blurb: 'One road east, one ridge north', out: [124, 13], flank: [[118, -40], [62, -50], [20, -30]], road: 'east road', flankName: 'north ridge', exp: [61, -28], arch: 68, wreck: [46, 30],
@@ -181,6 +185,11 @@ export const MAPS: MapDef[] = [
     rocks: 180, spireEvery: 6, buttes: 7, crystals: 70, ground: [.92, 1.12, 1.25], mesa: [.95, 1.05, 1.3], rock: [.9, 1.05, 1.2], dusk: .05, set: 'stone', like: 0 },
   { name: 'Drill Site', blurb: 'The Charter\'s hole in the Glass Flats', out: [-136, 62], flank: [[-96, 104], [-30, 92], [4, 40]], road: 'west causeway', flankName: 'salt shelf', exp: [-58, -30], arch: 0, wreck: null,
     rocks: 120, spireEvery: 12, buttes: 4, crystals: 40, ground: [.62, .82, 1.25], mesa: [.66, .72, 1.1], rock: [.7, .8, 1.1], dusk: .8, set: 'drill', like: 2 },
+  // Team maps (see teammaps.ts). Their roads, flank, far base and natural are worked out from the circle of starts.
+  { name: 'Crossing', blurb: 'Four starts round a crossroads', out: [0, 0], flank: [], road: 'cross road', flankName: 'side road', exp: [0, 0], arch: 0, wreck: null,
+    rocks: 300, spireEvery: 7, buttes: 10, crystals: 18, ground: [1, .93, .84], mesa: [1, .9, .8], rock: [.95, .88, .82], dusk: .35, ring: 4, ringR: 108, ringA: .3 },
+  { name: 'Wheel', blurb: 'Eight starts round a hub', out: [0, 0], flank: [], road: 'spoke road', flankName: 'rim road', exp: [0, 0], arch: 0, wreck: null,
+    rocks: 520, spireEvery: 6, buttes: 16, crystals: 26, ground: [.9, 1.02, 1.12], mesa: [.88, .95, 1.1], rock: [.86, .92, 1.05], dusk: .2, ring: 8, ringR: 152, ringA: -.2 },
 ];
 /** Story state the engine reads while a campaign job is running. Set before a Game is made, cleared for everything else. */
 export const STORY = {
@@ -215,8 +224,8 @@ export const baseOf = (code: number) => code % 10, sizeOf = (code: number) => Ma
 export const VAST = 3;
 export const mapCode = (base: number, size: number) => base + 10 * size;
 /** The map a match is played on: a Vast map gets a turn nobody chose, so the far base is somewhere new each time. Every other size is left as it is, and draws nothing from the dice. */
-export const rollMap = (code: number, turn = 0) => sizeOf(code) === VAST ? code % 100 + 100 * (turn >= 1 && turn <= TURNS ? turn : 1 + Math.floor(Math.random() * TURNS)) : code % 100;
-export const validMap = (code: number) => Number.isInteger(code) && code >= 0 && baseOf(code) < MAPS.length && sizeOf(code) < SIZES.length && turnOf(code) <= TURNS && !(turnOf(code) && MAPS[baseOf(code)].set);
+export const rollMap = (code: number, turn = 0) => sizeOf(code) === VAST && !MAPS[baseOf(code)]?.ring ? code % 100 + 100 * (turn >= 1 && turn <= TURNS ? turn : 1 + Math.floor(Math.random() * TURNS)) : code % 100;
+export const validMap = (code: number) => Number.isInteger(code) && code >= 0 && baseOf(code) < MAPS.length && sizeOf(code) < SIZES.length && turnOf(code) <= TURNS && !(turnOf(code) && (MAPS[baseOf(code)].set || MAPS[baseOf(code)].ring));
 const segD = (x: number, z: number, ax: number, az: number, bx: number, bz: number) => { const dx = bx - ax, dz = bz - az, t = Math.max(0, Math.min(1, ((x - ax) * dx + (z - az) * dz) / (dx * dx + dz * dz || 1))); return Math.hypot(x - ax - dx * t, z - az - dz * t); };
 export const OUTPOST = { x: 124, z: 13 };
 export const GATE = { x: 138, z: 12 };
@@ -235,7 +244,11 @@ export function setMap(code: number) {
   if (!validMap(code)) code = 0; const base = baseOf(code), size = sizeOf(code), turn = turnOf(code), S = SIZES[size], k = S.k, B0 = MAPS[base], sc = (p: number[]) => [Math.round(p[0] * k), Math.round(p[1] * k)];
   // A turned map: the road, the flank, the far base and the wreck all swing round the yard together. The rich seam swings by its own amount (see below), so it does not point at the far base.
   const th = turn ? turn * 6.2832 / TURNS + .13 : 0, cs = Math.cos(th), sn = Math.sin(th), tr = (p: number[]) => [p[0] * cs - p[1] * sn, p[0] * sn + p[1] * cs];
-  const B: MapDef = turn ? { ...B0, out: tr(B0.out) as [number, number], flank: B0.flank.map(tr), exp: tr(B0.exp) as [number, number], wreck: B0.wreck ? tr(B0.wreck) as [number, number] : null } : B0;
+  let B: MapDef = turn ? { ...B0, out: tr(B0.out) as [number, number], flank: B0.flank.map(tr), exp: tr(B0.exp) as [number, number], wreck: B0.wreck ? tr(B0.wreck) as [number, number] : null } : B0;
+  // A team map: the far base is the start opposite the yard, the flank runs past the next start round, the natural sits off the yard toward the middle.
+  const starts = B0.ring ? startsOf(B0, k) : undefined;
+  if (starts) { const n = starts.length, [hx, hz] = starts[n / 2], l = Math.hypot(hx, hz), cx = hx / 2, cz = hz / 2, [fx, fz] = starts[n / 2 - 1], toC = Math.atan2(cz, cx);
+    B = { ...B0, out: [(hx - hx / l * 8) / k, (hz - hz / l * 8) / k], flank: [[(cx + (fx - cx) * .55) / k, (cz + (fz - cz) * .55) / k]], exp: [Math.cos(toC + .95) * 62, Math.sin(toC + .95) * 62] }; }
   MAP = { ...B, base, size, k, out: sc(B.out) as [number, number], flank: B.flank.map(sc), exp: sc(B.exp) as [number, number], arch: turn ? 0 : Math.round(B.arch * k) /* a rock arch over one road would mark it as the real one */, wreck: B.wreck ? sc(B.wreck) as [number, number] : null, rocks: Math.round(B.rocks * k * k), buttes: Math.round(B.buttes * k), crystals: B.crystals };
   const ne = (B.like ?? base) === 0 && !turn; if (ne) MAP.out[1] = 13;
   const [ox, oz] = MAP.out;
@@ -249,6 +262,7 @@ export function setMap(code: number) {
   const e = MAP.flank[MAP.flank.length - 1], el = Math.hypot(e[0], e[1]) || 1; RALLY_N.x = e[0] - e[0] / el * 7; RALLY_N.z = e[1] - e[1] / el * 7;
   const vr = roadPt(ROAD.len - 24, 3); VRALLY.x = vr[0]; VRALLY.z = vr[1]; const f0 = MAP.flank[0]; VRALLY_N.x = ox + (f0[0] - ox) * .5; VRALLY_N.z = oz + (f0[1] - oz) * .5; const vh = veylPt(8, 1); VHOME.x = vh[0]; VHOME.z = vh[1];
   MAP.code = code; MAP.turn = turn; MAP.hid = turn > 0; MAP.mid = [ox / 2, oz / 2]; MAP.rad = 200 * k;
+  if (starts) { const n = starts.length; VHOME.x = starts[n / 2][0]; VHOME.z = starts[n / 2][1]; MAP.starts = starts; MAP.mid = [VHOME.x / 2, VHOME.z / 2]; MAP.rad = Math.hypot(VHOME.x, VHOME.z) / 2 + 80 * k; MAP.rocks = Math.round(B.rocks * k * k); }
   if (turn) {
     // The world is a disc with room behind both bases, and its middle sits off to one side, so neither the skyline nor the edge of the rock says which way to look.
     const hs = (n: number) => { const v = Math.sin(code * 12.9898 + n * 78.233) * 43758.5453; return v - Math.floor(v); }, ma = hs(1) * 6.2832, mo = 40 + 40 * hs(2);
@@ -266,6 +280,8 @@ export const compass = (x: number, z: number) => ['north', 'north-east', 'east',
 /** The roads painted on the ground. On a hidden map each end gets a few more, out to ore fields, so the one road between the bases does not give the far end away. */
 function layoutRoads() {
   const roads: number[][] = [MAP.hid ? [...roadPt(2), ...roadPt(ROAD.len - 2)] : [...roadPt(-25), ...roadPt(ROAD.len + 41)]];
+  // A team map paints a road from every start to the middle.
+  if (MAP.starts) { const [cx, cz] = MAP.mid!; roads.length = 0; for (const [x, z] of MAP.starts) { const l = Math.hypot(cx - x, cz - z); roads.push([x + (cx - x) / l * 6, z + (cz - z) / l * 6, cx, cz]); } }
   if (MAP.hid) for (const [hx, hz, rx, rz] of [[0, 0, ROAD.dx, ROAD.dz], [VHOME.x, VHOME.z, -ROAD.dx, -ROAD.dz]]) {
     const used = [Math.atan2(rz, rx)], gap = (a: number, b: number) => Math.abs(Math.atan2(Math.sin(a - b), Math.cos(a - b)));
     const by = (MAP.sites || []).map(([x, z]) => ({ x, z, d: Math.hypot(x - hx, z - hz), a: Math.atan2(z - hz, x - hx) })).sort((p, q) => p.d - q.d); let n = 0;
@@ -279,7 +295,8 @@ const SITES = new Map<string, number[][]>();
  *  pairing the outpost gets the same seam turned round, so neither end has the nearer first field. */
 function layoutSites() {
   if (!MAP || MAP.code === undefined) return;   // the ground (terrain.ts) is laid out at every way out of here, once the fields are down
-  const fair = LAYOUT.fair && !MAP.hid, even = fair || !(fac(SIDE.home) === 0 && fac(SIDE.out) !== 0) || !!MAP.hid, key = MAP.code + (fair ? 'f' : even ? 'e' : 'c'), had = SITES.get(key); if (had) { MAP.sites = had; layoutRoads(); layoutTerrain(); return; }
+  const fair = LAYOUT.fair && !MAP.hid, even = fair || !(fac(SIDE.home) === 0 && fac(SIDE.out) !== 0) || !!MAP.hid, key = MAP.code + (fair ? 'f' : even ? 'e' : 'c'), had = MAP.ring ? null : SITES.get(key); if (had) { MAP.sites = had; layoutRoads(); layoutTerrain(); return; }
+  if (MAP.ring) { const mains: number[] = [], sites = ringSites(MAP, mains); MAP.mains = mains; MAP.sites = sites; SITES.set(key, sites); layoutRoads(); layoutTerrain(); return; }   // a team map lays its own fields, one copy per start
   const k = MAP.k, S = SIZES[MAP.size], [ox, oz] = MAP.out;
   const sites: number[][] = [[MAP.exp[0], MAP.exp[1]]], cx = ox / 2, cz = oz / 2, end = roadPt(ROAD.len + 6);
   if (even) sites.push(swapEnd(MAP.exp[0], MAP.exp[1]).map(Math.round));

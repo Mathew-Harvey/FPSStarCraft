@@ -7,6 +7,7 @@ import { Game } from '../src/game';
 import { initHeadless } from '../src/gfx';
 import { DIFFS, MAP, MAPS, SIZES, VHOME, setMap, setSides, swapEnd, LAYOUT } from '../src/data';
 import { TER, STEP, BEACON, h, zone, sees, flat, segD } from '../src/terrain';
+import { TEAM_LAYOUTS, turn } from '../src/teammaps';
 
 initHeadless();
 const fail: string[] = []; const check = (ok: boolean, what: string) => { console.log((ok ? 'PASS ' : 'FAIL ') + what); if (!ok) fail.push(what); };
@@ -132,6 +133,41 @@ const near = (a: number[], b: number[], tol = .3) => Math.hypot(a[0] - b[0], a[1
 // 8. Bright seams carry more per load.
 {
   const g = match(1); const bright = g.ores.filter(o => (o.rich || 1) > 1); check(bright.length > 0 && bright.length % 2 === 0, `Switchback has bright seams (${bright.length}), in matched pairs`);
+}
+
+// 9. Team maps. Crossing has four starts and Wheel eight; everything on them is the same for every start: each ridge, ramp, vent, beacon, rock
+//    wall, field and ore seam turned one start round lands on another. Every start layout (2v2, 3v3, 4v4, free for all) is fair by the same turn.
+{
+  const RING: number[] = []; for (const b of MAPS.map((m, i) => m.ring ? i : -1).filter(i => i >= 0)) for (let size = 0; size < SIZES.length; size++) RING.push(b + 10 * size);
+  let bad: string[] = [], counts: string[] = []; setSides(0, 2);
+  for (const code of RING) { LAYOUT.fair = true; setMap(code); const n = MAP.ring!, name = `${code} ${MAPS[code % 10].name} ${SIZES[Math.floor(code / 10) % 10].name}`, T1 = (x: number, z: number) => turn(MAP, 1, x, z);
+    for (const R of TER.ridges) { const a = T1(R.ax, R.az), b = T1(R.bx, R.bz); const t = TER.ridges.find(q => q.kind === R.kind && Math.abs(q.r - R.r) < .01 && ((near([q.ax, q.az], a) && near([q.bx, q.bz], b)) || (near([q.ax, q.az], b) && near([q.bx, q.bz], a))));
+      if (!t || !R.ramps.every(m => t.ramps.some(o => near([o.tx, o.tz], T1(m.tx, m.tz)) && near([o.fx, o.fz], T1(m.fx, m.fz))))) bad.push(name + ' ridge'); }
+    for (const v of TER.vents) if (!TER.vents.some(w => near(w, T1(v[0], v[1]), .5))) bad.push(name + ' vent');
+    for (const b of TER.beacons) if (!TER.beacons.some(c => near([c.x, c.z], T1(b.x, b.z)))) bad.push(name + ' beacon');
+    for (const w of TER.walls) if (!TER.walls.some(q => near(q, T1(w[0], w[1])))) bad.push(name + ' wall');
+    for (const f of TER.fields) if (!TER.fields.some(q => near([q.x, q.z], T1(f.x, f.z)))) bad.push(name + ' island field');
+    // An empty main base is a start nobody holds in a one on one match: it stands where a start stands, so it is checked with the starts.
+    for (const [i, st] of MAP.sites!.entries()) if (!(MAP.mains || []).includes(i) && !MAP.sites!.some(q => near(q, T1(st[0], st[1]), .3))) bad.push(name + ' field');
+    for (const i of MAP.mains || []) if (!MAP.starts!.some(q => near(q, MAP.sites![i], .3))) bad.push(name + ' empty base');
+    for (const st of MAP.starts!) if (!MAP.starts!.some(q => near(q, T1(st[0], st[1]), .1))) bad.push(name + ' start');
+    if (MAP.starts!.length !== n) bad.push(name + ' starts');
+    if (!TER.ridges.some(R => R.ramps.length) || !TER.beacons.length) bad.push(name + ' has no high ground or no beacon');
+    counts.push(`${name.split(' ').slice(1).join(' ')}: ${TER.ridges.length} ridges, ${TER.walls.length} walls, ${TER.vents.length} vents, ${TER.beacons.length} beacons, ${TER.fields.length} island fields`);
+    // Seams as the match lays them.
+    if (code % 10 === 6 || code === 7) { const g = match(code); const ores = g.ores.map(o => [o.pos.x, o.pos.z]); const miss = ores.filter(([x, z]) => !ores.some(q => near(q, T1(x, z), 1.5))).length; if (miss) bad.push(`${name}: ${miss} seams with no turned copy`); }
+  }
+  check(!bad.length, `all ${RING.length} team maps: every start has the same ground, fields, seams, vents, beacons and walls${bad.length ? ' (' + [...new Set(bad)].slice(0, 6).join('; ') + ')' : ''}`);
+  for (const c of counts) console.log('  ' + c);
+  // Start layouts: same team sizes, no start twice, and each team is the first one turned round.
+  let lay: string[] = [];
+  for (const [nn, list] of Object.entries(TEAM_LAYOUTS)) { const n = +nn; for (const L of list) { const key = (t: number[]) => [...t].sort((a, b) => a - b).join(','), used = L.teams.flat();
+    if (new Set(used).size !== used.length || used.some(i => i < 0 || i >= n)) lay.push(L.name + ' reuses a start');
+    for (const t of L.teams) if (!Array.from({ length: n }, (_, r) => key(L.teams[0].map(i => (i + r) % n))).includes(key(t)) || t.length !== L.teams[0].length) lay.push(`${n} starts ${L.name}`); } }
+  check(!lay.length && TEAM_LAYOUTS[4].length >= 3 && TEAM_LAYOUTS[8].some(L => L.name === '4v4'), `team start layouts (2v2, 3v3, 4v4, free for all) are fair by the turn${lay.length ? ' (' + lay.join('; ') + ')' : ''}`);
+  // Every field on a team map can be walked to from start 0.
+  { const g = match(26); g.spires = []; const missed: number[] = []; (MAP.sites || []).forEach(([x, z], i) => { const r = g.spawn('rigger', 0, 3, 3); let ok = false; for (let t = 0; t < 150 * 30; t++) { g.time += 1 / 30; g.poseUnits(0); g.moveTo(r, x, z, 1 / 30, 3); if (Math.hypot(r.pos.x - x, r.pos.z - z) < 6) { ok = true; break; } } if (!ok) missed.push(i); r.alive = false; });
+    check(!missed.length, `Crossing Large: a Rigger walks from the yard to every field${missed.length ? ' (not ' + missed.join(', ') + ')' : ''}`); }
 }
 
 void VHOME;

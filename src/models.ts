@@ -553,6 +553,7 @@ function segDist(x: number, z: number, ax: number, az: number, bx: number, bz: n
 export function isClear(x: number, z: number, pad = 0) {
   const end = roadPt(ROAD.len + 6);
   if (nearGround(x, z, Math.max(1.5, 4 + pad))) return true;   // cliffs, ramps, vents, beacons and rock walls keep their own ground
+  for (const [sx, sz] of MAP.starts || []) if (Math.hypot(x - sx, z - sz) < 44 + pad) return true;   // every start of a team map keeps its base clear
   if (Math.hypot(x, z) < 44 + pad || Math.hypot(x - OUTPOST.x - 2 * ROAD.dx, z - OUTPOST.z - 2 * ROAD.dz) < 36 + pad || segDist(x, z, ROAD.x, ROAD.z, end[0], end[1]) < 9 + pad) return true;
   for (const [ex, ez] of MAP.sites || [MAP.exp]) if (Math.hypot(x - ex, z - ez) < 22 + pad || segDist(x, z, ex, ez, 0, 0) < 6 + pad) return true;
   for (const r of (MAP.roads || []).slice(1)) if (segDist(x, z, r[0], r[1], r[2], r[3]) < 7 + pad) return true;

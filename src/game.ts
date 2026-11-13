@@ -7,6 +7,7 @@ import { sfx, drillSound, setMood, babble } from './audio';
 import type { Hud } from './hud';
 import { Fog, SIGHT } from './fog';
 import * as T from './terrain';
+import { seamsFor } from './teammaps';
 import { Intel } from './scout';
 import { Kind, BKind, UNIT, BLD, BUILDABLE, UPGRADES, TRAINS, UNIT_NEEDS, UpKey, Unit, Building, Prop, OreNode, Difficulty, DIFFS, OUTPOST, GATE, MAP, MAPS, ROAD, VHOME, FACTION, SIDE, setMap, veylPt, isUnit, isSoldier, isWorker, isFighter, foeOf, fac, MIRROR, atHome, endPt, swapEnd , STORY, turnOf, LAYOUT, OVERTIME, CHOIR_REACH, CLEAVE } from './data';
 import { Director } from './director';
@@ -138,8 +139,9 @@ export class Game {
     // In a fair layout a field marked as a twin is the one before it turned round, seam for seam, and a field the same walk from both ends
     // faces away from the middle of the map and not away from the yard.
     { let prev: number[][] = [], prevAmt = 0; const mid = swapEnd(0, 0).map(v => v / 2);
-      MAP.sites!.forEach(([ex, ez, twin], i) => { let list: number[][], amt = 1000;
-        if (twin && prev.length) { list = prev.map(([x, z, n, sc]) => { const [mx, mz] = swapEnd(x, z); return [Math.round(mx), Math.round(mz), n, sc]; }); amt = prevAmt; }
+      MAP.sites!.forEach(([ex, ez, twin], i) => { let list: number[][], amt = 1000; const own = seamsFor(MAP, i, YARD_SEAMS);   // terrain (J): a team map's fields are laid by teammaps.ts
+        if (own) { list = own.list; amt = own.amt; }
+        else if (twin && prev.length) { list = prev.map(([x, z, n, sc]) => { const [mx, mz] = swapEnd(x, z); return [Math.round(mx), Math.round(mz), n, sc]; }); amt = prevAmt; }
         else if (!i) { list = [[ex - 1, ez, 10, 1.5], [ex + 4, ez + 4, 8, 1.3], [ex - 3, ez - 5, 9, 1.4]]; amt = 1600; }
         else { const even = this.fair && Math.abs(Math.hypot(ex, ez) - Math.hypot(ex - mid[0] * 2, ez - mid[1] * 2)) < 6, fx = even ? ex - mid[0] : ex, fz = even ? ez - mid[1] : ez, l = Math.hypot(fx, fz) || 1, ux = fx / l, uz = fz / l; list = [[ex + ux * 3 - uz * 6, ez + uz * 3 + ux * 6, 8, 1.2], [ex + ux * 6, ez + uz * 6, 9, 1.3], [ex + ux * 3 + uz * 6, ez + uz * 3 - ux * 6, 7, 1.1], [ex + ux * 9 - uz * 2, ez + uz * 9 + ux * 2, 8, 1.2]].map(p => [Math.round(p[0]), Math.round(p[1]), p[2], p[3]]); }
         field(list, amt); prev = list; prevAmt = amt; if (T.isBright(i)) MD.brighten(this.ores.slice(-list.length), T.BRIGHT); }); }

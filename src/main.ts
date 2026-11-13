@@ -160,10 +160,13 @@ function showTree() {
   $('intelBody').innerHTML = !tl.length ? `<p><b>Not found yet.</b> ${MAP.hid ? 'One of the roads out of your base ends at theirs. Press H to send a scout down one, or walk it yourself.' : 'Nobody has looked at their base. Press H to send a scout.'}</p>`
     : `<p><b>${rd.short}.</b> ${rd.line}</p><ul>${tl.map(([k, n]) => `<li>${n > 1 ? n + ' × ' : ''}${BLD[k].name}</li>`).join('')}</ul><p><small>Last seen ${when}. Press H to send a scout for another look.</small></p>`;
 }
-function pause() { if (game.phase !== 'play' && game.phase !== 'card') return; hush(); treeF = -1; showTree(); for (const g of [game, game2]) if (g && g.phase === 'card') g.hud.titleCard('', '', ''); if (game2) { game2.phase = 'paused'; game2.keys.clear(); game2.lmb = game2.rmb = false; look2.clear(); } if (game.net) { game.phase = 'paused'; game.keys.clear(); game.lmb = game.rmb = false; $('pause').hidden = false; return; } game.phase = 'paused'; game.keys.clear(); game.lmb = game.rmb = false; $('pause').hidden = false; }
+let pausedAt = 0;
+function pause() { if (game.phase !== 'play' && game.phase !== 'card') return; pausedAt = performance.now(); hush(); treeF = -1; showTree(); for (const g of [game, game2]) if (g && g.phase === 'card') g.hud.titleCard('', '', ''); if (game2) { game2.phase = 'paused'; game2.keys.clear(); game2.lmb = game2.rmb = false; look2.clear(); } if (game.net) { game.phase = 'paused'; game.keys.clear(); game.lmb = game.rmb = false; $('pause').hidden = false; return; } game.phase = 'paused'; game.keys.clear(); game.lmb = game.rmb = false; $('pause').hidden = false; }
 function resume(byPad = false) { if (game.phase !== 'paused') return; initAudio(); $('pause').hidden = true; game.phase = 'play'; if (game2) game2.phase = 'play'; if (!byPad) lock(); }
 $('start').addEventListener('click', start);
-$('resume').addEventListener('click', () => resume());
+// A tap on the touch pause button is followed by the browser's own click where the finger was, which can land on this button as the
+// pause screen opens: clicks in the first 400 ms are not taken as a press.
+$('resume').addEventListener('click', () => { if (performance.now() - pausedAt > 400) resume(); });
 $('again').addEventListener('click', () => {
   const st = game.story; if (st && mode !== 'skirm') { const i = MISSIONS.indexOf(st); if (game.won && i < STORY_JOBS - 1) { jobI = i + 1; const nx = MISSIONS[jobI]; playCuts([...(st.cutOut || []), ...(nx.cutIn || [])], () => { fresh(); start(); }); } else if (game.won && i === STORY_JOBS - 1) playCuts(st.cutOut || [], () => { mode = 'camp'; toMenu(); }); else { fresh(); start(); } return; }
   if (split && !game2) { startVeyl(); return; } if (split) { startSplit(splitMode); return; } if (game.net) { toMenu(); return; } fresh(); start(); });

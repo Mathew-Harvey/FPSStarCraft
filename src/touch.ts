@@ -182,7 +182,7 @@ export class TouchPad {
     // Pushing the stick all the way forward sprints.
     this.hold('ShiftLeft', mag > .93 && y < -.8);
     const me = g.me; if (!me) return;
-    if (this.btns.up.el.textContent !== 'Above') this.btns.up.el.textContent = 'Above'; this.btns.up.el.hidden = !!g.cmd.locked || g.tab;
+    if (this.btns.up.el.textContent !== 'Above') this.btns.up.el.textContent = 'Above'; this.btns.up.el.hidden = !!g.cmd.locked;   // not hidden while picking a body: the bar would shift under a thumb
     const worker = isWorker(me.kind), f = fac(me.team), building = worker && g.tool === 2, k = me.kind, gun = !!g.weapon();
     const show = (id: string, on: boolean, label?: string) => { const b = this.btns[id]; if (b.el.hidden === on) b.el.hidden = !on; if (label && b.el.textContent !== label) b.el.textContent = label; };
     show('fire', true, building ? 'Place' : worker ? (f === 2 ? 'Chew' : f ? 'Hum' : 'Drill') : k === 'blister' ? 'Burst' : f === 1 ? 'Sing' : f === 2 ? 'Bite' : 'Fire');

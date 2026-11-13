@@ -166,6 +166,7 @@ try {
   check(r.lit && r.mine && r.ty === 'amove', `with Order lit, a tap on the ground orders the picked bodies there (${r.ty})`);
   r = await p.evaluate(() => { const g = __ore.game, C = g.cmd; tbtn('corder'); const hf = g.ownB('headframe')[0]; C.sel.clear(); C.selB = hf; look(hf.pos.x, hf.pos.z); step(1); tframe(); const e = document.querySelector('#ccard [data-cb^="tr:"]'), r = e.getBoundingClientRect(), n = hf.queue.length; ttap(r.x + r.width / 2, r.y + r.height / 2); return { n0: n, n1: hf.queue.length, id: e.dataset.cb }; });
   check(r.n1 === r.n0 + 1, `a tap on a card button presses it (${r.id}: queue ${r.n0} → ${r.n1})`);
+  await p.evaluate(() => { tframe(); step(1); });   // a capture after hand-stepped frames is sometimes black: one more frame
   await shot('touch-command');
   r = await p.evaluate(() => { const g = __ore.game, C = g.cmd; C.zt = .5; C.z = .5; step(1); const z0 = C.zt, [x, y] = page(g.hud.W * .5, g.hud.H * .5); const a = tdown(x - 40, y), b2 = tdown(x + 40, y); for (let k = 1; k <= 2; k++) { tmove(a, x - 40 - k * 30, y); tmove(b2, x + 40 + k * 30, y); step(1); } tup(a, x - 100, y); tup(b2, x + 100, y); tframe(); step(1); return { z0, z1: C.zt, on: C.on }; });
   check(r.z1 < r.z0 && r.on, `two fingers spread apart zoom in (${r.z0.toFixed(2)} → ${r.z1.toFixed(2)})`);

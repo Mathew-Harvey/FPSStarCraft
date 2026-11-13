@@ -115,7 +115,11 @@ void main(){ vUv=uv*uRep;
 #ifdef WEAR
   vUv2=aWear;
 #endif
-  float cq=floor(aEm/32.+.001), er=aEm-32.*cq; vCav=cq<.5?0.:(cq-16.)/15.; float sq=floor(er*.5+.001); vEm=er-2.*sq; vSh=sq*.1; vO=position*length(modelMatrix[0].xyz); vOn=normal; vec4 w=modelMatrix*vec4(position,1.); vW=w.xyz; vec4 mv=viewMatrix*w; vP=mv.xyz; vN=normalize(normalMatrix*normal); vWn=normalize(mat3(modelMatrix)*normal); vL=(viewMatrix*vec4(uL,0.)).xyz; gl_Position=projectionMatrix*mv; }`;
+  float cq=floor(aEm/32.+.001), er=aEm-32.*cq; vCav=cq<.5?0.:(cq-16.)/15.; float sq=floor(er*.5+.001); vEm=er-2.*sq; vSh=sq*.1; mat4 mm=modelMatrix;
+#ifdef USE_INSTANCING
+  mm=modelMatrix*instanceMatrix;   // a crowd of far bodies drawn in one call (src/meshes.ts)
+#endif
+  vO=position*length(mm[0].xyz); vOn=normal; vec4 w=mm*vec4(position,1.); vW=w.xyz; vec4 mv=viewMatrix*w; vP=mv.xyz; vWn=normalize(mat3(mm)*normal); vN=normalize(mat3(viewMatrix)*vWn); vL=(viewMatrix*vec4(uL,0.)).xyz; gl_Position=projectionMatrix*mv; }`;
 const TOON_FS = `precision highp float;
 uniform vec3 uColor,uFog; uniform sampler2D uMap,uShadow; uniform mat4 uShadowMat; uniform float uEmis,uOpacity,uHatch,uFogK,uFlat,uPx,uShadowTex,uGrit,uShine,uKey,uFogD,uMist,uCloudK,uCloudTh,uRimK; uniform vec2 uCloudO; uniform vec3 uRimC;
 uniform vec3 uSunT,uAmbT,uFogS; uniform vec4 uPLp[8]; uniform vec3 uPLc[8]; uniform int uPLn;
@@ -624,6 +628,8 @@ const SUNV = new THREE.Vector3();
 export const farInkOf = (cam: THREE.Camera) => (cam as any).isOrthographicCamera ? 0 : Math.min(1, Math.max(0, (cam.position.y - 14) / 40));
 /** Called before every draw with the scene, the camera and the picture height in pixels (levels of detail, src/meshes.ts). */
 export const PRE_DRAW: ((scene: THREE.Scene, cam: THREE.Camera, h: number) => void)[] = [];
+/** Called with true just before the shadow map is drawn and false just after (src/meshes.ts draws bodies' shadows from a coarser model). */
+export const SHADOW_SWAP: ((on: boolean) => void)[] = [];
 export class Pipeline {
   renderer: THREE.WebGLRenderer;
   w = 1; h = 1; px = 1;
@@ -734,7 +740,9 @@ export class Pipeline {
       sun.position.copy(focus).addScaledVector(LIGHT, 220); sun.lookAt(focus); sun.updateMatrixWorld();
       SHARED.uShadowMat.value.multiplyMatrices(sun.projectionMatrix, sun.matrixWorldInverse);
       sun.layers.set(0); sun.layers.enable(L_SELF);
+      for (const f of SHADOW_SWAP) f(true);
       scene.overrideMaterial = this.depthMat; r.setRenderTarget(this.rtS); r.clear(); r.render(scene, sun); scene.overrideMaterial = null;
+      for (const f of SHADOW_SWAP) f(false);
     }
 
     cam.layers.set(0); cam.layers.enable(L_FX); cam.layers.enable(L_VM);

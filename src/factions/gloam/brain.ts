@@ -1,9 +1,12 @@
 // The Gloam's economy brain, the Overgrowth: what to root next, what to grow, and how many mouths to feed.
 // It mirrors the Quartermaster and the Conductor, with the Gloam's own rules: every building costs a Grazer,
 // every unit costs a Bud, and buildings only grow on Bloom.
-import type { Director, Side } from './director';
-import { DOCTRINES } from './doctrine';
-import { BLD, UNIT, UPGRADES, Kind, BKind, Building, MAP, veylPt, endPt, homeXZ, foeOf } from './data';
+import type { Director, Side } from '../../director';
+import { DOCTRINES } from '../../doctrine';
+import { sfx } from '../../audio';
+import { defineFaction } from '../../core/registry';
+const LOOKOUT = ['Lookout', 'Watcher', 'Rootwatch'];
+import { BLD, UNIT, UPGRADES, Kind, BKind, Building, MAP, veylPt, endPt, homeXZ, foeOf, fac } from '../../data';
 export const GHINTS: [number, string, string][] = [
   [1.5, 'Overgrowth', 'The Gloam stir. Hold click on the green ore to chew it loose, then carry it in your belly to the Mother Cap. I will grow the rest.'],
   [16, 'Overgrowth', 'Press 2 to root a building yourself. It costs a Grazer, and it only grows on our Bloom. Press G and I will stop.'],
@@ -22,9 +25,6 @@ export const GCHATTER = [
 ];
 export const GKILL = ['Soil now.', 'Chewed.', 'One fewer hammer.', 'Mulch.', 'The Bloom will have that one.'];
 export const GDOWN = ['A sister is gone.', 'We are fewer.', 'They popped one of us.', 'Remember the smell of it.'];
-/** What the Ironhold say about the Gloam. */
-export const IKILL_G = ['Bug down!', 'Squashed one.', 'That one is fertiliser.', 'Put it on my tab. Legs and all.', 'Got one. Smells awful.'];
-export const ICHATTER_G = ['Anyone else itchy? Just me?', 'Those mushrooms are looking at me.', 'I stepped in the green stuff again.', 'How many legs is too many legs? I say four.', 'Quartermaster says the carpet is not contagious. Quartermaster is a liar.'];
 
 /** Where the Overgrowth roots its buildings, as offsets from the home Mother Cap (rotated to face the road like the Veyl's). */
 const SLOT: Partial<Record<BKind, number[][]>> = {
@@ -115,3 +115,22 @@ function expansion(D: Director, T: number): { site: number[] | null; bare: numbe
   const bare = g.ownB('mothercap', true, T).find(h => Math.hypot(h.pos.x - HX, h.pos.z - HZ) > 30 && !near(h.pos.x, h.pos.z, 24, b => b.team === T && b.kind === 'stinger'));
   return { site: free[0] || null, bare: bare ? [bare.pos.x, bare.pos.z] : null };
 }
+
+defineFaction(2, {
+  brain: (D, dt, S) => overgrowth(D, dt, S), hints: GHINTS, books: GBOOKS,
+  chatter: () => GCHATTER, lines: kind => kind === 'kill' ? GKILL : GDOWN,
+  trained(D, u) {
+    if (u.kind === 'snapper' && !D.flags.gsn) { D.flags.gsn = true; D.say('Snapper', 'Two of us, fresh from the Bud. Look at me and press F. Click bites, right click pounces.', 'in', u.team); sfx.callout(); }
+    if (u.kind === 'quillback' && !D.flags.gqb) { D.flags.gqb = true; D.say('Quillback', 'A Quillback, bristling. Click spits a quill; right click throws a fan of five.', 'in', u.team); sfx.callout(); }
+    if (u.kind === 'blister' && !D.flags.gbl) { D.flags.gbl = true; D.say('Blister', 'I am a Blister. Carry me into a crowd, click, and I pop. You will need a new body after.', 'in', u.team); sfx.callout(); }
+    if (u.kind === 'mulcher' && !D.flags.gmu) { D.flags.gmu = true; D.say('Mulcher', 'The old one walks. Click sweeps the tusks; right click charges through a line.', 'in', u.team); sfx.callout(); }
+  },
+  built(D, b) {
+    if (b.kind === 'warren' && !D.flags.gwar) { D.flags.gwar = true; D.say('Overgrowth', 'The Warren is open. Snappers can ripen at any Mother Cap now: look at a Cap and press T.', 'in', b.team); }
+    else if (b.kind === 'quillgarden') D.say('Overgrowth', 'The Quill Garden is grown. Quillbacks ripen at the Caps, and the Garden teaches thicker hide and sharper mouths.', 'in', b.team);
+    else if (b.kind === 'blisterbed') D.say('Overgrowth', 'The Blister Bed is full. Blisters ripen at the Caps now.', 'in', b.team);
+    else if (b.kind === 'tuskhollow') D.say('Overgrowth', 'The Tusk Hollow is grown. A Mulcher can wake inside it.', 'in', b.team);
+    else if (b.kind === 'mothercap') D.say('Overgrowth', 'A new Mother Cap stands. Grazers can bring ore here, and it grows Buds of its own.', 'in', b.team);
+  },
+  lost(D, b, left) { D.say('Rootwatch', `The ${BLD[b.kind].name} has withered.`, 'al', b.team); if (b.kind === 'mothercap' && left) D.say(LOOKOUT[fac(foeOf(b.team))], `A Mother Cap is down. ${left} still growing.`, 'in', foeOf(b.team)); else if (b.kind !== 'mothercap') D.say('Alpha', `${BLD[b.kind].name} squashed. Keep swinging.`, '', foeOf(b.team)); },
+});

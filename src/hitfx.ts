@@ -8,6 +8,7 @@
 import * as THREE from 'three';
 import { V3, M, G, L_FX, toonMaterial } from './gfx';
 import { UNIT, Unit, Building, fac } from './data';
+import { unitRule } from './core/registry';
 import { sfx } from './audio';
 import type { Game } from './game';
 
@@ -17,7 +18,7 @@ const smooth = (k: number) => { k = clamp(k, 0, 1); return k * k * (3 - 2 * k); 
 
 /** How a body is put together, which decides how it flinches and how it dies. */
 type Cls = 'man' | 'walker' | 'float' | 'bug';
-const clsOf = (u: Unit): Cls => fac(u.team) === 2 ? 'bug' : u.kind === 'gantry' ? 'walker' : u.rig.legL ? 'man' : 'float';
+const clsOf = (u: Unit): Cls => fac(u.team) === 2 ? 'bug' : unitRule(u.kind).stance?.idleTick ? 'walker' : u.rig.legL ? 'man' : 'float';
 /** What a bullet has landed on. */
 export type Surface = 'dirt' | 'rock' | 'metal' | 'crystal' | 'flesh' | 'plant';
 const BIG: Record<string, number> = { warden: .3, gantry: .28, mulcher: .4, breacher: .75 };
@@ -224,7 +225,7 @@ export class HitFx {
       if (r.head) { add(r.head.rotation, 'x', clamp(st.hx, -.9, .9)); add(r.head.rotation, 'z', clamp(-st.hz, -.7, .7)); }
       if (cls === 'man') {
         if (r.arms) { add(r.arms.rotation, 'x', -arm * .32); add(r.arms.rotation, 'z', st.tw * .5); }
-        if (r.armL) add(r.armL.rotation, u.kind === 'rigger' ? 'z' : 'x', -arm * .4); if (r.armR) add(r.armR.rotation, 'z', arm * .4);
+        if (r.armL) add(r.armL.rotation, unitRule(u.kind).stance?.tool ? 'z' : 'x', -arm * .4); if (r.armR) add(r.armR.rotation, 'z', arm * .4);
         if (r.legL && r.legR) { add(r.legL.rotation, 'z', -dip * .22); add(r.legR.rotation, 'z', dip * .22); add(r.legL.rotation, 'x', -lz * .5 + dip * .12); add(r.legR.rotation, 'x', -lz * .2 - dip * .3); }
         add(u.obj.position, 'y', -dip * .16); add(u.obj.position, 'x', (lx * Math.cos(u.yaw) + lz * Math.sin(u.yaw)) * .12); add(u.obj.position, 'z', (-lx * Math.sin(u.yaw) + lz * Math.cos(u.yaw)) * .12);
       } else if (cls === 'walker') {
@@ -315,14 +316,14 @@ export class HitFx {
       b.style = 'wreck'; b.mode = 'wait'; b.delay = .45; b.vel.set(0, 0, 0); b.tiltTo = rr(.95, 1.25); b.rest = 1.1 * s; b.sink = 10; const a = rnd() < .6 ? yaw + rr(-.4, .4) : Math.atan2(dx, dz); b.fx = Math.sin(a); b.fz = Math.cos(a); b.back = b.fx * Math.sin(yaw) + b.fz * Math.cos(yaw) > 0 ? -1 : 1;
       if (!quiet) sfx.ko(vol, false);
     } else if (cls === 'float') {
-      const boss = u.kind === 'warden'; b.sink = 99;
+      const boss = !!unitRule(u.kind).heavy; b.sink = 99;
       if (boss) { b.style = 'boss'; b.mode = 'wait'; b.delay = 1.0; b.vel.set(0, 0, 0); }
       else if (blast || crit || frac > .45 || rnd() < .5) { b.style = 'shatter'; b.mode = 'wait'; b.delay = blast ? .03 : .13; b.vel.set(dx * 1.2, .9, dz * 1.2); }
       else { b.style = 'crumble'; b.vel.set(dx * 1.6, 0, dz * 1.6); b.tiltV = 1.4; b.rest = .25 * k; }
       if (!quiet) { this.spray(T1.copy(b.com), T2.set(-dx, .3, -dz), 6, 2, 7, 1); sfx.shatter(vol * .5, false, true); }
     } else {
-      const big = u.kind === 'mulcher'; b.rest = def.bodyY * s * .9; b.sink = 5;
-      if (u.kind === 'blister' || blast || (!big && (frac > .7 || (crit && frac > .35)))) { b.style = 'splat'; b.mode = 'wait'; b.delay = 0; }
+      const big = !!unitRule(u.kind).stance?.bulk; b.rest = def.bodyY * s * .9; b.sink = 5;
+      if (unitRule(u.kind).stance?.burst || blast || (!big && (frac > .7 || (crit && frac > .35)))) { b.style = 'splat'; b.mode = 'wait'; b.delay = 0; }
       else if (big) { b.style = 'crash'; b.mode = 'wait'; b.delay = .42; b.vel.set(Math.sin(yaw) * 3 + dx, 0, Math.cos(yaw) * 3 + dz); b.fx = Math.sin(yaw); b.fz = Math.cos(yaw); b.tiltTo = .3; b.rest = b.h * .25; b.sink = 7; }
       else { b.style = 'flip'; b.mode = 'spin'; const p = 2.5 + Math.min(1, frac) * 3; b.vel.set(dx * p, rr(4.2, 5.8), dz * p); b.tiltV = rr(8.5, 11.5); b.yawV = rr(-5, 5); }
       if (!quiet) { T2.set(dx, .5, dz); this.spray(T1.copy(b.com), T2, 6, 3, 6, .8, .03); this.puff(b.com, .5 * k, M.gS, dx * 1.5, 1, dz * 1.5, .4); sfx.splat(vol, false); if (b.style !== 'splat') this.splat(u.pos.x + dx * rr(.5, 1.5), u.pos.z + dz * rr(.5, 1.5), rr(.3, .5) * k); }
@@ -374,7 +375,7 @@ export class HitFx {
   /** The thump of a body or a wreck meeting the ground. */
   private land(b: Body, speed: number, quiet: boolean) {
     b.lands++; if (b.landT < 0) b.landT = b.t; if (quiet) return;
-    const g = this.g, k = b.k, heavy = b.cls === 'walker' || b.u.kind === 'mulcher', x = b.com.x, z = b.com.z, P = T1.set(x, .12, z), mat = b.cls === 'bug' ? M.gS : M.dust, hard = clamp(speed / 6, .35, 1.3);
+    const g = this.g, k = b.k, heavy = b.cls === 'walker' || !!unitRule(b.u.kind).stance?.bulk, x = b.com.x, z = b.com.z, P = T1.set(x, .12, z), mat = b.cls === 'bug' ? M.gS : M.dust, hard = clamp(speed / 6, .35, 1.3);
     if (this.camDist(b.com) < 110) {
       const n = heavy ? 7 : b.lands > 1 ? 2 : 4; for (let j = 0; j < n; j++) { const a = j / n * 6.28 + rr(-.4, .4), r = (heavy ? 2.6 : .9) * hard; this.puff(P, (heavy ? .8 : .45) * k ** .5 * hard, heavy || b.cls !== 'bug' ? M.dust : mat, Math.cos(a) * r, heavy ? .9 : .5, Math.sin(a) * r, heavy ? .8 : .45); }
       if (b.cls === 'bug' && b.lands === 1) this.splat(x + rr(-.2, .2), z + rr(-.2, .2), rr(.3, .5) * k);
@@ -461,7 +462,7 @@ export class HitFx {
       for (let j = 0; j < b.legs.length; j++) { const l = b.legs[j], sx = l.name[3] === 'L' ? -1 : 1; l.rotation.z += (sx * curl + Math.sin(t * 31 + j * 2.1) * tw - l.rotation.z) * ease; l.rotation.y += (Math.sin(t * 23 + j) * tw * .6 - l.rotation.y) * ease; }
       ez(r.head, 'x', flat ? .3 * smooth(t / .4) + wob * .15 : air ? -.3 : .35 + wob * .2); ez(r.arms, 'x', air && !flat ? -.4 : .5); ez(r.body, 'x', 0);
       // the body lets go and the pool spreads
-      if (!air && b.stage === 0) { b.stage = 1; if (!quiet) this.splat(b.com.x, b.com.z, (b.u.kind === 'mulcher' ? 2.2 : .75) * b.k ** .5, 2.2); }
+      if (!air && b.stage === 0) { b.stage = 1; if (!quiet) this.splat(b.com.x, b.com.z, (unitRule(b.u.kind).stance?.bulk ? 2.2 : .75) * b.k ** .5, 2.2); }
       if (!air && land > 1.1) { const d = smooth((land - 1.1) / 1.3); o.scale.set(b.s * (1 + d * .12), b.s * (1 - d * .45), b.s * (1 + d * .12)); }
     }
     // gone into the ground

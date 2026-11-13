@@ -9,17 +9,20 @@ import { WebSocketServer, WebSocket } from 'ws';
 import { Game } from '../src/game';
 import { initHeadless } from '../src/gfx';
 import { DIFFS, MAPS, SIDE, FACTION, BLD, setMap, setSidesCode, fac, validMap, rollMap, Unit, isWorker } from '../src/data';
-import { buildSnap, serverCmd, serverMove } from '../src/netgame';
+import { Wire, WIRE, serverCmd, serverMove } from '../src/netgame';
+import { dropped } from '../src/net-arms';
 import { usePlan, parsePlan, checkPlan, planMap } from '../src/mapcode';
 
 initHeadless();
+if (process.env.ORE_TRUST_HITS === '1') { WIRE.trustHits = true; console.log('test server: hit claims are not checked (ORE_TRUST_HITS)'); }
+if (process.env.ORE_WIRE_FOG === '0') { WIRE.fog = false; console.log('test server: every side is sent the whole world (ORE_WIRE_FOG=0)'); }
 const PORT = +(process.env.PORT || 8080), TICK = 1 / 30, MAX_PLAYERS = 4, MAX_LOBBIES = 40;
 const here = dirname(fileURLToPath(import.meta.url));
 const pagePath = [join(here, 'index.html'), join(here, '..', 'dist', 'index.html')].find(existsSync) || '';
 let page = pagePath ? readFileSync(pagePath) : Buffer.from('Ore Else server is running, but the game page was not built. Run npm run build.');
 
 interface Player { id: number; name: string; ready: boolean; team: number; ws: WebSocket; lobby: Lobby | null; unit: Unit | null; inbox: any[]; alive: boolean }
-interface Lobby { code: string; host: number; map: number; /** A made map's code (mapcode.ts), or '' for the map as it comes. */ plan: string; diff: number; /** Who holds each end, as a match code: yard faction * 3 + outpost faction (see setSidesCode). 1 and 2 are Ironhold against the Veyl or the Gloam. */ out: number; players: Player[]; game: Game | null; tick: number; idle: number; hp0: number[]; /** Sides of players who dropped out of the running match, by name, so a Veyl player who reconnects sings for the Veyl again. */ gone: Record<string, number> }
+interface Lobby { code: string; host: number; map: number; /** A made map's code (mapcode.ts), or '' for the map as it comes. */ plan: string; diff: number; /** Who holds each end, as a match code: yard faction * 3 + outpost faction (see setSidesCode). 1 and 2 are Ironhold against the Veyl or the Gloam. */ out: number; players: Player[]; game: Game | null; /** What each side is sent: fog on the wire. */ wire: Wire | null; tick: number; idle: number; hp0: number[]; /** Sides of players who dropped out of the running match, by name, so a Veyl player who reconnects sings for the Veyl again. */ gone: Record<string, number> }
 const lobbies = new Map<string, Lobby>(); let nextPid = 1;
 const send = (p: Player, o: any) => { if (p.ws.readyState === 1) p.ws.send(JSON.stringify(o)); };
 const cleanName = (s: any) => String(s || '').replace(/[^\w \-'.]/g, '').trim().slice(0, 14) || 'Rigger';
@@ -46,7 +49,7 @@ function pilot(g: Game, p: Player, u: Unit) { if (p.unit && p.unit !== u) releas
 function begin(l: Lobby) {
   l.map = rollMap(l.map);   // a Vast map is turned a new way for every match, so nobody knows where the far base is
   usePlan(l.plan); setMap(l.map); setSidesCode(l.out); const eco = l.players.some(p => p.team !== SIDE.home) || l.out === 2, g = new Game(noPipe(), noHud, DIFFS[l.diff], l.map, null, null, eco); g.noRender = true; g.evq = []; g.coop = l.players.length; g.me = null; g.phase = 'play';
-  l.game = g; l.gone = {}; l.tick = 0; sides(l); l.hp0 = g.props.map(q => q.hp); const names: Record<number, string> = {}; for (const p of l.players) { names[p.id] = p.name; g.score[p.id] = [0, 0, 0]; g.teams[p.id] = p.team; } g.names = names; g.coop = Math.max(1, l.players.filter(p => p.team === SIDE.home).length);
+  l.game = g; l.wire = new Wire(g); l.gone = {}; l.tick = 0; sides(l); l.hp0 = g.props.map(q => q.hp); const names: Record<number, string> = {}; for (const p of l.players) { names[p.id] = p.name; g.score[p.id] = [0, 0, 0]; g.teams[p.id] = p.team; } g.names = names; g.coop = Math.max(1, l.players.filter(p => p.team === SIDE.home).length);
   const riggers = g.own(FACTION[SIDE.home].worker, SIDE.home); let ri = 0; l.players.forEach(p => { p.inbox = []; p.unit = null; const u = p.team !== SIDE.home ? veylBody(g) : riggers[ri++ % riggers.length]; if (u) pilot(g, p, u); });
   for (const p of l.players) send(p, { t: 'begin', plan: l.plan, map: l.map, diff: l.diff, unit: p.unit ? p.unit.id : 0, names, team: p.team, teams: g.teams, eco: g.eco ? 1 : 0, out: l.out });
   { const crew = l.players.filter(p => p.team === SIDE.home).length, veyl = l.players.length - crew, H = SIDE.home, O = SIDE.out;
@@ -93,16 +96,17 @@ function step(l: Lobby) {
     p.inbox.length = 0;
   }
   g.update(TICK); l.tick++;
-  if (l.tick % 2 === 0) { const s = JSON.stringify(buildSnap(g)); for (const p of l.players) if (p.ws.readyState === 1) p.ws.send(s); }
+  // Each side is sent only what it can see. One snapshot is built per side, and every player on that side gets the same one.
+  if (l.tick % 2 === 0) { const w = l.wire!; w.begin(l.players.map(p => p.team)); const by = new Map<number, string>(); for (const p of l.players) { if (p.ws.readyState !== 1) continue; let s = by.get(p.team); if (s === undefined) by.set(p.team, s = JSON.stringify(w.snap(p.team))); p.ws.send(s); } }
   if (g.phase === 'over') {
     const st = g.stats; for (const p of l.players) { send(p, { t: 'over', won: g.won, stats: [Math.floor(st.mined), st.built, st.kills, st.lost, Math.floor(st.minedV)], time: g.time }); p.unit = null; p.ready = false; }
-    l.game = null; tell(l);
+    l.game = null; l.wire = null; tell(l);
   }
 }
 setInterval(() => { for (const l of lobbies.values()) { if (l.game) { try { step(l); } catch (e) { console.error('match crashed', l.code, e); l.game = null; for (const p of l.players) send(p, { t: 'err', msg: 'The match hit a fault on the server and had to stop. Sorry.' }); tell(l); } } } }, TICK * 1000);
 
 const http = createServer((req, res) => {
-  if (req.url === '/healthz') { res.writeHead(200, { 'content-type': 'text/plain' }); res.end(`ok ${lobbies.size} lobbies`); return; }
+  if (req.url === '/healthz') { res.writeHead(200, { 'content-type': 'text/plain' }); res.end(`ok ${lobbies.size} lobbies\ndropped hit claims: ${JSON.stringify(dropped)}`); return; }
   if (process.env.ORE_DEV && pagePath) page = readFileSync(pagePath);
   res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-cache' }); res.end(page);
 });
@@ -116,7 +120,7 @@ wss.on('connection', ws => {
     if (m.t === 'in') { if (l && l.game && p.inbox.length < 30) p.inbox.push(m); return; }
     if (m.t === 'create') {
       if (l) leave(p); if (lobbies.size >= MAX_LOBBIES) { send(p, { t: 'err', msg: 'The server is full. Try again in a few minutes.' }); return; }
-      p.name = cleanName(m.name); p.ready = false; p.team = 0; const nl: Lobby = { code: newCode(), host: p.id, map: 0, plan: '', diff: 1, out: 1, players: [p], game: null, tick: 0, idle: 0, hp0: [], gone: {} }; lobbies.set(nl.code, nl); p.lobby = nl; tell(nl);
+      p.name = cleanName(m.name); p.ready = false; p.team = 0; const nl: Lobby = { code: newCode(), host: p.id, map: 0, plan: '', diff: 1, out: 1, players: [p], game: null, wire: null, tick: 0, idle: 0, hp0: [], gone: {} }; lobbies.set(nl.code, nl); p.lobby = nl; tell(nl);
     } else if (m.t === 'join') {
       if (l) leave(p); const jl = lobbies.get(String(m.code || '').toUpperCase().trim());
       if (!jl) { send(p, { t: 'err', msg: 'No lobby with that code. Check the five letters.' }); return; }

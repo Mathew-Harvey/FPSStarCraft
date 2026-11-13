@@ -219,7 +219,7 @@ export function spareGrazers(g: Game, team = g.myTeam) { return g.units.filter(u
 export function onBloom(g: Game, k: GBKind, x: number, z: number, team: number) { return k === 'mothercap' || g.carpet.on(x, z, Math.max(BLD[k].hx, BLD[k].hz) * .6, team); }
 export { isWorker };
 
-defineFaction(2, { ai: aiGloam, drive: (g, dt, P, eye, dir) => playerGloam(g, dt, P, eye, dir), each: gloamBuilding });
+defineFaction(2, { ai: aiGloam, drive: (g, dt, P, eye, dir) => playerGloam(g, dt, P, eye, dir), each: gloamBuilding, grows: true });
 defineBuildings({
   // A Mother Cap ripens every Bud at once; everything else trains one at a time.
   mothercap: { hatch(g, b, dt) { for (let i = b.queue.length - 1; i >= 0; i--) { const q = b.queue[i]; q.t -= dt; if (q.t > 0) continue; b.queue.splice(i, 1); const a = R(0, 6.283), u = g.spawn(q.kind, b.team, b.pos.x + Math.cos(a) * (b.hx + 1.2), b.pos.z + Math.sin(a) * (b.hz + 1.2)); g.puff(TMP.copy(u.pos).setY(1), 4, .8, M.gS); if (g.vol(b.pos) > .2) sfx.blip(); g.dir.trained(u); } }, done(_g, b) { b.buds = 1; } },

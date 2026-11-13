@@ -6,6 +6,7 @@ import type { Unit, Building } from '../data';
 import { UNIT, BLD, isUnit } from '../data';
 import { hiddenBy, hasStatus } from './status';
 import { isEnemy } from './sides';
+import { bldRule } from './registry';
 
 /** Is the body hidden from enemy eyes before detection counts? */
 export const isHidden = (u: Unit) => (!!UNIT[u.kind].cloak && !hasStatus(u, 'revealed')) || hiddenBy(u);
@@ -14,7 +15,7 @@ export const isHidden = (u: Unit) => (!!UNIT[u.kind].cloak && !hasStatus(u, 'rev
 export function seenBy(g: Game, team: number, t: Unit | Building): boolean {
   if (!isUnit(t) || !isEnemy(team, t.team) || !isHidden(t)) return true;
   for (const o of g.units) { if (!o.alive || isEnemy(team, o.team)) continue; const r = UNIT[o.kind].detect; if (r && Math.hypot(o.pos.x - t.pos.x, o.pos.z - t.pos.z) <= r) return true; }
-  for (const b of g.buildings) { if (!b.alive || !b.built || isEnemy(team, b.team)) continue; const r = BLD[b.kind].detect; if (r && Math.hypot(b.pos.x - t.pos.x, b.pos.z - t.pos.z) <= r) return true; }
+  for (const b of g.buildings) { if (!b.alive || !b.built || isEnemy(team, b.team)) continue; const r = Math.max(BLD[b.kind].detect || 0, bldRule(b.kind).detect?.(g, b) || 0); if (r && Math.hypot(b.pos.x - t.pos.x, b.pos.z - t.pos.z) <= r) return true; }
   return false;
 }
 

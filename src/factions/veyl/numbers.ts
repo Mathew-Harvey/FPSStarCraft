@@ -35,3 +35,6 @@ export const V_UPGRADES: { key: VUpKey; name: string; cost: number; blurb: strin
   { key: 'vhum', name: 'Low Hum', cost: 100, blurb: 'Tenders gather 30% faster', at: 'choir', say: 'Low Hum. The seams give up their ore sooner.' },
   { key: 'vwide', name: 'Wide Chorus', cost: 125, blurb: '+4 voices, and +2 more per Hush Well', at: 'choir', say: 'Wide Chorus. More room in the song.' },
 ];
+
+/** Which building a Veyl kind needs before it can be trained (none yet; the Veyl rules stream fills it). */
+export const V_NEEDS: Partial<Record<VKind, VBKind>> = {};

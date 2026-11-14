@@ -166,7 +166,7 @@ export const G_TUNE = {
   stinger: { range: 9, dmg: 18, cd: 1.1 },
 };
 /** Bloom radius for the kinds added in the full-depth roster. */
-export const BLOOM2: Record<string, number> = { ventbladder: 6, shellpit: 9, puffball: 6, rotden: 9, wingspire: 9, tallspire: 11, deeproot: 9, tunnelroot: 6, needleden: 9, sporepod: 10 };
+export const BLOOM2: Record<string, number> = { eldercap: 20, ancientcap: 20, ventbladder: 6, shellpit: 9, puffball: 6, rotden: 9, wingspire: 9, tallspire: 11, deeproot: 9, tunnelroot: 6, needleden: 9, sporepod: 10 };
 export const bloomOf = (k: string) => G_TUNE.bloomR[k] ?? BLOOM2[k] ?? 6;
 
 /** The full-depth roster's tuning: one block per kind, each number with its reason in roster.ts or abilities.ts where it is used. */

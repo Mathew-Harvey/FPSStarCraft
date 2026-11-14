@@ -11,7 +11,7 @@ import { hasStatus } from '../../src/core/status';
 import { seenBy } from '../../src/core/sight';
 import { bldRule, unitRule } from '../../src/core/registry';
 import { G_UNIT, G_BLD, G_RIPEN, G_DIGS, G2, G_TUNE, type GKind, type GBKind } from '../../src/factions/gloam/numbers';
-import { FUSES } from '../../src/factions/gloam/abilities';
+import { FUSES, podRoom } from '../../src/factions/gloam/abilities';
 import { isDug } from '../../src/factions/gloam/roster';
 import { otherEnd } from '../../src/factions/gloam/actions';
 
@@ -51,15 +51,23 @@ const dmgOf = (b: Unit | Building) => b.maxHp - b.hp;
   tryAll();
   const why0 = bldRule('mothercap').actions!(g, cap).find(a => a.key === 'grow')!.ok!(g, cap);
   check(built.has('warren') ? why0 === '' : /Warren/.test(why0), `tech: an Elder Cap needs a Warren (${why0 || 'Warren standing, allowed'})`);
+  // A Cap that ripens keeps its Bloom: its patch never shrinks, and buildings that need Bloom still go down 14 m out.
+  const capBloom = () => Math.max(0, ...g.carpet.patches.filter(p => p.owner === cap && !p.dying).map(p => p.max));
+  const bloomHolds = (was: number, what: string) => { run(g, 3); const r = capBloom(), far = [[14, 0], [-14, 0], [0, 14], [0, -14]].filter(([dx, dz]) => g.carpet.on(cap.pos.x + dx, cap.pos.z + dz, 0, H)).length;
+    let spot = false; for (let a = 0; a < 16 && !spot; a++) { const x = Math.round(cap.pos.x + Math.cos(a * .4) * 14), z = Math.round(cap.pos.z + Math.sin(a * .4) * 14); spot = g.canPlace('rotden', x, z, false, H); }
+    check(r >= was && far >= 3 && spot, `Bloom: ${what} keeps its Bloom (${was} m to ${r} m, Bloom 14 m out on ${far} of 4 sides, a Rot Den fits: ${spot})`); return r; };
+  const bloom0 = capBloom();
   check(g.buildingAction(cap, 'grow'), 'tech: the Mother Cap starts ripening into an Elder Cap');
   run(g, BLD.eldercap.time + 1);
   check(cap.kind === 'eldercap' && g.isHQ(cap) && g.ownB('mothercap', true, H).includes(cap), 'tech: it becomes an Elder Cap, still a home building and still counts as a Mother Cap');
+  const bloom1 = bloomHolds(bloom0, 'a Mother Cap that ripens into an Elder Cap');
   tryAll(); tryAll();
   check(built.has('rotden') && built.has('wingspire') && built.has('deeproot') && built.has('quillgarden'), 'tech: the Elder Cap opens the Rot Den, Wing Spire, Deep Root and Quill Garden');
   check(!built.has('needleden') && !g.unlocked('tallspire', H), 'tech: the Needle Den and Tall Spire still wait for an Ancient Cap');
   check(g.buildingAction(cap, 'grow'), 'tech: the Elder Cap starts ripening into an Ancient Cap (a Rot Den is standing)');
   run(g, BLD.ancientcap.time + 1); tryAll(); tryAll();
   check(cap.kind === 'ancientcap' && built.has('needleden'), 'tech: the Ancient Cap opens the Needle Den');
+  bloomHolds(bloom1, 'an Elder Cap that ripens into an Ancient Cap');
   const spire = g.ownB('wingspire', true, H)[0]; check(!!spire && g.buildingAction(spire, 'grow'), 'tech: a Wing Spire ripens into a Tall Spire once an Ancient Cap stands');
   run(g, BLD.tallspire.time + 1); check(spire.kind === 'tallspire' && g.ownB('wingspire', true, H).includes(spire), 'tech: the Tall Spire still counts as a Wing Spire');
   // Every Cap unit trains from the Cap; every ripened unit ripens. Spore Sacs first, for beds.
@@ -92,7 +100,7 @@ const dmgOf = (b: Unit | Building) => b.maxHp - b.hp;
   // Spore Pod: on own Bloom only.
   k.energy = 200; k.abCd = {}; const far = { x: cap.pos.x + 60, z: cap.pos.z + 60 };
   check(whyNot(g, k, 'pod', far) !== '', `Spore Pod: refused off Bloom or out of reach (${whyNot(g, k, 'pod', far)})`);
-  const spot = { x: k.pos.x + 5, z: k.pos.z + 2 }; check(useAbility(g, k, 'pod', spot), `Spore Pod: planted on its own Bloom (${whyNot(g, k, 'pod', spot) || 'ok'})`);
+  const spot = [[5, 2], [-5, 2], [2, -5], [-2, 5], [5, -4], [-5, -4]].map(([dx, dz]) => ({ x: k.pos.x + dx, z: k.pos.z + dz })).find(p => g.carpet.on(p.x, p.z, 0, H) && podRoom(g, p.x, p.z)) || { x: k.pos.x + 5, z: k.pos.z + 2 };   /* a free spot: with a Cap's full Bloom an earlier pod may stand at the first */ check(useAbility(g, k, 'pod', spot), `Spore Pod: planted on its own Bloom (${whyNot(g, k, 'pod', spot) || 'ok'})`);
   run(g, 2); const pod = g.ownB('sporepod', false, H)[0]; check(!!pod, 'Spore Pod: a pod stands there');
   run(g, BLD.sporepod.time + 1); check(pod.built && g.carpet.on(pod.pos.x + 4, pod.pos.z, 0, H) || g.carpet.on(pod.pos.x, pod.pos.z, 0, H), 'Spore Pod: grows its own Bloom');
   check(g.buildingAction(pod, 'hop'), 'Spore Pod: plants one more pod further on'); check(!g.buildingAction(pod, 'hop'), 'Spore Pod: only once');

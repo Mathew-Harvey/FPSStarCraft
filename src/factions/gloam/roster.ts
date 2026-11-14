@@ -30,7 +30,7 @@ addHitFilter((g, t, amt, from) => {
   if (isUnit(t) && ACID.has(t.id)) amt += G2.bloater.acid.arm;
   if (from && CLOUDS.length && isUnit(from)) {
     const far = (isUnit(t) ? dist(from, t) : g.distToBox(t, from.pos.x, from.pos.z)) > 3.5;
-    if (far) for (const c of CLOUDS) if (c.t > 0 && c.team !== from.team && Math.hypot(from.pos.x - c.x, from.pos.z - c.z) < c.r) return 0;
+    if (far) for (const c of CLOUDS) if (c.t > 0 && isEnemy(c.team, from.team) && Math.hypot(from.pos.x - c.x, from.pos.z - c.z) < c.r) return 0;
   }
   return amt;
 });
@@ -150,7 +150,7 @@ function aiNeedler(g: Game, u: Unit, dt: number) {
 export function spineLine(g: Game, u: Unit, yaw: number, len: number, by: Unit | null = u) {
   const N = G2.needler, fx = Math.sin(yaw), fz = Math.cos(yaw), dmg = N.dmg * gMul(g, u.team, 'needler'); let n = 0;
   for (const o of g.units) { if (!o.alive || !isEnemy(o.team, u.team) || o.air || o.inside) continue; const dx = o.pos.x - u.pos.x, dz = o.pos.z - u.pos.z, along = dx * fx + dz * fz, side = Math.abs(dx * fz - dz * fx); if (along < 0 || along > len + UNIT[o.kind].rad || side > N.width + UNIT[o.kind].rad * .6) continue; g.damage(o, dmg + (UNIT[o.kind].tags?.includes('plated') ? N.plated : 0), by); n++; }
-  for (const b of g.buildings) { if (!b.alive || b.team === u.team) continue; for (let s = 1; s <= len; s += 1.5) if (g.distToBox(b, u.pos.x + fx * s, u.pos.z + fz * s) < .6) { g.damage(b, dmg, by); n++; break; } }
+  for (const b of g.buildings) { if (!b.alive || !isEnemy(b.team, u.team)) continue; for (let s = 1; s <= len; s += 1.5) if (g.distToBox(b, u.pos.x + fx * s, u.pos.z + fz * s) < .6) { g.damage(b, dmg, by); n++; break; } }
   if (!g.noRender) for (let s = 1.2; s <= len; s += 1.4) g.puff(TMP.set(u.pos.x + fx * s, .3, u.pos.z + fz * s), 1, .5, M.dust, 1.4, .4, .35);
   g.tracer(V3(u.pos.x + fx, .2, u.pos.z + fz), V3(u.pos.x + fx * len, .5, u.pos.z + fz * len), spineMat, .16); if (g.vol(u.pos) > .1) sfx.slash(g.vol(u.pos)); u.swing = 1;
   return n;
@@ -276,7 +276,7 @@ function driveSpit(dmgK: string, base: number, cd: number, range: number, mat: T
     if (me.kind === 'needler') { if (g.lmb && g.fireCd <= 0) { if (!isDug(me)) { if (P.has('Mouse0')) { sfx.deny(); g.feed('Needler', 'I fire only from under the ground. Press Ctrl to dig in.', 'al'); } return; } g.fireCd = G2.needler.cd; g.recoil = 1; g.shake = Math.max(g.shake, .2); const n = spineLine(g, me, g.yaw, g.upOf(me.team).gspines ? G2.needler.deep : G2.needler.len, me); if (n) { g.hud.hitmark(n > 1); sfx.hit(); } } return; }
     if (g.lmb && g.fireCd <= 0) {
       g.fireCd = cd; g.recoil = 1; g.kick += .015; me.swing = 1; sfx.throw();
-      const hit = g.ray(eye, dir, range, -1, me), end = V3().copy(eye).addScaledVector(dir, hit ? hit.dist : range), tgt = hit && (hit.unit && hit.unit.team !== me.team ? hit.unit : hit.b && hit.b.team !== me.team ? hit.b : null);
+      const hit = g.ray(eye, dir, range, -1, me), end = V3().copy(eye).addScaledVector(dir, hit ? hit.dist : range), tgt = hit && (hit.unit && isEnemy(hit.unit.team, me.team) ? hit.unit : hit.b && isEnemy(hit.b.team, me.team) ? hit.b : null);
       g.tracer(V3(eye.x + dir.x * .8, eye.y - .3, eye.z + dir.z * .8), end, mat, .1);
       if (tgt) { const dmg = base * gMul(g, me.team, dmgK) * (hit!.head ? 1.6 : 1); g.damage(tgt, dmg, me, !!hit!.head); g.hud.hitmark(!!hit!.head); sfx.hit(); if (me.kind === 'bloater' && isUnit(tgt)) ACID.set(tgt.id, G2.bloater.acid.t); }
       else g.impact(eye, dir, hit, end, 6);
@@ -288,8 +288,8 @@ function driveBite(dmgK: string, base: number, cd: number, reachM: number) {
   return (g: Game, _dt: number, P: Set<string>, _eye: THREE.Vector3, dir: THREE.Vector3, look: Hit | null) => {
     const me = g.me!; if (commonKeys(g, me, P, dir, look)) return; if (isDug(me)) return;
     if (!g.lmb || g.fireCd > 0) return; g.fireCd = cd; g.jaw = 1; me.swing = 1; squelch(g, me.pos, .8); let any = false;
-    if (me.kind === 'gnatwing') { const t = look?.unit && look.unit.team !== me.team && look.dist < reachM + 3 ? look.unit : look?.b && look.b.team !== me.team && look.dist < reachM + 3 ? look.b : null; if (t) { gnatBite(g, me, t, me); any = true; } }
-    else for (const u of g.units) { if (!u.alive || u.team === me.team) continue; const dx = u.pos.x - me.pos.x, dz = u.pos.z - me.pos.z, d = Math.hypot(dx, dz); if (d > reachM + UNIT[u.kind].rad || (dx * dir.x + dz * dir.z) / (d || 1) < .4) continue; g.damage(u, base * gMul(g, me.team, dmgK), me); any = true; }
+    if (me.kind === 'gnatwing') { const t = look?.unit && isEnemy(look.unit.team, me.team) && look.dist < reachM + 3 ? look.unit : look?.b && isEnemy(look.b.team, me.team) && look.dist < reachM + 3 ? look.b : null; if (t) { gnatBite(g, me, t, me); any = true; } }
+    else for (const u of g.units) { if (!u.alive || !isEnemy(u.team, me.team)) continue; const dx = u.pos.x - me.pos.x, dz = u.pos.z - me.pos.z, d = Math.hypot(dx, dz); if (d > reachM + UNIT[u.kind].rad || (dx * dir.x + dz * dir.z) / (d || 1) < .4) continue; g.damage(u, base * gMul(g, me.team, dmgK), me); any = true; }
     if (any) { g.hud.hitmark(false); sfx.hit(); }
   };
 }
@@ -308,7 +308,7 @@ function driveCaster(g: Game, _dt: number, P: Set<string>, _eye: THREE.Vector3, 
 /** Puffball: shoots the nearest flier in reach. Its detection is BLD.puffball.detect. */
 function puffTick(g: Game, b: Building, dt: number) {
   const P = G2.puffball; b.cd -= dt; if (b.cd > 0) return;
-  let t: Unit | null = null, bd = P.range + b.hx; for (const o of g.units) { if (!o.alive || o.team === b.team || !o.air || o.inside) continue; const d = Math.hypot(o.pos.x - b.pos.x, o.pos.z - b.pos.z); if (d < bd) { bd = d; t = o; } }
+  let t: Unit | null = null, bd = P.range + b.hx; for (const o of g.units) { if (!o.alive || !isEnemy(o.team, b.team) || !o.air || o.inside) continue; const d = Math.hypot(o.pos.x - b.pos.x, o.pos.z - b.pos.z); if (d < bd) { bd = d; t = o; } }
   if (!t) { b.cd = .3; return; } b.cd = P.cd;
   g.tracer(V3(b.pos.x, b.h * .8, b.pos.z), V3(t.pos.x, UNIT[t.kind].bodyY + (t.alt || 0), t.pos.z), acidMat, .14); g.damage(t, P.dmg * gMul(g, b.team, 'quillback'), b); if (g.vol(b.pos) > .2) sfx.throw();
 }

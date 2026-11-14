@@ -38,6 +38,8 @@ function play(name: string, plan: TeamPlan, seed: number, MAPC: number) {
   for (const t of teams) check((built[t] || 0) >= 4, `${name}: ${g.sideName(t)} built a base (${built[t] || 0} buildings at most)`);
   check(teams.filter(t => marched[t]).length >= teams.length / 2, `${name}: sides march on the enemy (${teams.map(t => g.sideName(t) + ' ' + (marched[t] || 0)).join(', ')})`);
   check(!wrongMarch.length, `${name}: nobody marches on a friend ${wrongMarch.slice(0, 3).join('; ')}`);
+  const lost = g.units.filter(u => u.alive && !(Number.isFinite(u.pos.x) && Number.isFinite(u.pos.y) && Number.isFinite(u.pos.z)));
+  check(!lost.length, `${name}: every live body is somewhere (${lost.length} with no position${lost[0] ? ', e.g. ' + lost[0].kind : ''})`);
   check(!friendly, `${name}: nobody hurts a friend (${friendly}${foul ? ', e.g. ' + foul : ''})`);
   const out = g.outOf.map(t => g.sideName(t)).join(', ') || 'nobody';
   console.log(`  ${name}: ${g.phase === 'over' ? 'over at ' + Math.round(g.time / 60) + ' min, winners ' + g.winners.map(t => g.sideName(t)).join(' and ') : 'still going at ' + mins + ' min'}; out: ${out}`);

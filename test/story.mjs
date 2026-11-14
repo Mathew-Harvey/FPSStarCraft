@@ -18,7 +18,7 @@ try {
   await p.evaluate(() => { __ore.setFree(true); __ore.cutP.auto = false; });
   // the campaign menu shows the four acts and the first act's eight jobs
   const menu = await p.evaluate(() => ({ acts: document.querySelectorAll('#jobs .acts button').length, jobs: document.querySelectorAll('#jobs .jrow button').length, open: document.querySelectorAll('#jobs .jrow button:not([disabled])').length }));
-  check(menu.acts === 5 && menu.jobs === 8 && menu.open === 1, `the menu lists four acts and side jobs, and Act 1's eight jobs with one open (${JSON.stringify(menu)})`);
+  check(menu.acts === 5 && menu.jobs === 12 && menu.open === 1, `the menu lists four acts and side jobs, and Act 1's twelve jobs with one open (${JSON.stringify(menu)})`);
   // Clock in on job 1: the arrival scene plays first
   await p.evaluate(() => document.getElementById('startJob').click());
   check(await until(() => !document.getElementById('cut').hidden && __ore.game.phase === 'cut'), 'the opening cut scene plays before job 1');
@@ -28,44 +28,44 @@ try {
   check(await until(() => /2 \//.test(document.querySelector('#cut .cnum').textContent)), 'a click turns the page');
   await p.keyboard.press('Escape');
   check(await until(() => document.getElementById('cut').hidden && __ore.game.phase === 'play' && __ore.game.mission && __ore.game.mission.name === 'First Shift'), 'Esc skips the scene and starts the job');
-  // job 9 runs from the outpost end, in a Veyl body, on a local host
-  await p.evaluate(() => __ore.startStory(8));
-  check(await until(() => __ore.split() && __ore.game.me && __ore.split().host.mission), 'job 9 starts on a local host');
+  // job 13 (Wrong Body) runs from the outpost end, in a Veyl body, on a local host
+  await p.evaluate(() => __ore.startStory(12));
+  check(await until(() => __ore.split() && __ore.game.me && __ore.split().host.mission), 'job 13 starts on a local host');
   const v = await p.evaluate(() => { const g = __ore.game, h = __ore.split().host; return { team: g.myTeam, out: h.teams[1], kind: g.me.kind, story: g.story && g.story.name, hm: h.mission.name, home: h.buildings.filter(b => b.alive && b.team === 2).length }; });
-  check(v.kind === 'tender' && v.story === 'Wrong Body' && v.hm === 'Wrong Body' && v.team === 1, `the player is a Veyl Tender on job 9 (${JSON.stringify(v)})`);
+  check(v.kind === 'tender' && v.story === 'Wrong Body' && v.hm === 'Wrong Body' && v.team === 1, `the player is a Veyl Tender on job 13 (${JSON.stringify(v)})`);
   check(await until(() => __ore.game.netObjs && __ore.game.netObjs.length === 5), 'the host sends the five objectives to the screen');
   check(await until(() => /Choir Stone/.test(document.getElementById('objs').textContent)), 'the objectives panel shows them');
-  // job 14 locks the trigger
-  await p.evaluate(() => __ore.startStory(13));
-  check(await until(() => __ore.split() && __ore.game.me && __ore.game.me.kind === 'lancer'), 'job 14 hands over a single Lancer');
-  check(await p.evaluate(() => __ore.game.story.noFire && __ore.split().host.truce), 'job 14 locks weapons and holds everyone\'s fire');
-  // job 24 puts an Ironhold player at the outpost end, against Charter Security at the yard
-  await p.evaluate(() => __ore.startStory(23));
-  check(await until(() => __ore.split() && __ore.game.me), 'job 24 starts');
+  // job 18 (Open Hands) locks the trigger
+  await p.evaluate(() => __ore.startStory(17));
+  check(await until(() => __ore.split() && __ore.game.me && __ore.game.me.kind === 'lancer'), 'job 18 hands over a single Lancer');
+  check(await p.evaluate(() => __ore.game.story.noFire && __ore.split().host.truce), 'job 18 locks weapons and holds everyone\'s fire');
+  // job 28 (Fourteen Twenty) puts an Ironhold player at the outpost end, against Charter Security at the yard
+  await p.evaluate(() => __ore.startStory(27));
+  check(await until(() => __ore.split() && __ore.game.me), 'job 28 starts');
   const f = await p.evaluate(() => { const g = __ore.game, h = __ore.split().host; return { team: g.myTeam, kind: g.me.kind, yard: h.buildings.filter(b => b.alive && b.team === 0 && b.kind === 'headframe').length, clock: g.ms.clock }; });
   check(f.team === 3 && f.kind === 'rigger' && f.yard === 1, `the player is an Ironhold Rigger at the outpost end, and the Charter holds the yard (${JSON.stringify(f)})`);
   check(await until(() => __ore.game.ms.clock > 2300 && __ore.game.ms.clock <= 2400), 'the forty-minute clock reaches the screen');
   // winning a job is picked up: progress moves on, the button offers the next job, and the closing scene plays before it
   const win = g => { for (let i = 0; i < g.mission.objectives.length; i++) g.ms['_o' + i] = 1; };
-  await p.evaluate(() => __ore.startStory(4));
-  check(await until(() => __ore.game.phase === 'play' && __ore.game.mission && __ore.game.mission.name === 'Core Sample'), 'job 5 starts');
+  await p.evaluate(() => __ore.startStory(5));
+  check(await until(() => __ore.game.phase === 'play' && __ore.game.mission && __ore.game.mission.name === 'Core Sample'), 'job 6 starts');
   await p.evaluate(`(${win})(__ore.game)`);
-  check(await until(() => __ore.game.phase === 'over' && __ore.game.won && !document.getElementById('end').hidden), 'ticking every objective on job 5 wins it');
+  check(await until(() => __ore.game.phase === 'over' && __ore.game.won && !document.getElementById('end').hidden), 'ticking every objective on job 6 wins it');
   const e5 = await p.evaluate(() => ({ btn: document.getElementById('again').textContent, save: JSON.parse(localStorage.getItem('ore-else') || '{}').camp }));
-  check(e5.btn === 'Next job' && e5.save >= 5, `the win is saved and the end screen offers the next job (${JSON.stringify(e5)})`);
+  check(e5.btn === 'Next job' && e5.save >= 6, `the win is saved and the end screen offers the next job (${JSON.stringify(e5)})`);
   await p.evaluate(() => document.getElementById('again').click());
-  check(await until(() => __ore.game.phase === 'cut' && /Ring inside ring/.test(document.querySelector('#cut .ctitle').textContent)), "job 5's closing scene plays after the win");
+  check(await until(() => __ore.game.phase === 'cut' && /Ring inside ring/.test(document.querySelector('#cut .ctitle').textContent)), "job 6's closing scene plays after the win");
   await p.keyboard.press('Escape');
-  check(await until(() => __ore.game.phase === 'play' && __ore.game.mission && __ore.game.mission.name === 'Heavy Metal'), 'skipping it starts job 6');
+  check(await until(() => __ore.game.phase === 'play' && __ore.game.mission && __ore.game.mission.name === 'Heavy Metal'), 'skipping it starts job 7');
   // and from the outpost end, where the job runs on the local host
-  await p.evaluate(() => __ore.startStory(9));
-  check(await until(() => __ore.split() && __ore.split().host.mission && __ore.game.me), 'job 10 starts on a local host');
+  await p.evaluate(() => __ore.startStory(13));
+  check(await until(() => __ore.split() && __ore.split().host.mission && __ore.game.me), 'job 14 starts on a local host');
   // drawing is the slow part on a software renderer, and the checks from here on only read state
   await p.evaluate(`__ore.game.noRender = true; (${win})(__ore.split().host)`);
   check(await until(() => __ore.game.phase === 'over' && __ore.game.won, undefined, 150000), 'a win on the host reaches the player at the outpost end');
   check(await p.evaluate(() => /Next job/.test(document.getElementById('again').textContent) && /ridge is clear/.test(document.getElementById('endLine').textContent)), "the end screen shows the job's closing line and offers the next job");
   // and a loss there reads as a loss
-  await p.evaluate(() => __ore.startStory(9)); await until(() => __ore.split() && __ore.split().host.mission && __ore.game.me && __ore.game.phase === 'play');
+  await p.evaluate(() => __ore.startStory(13)); await until(() => __ore.split() && __ore.split().host.mission && __ore.game.me && __ore.game.phase === 'play');
   await p.evaluate(() => { __ore.game.noRender = true; __ore.split().host.ms.lose = 1; });
   check(await until(() => __ore.game.phase === 'over' && !__ore.game.won && /Try that again/.test(document.getElementById('again').textContent), undefined, 150000), 'a lost job at the outpost end reads as lost');
 } finally { await b.close(); }

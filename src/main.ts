@@ -109,7 +109,11 @@ function teamPlan(): TeamPlan | null {
   for (const grp of L.teams) { const mine = grp.includes(me); for (const s of grp) facs[s] = mine ? sideI : L.teams.length === 2 ? foe : others[e++ % 2]; }
   return { n, groups: L.teams.map(t => t.slice()), facs };
 }
-const teamKey = () => JSON.stringify(teamPlan());
+/** The old raid match: Ironhold at the yard against a Veyl outpost that breeds raids for free and builds nothing. Off by default, since a
+ *  skirmish now runs both economies; the menu's "Raid the Veyl outpost" button turns it on, and only while the player is Ironhold. */
+let raid = false;
+const raidOn = () => raid && mode === 'skirm' && sideI === 0 && foeI === 0 && teamI <= 0;
+const teamKey = () => JSON.stringify([teamPlan(), raidOn()]);
 /** Every faction in the match the menu would start: two in a one-on-one, up to three in a team game. Their art comes before it starts. */
 const matchFacs = () => { const tp = teamPlan(); return tp ? [...new Set(tp.facs)] : sidesWanted(); };
 let builtTeam = 'null';
@@ -117,9 +121,9 @@ const setWanted = () => { const tp = teamPlan(); if (!tp || !setTeamGame(tp)) se
 const want = () => { setWanted(); STORY.charter = mode === 'skirm' ? -1 : charterTeam(MISSIONS[jobI]); return want0(); };
 /** The skirmish map with its turn: a Vast map is turned a new way for every new match (see rollMap). `__ore.turn` pins it, for tests and pictures. */
 let playMap = 0; const reroll = () => playMap = rollMap(mapI, (window as any).__ore?.turn | 0);
-const want0 = () => mode !== 'skirm' ? { d: DIFFS[MISSIONS[jobI].diff], map: MISSIONS[jobI].map, m: MISSIONS[jobI] } : { d: DIFFS[diffI], map: playMap, m: null };
+const want0 = () => mode !== 'skirm' ? { d: DIFFS[MISSIONS[jobI].diff], map: MISSIONS[jobI].map, m: MISSIONS[jobI], eco: false } : { d: DIFFS[diffI], map: playMap, m: null, eco: !raidOn() };
 reroll();
-let game = new Game(pipe, hud, want().d, want().map, want().m); game.sens = sens;
+let game = new Game(pipe, hud, want().d, want().map, want().m, null, want().eco); game.sens = sens;
 window.addEventListener('resize', resize);
 
 // ---------------------------------------------------------------- input
@@ -172,7 +176,7 @@ document.addEventListener('visibilitychange', () => { if (document.hidden) { pad
 document.addEventListener('pointerlockerror', () => { freeMouse = true; });
 document.addEventListener('pointerlockchange', () => { if (!locked() && live() && !freeMouse) pause(); });
 
-function fresh() { endSplit(); hush(); hud.reset(); reroll(); const w = want(); game.dispose(); game = new Game(pipe, hud, w.d, w.map, w.m); game.sens = sens; ended = false; (window as any).__ore.game = game;
+function fresh() { endSplit(); hush(); hud.reset(); reroll(); const w = want(); game.dispose(); game = new Game(pipe, hud, w.d, w.map, w.m, null, w.eco); game.sens = sens; ended = false; (window as any).__ore.game = game;
   artSoon(matchFacs(), () => { if (!$('menu').hidden && game.phase !== 'play' && !game.net && !split) fresh(); }); }   // the art for sides picked in the menu comes while the player looks
 function start() { if (!artGate(matchFacs(), () => { fresh(); start(); })) return; if (mode === 'skirm' && sideI) { startVeyl(); return; } if (mode !== 'skirm' && MISSIONS[jobI].out) { startStory(MISSIONS[jobI]); return; } if (sidesCode() !== wantCode() || builtTeam !== teamKey()) fresh(); initAudio(); setVolume(vol); setMusic(mus); { const w = want(); if (game.diff !== w.d || game.mapI !== w.map || game.mission !== w.m || game.time > 0) fresh(); } $('menu').hidden = true; $('pause').hidden = true; $('end').hidden = true; hud.show(true); game.phase = 'play'; game.introT = 1.8; lock(); }
 /** The pause screen shows the whole tech tree: what is standing, what can be built next and what each building sells. */
@@ -325,10 +329,11 @@ const showSplit = () => splitBtns.forEach((b, i) => { const on = (i === 0) === s
 splitBtns.forEach((b, i) => b.addEventListener('click', () => { splitSide = i === 0; showSplit(); save(); })); showSplit();
 // ---- which side a skirmish plays
 const sideBtns = Array.from($('sides').querySelectorAll('button')) as HTMLButtonElement[];
-const foeBtns = Array.from($('foes').querySelectorAll('button')) as HTMLButtonElement[];
-const showSide = () => { sideBtns.forEach((b, i) => { const on = i === sideI; b.classList.toggle('on', on); b.setAttribute('aria-pressed', String(on)); }); foeBtns.forEach((b, i) => { const on = i === foeI; b.classList.toggle('on', on); b.setAttribute('aria-pressed', String(on)); }); $('foes').hidden = false; $('start').textContent = sideI === 2 ? 'Start growing' : sideI ? 'Start singing' : 'Clock in'; $('startSplit').textContent = sideI === 2 ? 'Split screen co-op as the Gloam' : sideI ? 'Split screen co-op as the Veyl' : 'Split screen co-op'; };
+const foeBtns = Array.from($('foes').querySelectorAll('button:not(#raid)')) as HTMLButtonElement[], raidBtn = $('raid') as HTMLButtonElement;
+const showSide = () => { sideBtns.forEach((b, i) => { const on = i === sideI; b.classList.toggle('on', on); b.setAttribute('aria-pressed', String(on)); }); foeBtns.forEach((b, i) => { const on = i === foeI && !raidOn(); b.classList.toggle('on', on); b.setAttribute('aria-pressed', String(on)); }); raidBtn.hidden = sideI !== 0 || teamI > 0; raidBtn.classList.toggle('on', raidOn()); raidBtn.setAttribute('aria-pressed', String(raidOn())); $('foes').hidden = false; $('start').textContent = sideI === 2 ? 'Start growing' : sideI ? 'Start singing' : 'Clock in'; $('startSplit').textContent = sideI === 2 ? 'Split screen co-op as the Gloam' : sideI ? 'Split screen co-op as the Veyl' : 'Split screen co-op'; };
 sideBtns.forEach((b, i) => b.addEventListener('click', () => { if (i !== sideI) foeI = i ? 2 : 0; sideI = i; showSide(); save(); if (mode === 'skirm' && (sidesCode() !== wantCode() || builtTeam !== teamKey())) fresh(); }));
-foeBtns.forEach((b, i) => b.addEventListener('click', () => { foeI = i; showSide(); save(); if (mode === 'skirm' && (sidesCode() !== wantCode() || builtTeam !== teamKey())) fresh(); })); showSide();
+foeBtns.forEach((b, i) => b.addEventListener('click', () => { foeI = i; raid = false; showSide(); save(); if (mode === 'skirm' && (sidesCode() !== wantCode() || builtTeam !== teamKey())) fresh(); })); showSide();
+raidBtn.addEventListener('click', () => { raid = true; foeI = 0; showSide(); save(); if (mode === 'skirm' && (sidesCode() !== wantCode() || builtTeam !== teamKey())) fresh(); });
 // ---- campaign and mode tabs
 let ended = false;
 const modeBtns = Array.from($('modes').querySelectorAll('button')) as HTMLButtonElement[];
@@ -429,7 +434,7 @@ const showTeams = () => {
   const say: Record<string, string> = { '1v1': 'One on one, the rest of the starts left empty', '2v2': 'You and one ally against two', '3v3': 'You and two allies against three', '4v4': 'You and three allies against four', 'Free for all': 'Every start for itself' };
   teamRow.innerHTML = L.map((l, i) => `<button type="button" data-t="${i}" class="${i === teamI ? 'on' : ''}" aria-pressed="${i === teamI}">${l.name}<small>${say[l.name] || ''}</small></button>`).join('');
 };
-teamRow.addEventListener('click', e => { const b = (e.target as HTMLElement).closest('[data-t]') as HTMLElement | null; if (!b) return; teamI = +b.dataset.t!; showTeams(); if (mode === 'skirm' && builtTeam !== teamKey()) fresh(); });
+teamRow.addEventListener('click', e => { const b = (e.target as HTMLElement).closest('[data-t]') as HTMLElement | null; if (!b) return; teamI = +b.dataset.t!; showTeams(); showSide(); if (mode === 'skirm' && builtTeam !== teamKey()) fresh(); });
 const showMap = () => { showTeams(); mapBtns.forEach((b, i) => { const on = +(b.dataset.b ?? i) === baseOf(mapI); b.classList.toggle('on', on); b.setAttribute('aria-pressed', String(on)); }); sizeBtns.forEach(b => { const on = +(b.dataset.s || 0) === sizeOf(mapI); b.classList.toggle('on', on); b.setAttribute('aria-pressed', String(on)); }); };
 /** Picks a map, keeping the size; a number of 10 or more is a whole map code with its size. */
 const useMap = (code: number) => { mode = 'skirm'; mapI = code % 100; showMap(); showMode(); save(); if (game.mapI % 100 !== mapI || game.mission) fresh(); };
@@ -513,5 +518,5 @@ function frame(now: number) {
   if (fast > 900 && quality < 1) { quality = Math.min(1, quality / .85); fast = 0; pipe.aa = aaFor(); pipe.ao = aoFor(); pipe.glow = pipe.shafts = glowFor(); LAMP_ON.value = (gfxI as number) !== 1; resize(); }
   requestAnimationFrame(frame);
 }
-(window as any).__ore = { MAP: () => MAP, ter: () => TER, models: MD, tx: TX, mats: M, gloamB: GLOAM_BUILDINGS, gloamBloom: bloomPatch, sounds: { ready: soundsReady, sfx }, quit, atlasUsed: MD.atlasUsed, game, start, pipe, hud, hud2, startSplit, startVeyl, pause, resume, touch: pad, setTouch, reg: { defineAbilities, defineBuildings, UNIT, BLD, isFriend }, padDrive: (p: Gamepad, dt = 1 / 30) => padDrive(game, p, 0, dt), split: () => split, game2: () => game2, setFree: (v: boolean) => { freeMouse = v; }, hold: (v: boolean) => { still = v; if (!v) { game.noRender = false; if (game2) game2.noRender = false; } }, pickMap, pickSize, pickSide: (s: number, f = 0) => { mode = "skirm"; sideI = s; foeI = s ? s - 1 : f; showSide(); fresh(); }, unlock: () => { camp = STORY_JOBS; mpOpen = true; mode = 'multi'; showMode(); }, net: () => net, pickJob: (i: number) => { mode = 'camp'; camp = Math.max(camp, Math.min(i, STORY_JOBS)); jobI = i; showMode(); fresh(); }, playCuts, cuts: CUTS, cutP, startStory: (i: number) => { mode = 'camp'; jobI = i; camp = Math.max(camp, Math.min(i, STORY_JOBS)); start(); } };
+(window as any).__ore = { MAP: () => MAP, ter: () => TER, models: MD, tx: TX, mats: M, gloamB: GLOAM_BUILDINGS, gloamBloom: bloomPatch, sounds: { ready: soundsReady, sfx }, quit, atlasUsed: MD.atlasUsed, game, start, pipe, hud, hud2, startSplit, startVeyl, pause, resume, touch: pad, setTouch, reg: { defineAbilities, defineBuildings, UNIT, BLD, isFriend }, padDrive: (p: Gamepad, dt = 1 / 30) => padDrive(game, p, 0, dt), split: () => split, game2: () => game2, setFree: (v: boolean) => { freeMouse = v; }, hold: (v: boolean) => { still = v; if (!v) { game.noRender = false; if (game2) game2.noRender = false; } }, pickMap, pickSize, setRaid: (v: boolean) => { raid = v; showSide(); if (mode === 'skirm' && builtTeam !== teamKey()) fresh(); }, pickSide: (s: number, f = 0) => { mode = "skirm"; sideI = s; foeI = s ? s - 1 : f; showSide(); fresh(); }, unlock: () => { camp = STORY_JOBS; mpOpen = true; mode = 'multi'; showMode(); }, net: () => net, pickJob: (i: number) => { mode = 'camp'; camp = Math.max(camp, Math.min(i, STORY_JOBS)); jobI = i; showMode(); fresh(); }, playCuts, cuts: CUTS, cutP, startStory: (i: number) => { mode = 'camp'; jobI = i; camp = Math.max(camp, Math.min(i, STORY_JOBS)); start(); } };
 requestAnimationFrame(frame);

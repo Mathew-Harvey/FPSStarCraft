@@ -17,7 +17,7 @@ try {
   const shot = async n => { if (SHOTS) { await p.evaluate(() => { for (const d of document.querySelectorAll('#feed div')) d.style.animation = 'none'; }); await p.screenshot({ path: `${SHOTS}/${n}.jpg`, type: 'jpeg', quality: 85 }); } };
   await p.goto(page); await p.waitForFunction('window.__ore && __ore.game');
   await p.evaluate(() => {
-    __ore.setFree(true); __ore.pickMap(0); document.querySelectorAll('#diff button')[0].click(); __ore.start(); __ore.hold(true);
+    __ore.setFree(true); __ore.pickMap(0); document.querySelectorAll('#diff button')[0].click(); __ore.setRaid(true); __ore.start(); __ore.hold(true);
     const g = __ore.game; g.introT = 0; g.hourFix = 13; g.wxFix = 'clear'; g.truce = true; g.dir.raidIn = 9999; g.dir.auto = false; g.ore = 600;
     for (const k of ['linesman', 'breacher', 'longshot', 'rigger', 'patch', 'gantry']) g.seenKinds.add(k);
     for (let i = 0; i < 6; i++) g.spawn('linesman', 0, -6 + i * 2.2, 14 + (i % 2) * 2);

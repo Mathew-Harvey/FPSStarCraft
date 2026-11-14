@@ -30,6 +30,17 @@ for (const [home, out, loser] of [[0, 2, 'home'], [1, 0, 'out'], [2, 2, 'out']] 
   Object.assign(OVERTIME, was);
 }
 
+// A tie on value lost breaks on worth still standing, not on which end started first; a mirror's line names the end.
+{ const g = match(2, 2); g.lostV = []; g.spawn('snapper', SIDE.out, 0, 0); g.evq = []; g.pointsWin();
+  check(g.byPoints && g.endT > 0 && g.endWon === false, 'with nothing lost on either side, the end with more standing (the far end here) wins, not the yard on start order');
+  check(g.evq.some(e => e[0] === 'fd' && /far end/.test(String(e[2]))), 'a mirror points win says which end won'); }
+
+// A False Voice copy that fades costs nothing.
+{ const g = match(1, 0); const k = g.units.find(u => u.alive && u.team === SIDE.home)!; const c = g.spawn('cantor', k.team, k.pos.x, k.pos.z); g.unpaid.add(c);
+  const before = g.lostV[k.team] || 0; g.killUnit(c, null); const echo = (g.lostV[k.team] || 0) - before;
+  const d = g.spawn('cantor', k.team, k.pos.x, k.pos.z); const b2 = g.lostV[k.team] || 0; g.killUnit(d, null); const paid = (g.lostV[k.team] || 0) - b2;
+  check(echo === 0 && paid === 100, `an unpaid copy adds nothing to the value lost (${echo}), a real Cantor its price (${paid})`); }
+
 // Overtime: buildings take more damage after the start.
 { const g = match(0, 1); const b = g.buildings.find(b => b.alive && b.team === SIDE.out)!; const hp0 = b.hp; g.damage(b, 100, null); const plain = hp0 - b.hp;
   OVERTIME.start = 1; OVERTIME.perMin = .2; g.time = 61 + 60; const hp1 = b.hp; g.damage(b, 100, null); const late = hp1 - b.hp; Object.assign(OVERTIME, was);

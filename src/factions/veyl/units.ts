@@ -137,7 +137,7 @@ function glassWall(g: Game, u: Unit, t: Target) {
 }
 function falseVoice(g: Game, u: Unit, o: Unit) {
   for (let i = 0; i < T.tuner.voiceN; i++) {
-    const a = i * Math.PI + u.id, c = g.spawn(o.kind, o.team, o.pos.x + Math.cos(a) * 2, o.pos.z + Math.sin(a) * 2); ECHO.set(c, g.time + T.tuner.voiceT);
+    const a = i * Math.PI + u.id, c = g.spawn(o.kind, o.team, o.pos.x + Math.cos(a) * 2, o.pos.z + Math.sin(a) * 2); ECHO.set(c, g.time + T.tuner.voiceT); g.unpaid.add(c);
     c.order = { ...o.order, path: o.order.path ? o.order.path.map(p => [...p]) : undefined }; c.target = o.target;
   }
 }

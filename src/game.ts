@@ -475,7 +475,7 @@ export class Game {
     if (this.evq) { const e = ['ku', u.id, from ? from.id : 0]; this.evq.push(e); DEATHS.set(e, u);   /* its looks are added when it is sent (K, src/net-look.ts) */ const kp = from && (from as Unit).pilot; if (kp && u.team !== from!.team && this.score[kp]) this.score[kp][0]++; }
     if (u.alive) unitRule(u.kind).dying?.(this, u, from);
     if (u.cargo?.length) spill(this, u, from); if (u.inside) { const c = u.inside; c.cargo = (c.cargo || []).filter(x => x !== u); u.inside = null; }
-    if (u.alive) this.loseV(u.team, u.kind); u.alive = false; const away = u.team !== SIDE.home, v = this.vol(u.pos), st = UNIT[u.kind];
+    if (u.alive) this.loseV(u.team, u.kind, u); u.alive = false; const away = u.team !== SIDE.home, v = this.vol(u.pos), st = UNIT[u.kind];
     this.hud.damage(V3(u.pos.x, st.headY + .4, u.pos.z), unitRule(u.kind).koWord || 'KO!', u.team !== this.myTeam ? 'ko' : 'kobad');
     u.ring.visible = false; if (u.rig.flash) u.rig.flash.visible = false; this.bodyLayer(u, false);
     R(-1, 1); R(-1, 1);   // two draws the old fall used: kept so the match's seeded random numbers run exactly as before
@@ -502,20 +502,29 @@ export class Game {
   }
   /** Value (ore + Flux) each team has lost to deaths, for the points win at OVERTIME.limit. */
   lostV: number[] = [];
-  loseV(t: number, k: Kind | BKind) { const [o, f] = costOf(k); this.lostV[t] = (this.lostV[t] || 0) + o + f; }
+  /** Bodies nobody paid for (a Tuner's False Voice copies): they cost nothing when they go. Husks, Pups, Shaft Mines and Stake Guns are priced 0. */
+  unpaid = new WeakSet<Unit>();
+  loseV(t: number, k: Kind | BKind, u?: Unit) { if (u && this.unpaid.has(u)) return; const [o, f] = costOf(k); this.lostV[t] = (this.lostV[t] || 0) + o + f; }
   /** Ends a fair skirmish on points at OVERTIME.limit: the side (or alliance) that lost the least value wins. */
   pointsWin() {
     const all = multi() ? MATCH.teams : [SIDE.home, SIDE.out], lost = (t: number) => all.filter(o => isFriend(o, t)).reduce((a, o) => a + (this.lostV[o] || 0), 0);
     const left = multi() ? MATCH.teams.filter(o => !this.outOf.includes(o)) : [SIDE.home, SIDE.out];
-    const best = left.reduce((b, t) => lost(t) < lost(b) ? t : b, left[0]);
+    // Ties break on worth still standing (more wins); an exact tie on both plays on, and the check runs again next tick.
+    const stand = (t: number) => all.filter(o => isFriend(o, t)).reduce((a, o) => a + this.units.filter(u => u.alive && u.team === o && !this.unpaid.has(u)).reduce((q, u) => q + costOf(u.kind)[0] + costOf(u.kind)[1], 0)
+      + this.buildings.filter(b => b.alive && b.team === o && b.built !== false).reduce((q, b) => q + costOf(b.kind)[0] + costOf(b.kind)[1], 0), 0);
+    const score = (t: number) => [lost(t), -stand(t)], better = (a: number, b: number) => { const [x, y] = [score(a), score(b)]; return x[0] !== y[0] ? x[0] < y[0] : x[1] < y[1]; };
+    const best = left.reduce((b, t) => better(t, b) ? t : b, left[0]);
+    if (left.some(t => !isFriend(t, best) && !better(best, t))) return;
     this.winners = MATCH.teams.filter(o => isFriend(o, best)); this.byPoints = true;
-    this.feed('Signal', `Time. ${this.sideName(best)} win on points: they lost ${Math.round(lost(best))} worth, the rest more.`, 'al');
+    const who = !multi() && fac(SIDE.home) === fac(SIDE.out) ? `${this.sideName(best)} at ${best === SIDE.home ? 'the yard' : 'the far end'}` : this.sideName(best);
+    this.feed('Signal', `Time. ${who} win on points: they lost ${Math.round(lost(best))} worth, the rest more.`, 'al');
     this.endT = 2.4; this.endWon = isFriend(best, this.myTeam); this.pipe.flash = 1;
   }
   byPoints = false;
   fallA = -1; possT = -9;
   killBuilding(b: Building) {
     if (b.cargo?.length) spill(this, b, null);
+    // A site that falls before it is finished adds nothing to lostV: points count what stood.
     if (b.alive && b.built !== false) this.loseV(b.team, b.kind); b.alive = false; if (b.holo) this.scene.remove(b.holo); const veyl = fac(b.team) !== 0, bad = b.team === this.myTeam, v = this.vol(b.pos);
     const tall = b.h > Math.max(b.hx, b.hz) * 1.9, a = this.fallA >= 0 ? this.fallA : R(0, 6.283); this.fallA = -1;
     if (this.evq) this.evq.push(['kb', b.id, Math.round(a * 100) / 100]);

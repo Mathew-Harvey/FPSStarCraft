@@ -35,7 +35,8 @@ try {
     check(seen.card === 0 && seen.sel === 0, 'and there is nothing to pick or order');
     await shot(W, 'watch-above.png');
     const f0 = await W.evaluate(() => ({ x: __ore.game.cmd.focus.x, z: __ore.game.cmd.focus.z }));
-    await W.keyboard.down('KeyD'); await sleep(1500); await W.keyboard.up('KeyD');
+    // held until the camera has gone 5 m, or 20 s: a page on a busy machine draws few frames a second, and the camera moves per frame
+    await W.keyboard.down('KeyD'); await until(W, f0 => __ore.game.cmd.focus.x - f0.x > 5, f0); await W.keyboard.up('KeyD');
     const f1 = await W.evaluate(() => ({ x: __ore.game.cmd.focus.x, z: __ore.game.cmd.focus.z }));
     check(f1.x - f0.x > 5, `D moves the camera across the ground (${(f1.x - f0.x).toFixed(0)} m)`);
     const z0 = await W.evaluate(() => __ore.game.cmd.zt); await W.mouse.move(640, 360); await W.mouse.wheel(0, 300); await sleep(500);
@@ -56,7 +57,7 @@ try {
   {
     const A = await client(S.url, 'Ada'); A.send({ t: 'create', name: 'Ada' }); const code = (await A.wait(m => m.t === 'lobby' && m.code)).code;
     A.send({ t: 'set', map: 6 }); await sleep(200); A.send({ t: 'set', mt: { n: 4, groups: [[0, 1], [2, 3]], facs: [0, 1, 2, 0] } }); await A.wait(m => m.t === 'lobby' && m.mt);
-    A.send({ t: 'start' }); await A.wait(m => m.t === 'begin');
+    A.send({ t: 'start' }); await A.wait(m => m.t === 'begin', 60000);   // a four-start map takes a while to lay out on a busy machine
     const W = await watcher(code);
     check(await until(W, () => { const g = __ore.game; return Object.keys(g.stats.bySide).filter(t => g.stats.bySide[t] > 0).length >= 3; }, null, 90000), 'the watcher is sent what every side has banked');
     await sleep(12000);

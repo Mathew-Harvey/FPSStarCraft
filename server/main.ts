@@ -95,7 +95,7 @@ function step(l: Lobby) {
   const m = l.match!;
   if (m.step()) {
     const g = m.g, st = g.stats, id = keep(l, 'over'), R = l.ranked, rank = R && !R.done ? store.result(g.won ? R.home : R.out, g.won ? R.out : R.home, R.keys) : null; if (R) R.done = true;
-    for (const p of l.players) { send(p, { t: 'over', won: multi() ? g.winners.some(t => isFriend(t, p.team)) : g.won, mine: multi() ? 1 : 0, stats: [Math.floor(st.mined), st.built, st.kills, st.lost, Math.floor(st.minedV)], time: g.time, replay: id, rank: rank?.[p.name] || null }); p.unit = null; p.ready = false; }
+    for (const p of l.players) { send(p, { t: 'over', won: multi() ? g.winners.some(t => isFriend(t, p.team)) : g.won, mine: multi() ? 1 : 0, stats: [Math.floor(st.mined), st.built, st.kills, st.lost, Math.floor(st.minedV)], time: g.time, replay: id, pts: g.byPoints ? 1 : 0, rank: rank?.[p.name] || null }); p.unit = null; p.ready = false; }
     l.match = null; tell(l); return true;
   }
   return false;

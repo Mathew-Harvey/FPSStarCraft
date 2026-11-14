@@ -2,7 +2,7 @@
 import { drawMap as drawGround } from './terrain';
 import * as THREE from 'three';
 import type { Game } from './game';
-import { UNIT, BLD, FACTION, SIDE, fac, foeOf, atHome, homeXZ, Kind, Unit, Building, MAP, MAPS, OUTPOST, VHOME, ROAD, NORTH_PATH, roadPt, isWorker } from './data';
+import { UNIT, BLD, FACTION, SIDE, fac, foeOf, atHome, homeXZ, Kind, Unit, Building, MAP, MAPS, OUTPOST, VHOME, ROAD, NORTH_PATH, roadPt, isWorker, OVERTIME } from './data';
 import { keyName, abilityWords } from './card';
 import { abilitiesOf, whyNot } from './core/ability';
 import { isFriend, multi, enemiesOf } from './core/sides';
@@ -79,6 +79,7 @@ export class Hud {
     if (g.story) { /* a story job keeps its own closing line, whichever side the player was on */ }
     else if (fac(g.myTeam) === 2) { this.$('endTitle').textContent = g.won ? 'The valley is soil' : 'Withered'; this.$('endLine').textContent = g.won ? 'Every Headframe is chewed to scrap. The Bloom runs to the horizon, and the Gloam are fat and quiet.' : 'Every Mother Cap is mulch. The Bloom is drying out, but spores are patient.'; }
     else if (fac(g.myTeam)) { this.$('endTitle').textContent = g.won ? 'The last verse' : 'Out of tune'; this.$('endLine').textContent = g.won ? 'Every Headframe is scrap and the valley is quiet again. The Chorus holds the note.' : 'Every Choir Stone is gravel. The singing has stopped, for now.'; }
+    if (g.byPoints && !g.story) this.$('endLine').textContent = `${Math.round(OVERTIME.limit / 60)} minutes, and nobody broke. ${g.won ? 'Your side destroyed more value than the enemy did, so the shift is yours on points.' : 'The enemy destroyed more value than your side did, so the shift is theirs on points.'}`;
     if (!g.won) {
       // Say what did the damage and what answers it, so a loss teaches something.
       const top = Object.entries(!atHome(g.myTeam) ? g.stats.lostToV : g.stats.lostTo).sort((a, b) => b[1] - a[1])[0], why: Record<string, string> = {

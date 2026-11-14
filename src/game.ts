@@ -424,7 +424,7 @@ export class Game {
       return;
     }
     if (t === this.me && this.safeT > 0) return;
-    if (!t.alive || amt <= 0) return; if (from && !canHit(from, t)) return; for (const f of HIT_FILTERS) { amt = f(this, t, amt, from); if (amt <= 0) return; } t.lastHit = this.time;
+    if (!t.alive || amt <= 0) return; if (from && !canHit(from, t)) return; for (const f of HIT_FILTERS) { amt = f(this, t, amt, from); if (amt <= 0) return; } t.lastHit = this.time; if (from && from.team !== t.team) (t as any).lastBy = from.team;
     const u = isUnit(t) ? t : null, me = this.me;
     if (!u) amt *= 1 + this.overtime(); else if (from && !isUnit(from)) amt /= 1 + this.overtime();
     // A unit sheltering behind scenery: shots from the far side by anything but a player mostly chew up the scenery instead.
@@ -475,7 +475,7 @@ export class Game {
     if (this.evq) { const e = ['ku', u.id, from ? from.id : 0]; this.evq.push(e); DEATHS.set(e, u);   /* its looks are added when it is sent (K, src/net-look.ts) */ const kp = from && (from as Unit).pilot; if (kp && u.team !== from!.team && this.score[kp]) this.score[kp][0]++; }
     if (u.alive) unitRule(u.kind).dying?.(this, u, from);
     if (u.cargo?.length) spill(this, u, from); if (u.inside) { const c = u.inside; c.cargo = (c.cargo || []).filter(x => x !== u); u.inside = null; }
-    if (u.alive) this.loseV(u.team, u.kind, u); u.alive = false; const away = u.team !== SIDE.home, v = this.vol(u.pos), st = UNIT[u.kind];
+    if (u.alive) this.loseV(u, from); u.alive = false; const away = u.team !== SIDE.home, v = this.vol(u.pos), st = UNIT[u.kind];
     this.hud.damage(V3(u.pos.x, st.headY + .4, u.pos.z), unitRule(u.kind).koWord || 'KO!', u.team !== this.myTeam ? 'ko' : 'kobad');
     u.ring.visible = false; if (u.rig.flash) u.rig.flash.visible = false; this.bodyLayer(u, false);
     R(-1, 1); R(-1, 1);   // two draws the old fall used: kept so the match's seeded random numbers run exactly as before
@@ -500,25 +500,31 @@ export class Game {
     if (!c) { if (this.craters.length < 16) { const m = new THREE.Group(); mk(G.blot, M.scorch, [0, .05, 0], [2.3, 2.3, 1], [-Math.PI / 2, 0, 0], m); for (let i = 0; i < 9; i++) { const a = i / 9 * 6.283 + R(-.2, .2); mk(G.dod, i % 3 ? M.rock : M.mesa, [Math.cos(a), .08, Math.sin(a)], [R(.3, .5), R(.14, .3), R(.24, .4)], [R(0, 3), R(0, 3), 0], m); } setLayer(m, L_FX); this.scene.add(m); c = { m, t: 0 }; this.craters.push(c); } else c = this.craters.reduce((a, b) => a.t < b.t ? a : b); }
     c.m.position.set(p.x, R(0, .02), p.z); c.m.rotation.y = R(0, 6); c.m.scale.set(r, Math.min(2.2, r * .55), r); c.m.visible = true; c.t = 150;
   }
-  /** Value (ore + Flux) each team has lost to deaths, for the points win at OVERTIME.limit. */
-  lostV: number[] = [];
+  /** Value (ore + Flux) each team has lost, and has destroyed of its foes (credited to whoever landed the killing blow or last hit), for the
+   *  points win at OVERTIME.limit. */
+  lostV: number[] = []; destroyedV: number[] = [];
   /** Bodies nobody paid for (a Tuner's False Voice copies): they cost nothing when they go. Husks, Pups, Shaft Mines and Stake Guns are priced 0. */
   unpaid = new WeakSet<Unit>();
-  loseV(t: number, k: Kind | BKind, u?: Unit) { if (u && this.unpaid.has(u)) return; const [o, f] = costOf(k); this.lostV[t] = (this.lostV[t] || 0) + o + f; }
-  /** Ends a fair skirmish on points at OVERTIME.limit: the side (or alliance) that lost the least value wins. */
+  loseV(x: Unit | Building, from: Unit | Building | null) {
+    if (isUnit(x) && this.unpaid.has(x)) return; const [o, f] = costOf(x.kind), v = o + f, t = x.team; this.lostV[t] = (this.lostV[t] || 0) + v;
+    const by = from && from.team !== t ? from.team : (x as any).lastBy; if (by !== undefined && by !== t && !isFriend(by, t)) this.destroyedV[by] = (this.destroyedV[by] || 0) + v;
+  }
+  /** Ends a fair skirmish on points at OVERTIME.limit: the side (or alliance) that destroyed the most value of its foes wins (Mat's rule,
+   *  2026-11-14: overtime, then points, no draws). */
   pointsWin() {
-    const all = multi() ? MATCH.teams : [SIDE.home, SIDE.out], lost = (t: number) => all.filter(o => isFriend(o, t)).reduce((a, o) => a + (this.lostV[o] || 0), 0);
+    const all = multi() ? MATCH.teams : [SIDE.home, SIDE.out], side = (t: number, A: number[]) => all.filter(o => isFriend(o, t)).reduce((a, o) => a + (A[o] || 0), 0);
+    const won = (t: number) => side(t, this.destroyedV);
     const left = multi() ? MATCH.teams.filter(o => !this.outOf.includes(o)) : [SIDE.home, SIDE.out];
     // Ties break on worth still standing (more wins); an exact tie on both plays on, and the check runs again next tick.
     const stand = (t: number) => all.filter(o => isFriend(o, t)).reduce((a, o) => a + this.units.filter(u => u.alive && u.team === o && !this.unpaid.has(u)).reduce((q, u) => q + costOf(u.kind)[0] + costOf(u.kind)[1], 0)
       + this.buildings.filter(b => b.alive && b.team === o && b.built !== false).reduce((q, b) => q + costOf(b.kind)[0] + costOf(b.kind)[1], 0), 0);
-    const score = (t: number) => [lost(t), -stand(t)], better = (a: number, b: number) => { const [x, y] = [score(a), score(b)]; return x[0] !== y[0] ? x[0] < y[0] : x[1] < y[1]; };
+    const score = (t: number) => [won(t), stand(t)], better = (a: number, b: number) => { const [x, y] = [score(a), score(b)]; return x[0] !== y[0] ? x[0] > y[0] : x[1] > y[1]; };
     const best = left.reduce((b, t) => better(t, b) ? t : b, left[0]);
     if (left.some(t => !isFriend(t, best) && !better(best, t))) return;
     this.winners = MATCH.teams.filter(o => isFriend(o, best)); this.byPoints = true;
     const who = !multi() && fac(SIDE.home) === fac(SIDE.out) ? `${this.sideName(best)} at ${best === SIDE.home ? 'the yard' : 'the far end'}` : this.sideName(best);
-    const even = left.some(t => !isFriend(t, best) && lost(t) === lost(best));
-    this.feed('Signal', even ? `Time. Both sides lost ${Math.round(lost(best))} worth; ${who} win on what they still have standing.` : `Time. ${who} win on points: they lost ${Math.round(lost(best))} worth, the rest more.`, 'al');
+    const even = left.some(t => !isFriend(t, best) && won(t) === won(best));
+    this.feed('Signal', even ? `Time. Both sides destroyed ${Math.round(won(best))} worth; ${who} win on what they still have standing.` : `Time. ${who} win on points: they destroyed ${Math.round(won(best))} worth of the enemy's army and buildings, more than anyone else.`, 'al');
     this.endT = 2.4; this.endWon = isFriend(best, this.myTeam); this.pipe.flash = 1;
   }
   byPoints = false;
@@ -526,7 +532,7 @@ export class Game {
   killBuilding(b: Building) {
     if (b.cargo?.length) spill(this, b, null);
     // A site that falls before it is finished adds nothing to lostV: points count what stood.
-    if (b.alive && b.built !== false) this.loseV(b.team, b.kind); b.alive = false; if (b.holo) this.scene.remove(b.holo); const veyl = fac(b.team) !== 0, bad = b.team === this.myTeam, v = this.vol(b.pos);
+    if (b.alive && b.built !== false) this.loseV(b, null); b.alive = false; if (b.holo) this.scene.remove(b.holo); const veyl = fac(b.team) !== 0, bad = b.team === this.myTeam, v = this.vol(b.pos);
     const tall = b.h > Math.max(b.hx, b.hz) * 1.9, a = this.fallA >= 0 ? this.fallA : R(0, 6.283); this.fallA = -1;
     if (this.evq) this.evq.push(['kb', b.id, Math.round(a * 100) / 100]);
     this.wrecks.push({ b, t: 0, dur: tall ? 1.5 : 1.7, tall, dx: Math.sin(a), dz: Math.cos(a), yaw: b.obj.rotation.y, puffT: 0 });

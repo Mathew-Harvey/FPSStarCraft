@@ -1,5 +1,5 @@
-// The end rule (OVERTIME in data.ts): off by default; when its limit is set, a fair skirmish ends on points at that time and the side that
-// lost the least value wins; overtime makes buildings take more damage. Run: node tools/run-ts.mjs test/endrule.ts
+// The end rule (OVERTIME in data.ts, Mat's choice: overtime from minute 20, points at minute 40): at the limit a fair skirmish ends on points and
+// the side that destroyed more value wins; overtime makes buildings take more damage; with start and limit at 0 it is off. Run: node tools/run-ts.mjs test/endrule.ts
 import { noHud, noPipe } from '../server/shim';
 import { Game } from '../src/game';
 import { initHeadless } from '../src/gfx';
@@ -16,23 +16,24 @@ const match = (home: number, out: number) => {
 const run = (g: Game, secs: number) => { for (let i = 0; i < secs * 30 && g.phase !== 'over'; i++) { g.update(1 / 30); g.evq!.length = 0; } };
 const was = { ...OVERTIME };
 
-// Off by default: nothing ends a match at any minute.
-{ const g = match(0, 1); check(OVERTIME.limit === 0 && OVERTIME.start === 0, 'the end rule ships switched off (OVERTIME.start and limit are 0)'); run(g, 90); check(g.phase !== 'over' && !g.byPoints, 'with the rule off a match is still going at 90 s'); }
+check(OVERTIME.start === 1200 && OVERTIME.perMin === .2 && OVERTIME.limit === 2400, 'the end rule ships on with Mat\'s numbers: overtime from minute 20 at 20% a minute, points at minute 40');
+// Switched off: nothing ends a match at any minute.
+{ OVERTIME.start = 0; OVERTIME.limit = 0; const g = match(0, 1); run(g, 90); check(g.phase !== 'over' && !g.byPoints, 'with the rule off a match is still going at 90 s'); Object.assign(OVERTIME, was); }
 
 // On: the side that lost less wins at the limit, whichever end it holds.
 for (const [home, out, loser] of [[0, 2, 'home'], [1, 0, 'out'], [2, 2, 'out']] as const) {
   OVERTIME.limit = 60; const g = match(home, out); run(g, 5);
   const t = loser === 'home' ? SIDE.home : SIDE.out, ws = g.units.filter(u => u.alive && u.team === t && !isFighter(u)).slice(0, 3);
-  for (const u of ws) g.damage(u, 1e6, null);
+  const foe = g.units.find(u => u.alive && u.team !== t)!; for (const u of ws) g.damage(u, 1e6, foe);
   run(g, 70);
   check(g.phase === 'over' && g.byPoints, `${home}v${out}: the match ends on points at the limit (${Math.round(g.time)} s)`);
-  check(g.won === (loser === 'out'), `${home}v${out}: the side that lost three workers (${loser}) loses on points`);
+  check(g.won === (loser === 'out'), `${home}v${out}: the side whose three workers the other killed (${loser}) loses on points`);
   Object.assign(OVERTIME, was);
 }
 
 // A tie on value lost breaks on worth still standing, not on which end started first; a mirror's line names the end.
-{ const g = match(2, 2); g.lostV = []; g.spawn('snapper', SIDE.out, 0, 0); g.evq = []; g.pointsWin();
-  check(g.byPoints && g.endT > 0 && g.endWon === false, 'with nothing lost on either side, the end with more standing (the far end here) wins, not the yard on start order');
+{ const g = match(2, 2); g.lostV = []; g.destroyedV = []; g.spawn('snapper', SIDE.out, 0, 0); g.evq = []; g.pointsWin();
+  check(g.byPoints && g.endT > 0 && g.endWon === false, 'with nothing destroyed on either side, the end with more standing (the far end here) wins, not the yard on start order');
   check(g.evq.some(e => e[0] === 'fd' && /far end/.test(String(e[2]))), 'a mirror points win says which end won'); }
 
 // A False Voice copy that fades costs nothing.

@@ -181,16 +181,17 @@ for (const f of [0, 1, 2]) {
 // shared one stream of dice). Stalls are still real elsewhere: in the 810-match table
 // (tools/table.mjs 30) 51 matches were undecided at 40 minutes, 30 of them Veyl mirrors, where every push dies to the defenders before
 // it breaks a building. Ending those is either balance work or a hard end rule (OVERTIME, switched off), and the end rule is Mat's call.
-// With their own seeds five of the six finish. Ironhold vs Veyl on map 2 still stalls since stream J's map work (0dbb66b): that is the
-// balance stream's to fix, not this test's, so one stall is allowed and named. Picking a different seed to hide it would be cheating.
+// Each of the six runs on two seeds, and 10 of the 12 must finish. One seed each flipped with changes that never touched the match:
+// three.js draws from Math.random when it builds something lazily, so any code change moves the dice (a Veyl brain change stalled
+// the Gloam mirror). Two stalls in twelve are allowed and named; picking seeds to hide a stall would be cheating.
 { const late: string[] = [];
-  for (const [i, [home, out, map]] of ([[0, 1, 2], [0, 2, 20], [0, 0, 1], [1, 1, 0], [2, 2, 10], [1, 2, 0]] as const).entries()) {
-    seed = 7 + 1000 * (i + 1); const g = match(out, map, home), H = SIDE.home, O = SIDE.out, tag = `${FACTION[H].short} vs ${NAME(O)} on map ${map}`; let bad = '';
+  for (const [i, [home, out, map]] of ([[0, 1, 2], [0, 2, 20], [0, 0, 1], [1, 1, 0], [2, 2, 10], [1, 2, 0]] as const).entries()) for (const extra of [0, 500]) {
+    seed = 7 + 1000 * (i + 1) + extra; const g = match(out, map, home), H = SIDE.home, O = SIDE.out, tag = `${FACTION[H].short} vs ${NAME(O)} on map ${map}${extra ? ' (second seed)' : ''}`; let bad = '';
     for (let i = 0; i < 40 * 60 * 30 && g.phase !== 'over'; i++) { g.update(1 / 30); g.evq!.length = 0; if (g.cash(H) < -1 || g.cash(O) < -1) bad = 'negative ore'; }
     check(!bad, `${tag}: no negative ore`);
     console.log(`     ${tag}: ${g.phase === 'over' ? 'finished' : 'still going'} at ${Math.round(g.time)} s`); if (g.phase !== 'over') late.push(tag);
   }
-  check(late.length <= 1, `the bots finish at least five of the six matches inside 40 minutes (${late.length ? 'still going: ' + late.join(', ') : 'all finished'})`);
+  check(late.length <= 2, `the bots finish at least 10 of the 12 matches inside 40 minutes (${late.length ? 'still going: ' + late.join(', ') : 'all finished'})`);
 }
 
 // Each side's squad waits at its own end, and a back-door alarm sends it toward the ridge path's end at its own base. The far end used to borrow

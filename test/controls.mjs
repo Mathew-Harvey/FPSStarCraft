@@ -5,20 +5,19 @@
 import { createRequire } from 'node:module';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { dirname, join } from 'node:path';
-import { testPage } from './page.mjs';
+import { testPage, oneDrawPerTurn } from './page.mjs';
 const require = createRequire(import.meta.url); const { chromium } = require('playwright');
 const page = await testPage(), SHOTS = process.env.SHOTS || '';
 const fail = []; const check = (ok, what) => { console.log((ok ? 'PASS ' : 'FAIL ') + what); if (!ok) fail.push(what); };
 const b = await chromium.launch({ args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist', '--enable-webgl', '--disable-dev-shm-usage', '--js-flags=--expose-gc'] });
 try {
   const shotIn = async (p, n) => { if (SHOTS) { await p.evaluate(() => { for (const d of document.querySelectorAll('#feed div')) d.style.animation = 'none'; }); await p.screenshot({ path: `${SHOTS}/${n}.jpg`, type: 'jpeg', quality: 88 }); } };
-  // Software drawing in a headless browser grows its memory with every frame drawn, so the test runs in fresh pages, and every fourth step
-  // collects the garbage by hand: the native memory behind dropped objects is only freed by a collection, and the JavaScript heap is too quiet
-  // to start one, so a page climbed past 10 GB and was killed ("Target crashed") inside the full run.
+  // The test runs in fresh pages, and every fourth step collects the garbage by hand, to keep each page's memory low.
   const open = async () => {
   const p = await b.newPage({ viewport: { width: 1280, height: 720 } }); p.setDefaultTimeout(300000);
   p.on('pageerror', e => { console.log('[pageerror]', e.message.slice(0, 400)); fail.push('page error'); });
   await p.goto(page); await p.waitForFunction('window.__ore && __ore.game');
+  await oneDrawPerTurn(p);   // see test/page.mjs: many frames drawn in one call filled the page's memory
   await p.evaluate(() => {
     __ore.setFree(true); __ore.pickMap(0); document.querySelectorAll('#diff button')[0].click(); __ore.setRaid(true); __ore.start(); __ore.hold(true);
     const g = __ore.game; g.introT = 0; g.hourFix = 13; g.wxFix = 'clear'; g.truce = true; g.dir.raidIn = 9999; g.dir.auto = false; g.ore = 2000;
@@ -176,7 +175,9 @@ try {
   check(r.z1 < r.z0 && r.on, `two fingers spread apart zoom in (${r.z0.toFixed(2)} → ${r.z1.toFixed(2)})`);
   await p.evaluate(() => { __ore.setTouch(false); __ore.setFree(true); window.dispatchEvent(new Event('resize')); tframe(); step(1); });
 
-  // ---- a controller: a fake pad, driven through the same code the page polls
+  // ---- a controller, on its own fresh page: a fake pad, driven through the same code the page polls. Nothing here leans on what the
+  // touch section left set, and the page's memory starts low again.
+  await p.close(); p = await open();
   await p.evaluate(() => { window.pad = { connected: true, buttons: Array.from({ length: 17 }, () => ({ pressed: false, value: 0 })), axes: [0, 0, 0, 0] };
     window.pbtn = (i, on) => { pad.buttons[i] = { pressed: on, value: on ? 1 : 0 }; };
     window.pdrive = () => { __ore.padDrive(pad); step(1); };
@@ -187,7 +188,12 @@ try {
   check(!r.was && r.on && r.still, 'holding View on a controller lifts the player into the command view (a short press still calls the squad)');
   r = await p.evaluate(() => { const g = __ore.game, C = g.cmd, z0 = C.zt; ptap(12); return { z0, z1: C.zt }; });
   check(r.z1 < r.z0, `D-pad up zooms in from above (${r.z0.toFixed(2)} → ${r.z1.toFixed(2)})`);
-  r = await p.evaluate(() => { const g = __ore.game, C = g.cmd, hf = g.ownB('headframe')[0]; C.sel.clear(); C.selB = hf; step(1); C.padFocus = -1; ptap(15); const f = C.padFocus, lit = document.querySelector('#ccard .cb.pf')?.dataset.cb; const n = hf.queue.length; ptap(0); return { f, lit, n0: n, n1: hf.queue.length }; });
+  // This section stands on its own: it sets its own supply room rather than leaning on the touch section's. With the six extra fighters
+  // in the starting beds, the Rigger button is greyed for want of beds, and A must say so instead of training.
+  r = await p.evaluate(() => { const g = __ore.game, C = g.cmd, hf = g.ownB('headframe')[0], cap = g.supplyCap; hf.queue.length = 0; g.supplyCap = () => g.supplyUsed(g.myTeam);
+    C.sel.clear(); C.selB = hf; step(1); C.padFocus = -1; ptap(15); const off = C.card[C.padFocus]?.off || '', n0 = hf.queue.length; ptap(0); const full = hf.queue.length;
+    g.supplyCap = () => 60; step(1); const f = C.padFocus, lit = document.querySelector('#ccard .cb.pf')?.dataset.cb; ptap(0); return { off, n0, full, f, lit, n1: hf.queue.length }; });
+  check(r.off && r.full === r.n0, `with no beds, A on the outlined Rigger trains nothing and the button says why ("${r.off}")`);
   check(r.f === 0 && r.lit === 'tr:rigger' && r.n1 === r.n0 + 1, `D-pad right steps onto the card (outlined: ${r.lit}) and A presses it (queue ${r.n0} → ${r.n1})`);
   r = await p.evaluate(() => { const g = __ore.game, C = g.cmd; C.selB = null; step(1); ptap(3); const army = C.sel.size; ptap(8); step(25); return { army, on: C.on }; });
   check(r.army >= 5 && !r.on, `Y picks the whole army (${r.army}) and a tap of View drops back into the body`);

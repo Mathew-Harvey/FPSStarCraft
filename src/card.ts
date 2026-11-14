@@ -42,7 +42,7 @@ export const KEYS = {
   /** Buildings in the build list, in order. */
   builds: ['KeyQ', 'KeyE', 'KeyT', 'KeyY', 'KeyU', 'KeyI', 'KeyO', 'KeyP', 'KeyH', 'KeyJ', 'KeyK', 'KeyL'],
 };
-const PUNCT: Record<string, string> = { Backspace: '⌫', Comma: ',', Period: '.', Slash: '/' };
+const PUNCT: Record<string, string> = { Backspace: '⌫', Comma: ',', Period: '.', Slash: '/', ControlLeft: 'Ctrl', ControlRight: 'R Ctrl', ShiftLeft: 'Shift', ShiftRight: 'R Shift', AltLeft: 'Alt', Space: 'Space', Tab: 'Tab', Mouse0: 'LMB', Mouse2: 'RMB', Mouse1: 'MMB' };
 export const keyName = (code: string) => PUNCT[code] ?? code.replace(/^Key|^Digit/, '');
 
 /** The reason a building cannot train a kind now, or '' when it can. Mirrors the checks in Game.train so the button and the order agree. */

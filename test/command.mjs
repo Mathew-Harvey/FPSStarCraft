@@ -5,7 +5,7 @@
 import { createRequire } from 'node:module';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { dirname, join } from 'node:path';
-import { testPage } from './page.mjs';
+import { testPage, oneDrawPerTurn } from './page.mjs';
 const require = createRequire(import.meta.url); const { chromium } = require('playwright');
 const page = await testPage(), SHOTS = process.env.SHOTS || '';
 const fail = []; const check = (ok, what) => { console.log((ok ? 'PASS ' : 'FAIL ') + what); if (!ok) fail.push(what); };
@@ -15,7 +15,7 @@ try {
   p.on('pageerror', e => { console.log('[pageerror]', e.message.slice(0, 400)); fail.push('page error'); });
   const until = (fn, arg, ms = 90000) => p.waitForFunction(fn, arg, { timeout: ms }).then(() => true, () => false);
   const shot = async n => { if (SHOTS) { await p.evaluate(() => { for (const d of document.querySelectorAll('#feed div')) d.style.animation = 'none'; }); await p.screenshot({ path: `${SHOTS}/${n}.jpg`, type: 'jpeg', quality: 85 }); } };
-  await p.goto(page); await p.waitForFunction('window.__ore && __ore.game');
+  await p.goto(page); await p.waitForFunction('window.__ore && __ore.game'); await oneDrawPerTurn(p);
   await p.evaluate(() => {
     __ore.setFree(true); __ore.pickMap(0); document.querySelectorAll('#diff button')[0].click(); __ore.setRaid(true); __ore.start(); __ore.hold(true);
     const g = __ore.game; g.introT = 0; g.hourFix = 13; g.wxFix = 'clear'; g.truce = true; g.dir.raidIn = 9999; g.dir.auto = false; g.ore = 600;
@@ -94,7 +94,7 @@ try {
   // every frame, and one page for the whole file runs out of it now the art is in the page.
   await p.close(); p = await b.newPage({ viewport: { width: 960, height: 540 } }); p.setDefaultTimeout(300000);
   p.on('pageerror', e => { console.log('[pageerror]', e.message.slice(0, 400)); fail.push('page error'); });
-  await p.goto(page); await p.waitForFunction('window.__ore && __ore.game');
+  await p.goto(page); await p.waitForFunction('window.__ore && __ore.game'); await oneDrawPerTurn(p);
   await p.evaluate(() => { __ore.setFree(true); __ore.startSplit(); });
   check(await until(() => __ore.game.me && __ore.game2() && __ore.game2().me && __ore.game.units.length > 6), 'a split screen match starts');
   await p.evaluate(() => { const h = __ore.split().host; h.truce = true; h.dir.raidIn = 9999; for (let i = 0; i < 4; i++) h.spawn('linesman', 0, -6 + i * 2.2, 16); __ore.game2().noRender = true; });

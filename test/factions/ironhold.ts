@@ -209,7 +209,7 @@ const bolt = (g: Game, host: Building, k: 'labbay' | 'twinbay') => { const ok = 
   for (const u of [bird, plate, far]) u.order = { type: 'guard', x: u.pos.x, z: u.pos.z };
   const s1 = BK.seenFoe(g, S); check(s1.tags.air > 0 && s1.tags.plated > 0, 'the Quartermaster counts the fliers and plate it has seen'); check(!s1.kinds.cantor, 'and nothing it has not seen');
   // the cap: a kind that has taken most of the fighter spend waits, the rest do not
-  g.time = Math.max(g.time, BK.CAP_FROM + 1); for (let i = 0; i < 60; i++) BK.spent(g, S, 'linesman'); BK.spent(g, S, 'breacher');
+  for (let i = 0; i < 60; i++) BK.spent(g, S, 'linesman'); BK.spent(g, S, 'breacher');
   check(BK.capped(S, 'linesman') && !BK.capped(S, 'breacher'), 'a kind over the share cap of fighter spend waits, the others do not');
   // no hunt while the foe army is about
   BK.hunt(D, S, 3); check(!BK.isHunting(S), 'no hunt while foe fighters are in sight');

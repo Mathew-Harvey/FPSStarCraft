@@ -23,10 +23,9 @@ export interface Seen {
 }
 /** How far back a seen body still counts. */
 export const SEEN_FOR = 90;
-/** The share of fighter spend (since minute 4) above which a kind is not trained until it falls back. */
+/** The share of fighter spend above which a kind is not trained until it falls back. Spend is ore + Flux over the whole match, the
+ *  same measure as the balance table (tools/review.ts), so the cap holds the number that table checks. */
 export const CAP = .3;
-/** Spend before this time does not count toward the cap: the opening is always a few cheap kinds. */
-export const CAP_FROM = 240;
 /** Melee: a body whose longest move reaches this far or less. */
 const MELEE = 2.6;
 
@@ -77,11 +76,11 @@ export function seenFoe(g: Game, S: Side): Seen {
   return s;
 }
 
-/** Counts a fighter the brain has just queued toward its spend shares. Spend before minute 4 is left out. */
-export function spent(g: Game, S: Side, kind: Kind) { if (g.time < CAP_FROM) return; const m = memOf(S), w = worthOf(kind); m.spend[kind] = (m.spend[kind] || 0) + w; m.spendAll += w; }
+/** Counts a fighter the brain has just queued toward its spend shares (ore + Flux, as the balance table counts it). */
+export function spent(_g: Game, S: Side, kind: Kind) { const m = memOf(S), c = costOf(kind), w = c[0] + c[1]; m.spend[kind] = (m.spend[kind] || 0) + w; m.spendAll += w; }
 /** Each kind's share of the fighter spend counted so far. */
 export function shareOf(S: Side, kind: Kind): number { const m = memOf(S); return m.spendAll > 0 ? (m.spend[kind] || 0) / m.spendAll : 0; }
-/** A kind over the cap is not trained until it falls back. Not before a little has been spent, or the first unit after minute 4 caps itself. */
+/** A kind over the cap is not trained until it falls back. Not before 1500 has been spent, or the first few units cap themselves. */
 export function capped(S: Side, kind: Kind): boolean { const m = memOf(S); return m.spendAll >= 1500 && shareOf(S, kind) > CAP; }
 
 /** Worth of side T's own fighters, fliers included. */

@@ -4,7 +4,9 @@
 import { noHud, noPipe } from '../server/shim';
 import { Game } from '../src/game';
 import { initHeadless } from '../src/gfx';
-import { DIFFS, ROAD, SIDE, STORY, roadPt, setMap, setSides } from '../src/data';
+import { BLD, DIFFS, FACTION, ROAD, SIDE, STORY, TRAINS, UNIT, fac, roadPt, setMap, setSides, setTeamGame } from '../src/data';
+import type { BKind, Kind } from '../src/data';
+import { fieldsOn } from '../src/factions/veyl/fields';
 import { MISSIONS, missionSides, charterTeam, Mission } from '../src/campaign';
 
 initHeadless();
@@ -13,7 +15,7 @@ let seed = 7; Math.random = () => { seed = (seed * 16807) % 2147483647; return (
 const fails: string[] = []; const check = (ok: boolean, what: string) => { console.log((ok ? 'PASS ' : 'FAIL ') + what); if (!ok) fails.push(what); };
 
 function host(m: Mission) {
-  setMap(m.map); setSides(...missionSides(m)); STORY.charter = charterTeam(m);
+  setMap(m.map); setSides(...missionSides(m)); if (m.team) setTeamGame(m.team); STORY.charter = charterTeam(m);
   const g = new Game(noPipe(), noHud, DIFFS[m.diff], m.map, m, null, m.out); g.noRender = true; g.evq = []; g.phase = 'play';
   const mine = m.out ? SIDE.out : SIDE.home; g.human = g.human.map((_, t) => t === mine);
   if (m.out) { g.me = null; for (const u of g.units) u.pilot = 0; const b = g.units.find(u => u.alive && u.team === mine); if (b) b.pilot = 1; }
@@ -58,5 +60,23 @@ if (!only.length) {
   { const { g } = host(job('What It Remembers')); run(g, 1); check(g.props.filter(q => q.name === 'Glass wall').length >= 12 && g.props.some(q => q.name === 'First Stone'), 'What It Remembers: First Stone has its walls and the Stone'); }
   { const { g } = host(job('Wrong Body')); check(g.props.some(q => q.name === 'Broken glass'), 'Wrong Body: The Crack has its split floor'); const c = g.ownB('choir', true, SIDE.out)[0]; check(!!c && c.hp < c.maxHp * .5, 'Wrong Body: the Choir Stone starts cracked'); }
 }
+// ---- song fields: a story Veyl player runs the field rules, the story bot side does not (the classic outpost has no fields)
+{ const { g, mine } = host(job('Brood')); check(fieldsOn(g, mine), 'Brood: the story Veyl player gets song fields');
+  const { g: g2 } = host(job('Payroll')); check(fac(SIDE.out) === 1 && !fieldsOn(g2, SIDE.out), 'Payroll: the Veyl outpost a story job raids from gets no song fields'); }
+// ---- every kind the three factions can train or build shows up on at least one job's paperwork, on that faction's own arc
+{ const units = new Set(MISSIONS.flatMap(m => m.units)), blds = new Set(MISSIONS.flatMap(m => m.allow));
+  const trainable = new Set(Object.values(TRAINS).flat() as Kind[]), builds = new Set([0, 1, 2].flatMap(f => FACTION[f].builds) as BKind[]);
+  const noU = [...trainable].filter(k => !units.has(k) && !UNIT[k].worker && k !== 'rigger' && k !== 'tender' && k !== 'grazer'), noB = [...builds].filter(k => !blds.has(k) && ![0, 1, 2].some(f => FACTION[f].hq === k));   // workers and home buildings are on every job
+  check(!noU.length, `every trainable kind is on some job (${noU.join(', ') || 'all'})`); check(!noB.length, `every building is on some job (${noB.join(', ') || 'all'})`); }
+// ---- the field guide: a new kind on the player's side gets one line that says what it does and which keys work it
+{ const { g, mine } = host(job('Old Friends')); const lines: string[] = []; const feed = g.feed.bind(g); (g as any).feed = (w: string, t: string, ...r: any[]) => { if (w === 'Field guide') lines.push(t); return (feed as any)(w, t, ...r); };
+  run(g, 2); const [x, z] = [g.ownB('choir', true, mine)[0].pos.x, g.ownB('choir', true, mine)[0].pos.z]; g.spawn('tuner', mine, x + 4, z + 4); run(g, 2);
+  check(lines.some(l => /^Tuner: .*R Glass Wall/.test(l)), `Old Friends: the field guide names the Tuner's keys (${lines.find(l => l.startsWith('Tuner')) || 'none'})`); g.spawn('tuner', mine, x + 5, z + 4); run(g, 2);
+  check(lines.filter(l => l.startsWith('Tuner')).length === 1, 'Old Friends: the field guide says it once'); void UNIT; void BLD; }
+// ---- team jobs: the plan puts a bot ally beside the player, and the Charter across the map
+for (const name of ['Common Ground', 'Three Voices']) { const m = job(name); const { g, mine } = host(m); run(g, 2);
+  const allies = [...new Set(g.buildings.filter(b => b.alive && b.team !== mine && b.team !== SIDE.out).map(b => b.team))];
+  check(mine === 0 && allies.length === (name === 'Three Voices' ? 2 : 1) && g.buildings.some(b => b.alive && b.team === SIDE.out) && STORY.charter === SIDE.out, `${name}: the player at the yard, ${allies.length} bot ${allies.length > 1 ? 'allies' : 'ally'}, Charter Security across the map`);
+  check(!g.human[allies[0]], `${name}: the ally is a bot`); }
 console.log(fails.length ? `\n${fails.length} failed` : '\nall passed');
 process.exit(fails.length ? 1 : 0);

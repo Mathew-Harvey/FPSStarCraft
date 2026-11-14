@@ -1,10 +1,12 @@
-// The story campaign: 36 jobs across four acts and three side jobs. Each job teaches part of one side and moves the story on.
+// The story campaign: 38 jobs across four acts and three side jobs. Each job teaches part of one side and moves the story on.
 // Act 1 plays the Ironhold Charter, Act 2 the Veyl, Act 3 the Gloam, and Act 4 one job for each against Charter Security.
 // Jobs where the player is at the outpost end of the map run on a hidden local host (see split.ts); the job's script runs there.
 import type { Game } from './game';
 import type { BKind, Kind, Building, Unit } from './data';
-import { SIDE, FACTION, MAP, ROAD, VHOME, STORY, UNIT, roadPt, foeOf, fac } from './data';
+import { SIDE, FACTION, MAP, ROAD, VHOME, STORY, UNIT, BLD, roadPt, foeOf, fac } from './data';
+import { abilitiesOf } from './core/ability';
 import { addStatus } from './core/status';
+import { isEnemy, type TeamPlan } from './core/sides';
 import * as TR from './terrain';
 import { silent } from './factions/veyl/fields';
 import { setDug, isDug } from './factions/gloam/roster';
@@ -30,6 +32,7 @@ export interface Mission {
   outro: string; /** The end screen line when the job is lost, if not the usual. */ fail?: string | ((g: Game) => string);
   /** Cut scenes before the job starts and after it is won (see cutscene.ts). */ cutIn?: string[]; cutOut?: string[];
   /** A side job opens once this many story jobs are done. */ opens?: number;
+  /** A team job: the start layout on a map with more than two starts (see core/sides.ts). The player holds start 0; every other start is a bot. */ team?: TeamPlan;
 }
 
 // ---------------------------------------------------------------- helpers the jobs share
@@ -113,6 +116,9 @@ function farSung(g: Game, s: Record<string, number>, at?: [number, number]) {
 }
 /** Puts a Gloam body under the ground, unseen and still, the way Dig In does. */
 const digIn = (g: Game, u: Unit) => { if (!setDug(g, u, true)) hide(u); };
+
+/** In a team job, the bot ally playing a faction (0 Ironhold, 1 Veyl, 2 Gloam), or -1 if there is none. */
+const allyTeam = (g: Game, f: number) => { for (let t = 0; t < 24; t++) if (t !== me(g) && fac(t) === f && !isEnemy(t, me(g)) && g.buildings.some(b => b.team === t)) return t; return -1; };
 
 const QM = 'Quartermaster', AG = 'Aggie', MO = 'Moss', PIM = 'Pim', H5 = 'Held Fifth', PB = 'Phrasebook 3', AL = 'Abbot-Lyle', GL = 'The Gloam';
 const raiders = (g: Game) => g.units.filter(u => u.alive && u.team === 1 && u.order.type === 'raid').length;
@@ -199,7 +205,7 @@ const ACT1: Mission[] = [
   job(3, 1, {
     name: 'Gas Money', side: 0, foe: 1, map: 0, diff: 0, dusk: DAY, teaches: 'Flux vents, the Pump Jack, carrying Flux, the Machine Shop, the Twin Bay, Dustbikes and Kick Start',
     brief: 'Machines cost Flux as well as ore. Flux is a gas that comes out of vents in the ground. Stake a Pump Jack on the vent beside the yard, and Riggers carry Flux from it the way they carry ore. A Machine Shop costs 100 Flux and builds Dustbikes: fast bikes with a flame spout that burns soft bodies. Bolt a Twin Bay onto the Machine Shop (press N at it) and it builds two at once. Veyl Tenders are humming ore out of the north field, with a guard. Drive them off it.',
-    allow: ['bunkhouse', 'depot', 'watchpost', 'pumpjack', 'machineshop', 'twinbay'], units: ['linesman', 'dustbike'], raids: false, auto: false,
+    allow: ['bunkhouse', 'depot', 'watchpost', 'pumpjack', 'machineshop', 'twinbay'], units: ['linesman', 'dustbike'], raids: false, auto: false, cutIn: ['ironyard'],
     objectives: [
       { text: () => 'Stake a Pump Jack on a Flux vent (press 2)', done: g => has(g, 'pumpjack') },
       { text: g => `Bank 150 Flux (${Math.min(150, Math.floor(g.ms.fluxIn || 0))}/150)`, done: g => (g.ms.fluxIn || 0) >= 150 },
@@ -616,7 +622,7 @@ const ACT2: Mission[] = [
   job(19, 2, {
     name: 'Hold the Note', side: 1, foe: 2, map: 3, diff: 1, dusk: DAY, teaches: 'The Song Archive, the Warden, Choirmasters, Join and the Chord, the Conductor (G), Chorus Lead plans',
     brief: 'The crack is still open. A Warden standing near it can hold the Gloam back, but only while it is alive. The Song Archive lets the Reed Gate wake Wardens and the Brood Pit train Choirmasters. Walk two Choirmasters within 8 m of each other and press V on one of them: both stand still, and in ten seconds they join into a Chord, which hits everything around what it shoots. Keep a Warden by the crack for six minutes. The Conductor builds for you on this job (G). The Chorus Lead pitches plans: Z says yes.',
-    allow: V5, units: ['tender', 'cantor', 'lancer', 'tuner', 'mute', 'bell', 'listener', 'choirmaster', 'warden'], raids: false, auto: true,
+    allow: V5, units: ['tender', 'cantor', 'lancer', 'tuner', 'mute', 'bell', 'listener', 'choirmaster', 'warden'], raids: false, auto: true, cutIn: ['chord'],
     objectives: [
       { text: () => 'Wake a Song Archive', done: g => nB(g, 'songarchive') > 0 },
       { text: () => 'Train a Warden', done: g => nU(g, 'warden') > 0 },
@@ -639,7 +645,7 @@ const ACT2: Mission[] = [
   job(20, 2, {
     name: 'Sky Choir', side: 1, foe: 0, map: 20, diff: 1, dusk: DUSK, teaches: 'The Skyloft, Swifts against fliers, Prisms and Omens, the Ferry carrying fighters and unfolding a song field',
     brief: 'The Charter has put a drill on the island south of the road, where nobody can walk. Gadflies guard it. Wake a Skyloft and grow two Swifts, which only shoot fliers, to clear the sky. Then fire a Ferry at the Kiln: R takes on everyone within 4 m, V lets them out. Fly it to the island and press C to unfold it into a song field. With Far Singing, the Brood Pit sings new fighters in at the field nearest your army, and that can be the Ferry\'s. Sing four fighters in on the island and break the drill.',
-    allow: V6, units: ['tender', 'cantor', 'lancer', 'tuner', 'mute', 'bell', 'listener', 'ferry', 'choirmaster', 'warden', 'swift', 'prism', 'omen'], raids: false, auto: false,
+    allow: V6, units: ['tender', 'cantor', 'lancer', 'tuner', 'mute', 'bell', 'listener', 'ferry', 'choirmaster', 'warden', 'swift', 'prism', 'omen'], raids: false, auto: false, cutIn: ['skychoir'],
     objectives: [
       { text: () => 'Wake a Skyloft', done: g => nB(g, 'skyloft') > 0 },
       { text: g => `Shoot down the Gadflies over the island (${left(g, 'sky')} left)`, done: g => g.ms.sky === 1 && !left(g, 'sky') },
@@ -858,7 +864,7 @@ const ACT3: Mission[] = [
   job(28, 3, {
     name: 'Elder', side: 2, foe: 1, map: 3, diff: 1, dusk: .4, teaches: 'Ripening the Mother Cap into an Elder Cap, the Rot Den, Smothers and Rot Mind, Seeders, finding unseen Mutes',
     brief: 'The Chorus has Mutes in the Bloom, which nobody sees without a detector, and a Bell at the crack. Ripen the Mother Cap into an Elder Cap (N at the Cap, with a Warren standing): that opens the second tier. Grow a Rot Den. A Smother spends energy on Rot Mind (E), which takes an enemy body for twelve seconds (not a huge one). Take the Bell with it. A Puffball, or a Drifter ripened into a Lookout Sac, shows the Mutes.',
-    allow: G5, units: ['grazer', 'snapper', 'quillback', 'blister', 'keeper', 'smother', 'seeder'], raids: false, auto: false,
+    allow: G5, units: ['grazer', 'snapper', 'quillback', 'blister', 'keeper', 'smother', 'seeder'], raids: false, auto: false, cutIn: ['elder'],
     objectives: [
       { text: () => 'Ripen the Mother Cap into an Elder Cap (N at the Cap)', done: g => g.ownB('eldercap', true, me(g)).length > 0 },
       { text: () => 'Grow a Rot Den, a Smother and a Seeder', done: g => nB(g, 'rotden') > 0 && nU(g, 'smother') > 0 && nU(g, 'seeder') > 0 },
@@ -1050,6 +1056,59 @@ const ACT4: Mission[] = [
     fail: 'The charge is armed.', cutOut: ['mossstays'],
   }),
   job(36, 4, {
+    name: 'Common Ground', side: 0, foe: 0, map: 6, diff: 1, dusk: DUSK, charter: 'out', team: { n: 4, groups: [[0, 1], [2]], facs: [0, 1, 0, -1] },
+    teaches: 'Fighting beside a bot ally on a four-start map: covering the ally\'s base, a shared enemy, two bases on the command view',
+    brief: 'Crossing. Aggie\'s yard and Held Fifth\'s Chorus hold two starts next to each other on the crossroads, and Charter Security holds the start across from you. The Chorus is a bot ally: it builds and fights on its own, you cannot give it orders, and you see everything it sees. Charter Security goes for the Chorus first, because it is the smaller. Take fighters to the Choir Stone when the Watcher calls, then break the Charter Headframes together. If the Chorus loses every Choir Stone, the job is lost.',
+    allow: IRON_ALL, units: IRON_UNITS, raids: false, auto: false,
+    objectives: [
+      { text: g => g.ms.a1 ? `See off the Charter attack on the Chorus (${left(g, 'a1')} left)` : 'Wait for the Charter to move', done: g => g.ms.a1 === 1 && !left(g, 'a1') },
+      { text: g => `Break the Charter Headframes (${hq(g, SIDE.out).length} standing)`, done: g => !hq(g, SIDE.out).length },
+    ],
+    setup: g => { hush(g, SIDE.out, 600); },
+    tick: (g, s, dt) => {
+      s.t0 = (s.t0 || 0) + dt; const ally = allyTeam(g, 1);
+      once(g, s, 'l1', s.t0 > 3, AG, 'Never thought I\'d share a fence with a Choir Stone. Don\'t shoot the glass people. They\'re ours today.');
+      once(g, s, 'l2', s.t0 > 12, H5, 'WE ARE NEXT TO YOU. WE WILL SING WHERE WE ARE. COME IF WE CALL.', 'al');
+      if (!s.a1 && s.t0 > 240 && ally >= 0) { s.a1 = 1; send(g, SIDE.out, ['breacher', 'breacher', 'linesman', 'linesman', 'linesman', 'linesman', 'patch', 'longshot', 'dustbike', 'dustbike'], 'a1', homeOf(g, ally)); say(g, 'Watcher', 'GREY BOOTS ON THE ROAD TO THE CHORUS. MANY OF THEM. WE CANNOT HOLD THEM ALONE.', 'al'); }
+      once(g, s, 'l3', s.a1 === 1 && !left(g, 'a1'), H5, 'THANK YOU. NOW WE GO TO THEM. TOGETHER.', 'al');
+      if (s.a1 && !left(g, 'a1') && !s.go) { s.go = 1; hush(g, SIDE.out, g.time + 30); }
+      // After the first attack the Charter hits the yard and the Chorus in turn, every four minutes.
+      if (s.a1 && s.t0 > (s.next || 480)) { s.next = s.t0 + 240; s.n = (s.n || 0) + 1; const at = s.n % 2 && ally >= 0 ? homeOf(g, ally) : homeOf(g, me(g)); send(g, SIDE.out, ([] as Kind[]).concat(...Array(1 + s.n).fill(['breacher', 'linesman', 'linesman', 'longshot'])), 'w', at); }
+      if (ally < 0 || !hq(g, ally).length) { s.allyDown = 1; s.lose = 1; }
+    },
+    target: g => hq(g, SIDE.out)[0] || null,
+    outro: 'The Charter base on the crossroads is down. The yard and the Chorus stood on the same side of a fight, and nobody shot the wrong one.',
+    fail: g => g.ms.allyDown ? 'The Chorus lost its last Choir Stone. The yard is on its own.' : 'The yard fell.',
+  }),
+  job(37, 4, {
+    name: 'Three Voices', side: 0, foe: 0, map: 7, diff: 2, dusk: NIGHT, charter: 'out', team: { n: 8, groups: [[0, 1, 7], [4]], facs: [0, 1, -1, -1, 0, -1, -1, 2] }, clockLabel: 'Order lands in',
+    teaches: 'Three sides against one on an eight-start map, two bot allies, attacks on each base in turn, the clock', cutIn: ['threevoices'],
+    brief: 'Wheel. The yard, the Chorus and the Gloam hold three starts next to each other: the Chorus on your left, the Gloam on your right. Charter Security holds the start across the hub with enough kit for three crews, and it will hit each of you in turn. Both allies are bots. Go where the Watcher or Moss sends you, keep both allies standing, and break the Charter Headframes before the order lands in forty minutes.',
+    allow: IRON_ALL, units: IRON_UNITS, raids: false, auto: false,
+    objectives: [
+      { text: g => `Hold off the Charter attack on each base (${Math.min(3, g.ms.held || 0)}/3)`, done: g => (g.ms.held || 0) >= 3 },
+      { text: g => `Break the Charter Headframes (${hq(g, SIDE.out).length} standing)`, done: g => !hq(g, SIDE.out).length },
+    ],
+    setup: g => { hush(g, SIDE.out, 1e9); },
+    tick: (g, s, dt) => {
+      countdown(g, s, dt, 2400); s.t0 = (s.t0 || 0) + dt; const veyl = allyTeam(g, 1), gloam = allyTeam(g, 2);
+      once(g, s, 'l1', s.t0 > 3, MO, 'All three of us on one side. I\'ve got no idea what odds to give on that.');
+      once(g, s, 'l2', s.t0 > 10, H5, 'THE GLOAM ON ONE SIDE OF YOU AND US ON THE OTHER. DO NOT MIX US UP.', 'al');
+      once(g, s, 'l3', s.t0 > 20, QM, '(Charter Security channel) Three liabilities in one place. That saves on travel.', 'al');
+      // Three attacks, one at each base: the Chorus at four minutes, the Gloam at nine, the yard at fourteen. Each counts once it is seen off.
+      const plan: [number, number, string, string][] = [[240, veyl, 'Watcher', 'GREY BOOTS ON THE ROAD TO THE CHORUS. COME.'], [540, gloam, MO, 'They\'re coming for the Cap. Get over here, I\'ve got money on us.'], [840, me(g), AG, 'They\'re coming up our road. Everyone back to the yard.']];
+      plan.forEach(([at, t, who, line], i) => {
+        const k = 'b' + i; if (!s[k] && s.t0 > at && t >= 0) { s[k] = 1; send(g, SIDE.out, ([] as Kind[]).concat(...Array(3 + i).fill(['breacher', 'linesman', 'linesman', 'longshot'])), k, homeOf(g, t)); say(g, who, line, 'al'); }
+        if (s[k] === 1 && !left(g, k)) { s[k] = 2; s.held = (s.held || 0) + 1; }
+      });
+      if ((s.held || 0) >= 3 && !s.go) { s.go = 1; hush(g, SIDE.out, g.time + 30); say(g, H5, 'THEY HAVE NOTHING LEFT ON THE ROAD. NOW WE GO TO THEM.', 'al'); }
+      if (veyl < 0 || gloam < 0 || !hq(g, veyl).length || !hq(g, gloam).length) { s.allyDown = 1; s.lose = 1; }
+    },
+    target: g => hq(g, SIDE.out)[0] || null,
+    outro: 'The Charter base on the Wheel is gone. Three sides that spent nine hundred years fighting each other took it down in one night.',
+    fail: g => g.ms.allyDown ? 'One of your allies lost its last base. The other two could not hold the Wheel alone.' : g.ms.clock !== undefined && g.ms.clock <= 1 ? 'The order landed.' : 'The yard fell.',
+  }),
+  job(38, 4, {
     name: 'Fourteen Twenty', side: 0, foe: 0, map: 20, diff: 2, dusk: .62, charter: 'home', out: true, noHq: false, teaches: 'Everything, against the clock',
     brief: 'Needle\'s Eye, large, at sunset. Charter Security holds the yard, and the Quartermaster is inside the first Headframe, the one where you banked your first ore. The detonation order lands in forty minutes and nothing can stop it. Break that Headframe before it lands, so nobody is left to carry the order out.',
     allow: IRON_ALL, units: IRON_UNITS, raids: false, auto: false, clockLabel: 'Order lands in',
@@ -1096,11 +1155,46 @@ const SIDES: Mission[] = [
     outro: 'The sour patch is mulch. The Bloom on this side is yours.' },
 ];
 
-/** The 28 story jobs in order, then the side jobs. `STORY_JOBS` story jobs make up the main campaign. */
+// ---------------------------------------------------------------- field guide
+// The first time a story job puts a new kind of body on the player's side, the feed says what it does and which keys work it. The keys come
+// from the kind's own abilities (as the body you drive), so a key that moves moves here too. Each kind gets its line once per job.
+const ROLE: Partial<Record<Kind, string>> = {
+  rigger: 'Drills ore with the mouse button and carries it to the Headframe. Builds with 2.', linesman: 'Rifle. Shoots ground and air.', breacher: 'Shotgun and a shield. Goes in first.',
+  patch: 'Medic. Heals the bodies near it.', sapper: 'Lays Shaft Mines that blow up under enemy feet.', longshot: 'Sniper. Hits hard from far off, slowly.',
+  dustbike: 'Fast bike with a gun. Raids and scouts.', piledriver: 'Artillery. Has to anchor to fire, and then cannot move.', gantry: 'Walker with heavy guns.',
+  hopper: 'Flier that carries eight beds of bodies.', flakkite: 'Flier that shoots other fliers.', gadfly: 'Fast flier with guns.', surveyor: 'Flying detector: shows unseen bodies near it. No gun.',
+  claimbarge: 'Huge flier. Takes over enemy buildings.',
+  tender: 'Hums ore into its sling and carries it to the Choir Stone. Sings buildings up with 2.', cantor: 'Runs in and cuts.', lancer: 'Shoots from far off. Hits ground and air.',
+  tuner: 'Caster with energy. Shoots ground bodies.', mute: 'Unseen blade. Nobody sees it without a detector.', choirmaster: 'Caster with energy. Burns enemy energy and cracks the air.',
+  chord: 'Two Choirmasters joined. Its bolt hits everything around what it shoots.', warden: 'Huge. Slams the ground in front of it.', bell: 'Slow. Breaks the ground in front of it with one loud note.',
+  reedwalker: 'Tall enough to walk up cliffs. Its beam sweeps a line on the ground.', knell: 'Rolls an orb that bursts on everything round where it stops.',
+  listener: 'Flying detector: shows hidden and dug-in bodies near it.', ferry: 'Flier that carries eight beds of bodies and opens into a song field.',
+  swift: 'Fast flier. Only shoots other fliers.', prism: 'Flier with a beam. Burns plated targets.', omen: 'Flier with energy. Shows hidden bodies and leaves traps.',
+  lyre: 'Huge flier. Builds Shards that fly out and fight.', cantus: 'Huge flier. Hides every Veyl body under it.',
+  grazer: 'Chews ore and carries it to the Cap. Roots into a building with 2; the building uses the Grazer up.', snapper: 'Small and fast. Two hatch from each Bud.',
+  quillback: 'Shoots quills. Hits ground and air.', blister: 'Runs into a crowd and bursts.', mulcher: 'Huge. Tusks, and a charge that knocks bodies over.',
+  keeper: 'Caster with energy. Plants Spore Pods that carry the Bloom, and mends.', shellback: 'Plated. Spits, and can dig in.', lobber: 'Throws a sac of bile over walls.',
+  needler: 'Digs in and stabs anything that walks over it.', smother: 'Caster with energy. Chokes a spot, or takes an enemy body for a while.', seeder: 'Throws husks that bite once.',
+  gnatwing: 'Flier. Bites ground and air.', bloater: 'Flier. Only hits other fliers.', sower: 'Huge flier. Drops Pups on the ground below.', hooksail: 'Flier with energy. Drags bodies to it.',
+  drifter: 'A Spore Sac that floated off. With Belly Sacs it carries eight beds of bodies.', lookoutsac: 'Flying detector: shows dug-in and hidden bodies near it.',
+};
+const keyName = (k: string) => k === 'Mouse0' ? 'left click' : k === 'Mouse2' ? 'right click' : k === 'ControlLeft' ? 'Ctrl' : k.replace(/^Key/, '');
+/** The keys a kind's abilities use, as a player reads them: "R Glass Wall, C Ward Hum". */
+const keysOf = (k: Kind) => abilitiesOf(k).filter(a => a.hotkey).map(a => `${keyName(a.hotkey)} ${a.name}`).join(', ');
+const guided = new WeakMap<Game, Set<string>>();
+/** Says the field guide line for every kind on the player's side that has not had one yet this job. */
+function guide(g: Game) {
+  let seen = guided.get(g); if (!seen) { guided.set(g, seen = new Set()); for (const u of g.units) if (u.team === me(g)) seen.add(u.kind); for (const b of g.buildings) if (b.team === me(g)) seen.add(b.kind); return; }
+  for (const u of g.units) { if (!u.alive || u.team !== me(g) || seen.has(u.kind)) continue; seen.add(u.kind); const r = ROLE[u.kind]; if (!r) continue; const ks = keysOf(u.kind); say(g, 'Field guide', `${UNIT[u.kind].name}: ${r}${ks ? ` Keys when you drive it: ${ks}.` : ''}`, 'in'); }
+  for (const b of g.buildings) { if (!b.alive || b.team !== me(g) || seen.has(b.kind)) continue; seen.add(b.kind); say(g, 'Field guide', `${BLD[b.kind].name}: ${BLD[b.kind].blurb}.`, 'in'); }
+}
+
+/** The 38 story jobs in order, then the side jobs. `STORY_JOBS` story jobs make up the main campaign. */
 export const MISSIONS: Mission[] = [...ACT1, ...ACT2, ...ACT3, ...ACT4, ...SIDES];
 // An objective stays ticked once it is done. Without this a job could not finish when something done earlier was undone later: Tenders
 // killed after the eighth was woken, a Bunkhouse burnt down, a Machine Shop lost in a raid. Timed holds keep their own clocks, so a
 // hold that breaks still has to be held again. The first two seconds don't count, while the map and the set are still going up.
+for (const m of MISSIONS) { const t = m.tick; m.tick = (g, s, dt) => { t?.(g, s, dt); if (Math.floor(g.time * 2) !== Math.floor((g.time - dt) * 2)) guide(g); }; }
 for (const m of MISSIONS) m.objectives = m.objectives.map((o, i) => ({ text: o.text, done: (g: Game) => { const k = '_o' + i; if (g.ms[k]) return true; const d = !!o.done(g); if (d && g.time > 2) g.ms[k] = 1; return d; } }));
 export const STORY_JOBS = ACT1.length + ACT2.length + ACT3.length + ACT4.length;
 /** Saves from before the full-depth Act 1 (`st: 2`) count jobs on the old list of 24. Act 1 went from eight jobs to twelve, so the old count

@@ -110,6 +110,7 @@ const startsHere = () => MAPS[baseOf(mapI)]?.ring || 0;
  *  (as in a one on one); allies play the player's faction; the other side plays the faction picked under "Against", and in a free for all
  *  the other starts take turns between that faction and the third. */
 function teamPlan(): TeamPlan | null {
+  if (mode !== 'skirm') return MISSIONS[jobI]?.team || null;   // a story team job (Common Ground, Three Voices) brings its own start layout
   const n = startsHere(), L = mode === 'skirm' && n ? TEAM_LAYOUTS[n]?.[teamI] : null; if (!L || teamI <= 0) return null;
   const me = sideI === 0 ? 0 : n / 2, foe = FOE_FAC[foeI], others = [foe, [0, 1, 2].find(f => f !== foe && f !== sideI) ?? [0, 1, 2].find(f => f !== foe)!], facs: number[] = Array(n).fill(-1); let e = 0;
   for (const grp of L.teams) { const mine = grp.includes(me); for (const s of grp) facs[s] = mine ? sideI : L.teams.length === 2 ? foe : others[e++ % 2]; }

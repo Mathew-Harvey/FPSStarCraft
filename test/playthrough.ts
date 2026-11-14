@@ -9,7 +9,7 @@
 import { noHud, noPipe } from '../server/shim';
 import { Game } from '../src/game';
 import { initHeadless } from '../src/gfx';
-import { BLD, DIFFS, FACTION, MAP, ROAD, SIDE, STORY, TRAINS, UNIT, UPGRADES, foeOf, roadPt, setMap, setSides } from '../src/data';
+import { BLD, DIFFS, FACTION, MAP, ROAD, SIDE, STORY, TRAINS, UNIT, UPGRADES, foeOf, roadPt, setMap, setSides, setTeamGame } from '../src/data';
 import type { BKind, Kind, Unit, UpKey, Building } from '../src/data';
 import { useAbility, whyNot } from '../src/core/ability';
 import { load, unload } from '../src/core/cargo';
@@ -33,7 +33,7 @@ class Play {
   /** Things this run refuses to do (the must-use check), and whether the player's buildings are kept standing (off for the lose check). */
   ban = new Set<string>(); guard = true;
   constructor(public m: Mission) {
-    setMap(m.map); setSides(...missionSides(m)); STORY.charter = charterTeam(m);
+    setMap(m.map); setSides(...missionSides(m)); if (m.team) setTeamGame(m.team); STORY.charter = charterTeam(m);
     const g = this.g = new Game(noPipe(), noHud, DIFFS[m.diff], m.map, m, null, m.out); g.noRender = true; g.evq = []; g.phase = 'play';
     this.me = m.out ? SIDE.out : SIDE.home; this.foe = foeOf(this.me); g.human = g.human.map((_, t) => t === this.me);
     if (m.out) { g.me = null; for (const u of g.units) u.pilot = 0; const b = g.units.find(u => u.alive && u.team === this.me); if (b) b.pilot = 1; }
@@ -67,7 +67,7 @@ class Play {
       this.cash(BLD[k].cost); const by = g.units.find(u => u.alive && u.team === this.me && (u.kind === 'grazer' || u.kind === 'rigger' || u.kind === 'tender')) || null;
       const b = g.place(k, x, z, false, this.me, by); if (!b) continue; b.progress = 1; this.run(FACTION[this.me].hq === 'mothercap' ? 14 : 1); return true;   // a Gloam building's Bloom takes a few seconds to spread
     }
-    if (FACTION[this.me].hq === 'mothercap' && k !== 'sporesac' && k !== 'mothercap' && !at && (this as any)._sp !== k) { (this as any)._sp = k; this.cash(400); this.train('grazer', this.g.own('grazer', this.me).length + 2); if (this.build('sporesac') && this.build('sporesac') && this.build(k)) { (this as any)._sp = ''; return true; } }   // more Bloom, the way a player would spread it
+    if (FACTION[this.me].hq === 'mothercap' && k !== 'sporesac' && k !== 'mothercap' && !at && (this as any)._sp !== k) { (this as any)._sp = k; const n0 = this.log.length; this.cash(400); this.train('grazer', this.g.own('grazer', this.me).length + 2); if (this.build('sporesac') && this.build('sporesac')) { const sacs = g.ownB('sporesac', true, this.me).slice(-2); for (const s of [null, ...sacs]) if (s ? this.build(k, [s.pos.x, s.pos.z], 0, 12) : this.build(k)) { (this as any)._sp = ''; this.log.length = n0; return true; } } this.log.length = n0; }   // more Bloom, the way a player would spread it
     this.log.push(`could not stake a ${k}${FACTION[this.me].hq === 'mothercap' ? ` (${g.own('grazer', this.me).length} Grazers, unlocked ${g.unlocked(k, this.me)})` : ''}`); return false;
   }
   /** Trains n of a unit at the building that makes it, as many rounds as it takes. */
@@ -199,6 +199,8 @@ const SCRIPTS: Record<string, (p: Play) => void> = {
   'Old Opening': p => { const g = p.g; p.build('flaktower'); p.build('hangar'); p.train('flakkite', 1); p.defend(700, () => { p.kill(u => !!u.air); return p.done(2); }); p.raze('headframe'); p.run(5); },
   'Needle\'s Eye Road': p => { const g = p.g; p.jump('warden'); p.run(2); p.defend(500, () => (g.ms.done || 0) >= 3); p.prop('Needle\'s Eye', q => q.y0 === 0); p.run(6); if (g.props.some(q => q.alive && q.name === 'Needle\'s Eye' && q.y0 > 0)) { p.log.push('the arch top stayed up after its legs were shot out'); p.prop('Needle\'s Eye'); } p.run(5); },
   'Rig Breakers': p => { p.prop('Deep Charge rig'); p.run(5); },
+  'Common Ground': p => { const g = p.g; p.build('bunkhouse'); p.train('linesman', 6); p.run(400, () => { p.kill(u => u.order.type === 'raid' && (p.may('help') || Math.hypot(u.pos.x, u.pos.z) < 40)); return p.done(0); }, true); p.run(2); for (const b of g.buildings) if (b.alive && b.team === SIDE.out) g.damage(b, 1e7, null); p.defend(10, () => g.endT > 0); },
+  'Three Voices': p => { const g = p.g; p.build('bunkhouse'); p.train('linesman', 6); p.run(1000, () => { p.kill(u => u.order.type === 'raid' && (p.may('help') || Math.hypot(u.pos.x, u.pos.z) < 40)); return p.done(0); }, true); p.run(2); for (const b of g.buildings) if (b.alive && b.team === SIDE.out) g.damage(b, 1e7, null); p.defend(10, () => g.endT > 0); },
   'Fourteen Twenty': p => { const g = p.g, h = (g as any)._first; if (h) g.damage(h, 1e7, null); p.run(5); },
   'Moss\'s Book': p => { p.raze('choir'); p.run(5); },
   'Discord': p => { p.raze('choir'); p.run(5); },
@@ -252,13 +254,15 @@ const TEACH: Record<string, { ban: string[]; lose: number }> = {
   'Deep Roots': { ban: ['tunnelroot'], lose: 1200 },
   'Spore Season': { ban: ['hooksail'], lose: 1500 },
   'Old Opening': { ban: ['flaktower'], lose: 1500 },
+  'Common Ground': { ban: ['help'], lose: 1500 },
+  'Three Voices': { ban: ['help'], lose: 2500 },
 };
 const result = (p: Play) => { const g = p.g; return g.phase === 'over' ? (g.won ? 'won' : 'lost') : g.endT > 0 ? (g.endWon ? 'won' : 'lost') : 'running'; };
 if (!quick) MISSIONS.forEach((m, i) => {
   const t = TEACH[m.name]; if (!t || (only.length && !only.includes(i + 1))) return;
   const label = `${m.tag} ${m.name}`;
   try {
-    const p = new Play(m); for (const b of t.ban) p.ban.add(b); p.run(1); SCRIPTS[m.name](p); p.run(6, () => p.g.phase === 'over');
+    const p = new Play(m); for (const b of t.ban) p.ban.add(b); p.g.dir.side(p.me).auto = false; p.run(1); SCRIPTS[m.name](p);   // the side's own builder stays off, or it would build the refused thing p.run(6, () => p.g.phase === 'over');
     check(result(p) !== 'won', `${label}: cannot be won without ${t.ban.join(', ')} (${result(p)})`);
   } catch (e: any) { check(false, `${label}: must-use run ran without throwing (${String(e && e.stack || e).split('\n').slice(0, 4).join(' / ')})`); }
   try {

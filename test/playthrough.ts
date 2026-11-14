@@ -20,7 +20,7 @@ import { MISSIONS, missionSides, charterTeam, Mission } from '../src/campaign';
 initHeadless();
 const VENT_TAPS: BKind[] = ['pumpjack', 'siphonbell', 'ventbladder' as BKind];
 const quick = process.argv.includes('--quick'), only = process.argv.slice(2).filter(a => !a.startsWith('--')).map(Number);
-let seed = 11; Math.random = () => { seed = (seed * 16807) % 2147483647; return (seed - 1) / 2147483646; };
+let seed = Number((process.argv.find(a => a.startsWith('--seed=')) || '--seed=11').slice(7)); Math.random = () => { seed = (seed * 16807) % 2147483647; return (seed - 1) / 2147483646; };
 const fails: string[] = []; const check = (ok: boolean, what: string) => chk(ok, what); const chk = (ok: boolean, what: string) => { console.log((ok ? 'PASS ' : 'FAIL ') + what); if (!ok) fails.push(what); };
 const T = 1 / 20;
 
@@ -62,10 +62,10 @@ class Play {
     const g = this.g; if (!this.may(k)) return false; for (const n of g.missing(k, this.me)) if (!this.build(n)) return false;
     if (VENT_TAPS.includes(k) && !at) { const h = this.hq(), v = g.vents.filter(v => !v.tap).sort((a, b) => Math.hypot(a.pos.x - (h?.pos.x || 0), a.pos.z - (h?.pos.z || 0)) - Math.hypot(b.pos.x - (h?.pos.x || 0), b.pos.z - (h?.pos.z || 0)))[0]; if (!v) { this.log.push('no vent'); return false; } at = [v.pos.x, v.pos.z]; r0 = 0; r1 = 0; }
     const h = this.hq(), [cx, cz] = at || (h ? [h.pos.x, h.pos.z] : [0, 0]); if (!at && FACTION[this.me].hq === 'choir') r0 = Math.min(r0, 5);   // a Veyl building has to touch a song field
-    const fine = FACTION[this.me].hq === 'mothercap';   // Gloam room is tight: only on Bloom, so look closer together
+    const why: Record<string, number> = {}; const fine = FACTION[this.me].hq === 'mothercap';   // Gloam room is tight: only on Bloom, so look closer together
     for (let r = r0; r <= r1; r += fine ? 1.5 : 3) for (let a = 0; a < 6.28; a += r ? (fine ? .15 : .35) : 9) {
       const x = cx + Math.cos(a) * r, z = cz + Math.sin(a) * r;
-      if (!g.unlocked(k, this.me) || !g.canPlace(k, x, z, false, this.me)) continue;
+      if (!g.unlocked(k, this.me)) continue; g.placeWhy = ''; if (!g.canPlace(k, x, z, false, this.me)) { const w = g.placeWhy || 'ground'; why[w] = (why[w] || 0) + 1; continue; }
       this.cash(BLD[k].cost); const by = g.units.find(u => u.alive && u.team === this.me && (u.kind === 'grazer' || u.kind === 'rigger' || u.kind === 'tender')) || null;
       const b = g.place(k, x, z, false, this.me, by); if (!b) continue; b.progress = 1; this.run(FACTION[this.me].hq === 'mothercap' ? 14 : 1); return true;   // a Gloam building's Bloom takes a few seconds to spread
     }
@@ -78,7 +78,8 @@ class Play {
       }
       (this as any)._sp = ''; this.log.length = n0;
     }
-    this.log.push(`could not stake a ${k}${FACTION[this.me].hq === 'mothercap' ? ` (${g.own('grazer', this.me).length} Grazers, unlocked ${g.unlocked(k, this.me)})` : ''}`); return false;
+    const top = Object.entries(why).sort((a, b) => b[1] - a[1])[0];
+    this.log.push(`could not stake a ${k}${FACTION[this.me].hq === 'mothercap' ? ` (${g.own('grazer', this.me).length} Grazers, unlocked ${g.unlocked(k, this.me)})` : ''}${top ? `, mostly: ${top[0]}` : ''}`); return false;
   }
   /** Trains n of a unit at the building that makes it, as many rounds as it takes. */
   /** Bolts an add-on onto the first built host of a kind (building it first if there is none) and finishes it. */
@@ -89,7 +90,7 @@ class Play {
   /** Runs a building's command (a refit, a call-down) and waits for it to finish. */
   act(b: Building | undefined, key: string, wait = 0): boolean { if (!b || !this.may(key)) return false; this.cash(400); const ok = this.g.buildingAction(b, key); if (!ok) this.log.push(`could not ${key} at ${b.kind}`); else this.run(wait); return ok; }
   /** Uses a body's ability. */
-  cast(u: Unit | undefined, key: string, x?: number, z?: number, id?: number) { if (!u || !this.may(key)) return false; u.energy = 200; if (u.abCd) u.abCd[key] = 0; const ok = useAbility(this.g, u, key, { x: x ?? u.pos.x, z: z ?? u.pos.z, id }); if (!ok) this.log.push(`could not ${key} with a ${u.kind}`); return ok; }
+  cast(u: Unit | undefined, key: string, x?: number, z?: number, id?: number) { if (!u || !this.may(key)) return false; u.energy = 200; if (u.abCd) u.abCd[key] = 0; const t = { x: x ?? u.pos.x, z: z ?? u.pos.z, id }, why = whyNot(this.g, u, key, t), ok = useAbility(this.g, u, key, t); if (!ok) this.log.push(`could not ${key} with a ${u.kind}${why ? ` (${why})` : ''}`); return ok; }
   train(k: Kind, n: number) {
     if (!this.may(k)) return;
     const g = this.g, at = (Object.keys(TRAINS) as BKind[]).filter(b => TRAINS[b]!.includes(k));
@@ -101,7 +102,7 @@ class Play {
     }
     if (g.own(k, this.me).length < n) this.log.push(`could not train ${n} ${k} (${g.own(k, this.me).length})`);
   }
-  up(key: UpKey) { if (!this.may(key)) return; const u = UPGRADES.find(x => x.key === key)!; this.cash(u.cost); if (!this.g.buyUpgrade(key, this.me)) this.log.push(`could not buy ${key}`); }
+  up(key: UpKey) { if (!this.may(key) || this.g.upOf(this.me)[key]) return; const u = UPGRADES.find(x => x.key === key)!; this.cash(u.cost); if (!this.g.buyUpgrade(key, this.me)) this.log.push(`could not buy ${key}`); }
   walk(x: number, z: number) { const b = this.body; if (b) { b.pos.x = x; b.pos.z = z; } }
   jump(k: Kind) { if (!this.may('jump')) return; const g = this.g, u = g.units.find(u => u.alive && u.team === this.me && u.kind === k); if (!u) { this.log.push(`no ${k} to jump into`); return; }
     if (this.m.out) { for (const x of g.units) x.pilot = 0; u.pilot = 1; } else { g.jumpCd = 0; g.possess(u); g.phase = 'play'; } }
@@ -191,8 +192,14 @@ const SCRIPTS: Record<string, (p: Play) => void> = {
     p.kill(u => u.kind === 'mute'); p.build('rotden'); p.train('seeder', 1); p.kill(u => u.order.type === 'raid'); p.train('smother', 1); const sm = g.own('smother', p.me)[0], w = g.units.find(u => u.alive && u.team === p.foe && u.kind === 'bell');
     if (sm && w) { sm.pos.x = w.pos.x + 6; sm.pos.z = w.pos.z; p.cast(sm, 'mind', w.pos.x, w.pos.z, w.id); p.run(2, undefined, true); }
     p.defend(20, () => g.endT > 0); },
-  'What It Remembers': p => { const g = p.g; p.cash(400); p.train('grazer', 10); p.train('keeper', 1); const k = g.own('keeper', p.me)[0]; if (k) { k.energy = 200; const a = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9].map(i => [k.pos.x + Math.cos(i * .63) * 7, k.pos.z + Math.sin(i * .63) * 7]).find(([x, z]) => !whyNot(g, k, 'pod', { x, z })); if (a) p.cast(k, 'pod', a[0], a[1]); else p.log.push('no room for a Spore Pod'); } p.run(10, undefined, true);
-    p.build('warren'); p.build('tuskhollow'); p.train('mulcher', 1); p.build('shellpit'); p.up('glob'); p.train('shellback', 1); const sb = g.own('shellback', p.me)[0]; p.cash(400); if (sb) p.cast(sb, 'ripen'); p.run(30, () => g.own('lobber', p.me).length > 0, true);
+  // The big growths go down first: with the Overgrowth on, its Keepers fill the Bloom with Spore Pods within a few minutes.
+  'What It Remembers': p => { const g = p.g; p.cash(400); p.train('grazer', 10); p.build('warren'); p.build('tuskhollow'); p.build('shellpit');
+    // A Spore Pod needs Bloom with room round it, in the Keeper's reach: look round the Keeper until a spot takes, for up to 30 s.
+    p.train('keeper', 1); const pods = () => g.ownB('sporepod' as BKind, false, p.me).length; const n0 = pods();
+    p.run(30, () => { const k = g.own('keeper', p.me)[0]; if (!k || pods() > n0) return pods() > n0; k.energy = 200; for (let r = 3; r <= 10; r += 1.5) for (let i = 0; i < 16; i++) { const x = k.pos.x + Math.cos(i * .39) * r, z = k.pos.z + Math.sin(i * .39) * r; if (!whyNot(g, k, 'pod', { x, z })) { useAbility(g, k, 'pod', { x, z }); return false; } } return false; }, true);
+    if (pods() <= n0) p.log.push('no room for a Spore Pod');
+    p.train('mulcher', 1); p.up('glob'); p.train('shellback', 1); // A Shellback that is stunned or dug in cannot ripen yet: try again until one does.
+    p.cash(400); p.run(40, () => { if (g.own('lobber', p.me).length) return true; const sb = g.own('shellback', p.me).find(u => !whyNot(g, u, 'ripen', { x: u.pos.x, z: u.pos.z })); if (sb) useAbility(g, sb, 'ripen', { x: sb.pos.x, z: sb.pos.z }); return false; }, true); if (!g.own('lobber', p.me).length) p.log.push('no Shellback ripened into a Lobber');
     p.prop('Glass wall'); p.run(2); const mu = g.own('mulcher', p.me)[0]; if (mu) { mu.pos.x = -36; mu.pos.z = -4; } p.run(5, () => g.endT > 0, true); },
   'Wings': p => { const g = p.g, [ix, iz] = [91, -103]; p.cash(400); p.train('grazer', 10); p.build('warren'); p.build('wingspire'); p.train('bloater', 2); p.kill(u => u.kind === 'gadfly');
     p.build('sporesac'); const sac = g.ownB('sporesac', true, p.me).slice(-1)[0]; p.act(sac, 'uproot', 1); p.up('gbelly'); p.train('snapper', 4); const dr = g.own('drifter', p.me)[0];

@@ -116,13 +116,20 @@ const rotMind: AbilityDef = {
   ai: (g, u) => { const o = foeBody(g, u, G2.smother.mind.range, o => !o.pilot && o !== g.me && !UNIT[o.kind].tags?.includes('huge') && !(o as any).rot && UNIT[o.kind].cost >= 100); return o ? { x: o.pos.x, z: o.pos.z, id: o.id } : null; },
 };
 /** Borrowed bodies: who they belong to and the seconds left. The body changes sides for that long, then goes home. */
-export const BORROWED = new Map<number, { team: number; t: number }>();
+/** Borrowed bodies by id, kept per game (K): a server runs many matches, and one shared list handed a body in the next match (same id,
+ *  another body) back to a side it was never on. */
+const BORROWS = new WeakMap<Game, Map<number, { team: number; t: number }>>();
+export const borrowedOf = (g: Game) => { let m = BORROWS.get(g); if (!m) BORROWS.set(g, m = new Map()); return m; };
 export function borrow(g: Game, o: Unit, team: number, secs: number) {
-  BORROWED.set(o.id, { team: o.team, t: secs }); (o as any).rot = true; o.team = team; o.target = null; o.order = { type: 'amove', x: o.pos.x, z: o.pos.z }; addStatus(o, 'borrowed', secs);
+  borrowedOf(g).set(o.id, { team: o.team, t: secs }); (o as any).rot = true; o.team = team; o.target = null; o.order = { type: 'amove', x: o.pos.x, z: o.pos.z }; addStatus(o, 'borrowed', secs);
   g.puff(TMP.set(o.pos.x, UNIT[o.kind].headY, o.pos.z), 4, .6, M.gS, .4); if (g.vol(o.pos) > .1) sfx.callout();
 }
 export function tickBorrowed(g: Game, dt: number) {
-  for (const [id, b] of BORROWED) { const o = byId(g, id); if (!o || !o.alive) { BORROWED.delete(id); continue; } b.t -= dt; if (b.t > 0) continue; BORROWED.delete(id); o.team = b.team; (o as any).rot = false; o.target = null; o.order = { type: 'guard', x: o.pos.x, z: o.pos.z }; }
+  const BORROWED = BORROWS.get(g); if (!BORROWED) return;
+  for (const [id, b] of BORROWED) { const o = byId(g, id); if (!o || !o.alive) { BORROWED.delete(id); continue; } b.t -= dt; if (b.t > 0) continue; BORROWED.delete(id); o.team = b.team; (o as any).rot = false; o.target = null; o.order = { type: 'guard', x: o.pos.x, z: o.pos.z };
+    // it is a friend again to those who were fighting it: they let it go (in a team game a Cantor kept cutting the Snapper it had been chasing)
+    for (const x of g.units) if (x.target === o && !isEnemy(x.team, o.team)) x.target = null;
+    for (const x of g.buildings) if ((x as any).target === o && !isEnemy(x.team, o.team)) (x as any).target = null; }
 }
 /** Fling Husks: a Seeder throws two Husks at a spot; they walk at the foe and wither after 18 s. Works dug in. */
 const fling: AbilityDef = {
@@ -130,7 +137,7 @@ const fling: AbilityDef = {
   blurb: 'Throws two Husks that walk at the foe and bite for 18 seconds. Works while dug in.',
   effect: (g, u, t) => {
     const S = G2.seeder; for (let i = 0; i < S.n; i++) {
-      const h = g.spawn('husk', u.team, u.pos.x + R(-1.2, 1.2), u.pos.z + R(-1.2, 1.2)); giveLife(h, S.life); h.order = { type: 'amove', x: t.x + R(-2, 2), z: t.z + R(-2, 2) };
+      const h = g.spawn('husk', u.team, u.pos.x + R(-1.2, 1.2), u.pos.z + R(-1.2, 1.2)); giveLife(g, h, S.life); h.order = { type: 'amove', x: t.x + R(-2, 2), z: t.z + R(-2, 2) };
       if (g.upOf(u.team).gwings) { h.air = true; h.alt = 4; (h as any).flyT = S.fly; }
     }
     u.swing = 1; g.puff(TMP.set(u.pos.x, .8, u.pos.z), 4, .8, M.gS, .8); if (g.vol(u.pos) > .1) sfx.throw();

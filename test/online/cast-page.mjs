@@ -1,5 +1,5 @@
 // Casts drawn online, in a real page: Wen watches a match in a browser, and a cast event in a picture from the server (a Linesman's
-// Overtime) is drawn on her screen with the ability's own look (AbilityDef.show in src/core/ability.ts). Who is sent which cast, wind-ups
+// Overtime) is drawn on her screen with the ability's own look (AbilityDef.show in src/core/ability.ts). A Gloam cast is drawn the same way. Who is sent which cast, wind-ups
 // and building looks are checked without a browser in test/online/cast-looks.ts.
 // Run with: npm run build && node test/online/cast-page.mjs
 import { createRequire } from 'node:module';
@@ -36,6 +36,23 @@ try {
   await W.evaluate(([id, x, z]) => { const n = __ore.game.net, take = n.take.bind(n); let once = true; n.take = m => { if (once && m.t === 's') { once = false; m.e.push(['ab', id, 'overtime', x, z, 0]); } return take(m); }; }, [9999999, lx, lz]);
   await sleep(1500); check(await kit() <= k1, 'a cast by a body the page does not have draws nothing and breaks nothing');
   A.close(); V.close(); await W.close();
+  await sleep(800);
+  // ---------------------------------------------------------------- the Gloam: a Grazer digging in, drawn with the Gloam's own look
+  {
+    const { A: A2, V: V2, code: c2 } = await versus(S.url, { set: { out: 5 } });   // the Veyl at the yard, the Gloam at the outpost
+    const W2 = await b.newPage({ viewport: { width: 960, height: 540 } }); W2.setDefaultTimeout(120000);
+    W2.on('pageerror', e => { console.log('[Wen pageerror]', e.message.slice(0, 400)); fail.push('page error'); });
+    await W2.goto(URL); await W2.waitForFunction('window.__ore');
+    await W2.evaluate(code => { __ore.setFree(true); __ore.game.noRender = true; __ore.unlock(); document.getElementById('mName').value = 'Wen'; document.getElementById('mCode').value = code; }, c2);
+    await W2.click('#mWatch');
+    check(await until(W2, () => __ore.game.net?.watch && __ore.game.phase === 'play' && __ore.game.units.some(u => u.alive && u.kind === 'grazer')), 'Wen watches a Veyl against Gloam match');
+    await W2.evaluate(() => { __ore.game.noRender = false; }); await sleep(800);
+    const [gid, gx, gz] = await W2.evaluate(() => { const u = __ore.game.units.find(x => x.alive && x.kind === 'grazer'); return [u.id, u.pos.x, u.pos.z]; });
+    const n0 = await W2.evaluate(() => __ore.game.scene.children.length);
+    await W2.evaluate(([id, x, z]) => { const n = __ore.game.net, take = n.take.bind(n); let once = true; n.take = m => { if (once && m.t === 's') { once = false; m.e.push(['ab', id, 'dig', x, z, 0]); } return take(m); }; }, [gid, gx, gz]);
+    check(await until(W2, n0 => __ore.game.scene.children.length > n0, n0, 8000), `a Grazer digging in, sent as a cast event, is drawn with the Gloam's look (${n0} things in the scene before, ${await W2.evaluate(() => __ore.game.scene.children.length)} after)`);
+    A2.close(); V2.close(); await W2.close();
+  }
 } catch (err) { check(false, 'the test ran to the end: ' + err.message); }
 try { await b?.close(); } catch (e) { /* gone */ }
 S.stop(); done('casts on the page');

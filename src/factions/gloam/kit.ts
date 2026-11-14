@@ -55,14 +55,16 @@ export function nearestFoeAt(g: Game, team: number, x: number, z: number, r: num
 }
 
 /** Bodies that live for a set time (Husks, Pups): seconds left by id. They wither when it runs out. */
-const LIFE = new Map<number, number>();
-export function giveLife(u: Unit, secs: number) { LIFE.set(u.id, secs); }
+// Kept per game (K): a server runs many matches, and a body id means a different body in each, so one shared list mixed them up and a
+// replay or a second match in the same process went a different way.
+const LIVES = new WeakMap<Game, Map<number, number>>(), lives = (g: Game) => { let m = LIVES.get(g); if (!m) LIVES.set(g, m = new Map()); return m; };
+export function giveLife(g: Game, u: Unit, secs: number) { lives(g).set(u.id, secs); }
 export function tickLife(g: Game, dt: number) {
-  if (!LIFE.size) return;
+  const LIFE = LIVES.get(g); if (!LIFE || !LIFE.size) return;
   for (const [id, t] of LIFE) { const u = byId(g, id); if (!u || !u.alive) { LIFE.delete(id); continue; } const n = t - dt; if (n <= 0) { LIFE.delete(id); g.puff(TMP.set(u.pos.x, .4, u.pos.z), 3, .5, M.gS, .4); g.killUnit(u, null); } else LIFE.set(id, n); }
 }
-export const lifeLeft = (u: Unit) => LIFE.get(u.id) ?? -1;
-export const clearLife = () => LIFE.clear();
+export const lifeLeft = (g: Game, u: Unit) => LIVES.get(g)?.get(u.id) ?? -1;
+export const clearLife = (g: Game) => LIVES.delete(g);
 
 /** A short wet sound for a Gloam hit, quieter far from the player. */
 export const squelch = (g: Game, p: THREE.Vector3, k = .6) => sfx.slash(g.vol(p) * k);
@@ -83,10 +85,10 @@ export const byId = (g: Game, id: number) => g.units.find(o => o.id === id) || n
 // ---------------------------------------------------------------- what the enemy can answer (the bots hold back on what nobody can fight)
 import { isEnemy } from '../../core/sides';
 import { BLD } from '../../data';
-const CAN = new Map<number, { t: number; air: boolean; see: boolean }>();
+const CANS = new WeakMap<Game, Map<number, { t: number; air: boolean; see: boolean }>>();   // per game (K), as above
 /** Can any enemy of `team` hit fliers, and can any see dug-in bodies? Checked at most every 5 s. */
 export function foeAnswers(g: Game, team: number) {
-  let c = CAN.get(team); if (c && g.time - c.t < 5 && g.time >= c.t) return c;
+  let CAN = CANS.get(g); if (!CAN) CANS.set(g, CAN = new Map()); let c = CAN.get(team); if (c && g.time - c.t < 5 && g.time >= c.t) return c;
   let air = false, see = false;
   for (const u of g.units) { if (!u.alive || !isEnemy(team, u.team)) continue; const d = UNIT[u.kind]; if (d.hits === 'air' || d.hits === 'both') air = true; if (d.detect) see = true; if (air && see) break; }
   if (!(air && see)) for (const b of g.buildings) { if (!b.alive || !isEnemy(team, b.team)) continue; const d = BLD[b.kind] as any; if (d.hits === 'air' || d.hits === 'both') air = true; if (d.detect) see = true; }

@@ -40,6 +40,8 @@ export function applyUnitLook(g: Game, u: Unit, r: unknown) {
 }
 /** Each death event and the body it is about (game.ts killUnit), so the line out can add the body's looks when it sends the event. */
 export const DEATHS = new WeakMap<any[], Unit>();
+/** Each cast event and its caster (core/ability.ts fire), so the line out can still tell who may see it when the cast killed the caster (a Blister bursting). */
+export const CASTERS = new WeakMap<any[], Unit>();
 
 // A building lifted off to fly (src/core/air.ts): every screen eases it up and down itself, once it knows.
 defineBuildingLook({ key: 'air', get: (_g, b) => (b.air ? 1 : 0), set(_g, b, v) { b.air = !!v; } });

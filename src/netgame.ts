@@ -6,7 +6,7 @@ import { Game, beamMat } from './game';
 import { UNIT, BLD, BUILDABLE, UPGRADES, TRAINS, UNIT_NEEDS, FACTION, VOICE_SIDE, SIDE, fac, atHome, Kind, BKind, Unit, Building, UpKey, isSoldier, isWorker, type StatusKey } from './data';
 import { useAbility, abilityOf, whyNot, bodyOf, showCast, setAutocast, type Target } from './core/ability';
 import { board, unload } from './core/cargo';
-import { packLook, applyLook, packUnitLook, applyUnitLook, DEATHS } from './net-look';
+import { packLook, applyLook, packUnitLook, applyUnitLook, DEATHS, CASTERS } from './net-look';
 import { abilityWords } from './card';
 import { seenBy } from './core/sight';
 import { multi, MATCH } from './core/sides';
@@ -100,7 +100,7 @@ export class Wire {
       case 'kb': return V.sentB.has(e[1]) || g.buildings.some(b => b.id === e[1] && V.friend(b.team));
       case 'ht': { const u = this.byId.get(e[1]); return !!u && V.friend(u.team); }
       // a cast going off: only to a side that was sent the caster (its own, or one looking at it)
-      case 'ab': { const u = this.byId.get(e[1]); return !!u && (V.friend(u.team) || V.sentU.has(e[1])); }
+      case 'ab': { const u = this.byId.get(e[1]) || CASTERS.get(e); return !!u && (V.friend(u.team) || V.sentU.has(e[1])); }
       default: return true;
     }
   }
@@ -200,7 +200,10 @@ function abilityAsk(g: Game, pid: number, unit: Unit | null, side: number, c: an
   if (!u || !u.alive) return no('gone');
   if (!(u === unit || (u.team === side && !u.pilot))) return no('not yours');
   const a = abilityOf(u.kind, key); if (!a) return no('no such ability');
-  if (a.target === 'body' && t.id && !WIRE.trustHits) { const V = WIRES.get(g)?.views.get(u.team); if (V && !(V.sentU.has(t.id) || V.sentB.has(t.id))) return no('unseen', `${a.name}: you cannot see that.`); }
+  if (a.target === 'body' && t.id && !WIRE.trustHits) {
+    // A side always knows its own and its friends' buildings (only an enemy's go in sentB), so aiming at one of those is never 'unseen'.
+    const V = WIRES.get(g)?.views.get(u.team), own = g.buildings.find(x => x.id === t.id && x.alive && V?.friend(x.team));
+    if (V && !own && !(V.sentU.has(t.id) || V.sentB.has(t.id))) return no('unseen', `${a.name}: you cannot see that.`); }
   const why = whyNot(g, u, key, t); if (why) return no(why, `${a.name}: ${abilityWords(why, a, u)}.`);
   if (useAbility(g, u, key, t)) abAsks.ok++;
 }

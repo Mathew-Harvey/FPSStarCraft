@@ -126,4 +126,35 @@ check(hidOk === tried, `and never on the other side's, which cannot see the cast
   check(!c0.alive && mem(c0).ztest === 3, 'its death carries the look as the rules left it, read before the screen plays the death');
 }
 
+// ---------------------------------------------------------------- every faction's casts
+// The Veyl and the Gloam, each in a match of its own at the far end: every ability that can be cast at a plain spot (or where its bot
+// hook would cast it) plays on its own side's screen and the watcher's once it goes off, wind-ups too, and never on the home side's.
+for (const f of [1, 2]) {
+  setMap(0); setSides(0, f);
+  const w = new Game(noPipe(), noHud, DIFFS[1], 0, null, null, true);
+  w.noRender = true; w.evq = []; w.me = null; w.phase = 'play'; for (const u of w.units) u.pilot = 0; w.human = w.human.map(() => false);
+  w.dir.qmT = 1e9; (w.dir.vs as any).qmT = 1e9; for (const t of [H, O]) for (const key in w.ups[t]) (w.ups[t] as any)[key] = true;
+  const ww = new Wire(w), sH = screen(H, fakeNet(1)), sO = screen(O, fakeNet(2)), sW = screen(O, fakeNet(3, true)); w.teams = { 1: H, 2: O }; for (const c of [sH, sO, sW]) c.teams = w.teams;
+  const step = (n = 1) => { for (let i = 0; i < n; i++) w.update(1 / 30); ww.begin([H, O]); const a = JSON.parse(JSON.stringify(ww.snap(H))), b = JSON.parse(JSON.stringify(ww.snap(O))), c = JSON.parse(JSON.stringify(ww.snap(null))); applySnap(sH, a); applySnap(sO, b); applySnap(sW, c); };
+  step();
+  const spot = quiet;   // the same map: halfway between the two ends
+  let n = 0, both = 0, hid = 0, nh = 0, looked = 0; const miss: string[] = [], skip: string[] = [], leak: string[] = [];
+  for (const k of (Object.keys(UNIT) as Kind[]).filter(x => (UNIT[x].team || 0) === f)) for (const a of abilitiesOf(k)) {
+    const u = w.spawn(k, O, spot.x, spot.z); u.pilot = 0; ready(u, a); const who = a.who ?? 'foe', S = who === 'ally' ? O : H;
+    const tgt = a.target === 'body' ? w.spawn(FACTION[S].worker, S, spot.x + 3, spot.z) : null; if (tgt && who === 'ally') tgt.hp = tgt.maxHp * .6;
+    step(); let t: { x: number; z: number; id?: number } | null = { x: tgt ? tgt.pos.x : spot.x + 3, z: tgt ? tgt.pos.z : spot.z, id: tgt?.id };
+    if (whyNot(w, u, a.key, t) && a.ai) t = a.ai(w, u);
+    if (!t || whyNot(w, u, a.key, t) || !useAbility(w, u, a.key, t)) { skip.push(`${k}.${a.key}`); u.alive = false; if (tgt) tgt.alive = false; step(); continue; }
+    n++; if (looks.has(a)) looked++;
+    for (let i = 0; i < 12 && u.cast; i++) step(10); step();
+    if (on(sO, a.key, u.id) && on(sW, a.key, u.id)) both++; else miss.push(`${k}.${a.key}`);
+    if (!tgt || who === 'ally') { nh++; if (!on(sH, a.key, u.id)) hid++; else leak.push(`${k}.${a.key}`); }   // an enemy target stands by the caster, so that side sees it
+    u.alive = false; if (tgt) tgt.alive = false; step();
+  }
+  const F = ['Ironhold', 'Veyl', 'Gloam'][f];
+  check(n >= 10, `${F}: ${n} casts tried, ${looked} with a look of their own (left out, needing a scene of their own: ${skip.join(', ') || 'none'})`);
+  check(both === n, `${F}: each one plays on its side's screen and the watcher's${miss.length ? ': missed ' + miss.join(', ') : ''}`);
+  check(hid === nh && nh > 3, `${F}: and never on the other side's when none of its bodies is near (${hid} of ${nh})${leak.length ? ': seen ' + leak.join(', ') : ''}`);
+}
+
 console.log(fail.length ? `\n${fail.length} FAILED` : '\nall cast and look checks passed'); process.exit(fail.length ? 1 : 0);

@@ -46,6 +46,7 @@ for (const k of kinds) {
     const reach = Math.min(a.range >= 9000 ? 30 : a.range, 30), near = Math.max(1, Math.min(reach * .6, 12)), who = a.who ?? 'foe';
     const tgt = a.target === 'body' ? g.spawn(FACTION[who === 'ally' ? side : foe].worker, who === 'ally' ? side : foe, X + near, Z) : null;
     const tx = a.target === 'self' ? X : tgt ? tgt.pos.x : X + reach * .7, tz = tgt ? tgt.pos.z : Z;
+    if (tgt && who === 'ally') tgt.hp = tgt.maxHp * .6;   // a hurt friend, for a heal
     look(); lastWhy();
     // honest: it goes, and the game runs on with it (a few seconds, so a wind-up goes off)
     // An ability with a spot rule of its own (a mine only so many at once, a jam only on a machine) is asked for where its bot hook would use it.
@@ -57,6 +58,12 @@ for (const k of kinds) {
       const extra: (Unit | Building)[] = a.target === 'body' ? [g.addBuilding(FACTION[S].builds[0], S, u.pos.x + Math.min(near, 2) + BLD[FACTION[S].builds[0]].hx, u.pos.z, true), ...(mach ? [g.spawn(mach, S, u.pos.x + near, u.pos.z + 1)] : [])] : [g.spawn(FACTION[side].worker, side, u.pos.x + 2, u.pos.z)];
       look(); for (const o of extra) { if (ok) break; ready(u, a); ok = ask(g, ME, null, u, a, o.pos.x, o.pos.z, a.target === 'body' ? o.id : 0); }
       for (const o of extra) o.alive = false;
+    }
+    // ...or one of this side's own buildings, standing next to it (a Cap to seed, a building to drink from)
+    if (!ok && a.can && a.target === 'body' && who !== 'foe') {
+      const x0 = u.pos.x, z0 = u.pos.z;
+      for (const b of g.buildings) { if (ok) break; if (!b.alive || b.team !== side || !b.built) continue; u.pos.x = b.pos.x + b.hx + 1.5; u.pos.z = b.pos.z; ready(u, a); look(); ok = ask(g, ME, null, u, a, b.pos.x, b.pos.z, b.id); }
+      if (!ok) { u.pos.x = x0; u.pos.z = z0; }
     }
     if (ok) { went++; try { for (let i = 0; i < 90; i++) { g.update(1 / 30); g.evq!.length = 0; } } catch (e) { fx.push(`${k}.${a.key}: ${(e as Error).message}`); } }
     else if (a.can) special.push(`${k}.${a.key} (${lastWhy()})`); else bad.push(`${k}.${a.key}`);
@@ -79,6 +86,7 @@ for (const k of kinds) {
 check(total >= 20, `${total} abilities on ${kinds.length} kinds, all read from their definitions`);
 check(!bad.length, `every honest ask goes through and every bad one is refused${bad.length ? ': ' + bad.join('; ') : ''}`);
 check(went + special.length === total, `${went} went at once; ${special.length} have a spot rule of their own and refused the plain test spot (${special.join(', ') || 'none'})`);
+check(!special.some(x => /unseen/.test(x)), `no honest ask is refused for not seeing what this side can see${special.filter(x => /unseen/.test(x)).length ? ': ' + special.filter(x => /unseen/.test(x)).join(', ') : ''}`);
 check(!fx.length, `the server runs every ability's effect with nobody's screen attached${fx.length ? ': ' + fx.join('; ') : ''}`);
 for (const r of Object.keys(tried)) check(refused[r] === tried[r], `refused ${r}: ${refused[r]} of ${tried[r]}`);
 check(refusals() > 0 && Object.keys(dropped).some(k => k === 'ab range') && Object.keys(dropped).some(k => k === 'ab unseen'), `refusals are counted by reason (${Object.entries(dropped).filter(([k]) => k.startsWith('ab ')).map(([k, v]) => `${k.slice(3)} ${v}`).join(', ')})`);

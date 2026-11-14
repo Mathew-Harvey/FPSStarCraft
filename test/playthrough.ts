@@ -11,13 +11,17 @@ import { Game } from '../src/game';
 import { initHeadless } from '../src/gfx';
 import { BLD, DIFFS, FACTION, MAP, ROAD, SIDE, STORY, TRAINS, UNIT, UPGRADES, foeOf, roadPt, setMap, setSides } from '../src/data';
 import type { BKind, Kind, Unit, UpKey, Building } from '../src/data';
-import { useAbility } from '../src/core/ability';
+import { useAbility, whyNot } from '../src/core/ability';
 import { load, unload } from '../src/core/cargo';
 import { sendToVent } from '../src/core/econ';
 import { addonOf } from '../src/factions/ironhold/bases';
+import { G_TUNE, bloomOf } from '../src/factions/gloam/numbers';
 import { MISSIONS, missionSides, charterTeam, Mission } from '../src/campaign';
 
 initHeadless();
+// Until stream D's fix lands on the lead: G_TUNE.bloomR has no rows for the Elder and Ancient Caps, so a ripened Cap's Bloom shrinks from
+// 20 m to 6 m and nothing more can be grown round it. The Gloam tier jobs set the dial here so they can be played. Take this out with D's fix.
+if (bloomOf('eldercap') < bloomOf('mothercap')) { G_TUNE.bloomR.eldercap = G_TUNE.bloomR.ancientcap = bloomOf('mothercap'); console.log('note: Elder and Ancient Cap Bloom set to the Mother Cap\'s for this run (stream D fix pending)'); }
 const VENT_TAPS: BKind[] = ['pumpjack', 'siphonbell', 'ventbladder' as BKind];
 const quick = process.argv.includes('--quick'), only = process.argv.slice(2).filter(a => !a.startsWith('--')).map(Number);
 let seed = 11; Math.random = () => { seed = (seed * 16807) % 2147483647; return (seed - 1) / 2147483646; };
@@ -56,13 +60,15 @@ class Play {
     const g = this.g; if (!this.may(k)) return false; for (const n of g.missing(k, this.me)) if (!this.build(n)) return false;
     if (VENT_TAPS.includes(k) && !at) { const h = this.hq(), v = g.vents.filter(v => !v.tap).sort((a, b) => Math.hypot(a.pos.x - (h?.pos.x || 0), a.pos.z - (h?.pos.z || 0)) - Math.hypot(b.pos.x - (h?.pos.x || 0), b.pos.z - (h?.pos.z || 0)))[0]; if (!v) { this.log.push('no vent'); return false; } at = [v.pos.x, v.pos.z]; r0 = 0; r1 = 0; }
     const h = this.hq(), [cx, cz] = at || (h ? [h.pos.x, h.pos.z] : [0, 0]); if (!at && FACTION[this.me].hq === 'choir') r0 = Math.min(r0, 5);   // a Veyl building has to touch a song field
-    for (let r = r0; r <= r1; r += 3) for (let a = 0; a < 6.28; a += r ? .35 : 9) {
+    const fine = FACTION[this.me].hq === 'mothercap';   // Gloam room is tight: only on Bloom, so look closer together
+    for (let r = r0; r <= r1; r += fine ? 1.5 : 3) for (let a = 0; a < 6.28; a += r ? (fine ? .15 : .35) : 9) {
       const x = cx + Math.cos(a) * r, z = cz + Math.sin(a) * r;
       if (!g.unlocked(k, this.me) || !g.canPlace(k, x, z, false, this.me)) continue;
       this.cash(BLD[k].cost); const by = g.units.find(u => u.alive && u.team === this.me && (u.kind === 'grazer' || u.kind === 'rigger' || u.kind === 'tender')) || null;
-      const b = g.place(k, x, z, false, this.me, by); if (!b) continue; b.progress = 1; this.run(1); return true;
+      const b = g.place(k, x, z, false, this.me, by); if (!b) continue; b.progress = 1; this.run(FACTION[this.me].hq === 'mothercap' ? 14 : 1); return true;   // a Gloam building's Bloom takes a few seconds to spread
     }
-    this.log.push(`could not stake a ${k}`); return false;
+    if (FACTION[this.me].hq === 'mothercap' && k !== 'sporesac' && k !== 'mothercap' && !at && (this as any)._sp !== k) { (this as any)._sp = k; this.cash(400); this.train('grazer', this.g.own('grazer', this.me).length + 2); if (this.build('sporesac') && this.build('sporesac') && this.build(k)) { (this as any)._sp = ''; return true; } }   // more Bloom, the way a player would spread it
+    this.log.push(`could not stake a ${k}${FACTION[this.me].hq === 'mothercap' ? ` (${g.own('grazer', this.me).length} Grazers, unlocked ${g.unlocked(k, this.me)})` : ''}`); return false;
   }
   /** Trains n of a unit at the building that makes it, as many rounds as it takes. */
   /** Bolts an add-on onto the first built host of a kind (building it first if there is none) and finishes it. */
@@ -164,11 +170,32 @@ const SCRIPTS: Record<string, (p: Play) => void> = {
   'Rooted': p => { const g = p.g; p.run(400, () => p.done(0)); p.build('sporesac'); const cap = g.ownB('mothercap', true, p.me)[0]; p.cash(200); for (let i = 0; i < 3; i++) g.train(cap, 'grazer'); p.run(40, () => p.done(2));
     p.cash(400); p.train('grazer', 8); const fields = MAP.sites!.filter(s => Math.hypot(s[0] - cap.pos.x, s[1] - cap.pos.z) > 40).sort((a, b) => Math.hypot(a[0] - cap.pos.x, a[1] - cap.pos.z) - Math.hypot(b[0] - cap.pos.x, b[1] - cap.pos.z));
     for (const s of fields) { if (g.ownB('mothercap', true, p.me).length >= 2) break; p.build('mothercap', s as [number, number], 6, 30); } p.run(5); },
-  'Two to a Bud': p => { const g = p.g; p.cash(300); p.train('grazer', 8); p.build('warren'); p.up('gtongue'); p.run(2); p.kill(u => u.order.type === 'guard'); p.run(5); },
-  'The Garden': p => { p.cash(400); p.train('grazer', 10); p.build('warren'); p.build('quillgarden'); p.build('blisterbed'); p.raze('wardpylon'); p.run(2); p.raze('choir'); p.run(5); },
-  'What It Remembers': p => { const g = p.g; p.cash(400); p.train('grazer', 10); p.build('warren'); p.build('tuskhollow'); p.train('mulcher', 1); p.prop('Glass wall'); p.run(2);
-    const mu = g.own('mulcher', p.me)[0]; if (mu) { mu.pos.x = -36; mu.pos.z = -4; } p.run(5, () => g.endT > 0, true); },
-  'Spore Season': p => { const g = p.g; p.prop('Drill tower'); p.run(2); const [tx, tz] = roadPt(ROAD.len * .3, -30); p.cash(300); p.train('grazer', 8); p.build('mothercap', [tx, tz], 6, 33); p.run(5); },
+  'Two to a Bud': p => { const g = p.g; p.cash(300); p.train('grazer', 8); p.build('warren'); if (p.build('ventbladder')) { const v = g.vents.find(v => v.tap && v.tap.team === p.me); for (const u of g.own('grazer', p.me).slice(0, 3)) sendToVent(g, u, v || null); }
+    p.run(300, () => (g.ms.fluxIn || 0) >= 100); p.up('gtongue'); p.run(2); p.kill(u => u.order.type === 'guard'); p.run(5); },
+  'The Garden': p => { const g = p.g; p.cash(400); p.train('grazer', 10); p.build('warren'); p.build('quillgarden'); p.build('blisterbed'); p.build('puffball');
+    p.defend(600, () => { p.kill(u => !!u.air); return p.done(3); }); p.raze('wardpylon'); p.run(2); p.raze('choir'); p.run(5); },
+  'Under the Road': p => { const g = p.g; p.cash(400); p.train('grazer', 8); p.build('warren'); p.up('gdig'); p.train('snapper', 6);
+    g.own('snapper', p.me).slice(0, 6).forEach((u, i) => { const [x, z] = roadPt(ROAD.len * (.4 + i * .04), i % 2 ? 3 : -3); u.pos.x = x; u.pos.z = z; u.order = { type: 'guard', x, z }; p.cast(u, 'dig'); });
+    p.run(10, () => !!g.ms.col, true); p.defend(300, () => p.done(2)); },
+  'Elder': p => { const g = p.g; p.cash(400); p.train('grazer', 6); p.build('warren'); const cap = g.ownB('mothercap', true, p.me)[0]; if (p.act(cap, 'grow', 2) && (cap as any).grow) (cap as any).grow.t = 0; p.run(2);
+    p.kill(u => u.kind === 'mute'); p.build('rotden'); p.train('seeder', 1); p.kill(u => u.order.type === 'raid'); p.train('smother', 1); const sm = g.own('smother', p.me)[0], w = g.units.find(u => u.alive && u.team === p.foe && u.kind === 'bell');
+    if (sm && w) { sm.pos.x = w.pos.x + 6; sm.pos.z = w.pos.z; p.cast(sm, 'mind', w.pos.x, w.pos.z, w.id); p.run(2, undefined, true); }
+    p.defend(20, () => g.endT > 0); },
+  'What It Remembers': p => { const g = p.g; p.cash(400); p.train('grazer', 10); p.train('keeper', 1); const k = g.own('keeper', p.me)[0]; if (k) { k.energy = 200; const a = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9].map(i => [k.pos.x + Math.cos(i * .63) * 7, k.pos.z + Math.sin(i * .63) * 7]).find(([x, z]) => !whyNot(g, k, 'pod', { x, z })); if (a) p.cast(k, 'pod', a[0], a[1]); else p.log.push('no room for a Spore Pod'); } p.run(10, undefined, true);
+    p.build('warren'); p.build('tuskhollow'); p.train('mulcher', 1); p.build('shellpit'); p.up('glob'); p.train('shellback', 1); const sb = g.own('shellback', p.me)[0]; p.cash(400); if (sb) p.cast(sb, 'ripen'); p.run(30, () => g.own('lobber', p.me).length > 0, true);
+    p.prop('Glass wall'); p.run(2); const mu = g.own('mulcher', p.me)[0]; if (mu) { mu.pos.x = -36; mu.pos.z = -4; } p.run(5, () => g.endT > 0, true); },
+  'Wings': p => { const g = p.g, [ix, iz] = [91, -103]; p.cash(400); p.train('grazer', 10); p.build('warren'); p.build('wingspire'); p.train('bloater', 2); p.kill(u => u.kind === 'gadfly');
+    p.build('sporesac'); const sac = g.ownB('sporesac', true, p.me).slice(-1)[0]; p.act(sac, 'uproot', 1); p.up('gbelly'); p.train('snapper', 4); const dr = g.own('drifter', p.me)[0];
+    if (dr) { const sn = g.own('snapper', p.me).slice(0, 4); for (const u of sn) { u.pos.x = dr.pos.x + 1; u.pos.z = dr.pos.z; } p.cast(dr, 'board'); dr.pos.x = ix; dr.pos.z = iz; p.kill(u => Math.hypot(u.pos.x - ix, u.pos.z - iz) < 20 && !u.air); p.cast(dr, 'drop'); p.run(3, undefined, true); }
+    p.raze('pumpjack', SIDE.home); p.raze('watchpost', SIDE.home); p.defend(20, () => g.endT > 0); },
+  'Deep Roots': p => { const g = p.g, [lx, lz] = [78.8, -47.6]; p.cash(400); p.train('grazer', 12); p.build('warren'); p.build('deeproot'); p.build('wingspire'); p.train('gnatwing', 1); const gw = g.own('gnatwing', p.me)[0]; if (gw) { gw.pos.x = lx; gw.pos.z = lz; }
+    p.kill(u => Math.hypot(u.pos.x - lx, u.pos.z - lz) < 18); p.build('tunnelroot', [lx, lz], 0, 10); p.train('snapper', 8); const dp = g.ownB('deeproot', true, p.me)[0];
+    if (dp) { for (const u of g.own('snapper', p.me).slice(0, 8)) { u.pos.x = dp.pos.x + 4; u.pos.z = dp.pos.z; } p.act(dp, 'go', 4); }
+    p.build('rotden'); const cap = g.ownB('eldercap', true, p.me)[0]; if (p.act(cap, 'grow', 2) && (cap as any).grow) (cap as any).grow.t = 0; p.run(2);
+    p.build('quillgarden'); p.build('needleden'); p.up('gneedle'); p.train('quillback', 2); for (const q of g.own('quillback', p.me).slice(0, 2)) { p.cash(300); p.cast(q, 'ripen'); } p.run(30, () => g.own('needler', p.me).length >= 2, true);
+    p.defend(300, () => { for (const u of g.own('snapper', p.me)) if (!u.inside && Math.hypot(u.pos.x - lx, u.pos.z - lz) > 12) { u.pos.x = lx + (u.id % 5) - 2; u.pos.z = lz + (u.id % 3) - 1; u.order = { type: 'guard', x: u.pos.x, z: u.pos.z }; } return p.done(5); }); },
+  'Spore Season': p => { const g = p.g; p.prop('Drill tower'); p.run(2); const [tx, tz] = roadPt(ROAD.len * .3, -30); p.cash(300); p.train('grazer', 8); p.build('warren'); p.build('rotden');
+    const cap = g.ownB('eldercap', true, p.me)[0]; if (p.act(cap, 'grow', 2) && (cap as any).grow) (cap as any).grow.t = 0; p.run(2); p.train('hooksail', 1); p.build('mothercap', [tx, tz], 6, 33); p.run(5); },
   'Old Opening': p => { const g = p.g; p.build('flaktower'); p.build('hangar'); p.train('flakkite', 1); p.defend(700, () => { p.kill(u => !!u.air); return p.done(2); }); p.raze('headframe'); p.run(5); },
   'Needle\'s Eye Road': p => { const g = p.g; p.jump('warden'); p.run(2); p.defend(500, () => (g.ms.done || 0) >= 3); p.prop('Needle\'s Eye', q => q.y0 === 0); p.run(6); if (g.props.some(q => q.alive && q.name === 'Needle\'s Eye' && q.y0 > 0)) { p.log.push('the arch top stayed up after its legs were shot out'); p.prop('Needle\'s Eye'); } p.run(5); },
   'Rig Breakers': p => { p.prop('Deep Charge rig'); p.run(5); },
@@ -215,6 +242,15 @@ const TEACH: Record<string, { ban: string[]; lose: number }> = {
   'Sky Choir': { ban: ['unfold'], lose: 1500 },
   'Long Stride': { ban: ['reedwalker'], lose: 1200 },
   'The Last Verse': { ban: ['highbeacon'], lose: 1500 },
+  'Rooted': { ban: ['mothercap'], lose: 1200 },
+  'Two to a Bud': { ban: ['ventbladder'], lose: 1000 },
+  'The Garden': { ban: ['puffball'], lose: 1200 },
+  'Under the Road': { ban: ['gdig'], lose: 1200 },
+  'Elder': { ban: ['grow'], lose: 1200 },
+  'What It Remembers': { ban: ['tuskhollow'], lose: 1500 },
+  'Wings': { ban: ['uproot'], lose: 1500 },
+  'Deep Roots': { ban: ['tunnelroot'], lose: 1200 },
+  'Spore Season': { ban: ['hooksail'], lose: 1500 },
   'Old Opening': { ban: ['flaktower'], lose: 1500 },
 };
 const result = (p: Play) => { const g = p.g; return g.phase === 'over' ? (g.won ? 'won' : 'lost') : g.endT > 0 ? (g.endWon ? 'won' : 'lost') : 'running'; };

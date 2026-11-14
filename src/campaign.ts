@@ -1,4 +1,4 @@
-// The story campaign: 32 jobs across four acts and three side jobs. Each job teaches part of one side and moves the story on.
+// The story campaign: 36 jobs across four acts and three side jobs. Each job teaches part of one side and moves the story on.
 // Act 1 plays the Ironhold Charter, Act 2 the Veyl, Act 3 the Gloam, and Act 4 one job for each against Charter Security.
 // Jobs where the player is at the outpost end of the map run on a hidden local host (see split.ts); the job's script runs there.
 import type { Game } from './game';
@@ -7,7 +7,7 @@ import { SIDE, FACTION, MAP, ROAD, VHOME, STORY, UNIT, roadPt, foeOf, fac } from
 import { addStatus } from './core/status';
 import * as TR from './terrain';
 import { silent } from './factions/veyl/fields';
-import { setDug } from './factions/gloam/roster';
+import { setDug, isDug } from './factions/gloam/roster';
 
 export interface Objective { text: (g: Game) => string; done: (g: Game) => boolean }
 export interface Mission {
@@ -133,8 +133,15 @@ const V6: BKind[] = [...V5, 'skyloft'];
 const V7: BKind[] = [...V6, 'tuningfork'];
 const VEYL_ALL: BKind[] = [...V7, 'highbeacon'];
 const VEYL_UNITS: Kind[] = ['tender', 'cantor', 'lancer', 'tuner', 'mute', 'choirmaster', 'warden', 'bell', 'listener', 'ferry', 'reedwalker', 'knell', 'swift', 'prism', 'omen', 'lyre', 'cantus'];
-const GLOAM_ALL: BKind[] = ['sporesac', 'warren', 'stinger', 'quillgarden', 'blisterbed', 'tuskhollow', 'oldgrowth'];
-const GLOAM_UNITS: Kind[] = ['grazer', 'snapper', 'quillback', 'blister', 'mulcher'];
+// The Gloam tree as the jobs open it up. The Elder and Ancient Caps are a Mother Cap ripened in place (N at the Cap).
+const G2: BKind[] = ['mothercap', 'sporesac', 'ventbladder', 'warren', 'stinger', 'oldgrowth'];
+const G3: BKind[] = [...G2, 'quillgarden', 'blisterbed', 'puffball'];
+const G5: BKind[] = [...G3, 'eldercap', 'rotden'];
+const G6: BKind[] = [...G5, 'shellpit', 'tuskhollow'];
+const G7: BKind[] = [...G6, 'wingspire'];
+const G8: BKind[] = [...G7, 'deeproot', 'tunnelroot', 'needleden', 'ancientcap'];
+const GLOAM_ALL: BKind[] = [...G8, 'tallspire'];
+const GLOAM_UNITS: Kind[] = ['grazer', 'snapper', 'quillback', 'blister', 'mulcher', 'keeper', 'shellback', 'lobber', 'needler', 'smother', 'seeder', 'gnatwing', 'bloater', 'sower', 'hooksail', 'drifter', 'lookoutsac'];
 const DAY = .05, DUSK = .55, NIGHT = .85;
 
 const job = (n: number, act: number, m: Omit<Mission, 'tag' | 'act' | 'out'> & { out?: boolean }): Mission => ({ ...m, tag: `Job ${n}`, act, out: m.out ?? m.side !== 0 });
@@ -752,55 +759,65 @@ const crackSpots = () => [-30, 0, 30].map(k => { const c = roadPt(ROAD.len * .52
 const spots = (g: Game) => crackSpots().filter(([x, z]) => g.ownB('choir', true, me(g)).some(b => Math.hypot(b.pos.x - x, b.pos.z - z) < 16)).length;
 
 // ================================================================ Act 3: Grow
+// Nine jobs, one new piece of the Gloam each: Buds and a second Cap (24), the Warren and Flux (25), Puffballs against fliers (26), digging in
+// (27), the Elder Cap and the Rot Den (28), the Tusk Hollow, Keepers and Lobbers (29), Wing Spires and Drifters (30), Deep Roots, high
+// ground and the Ancient Cap (31), all of it (32).
 const ACT3: Mission[] = [
   job(24, 3, {
-    name: 'Rooted', side: 2, foe: 1, map: 13, diff: 0, dusk: .35, teaches: 'Grazers, the Mother Cap and its Buds, rooting buildings, the Bloom',
-    brief: 'You wake up as a Gloam Grazer, and the Gloam talks to you in Moss\'s voice. A Grazer chews ore. Each Gloam building is a Grazer that puts down roots, so building costs a body. A Mother Cap ripens three Buds, one every seven seconds, and they all hatch at once. Your fighters run faster and heal on the Bloom.',
+    name: 'Rooted', side: 2, foe: 1, map: 13, diff: 0, dusk: .35, teaches: 'Grazers, the Mother Cap and its Buds, rooting buildings, the Bloom, a second Cap',
+    brief: 'You wake up as a Gloam Grazer, and the Gloam talks to you in Moss\'s voice. A Grazer chews ore. Each Gloam building is a Grazer that puts down roots, so building costs a body. A Mother Cap ripens three Buds, one every seven seconds, and they all hatch at once. Your fighters run faster and heal on the Bloom. Root a second Mother Cap on another ore field: it is a second base, and it spreads Bloom of its own.',
     allow: ['sporesac', 'mothercap'], units: ['grazer', 'snapper'], raids: false, auto: false, cutIn: ['longshift'],
     objectives: [
       { text: g => `Chew 200 ore (${Math.min(200, Math.floor(banked(g)))}/200)`, done: g => banked(g) >= 200 },
       { text: () => 'Root a Spore Sac (press 2)', done: g => nB(g, 'sporesac') > 0 },
       { text: g => g.ms.used ? 'Let the Mother Cap ripen a new set of Buds' : 'Hatch the Buds on the Mother Cap (press E at the Cap)', done: g => g.ms.full === 1 },
-      { text: g => `Root a Mother Cap on a second field (${Math.min(2, nB(g, 'mothercap'))}/2)`, done: g => nB(g, 'mothercap') >= 2 },
+      { text: g => `Root a Mother Cap on a second field (${Math.min(2, caps(g).length)}/2)`, done: g => caps(g).length >= 2 },
     ],
     // Snappers come from a Warren, which this job does not have yet, so the Gloam starts the player with four of its own.
     setup: g => { hush(g, SIDE.home); const [x, z] = homeOf(g, SIDE.out); for (let i = 0; i < 4; i++) { const u = g.spawn('snapper', SIDE.out, x - 6 + i * 2, z + 8); u.order = { type: 'guard', x: u.pos.x, z: u.pos.z }; } },
     tick: (g, s, dt) => {
       s.t0 = (s.t0 || 0) + dt;
-      const caps = g.ownB('mothercap', true, me(g)); if (caps.some(b => b.buds !== undefined && b.buds < 3)) s.used = 1; if (s.used && caps.some(b => (b.buds || 0) >= 3 && b.queue.length === 0)) s.full = 1;
+      const cs = caps(g, true); if (cs.some(b => b.buds !== undefined && b.buds < 3)) s.used = 1; if (s.used && cs.some(b => (b.buds || 0) >= 3 && b.queue.length === 0)) s.full = 1;
       once(g, s, 'l1', s.t0 > 2, MO, 'Chewing is the same as drilling. Walk it to the Cap, same as the Headframe. You\'ll pick it up.');
       once(g, s, 'l2', s.t0 > 16, GL, 'MIND YOUR STEP. LIFT WITH YOUR LEGS. YOU HAVE SIX.');
       once(g, s, 'l3', !!s.full, MO, 'Everything hatches together down here. Nobody waits in a queue. I like it.');
       if (!s.w && s.t0 > 200) { s.w = 1; send(g, SIDE.home, ['cantor', 'cantor', 'lancer'], 'w'); say(g, MO, 'Three Veyl coming to burn us out. Snappers bite. Go on.', 'al'); }
+      // Until the second Cap is up, the Chorus comes back every three minutes with more.
+      if (s.w && caps(g).length < 2 && s.t0 > (s.next || 380)) { s.next = s.t0 + 180; s.n = (s.n || 0) + 1; send(g, SIDE.home, ([] as Kind[]).concat(...Array(1 + s.n).fill(['cantor', 'cantor', 'lancer'])), 'w'); }
     },
     outro: 'The Bloom reaches the canyon wall. Moss is still running his book, and you are on it.',
   }),
   job(25, 3, {
-    name: 'Two to a Bud', side: 2, foe: 0, map: 3, diff: 1, dusk: NIGHT, charter: 'home', teaches: 'The Warren, Snappers, Gloam upgrades, the Stinger Stalk, scattering from grenades',
-    brief: 'Charter Security has landed. They wear the same Ironhold kit as Aggie\'s crew, in company grey, and the Quartermaster runs them. Three survey teams are mapping the Bloom. Grow a Warren so each Bud hatches two Snappers, and hunt all three teams down before the survey finishes.',
-    allow: ['sporesac', 'warren', 'stinger', 'mothercap'], units: ['grazer', 'snapper'], raids: false, auto: false, clockLabel: 'Survey done in',
+    name: 'Two to a Bud', side: 2, foe: 0, map: 3, diff: 1, dusk: NIGHT, charter: 'home', teaches: 'The Warren, Snappers, the Vent Bladder and Flux, Gloam upgrades, the Stinger Stalk',
+    brief: 'Charter Security has landed. They wear the same Ironhold kit as Aggie\'s crew, in company grey, and the Quartermaster runs them. Three survey teams are mapping the Bloom. Grow a Warren so each Bud hatches two Snappers. Swell a Vent Bladder over a vent and send Grazers to carry the Flux home; Quick Legs at the Warren needs it. Then hunt all three teams down before the survey finishes.',
+    allow: G2, units: ['grazer', 'snapper'], raids: false, auto: false, clockLabel: 'Survey done in',
     objectives: [
       { text: () => 'Grow a Warren', done: g => nB(g, 'warren') > 0 },
+      { text: () => 'Swell a Vent Bladder over a vent', done: g => nB(g, 'ventbladder') > 0 },
+      { text: g => `Carry 100 Flux home (${Math.min(100, Math.floor(g.ms.fluxIn || 0))}/100)`, done: g => (g.ms.fluxIn || 0) >= 100 },
       { text: () => 'Learn an upgrade (Fat Buds, Long Tongues or Quick Legs)', done: g => upped(g) },
       { text: g => `Wipe out the survey teams (${['s0', 's1', 's2'].filter(k => left(g, k)).length} left)`, done: g => !left(g, 's0') && !left(g, 's1') && !left(g, 's2') },
     ],
     setup: g => { hush(g, SIDE.home); const st = MAP.sites || []; [st[1], st[2], st[3]].forEach((p, i) => { if (p) outpost(g, SIDE.home, p[0], p[1], [], ['linesman', 'linesman', 'linesman', 'longshot'], 's' + i); }); },
     tick: (g, s, dt) => {
-      countdown(g, s, dt, 900); s.t0 = (s.t0 || 0) + dt;
+      countdown(g, s, dt, 900); s.t0 = (s.t0 || 0) + dt; fluxIn(g, s);
       once(g, s, 'l1', s.t0 > 3, QM, '(Charter Security channel) Survey teams, please log all biological liabilities.');
       once(g, s, 'l2', nB(g, 'warren') > 0, MO, 'Two Snappers to a Bud. The Charter would love you.');
       once(g, s, 'l3', s.t0 > 40, MO, 'Those aren\'t Aggie\'s lot. Their boots are too clean.');
+      once(g, s, 'l4', nB(g, 'ventbladder') > 0, MO, 'The gas comes up into the bladder and the Grazers drink it. Don\'t ask me how it gets out again.');
     },
     outro: 'No survey team made it home. Charter Security is not Aggie\'s crew. It answers to head office, and head office wants the glass.',
     fail: 'The survey finished. Charter Security knows where the Bloom is now.',
   }),
   job(26, 3, {
-    name: 'The Garden', side: 2, foe: 1, map: 0, diff: 1, dusk: DAY, teaches: 'The Quill Garden, Quillbacks, the Blister Bed, Blisters, Gloam armour and Volatile Sap',
-    brief: 'Held Fifth\'s Chorus is singing glass over the Bloom from three Choir Stones at the yard end. Grow a Quill Garden for Quillbacks, which shoot from range, and a Blister Bed for Blisters, which run in and burst. Break the Ward Pylon first, then all three Stones.',
-    allow: ['sporesac', 'warren', 'stinger', 'quillgarden', 'blisterbed', 'mothercap'], units: ['grazer', 'snapper', 'quillback', 'blister'], raids: false, auto: false,
+    name: 'The Garden', side: 2, foe: 1, map: 0, diff: 1, dusk: DAY, teaches: 'The Quill Garden, Quillbacks, the Blister Bed, Blisters, the Puffball against fliers, Volatile Sap',
+    brief: 'Held Fifth\'s Chorus is singing glass over the Bloom from three Choir Stones at the yard end, and Veyl Prisms fly over to burn it off. Grow a Quill Garden for Quillbacks, which shoot from range and hit fliers, and a Blister Bed for Blisters, which run in and burst. A Puffball shoots fliers out of the sky. Break the Ward Pylon first, then all three Stones.',
+    allow: G3, units: ['grazer', 'snapper', 'quillback', 'blister'], raids: false, auto: false,
     objectives: [
       { text: () => 'Grow a Quill Garden', done: g => nB(g, 'quillgarden') > 0 },
       { text: () => 'Grow a Blister Bed', done: g => nB(g, 'blisterbed') > 0 },
+      { text: () => 'Grow a Puffball', done: g => nB(g, 'puffball') > 0 },
+      { text: g => g.ms.air ? `Shoot down the Prisms over the Bloom (${left(g, 'air')} left)` : 'Shoot down the Prisms over the Bloom', done: g => g.ms.air === 1 && !left(g, 'air') },
       { text: () => 'Break the Ward Pylon', done: g => !g.ownB('wardpylon', false, them(g)).length },
       { text: g => `Silence the Choir Stones (${hq(g, them(g)).length} left)`, done: g => !hq(g, them(g)).length },
     ],
@@ -811,54 +828,167 @@ const ACT3: Mission[] = [
       once(g, s, 'l2', nU(g, 'blister') > 0, MO, 'Fifty ore says you flinch when you send these at the Veyl.');
       once(g, s, 'l3', !g.ownB('wardpylon', false, them(g)).length, MO, 'You didn\'t flinch. I owe you fifty.');
       once(g, s, 'l4', hq(g, them(g)).length === 1, PB, 'THIS IS IMPOLITE OF YOU.');
+      // Prisms over the Bloom from the fourth minute, and again every three minutes until a set of them is shot down.
+      if (!(s.air === 1 && !left(g, 'air')) && s.t0 > (s.next || 240)) { s.next = s.t0 + 180; s.air = 1; s.n = (s.n || 0) + 1; send(g, SIDE.home, Array(2 + s.n).fill(vk('prism', 'lancer')), 'air', homeOf(g, me(g))); say(g, MO, 'Glass fliers. They burn whatever they hover over. Puffballs pop them.', 'al'); }
     },
     target: g => g.ownB('wardpylon', false, SIDE.home)[0] || null,
     outro: 'The three Stones have gone quiet. Held Fifth knew it was you the whole time.',
   }),
   job(27, 3, {
-    name: 'What It Remembers', side: 2, foe: 1, map: 24, diff: 1, dusk: DAY, teaches: 'The Tusk Hollow, Mulchers and their charge, Old Growth, the Overgrowth (G), Swarm Lead plans',
-    brief: 'First Stone, large. The oldest Veyl site on Tithe sits behind the yard end, past two old glass walls across the road. Grow a Tusk Hollow and send Mulchers through the walls. Then get a Mulcher to the First Stone. The Overgrowth builds for you on this job (G), and the Swarm Lead pitches plans.',
-    allow: GLOAM_ALL.concat(['mothercap']), units: GLOAM_UNITS, raids: false, auto: true,
+    name: 'Under the Road', side: 2, foe: 0, map: 10, diff: 1, dusk: NIGHT, charter: 'home', teaches: 'Dig In, unseen bodies, ambushes, the Charter\'s detectors',
+    brief: 'A Charter Security column is going to walk up the road to burn the Bloom. Learn Dig In at the Mother Cap: then Ctrl puts a Gloam body under the ground, where nobody can see it unless a detector is near, but it cannot move. Dig six bodies into the middle of the road, let the column walk onto them, and break it. Kill the Surveyor first; it is a detector.',
+    allow: G3, units: ['grazer', 'snapper', 'quillback', 'blister'], raids: false, auto: false,
     objectives: [
+      { text: () => 'Learn Dig In at the Mother Cap', done: g => !!g.upOf(me(g)).gdig },
+      { text: g => `Dig six bodies into the road (Ctrl) (${Math.min(6, dugOnRoad(g))}/6)`, done: g => dugOnRoad(g) >= 6 },
+      { text: g => g.ms.col ? `Break the Charter column (${left(g, 'col')} left)` : 'Wait for the Charter column', done: g => g.ms.col === 1 && !left(g, 'col') },
+    ],
+    setup: g => { hush(g, SIDE.home); },
+    tick: (g, s, dt) => {
+      s.t0 = (s.t0 || 0) + dt;
+      once(g, s, 'l1', s.t0 > 3, MO, 'Old trick. Lie in the road, wait for boots. I did it on the bus once and it worked then too.');
+      once(g, s, 'l2', dugOnRoad(g) > 0, GL, 'UNDER THE ROAD IT IS WARM AND DARK. WE CAN WAIT A LONG TIME.');
+      // The column leaves the yard once six are dug in, or at the eighth minute either way. With a Surveyor over it, a dug-in body shows up.
+      if (!s.col && (dugOnRoad(g) >= 6 || s.t0 > 480)) { s.col = 1; send(g, SIDE.home, ['breacher', 'breacher', 'linesman', 'linesman', 'linesman', 'linesman', 'patch', 'longshot', 'longshot', 'surveyor', 'dustbike', 'dustbike'], 'col'); say(g, QM, '(Charter Security channel) Column, proceed to the biological liability and remove it. Surveyor, look down.', 'al'); }
+      once(g, s, 'l3', !!s.col && !g.units.some(u => u.alive && u.team === them(g) && u.kind === 'surveyor'), MO, 'Their eye in the sky is down. Now they can\'t see us coming up out of the road.');
+      if (s.col && left(g, 'col') && s.t0 > (s.next || s.t0 + 240)) { s.next = s.t0 + 240; send(g, SIDE.home, ['breacher', 'linesman', 'linesman', 'linesman', 'patch', 'surveyor'], 'col'); }
+    },
+    outro: 'The column went into the ground on the road and did not come out. The Charter will send a bigger one with more Surveyors.',
+  }),
+  job(28, 3, {
+    name: 'Elder', side: 2, foe: 1, map: 3, diff: 1, dusk: .4, teaches: 'Ripening the Mother Cap into an Elder Cap, the Rot Den, Smothers and Rot Mind, Seeders, finding unseen Mutes',
+    brief: 'The Chorus has Mutes in the Bloom, which nobody sees without a detector, and a Bell at the crack. Ripen the Mother Cap into an Elder Cap (N at the Cap, with a Warren standing): that opens the second tier. Grow a Rot Den. A Smother spends energy on Rot Mind (E), which takes an enemy body for twelve seconds (not a huge one). Take the Bell with it. A Puffball, or a Drifter ripened into a Lookout Sac, shows the Mutes.',
+    allow: G5, units: ['grazer', 'snapper', 'quillback', 'blister', 'keeper', 'smother', 'seeder'], raids: false, auto: false,
+    objectives: [
+      { text: () => 'Ripen the Mother Cap into an Elder Cap (N at the Cap)', done: g => g.ownB('eldercap', true, me(g)).length > 0 },
+      { text: () => 'Grow a Rot Den, a Smother and a Seeder', done: g => nB(g, 'rotden') > 0 && nU(g, 'smother') > 0 && nU(g, 'seeder') > 0 },
+      { text: () => 'Take the Veyl Bell with Rot Mind (E, as a Smother)', done: g => !!g.ms.c_mind },
+      { text: g => `Kill the Mutes in the Bloom (${left(g, 'mute')} left)`, done: g => !left(g, 'mute') },
+    ],
+    setup: g => {
+      hush(g, SIDE.home);
+      const [hx, hz] = homeOf(g, SIDE.out), mutes: Unit[] = []; for (let i = 0; i < 4; i++) { const u = g.spawn(vk('mute', 'cantor'), SIDE.home, hx + 24 * Math.cos(i * 1.6), hz + 24 * Math.sin(i * 1.6)); hide(u); u.order = { type: 'guard', x: u.pos.x, z: u.pos.z }; mutes.push(u); } track(g, 'mute', mutes);
+      const c = roadPt(ROAD.len * .52, 34), w = g.spawn(vk('bell', 'lancer'), SIDE.home, c[0], c[1]); w.order = { type: 'guard', x: c[0], z: c[1] };
+    },
+    tick: (g, s, dt) => {
+      s.t0 = (s.t0 || 0) + dt; usedAb(g, s, 'mind');
+      once(g, s, 'l1', s.t0 > 3, MO, 'Something keeps cutting Grazers in half out there and I can\'t see what. I\'m not paying out on that.');
+      once(g, s, 'l2', g.ownB('eldercap', true, me(g)).length > 0, GL, 'WE ARE OLDER NOW. OLDER THINGS GROW HERE.');
+      once(g, s, 'l3', nU(g, 'seeder') > 0, MO, 'The Seeder throws husks. They bite once and fall over. Like my brother-in-law.');
+      once(g, s, 'l4', !!s.c_mind, H5, 'THE BELL IS RINGING AT US. WHAT DID YOU DO TO IT.', 'al');
+      // The Mutes go for the Grazers on the field from the third minute; the Chorus pushes every four minutes after the sixth.
+      if (!s.hunt && s.t0 > 180) { s.hunt = 1; for (const u of watched.get(g)?.mute || []) if (u.alive) { const [x, z] = homeOf(g, me(g)); u.order = { type: 'raid', x, z }; } }
+      if (s.t0 > (s.next || 360)) { s.next = s.t0 + 240; s.n = (s.n || 0) + 1; send(g, SIDE.home, ([] as Kind[]).concat(...Array(1 + s.n).fill(['cantor', 'cantor', 'lancer', 'lancer'])), 'w'); }
+    },
+    outro: 'The Mutes are dead and the Bell is rolling about with no idea what happened to it. The Gloam has grown its second tier.',
+  }),
+  job(29, 3, {
+    name: 'What It Remembers', side: 2, foe: 1, map: 24, diff: 1, dusk: DAY, teaches: 'The Tusk Hollow, Mulchers and their charge, Keepers and Spore Pods, the Shell Pit and Lobbers, the Overgrowth (G), Swarm Lead plans',
+    brief: 'First Stone, large. The oldest Veyl site on Tithe sits behind the yard end, past two old glass walls across the road. Your Cap is an Elder Cap already. A Keeper plants Spore Pods (E), which carry the Bloom with them; the Bloom has to reach the walls before anything can grow there. Grow a Tusk Hollow and send Mulchers through the walls. A Shell Pit grows Shellbacks, which ripen into Lobbers (R) once Lobber Ripening is learned. Then get a Mulcher to the First Stone. The Overgrowth builds for you on this job (G), and the Swarm Lead pitches plans.',
+    allow: G6, units: [...GLOAM_UNITS.filter(k => !['gnatwing', 'bloater', 'hooksail', 'sower'].includes(k))], raids: false, auto: true,
+    objectives: [
+      { text: () => 'Plant a Spore Pod with a Keeper (E)', done: g => nB(g, 'sporepod') > 0 },
       { text: () => 'Grow a Tusk Hollow', done: g => nB(g, 'tuskhollow') > 0 },
+      { text: () => 'Ripen a Shellback into a Lobber (R)', done: g => nU(g, 'lobber') > 0 },
       { text: g => `Break through the glass walls (${Math.min(6, propDown(g, 'Glass wall'))}/6 sections)`, done: g => propDown(g, 'Glass wall') >= 6 },
       { text: () => 'Get a Mulcher to the First Stone', done: g => g.ms.stone === 1 },
     ],
-    setup: g => { hush(g, SIDE.home, 420); },
+    setup: g => { hush(g, SIDE.home, 420); elder(g); },
     tick: (g, s, dt) => {
       s.t0 = (s.t0 || 0) + dt;
       if (g.own('mulcher', me(g)).some(u => near(u, -40, -4, 16))) s.stone = 1;
       once(g, s, 'l1', nU(g, 'mulcher') > 0, MO, 'Swarm Lead here. Straight through the wall. Z for yes. Old habits.');
+      once(g, s, 'l1b', nU(g, 'lobber') > 0, MO, 'The Lobber throws its sac over walls. Point at the spot and it lands there. Mostly.');
       once(g, s, 'l2', propDown(g, 'Glass wall') >= 3, GL, 'THE WALLS ARE OLD. THEY WERE SUNG OVER US. WE REMEMBER THE SINGING.');
       once(g, s, 'l3', !!s.stone, GL, 'THIS IS WHAT HAPPENED BEFORE THE GLASS.');
     },
     outro: 'At the First Stone the Gloam showed you what happened nine hundred years ago. It was on the surface first.',
     cutOut: ['beforeglass'],
   }),
-  job(28, 3, {
-    name: 'Spore Season', side: 2, foe: 0, map: 25, diff: 2, dusk: NIGHT, charter: 'home', teaches: 'Everything Gloam on a large map',
-    brief: 'Drill Site, large, at night. Charter Security has built a drill tower on the Glass Flats, and the hole under it goes deeper than any seam. Break the tower, then root a Mother Cap on the shaft so the Bloom reaches open sky.',
-    allow: GLOAM_ALL.concat(['mothercap']), units: GLOAM_UNITS, raids: false, auto: true,
+  job(30, 3, {
+    name: 'Wings', side: 2, foe: 0, map: 20, diff: 1, dusk: DUSK, charter: 'home', teaches: 'The Wing Spire, Gnatwings and Bloaters, uprooting a Spore Sac into a Drifter, Belly Sacs and carrying bodies',
+    brief: 'Charter Security has a drill on the island south of the road, with Gadflies over it. Your Cap is an Elder Cap already. Grow a Wing Spire for Gnatwings, which bite anything, and Bloaters, which only hit fliers. Clear the Gadflies. A Spore Sac can pull up its roots and float off as a Drifter (N at the Sac); with Belly Sacs learned at the Cap it takes on eight beds of bodies (E) and lets them out (C). Carry four bodies to the island and break the drill.',
+    allow: G7, units: GLOAM_UNITS.filter(k => !['hooksail', 'sower'].includes(k)), raids: false, auto: false,
     objectives: [
+      { text: () => 'Grow a Wing Spire', done: g => nB(g, 'wingspire') > 0 },
+      { text: g => `Shoot down the Gadflies over the island (${left(g, 'sky')} left)`, done: g => g.ms.sky === 1 && !left(g, 'sky') },
+      { text: () => 'Float a Spore Sac off as a Drifter and learn Belly Sacs', done: g => nU(g, 'drifter') > 0 && !!g.upOf(me(g)).gbelly },
+      { text: () => 'Let four bodies out of a Drifter on the island (C)', done: g => !!g.ms.landed },
+      { text: g => `Break the Charter drill on the island (${standing(g, 'drill')} left)`, done: g => !standing(g, 'drill') },
+    ],
+    setup: g => {
+      hush(g, SIDE.home); elder(g);
+      const [ix, iz] = ISLE; outpost(g, SIDE.home, ix, iz, ['pumpjack', 'watchpost'], ['linesman', 'linesman', 'longshot'], 'drill');
+      const fl: Unit[] = []; for (let i = 0; i < 4; i++) { const u = g.spawn('gadfly', SIDE.home, ix + (i % 2) * 4 - 2, iz + Math.floor(i / 2) * 4 - 2); u.order = { type: 'guard', x: ix, z: iz }; fl.push(u); } track(g, 'sky', fl); g.ms.sky = 1;
+    },
+    tick: (g, s, dt) => {
+      s.t0 = (s.t0 || 0) + dt; castNear(g, s, 'drop', ISLE, 20);
+      if (s.c_drop_isle && g.units.filter(u => u.alive && u.team === me(g) && !u.air && !u.inside && near(u, ISLE[0], ISLE[1], 20)).length >= 4) s.landed = 1;
+      once(g, s, 'l1', s.t0 > 3, MO, 'An island. They put it on an island. Like that ever stopped anybody with wings.');
+      once(g, s, 'l2', nU(g, 'drifter') > 0, GL, 'THE SAC LETS GO OF THE GROUND. THE WIND TAKES IT WHERE WE LOOK.');
+      once(g, s, 'l3', !!s.landed, QM, '(Charter Security channel) Biological liability on the island. Raise a claim against the weather.', 'al');
+      if (s.t0 > (s.next || 300) && standing(g, 'drill')) { s.next = s.t0 + 240; s.n = (s.n || 0) + 1; send(g, SIDE.home, ([] as Kind[]).concat(...Array(1 + s.n).fill(['linesman', 'linesman', 'breacher', 'gadfly'])), 'w'); }
+    },
+    outro: 'The drill is in the sea. Moss says he had money on the Drifter sinking, and it didn\'t, and he\'s not happy about it.',
+  }),
+  job(31, 3, {
+    name: 'Deep Roots', side: 2, foe: 1, map: 1, diff: 1, dusk: .35, teaches: 'The Deep Root and Tunnel Roots, high ground, the Ancient Cap, Needlers',
+    brief: 'The Chorus holds the ledge over the canyon road, and nobody climbs up it on foot. Your Cap is an Elder Cap already. Grow a Deep Root: it grows a Tunnel Root at any spot your side can see right now, and bodies walk in one end and out of the other. Fly a Gnatwing or a Drifter over the ledge so you can see it, grow a Tunnel Root on the top and send six bodies through. Then ripen the Cap into an Ancient Cap (it needs a Rot Den) and ripen two Quillbacks into Needlers at a Needle Den. Hold the ledge.',
+    allow: G8, units: GLOAM_UNITS.filter(k => !['sower'].includes(k)), raids: false, auto: false,
+    objectives: [
+      { text: () => 'Grow a Deep Root', done: g => nB(g, 'deeproot') > 0 },
+      { text: () => 'Grow a Tunnel Root on top of the ledge', done: g => g.ownB('tunnelroot', true, me(g)).some(b => near(b, LEDGE[0], LEDGE[1], 14) && TR.h(b.pos.x, b.pos.z) > 2) },
+      { text: g => `Send six bodies through onto the ledge (${Math.min(6, onLedge(g))}/6)`, done: g => onLedge(g) >= 6 },
+      { text: () => 'Ripen the Cap into an Ancient Cap', done: g => g.ownB('ancientcap', true, me(g)).length > 0 },
+      { text: g => `Ripen two Quillbacks into Needlers (${Math.min(2, g.ms.needlers || 0)}/2)`, done: g => (g.ms.needlers || 0) >= 2 },
+      { text: g => `Hold the ledge (${mmss(150 - (g.ms.hold || 0))})`, done: g => (g.ms.hold || 0) >= 150 },
+    ],
+    setup: g => { hush(g, SIDE.home); elder(g); const [lx, lz] = LEDGE; outpost(g, SIDE.home, lx, lz, [], ['lancer', 'lancer', 'lancer', 'cantor', 'cantor'], 'top'); },
+    tick: (g, s, dt) => {
+      s.t0 = (s.t0 || 0) + dt; s.needlers = Math.max(s.needlers || 0, nU(g, 'needler'));
+      const hold = onLedge(g) >= 4 && (s.needlers || 0) >= 2 && g.ownB('ancientcap', true, me(g)).length > 0; held(s, 'hold', dt, hold);
+      once(g, s, 'l1', s.t0 > 3, MO, 'Up there is where they shoot from. Down here is where we get shot. I\'d rather be up there.');
+      once(g, s, 'l2', nB(g, 'deeproot') > 0, GL, 'UNDER THE ROCK THERE IS ALWAYS A WAY. WE KNOW ALL OF THEM.');
+      once(g, s, 'l3', onLedge(g) > 0, H5, 'THE GLOAM IS ON THE LEDGE. IT CAME UP OUT OF THE ROCK. THAT IS NOT FAIR.', 'al');
+      if (s.t0 > (s.next || 420)) { s.next = s.t0 + 180; s.n = (s.n || 0) + 1; send(g, SIDE.home, ([] as Kind[]).concat(...Array(1 + s.n).fill(['cantor', 'cantor', 'lancer', 'lancer'])), 'w'); }
+    },
+    outro: 'The ledge is Gloam now. From up there the crack looks small.',
+  }),
+  job(32, 3, {
+    name: 'Spore Season', side: 2, foe: 0, map: 25, diff: 2, dusk: NIGHT, charter: 'home', teaches: 'Everything Gloam on a large map, the Tall Spire, Sowers and Hooksails',
+    brief: 'Drill Site, large, at night. Charter Security has built a drill tower on the Glass Flats, and the hole under it goes deeper than any seam. Your Cap is an Elder Cap already. Ripen it into an Ancient Cap and grow a Hooksail, which drags bodies to it, or ripen a Wing Spire into a Tall Spire and a Bloater into a Sower, which drops Pups. Break the tower, then root a Mother Cap on the shaft so the Bloom reaches open sky.',
+    allow: GLOAM_ALL, units: GLOAM_UNITS, raids: false, auto: true,
+    objectives: [
+      { text: () => 'Ripen the Cap into an Ancient Cap, then grow a Hooksail or a Sower', done: g => g.ownB('ancientcap', true, me(g)).length > 0 && nU(g, 'hooksail') + nU(g, 'sower') > 0 },
       { text: () => 'Break the Charter drill tower', done: g => !propUp(g, 'Drill tower') },
       { text: () => 'Root a Mother Cap by the shaft', done: g => g.ms.sky === 1 },
     ],
-    setup: g => { hush(g, SIDE.home, 300); },
+    setup: g => { hush(g, SIDE.home, 300); elder(g); },
     tick: (g, s, dt) => {
       s.t0 = (s.t0 || 0) + dt; const [tx, tz] = roadPt(ROAD.len * .3, -30);
       once(g, s, 'l1', s.t0 > 60, QM, 'Charge depth reached. Thank you for your patience.', 'al');
       once(g, s, 'l2', s.t0 > 80, MO, 'Go on. This one\'s even money and I\'m in for everything.');
-      if (!propUp(g, 'Drill tower') && g.ownB('mothercap', false, me(g)).some(b => Math.hypot(b.pos.x - tx, b.pos.z - tz) < 34)) s.sky = 1;
+      if (!propUp(g, 'Drill tower') && caps(g).some(b => Math.hypot(b.pos.x - tx, b.pos.z - tz) < 34) && g.ownB('ancientcap', true, me(g)).length > 0) s.sky = 1;
       once(g, s, 'l3', !propUp(g, 'Drill tower'), AL, 'The asset will be liquidated in line with Clause 9. Kind regards.', 'al');
+      // Charter Security pushes at the Bloom every four minutes from the eighth.
+      if (s.t0 > (s.next || 480)) { s.next = s.t0 + 240; s.n = (s.n || 0) + 1; send(g, SIDE.home, ([] as Kind[]).concat(...Array(1 + s.n).fill(['linesman', 'linesman', 'breacher', 'longshot', 'dustbike'])), 'w'); }
     },
     outro: 'The Bloom has open sky. Under the drill site you found what Clause 9 is: a bomb under the glass, big enough to crack the basin open.',
     cutOut: ['clause9'],
   }),
 ];
+/** The player's Mother Caps, Elder Caps and Ancient Caps. */
+const caps = (g: Game, builtOnly = false) => g.buildings.filter(b => b.alive && b.team === me(g) && (!builtOnly || b.built) && (b.kind === 'mothercap' || b.kind === 'eldercap' || b.kind === 'ancientcap'));
+/** Starts the player's first Cap as an Elder Cap (the later Gloam jobs). */
+const elder = (g: Game) => { const c = g.ownB('mothercap', true, me(g))[0]; if (c) g.rebuild(c, 'eldercap'); };
+/** The player's bodies dug in on the middle of the road (from 30% to 70% of the way along it, within 10 m of it). */
+const dugOnRoad = (g: Game) => g.units.filter(u => { if (!u.alive || u.team !== me(g) || !isDug(u)) return false; const dx = u.pos.x - ROAD.x, dz = u.pos.z - ROAD.z, a = dx * ROAD.dx + dz * ROAD.dz; return a > ROAD.len * .3 && a < ROAD.len * .7 && Math.abs(dx * ROAD.dz - dz * ROAD.dx) < 10; }).length;
+/** The player's ground bodies on top of the ledge over the Switchback road. */
+const onLedge = (g: Game) => g.units.filter(u => u.alive && u.team === me(g) && !u.air && !u.inside && near(u, LEDGE[0], LEDGE[1], 14) && TR.h(u.pos.x, u.pos.z) > 2).length;
 
 // ================================================================ Act 4: Or Else
 const ACT4: Mission[] = [
-  job(29, 4, {
+  job(33, 4, {
     name: 'Old Opening', side: 0, foe: 0, map: 21, diff: 1, dusk: NIGHT, charter: 'out', teaches: 'Anti-air: Flak Towers, Flak Kites and the Gantry\'s flak mode; the Surveyor as a flying detector; Ironhold against Ironhold',
     brief: 'Pim\'s receiver pulled your mind out of the Gloam and into a Rigger. Charter Security holds the old Veyl end of Switchback, and the Quartermaster runs it with the build orders you used in Act 1, plus Gadflies: gunships that hide in smoke. A Flak Tower shoots fliers and sees hidden ones near it. Flak Kites are fliers that only shoot fliers. A Gantry can press T to swap its cannons for flak. A Surveyor flies over the fight and sees hidden bodies around it. Shoot down the Charter\'s fliers, then break every Charter Headframe.',
     allow: IRON_ALL, units: IRON_UNITS, raids: false, auto: false, cutIn: ['receiver'],
@@ -881,7 +1011,7 @@ const ACT4: Mission[] = [
     },
     outro: 'Switchback is the crew\'s again. The Quartermaster lost to its own copy of your opening, and its gunships are scrap in the canyon.',
   }),
-  job(30, 4, {
+  job(34, 4, {
     name: 'Needle\'s Eye Road', side: 1, foe: 0, map: 0, diff: 1, dusk: DUSK, charter: 'home', teaches: 'The Warden as your own body, dropping the arch from the other side',
     brief: 'Charter Security is marching up the Needle\'s Eye road. Held Fifth\'s Chorus is holding it to protect the yard it planned to bury. Jump into a Warden, hold the road through three columns, and bring the arch down on one of them.',
     allow: [...VEYL_ALL, 'choir'], units: VEYL_UNITS, raids: false, auto: true,
@@ -902,10 +1032,10 @@ const ACT4: Mission[] = [
     },
     outro: 'The road held. Held Fifth fought for the yard it meant to bury.',
   }),
-  job(31, 4, {
+  job(35, 4, {
     name: 'Rig Breakers', side: 2, foe: 0, map: 25, diff: 1, dusk: NIGHT, charter: 'home', teaches: 'Three objectives at once with the Swarm Lead',
     brief: 'Three Deep Charge rigs stand on the far fields of the Drill Site. Break all three before Charter Security arms the charge. The Swarm Lead (Moss) will pitch pushes. Split the swarm or move fast.',
-    allow: GLOAM_ALL.concat(['mothercap']), units: GLOAM_UNITS, raids: false, auto: true, clockLabel: 'Charge armed in',
+    allow: GLOAM_ALL, units: GLOAM_UNITS, raids: false, auto: true, clockLabel: 'Charge armed in',
     objectives: [
       { text: g => `Break the Deep Charge rigs (${propUp(g, 'Deep Charge rig')} standing)`, done: g => !propUp(g, 'Deep Charge rig') },
     ],
@@ -919,7 +1049,7 @@ const ACT4: Mission[] = [
     outro: 'All three rigs are wrecked and the charge can\'t be armed from here. Moss is staying with the Gloam.',
     fail: 'The charge is armed.', cutOut: ['mossstays'],
   }),
-  job(32, 4, {
+  job(36, 4, {
     name: 'Fourteen Twenty', side: 0, foe: 0, map: 20, diff: 2, dusk: .62, charter: 'home', out: true, noHq: false, teaches: 'Everything, against the clock',
     brief: 'Needle\'s Eye, large, at sunset. Charter Security holds the yard, and the Quartermaster is inside the first Headframe, the one where you banked your first ore. The detonation order lands in forty minutes and nothing can stop it. Break that Headframe before it lands, so nobody is left to carry the order out.',
     allow: IRON_ALL, units: IRON_UNITS, raids: false, auto: false, clockLabel: 'Order lands in',
@@ -958,9 +1088,9 @@ const SIDES: Mission[] = [
     objectives: [{ text: g => `Silence the other Chorus (${hq(g, them(g)).length} Stones left)`, done: g => !hq(g, them(g)).length }],
     tick: (g, s, dt) => { s.t0 = (s.t0 || 0) + dt; once(g, s, 'l1', s.t0 > 3, H5, 'THEY SING THE SAME SONG AS US, TOO SOON. STOP THEM.'); },
     outro: 'The other Chorus has stopped singing. The yard is still above the glass.' },
-  { name: 'Rot', tag: 'Side job', act: 0, opens: 27, side: 2, foe: 2, out: true, map: 3, diff: 1, dusk: .4, teaches: 'Gloam against Gloam',
+  { name: 'Rot', tag: 'Side job', act: 0, opens: 31, side: 2, foe: 2, out: true, map: 3, diff: 1, dusk: .4, teaches: 'Gloam against Gloam',
     brief: 'An older, sour patch of Gloam doesn\'t want to share the sky. Squash every one of its Mother Caps.',
-    allow: GLOAM_ALL.concat(['mothercap']), units: GLOAM_UNITS, raids: false, auto: true,
+    allow: GLOAM_ALL, units: GLOAM_UNITS, raids: false, auto: true,
     objectives: [{ text: g => `Squash the old Mother Caps (${hq(g, them(g)).length} left)`, done: g => !hq(g, them(g)).length }],
     tick: (g, s, dt) => { s.t0 = (s.t0 || 0) + dt; once(g, s, 'l1', s.t0 > 3, MO, 'This lot has been down there longer than we have. They smell like old socks.'); },
     outro: 'The sour patch is mulch. The Bloom on this side is yours.' },

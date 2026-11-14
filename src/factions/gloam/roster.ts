@@ -152,7 +152,7 @@ export function spineLine(g: Game, u: Unit, yaw: number, len: number, by: Unit |
   for (const o of g.units) { if (!o.alive || !isEnemy(o.team, u.team) || o.air || o.inside) continue; const dx = o.pos.x - u.pos.x, dz = o.pos.z - u.pos.z, along = dx * fx + dz * fz, side = Math.abs(dx * fz - dz * fx); if (along < 0 || along > len + UNIT[o.kind].rad || side > N.width + UNIT[o.kind].rad * .6) continue; g.damage(o, dmg + (UNIT[o.kind].tags?.includes('plated') ? N.plated : 0), by); n++; }
   for (const b of g.buildings) { if (!b.alive || !isEnemy(b.team, u.team)) continue; for (let s = 1; s <= len; s += 1.5) if (g.distToBox(b, u.pos.x + fx * s, u.pos.z + fz * s) < .6) { g.damage(b, dmg, by); n++; break; } }
   if (!g.noRender) for (let s = 1.2; s <= len; s += 1.4) g.puff(TMP.set(u.pos.x + fx * s, .3, u.pos.z + fz * s), 1, .5, M.dust, 1.4, .4, .35);
-  g.tracer(V3(u.pos.x + fx, .2, u.pos.z + fz), V3(u.pos.x + fx * len, .5, u.pos.z + fz * len), spineMat, .16); if (g.vol(u.pos) > .1) sfx.slash(g.vol(u.pos)); u.swing = 1;
+  g.tracer(V3(u.pos.x + fx, .2, u.pos.z + fz), V3(u.pos.x + fx * len, .5, u.pos.z + fz * len), spineMat, .16); g.look('gfire', u.pos.x + fx, .2, u.pos.z + fz, u.pos.x + fx * len, .5, u.pos.z + fz * len); if (g.vol(u.pos) > .1) sfx.slash(g.vol(u.pos)); u.swing = 1;
   return n;
 }
 /** Smother: keeps behind the swarm and casts (abilities.ts); runs from anything that reaches it. */
@@ -195,14 +195,14 @@ export function gnatBite(g: Game, u: Unit, t: Unit | Building, by: Unit | null =
   spitAt(g, u, t, base, acidMat, 0);
   for (const k of N.jump) {
     let next: Unit | null = null, bd = N.jumpR; for (const o of g.units) { if (!o.alive || !isEnemy(o.team, u.team) || hit.has(o) || o.inside) continue; const d = Math.hypot(o.pos.x - cur.pos.x, o.pos.z - cur.pos.z); if (d < bd) { bd = d; next = o; } }
-    if (!next) break; hit.add(next); g.tracer(V3(cur.pos.x, 1, cur.pos.z), V3(next.pos.x, UNIT[next.kind].bodyY + (next.alt || 0), next.pos.z), acidMat, .08); g.damage(next, base * k, by); cur = next;
+    if (!next) break; hit.add(next); g.tracer(V3(cur.pos.x, 1, cur.pos.z), V3(next.pos.x, UNIT[next.kind].bodyY + (next.alt || 0), next.pos.z), acidMat, .08); g.look('gbite', cur.pos.x, 1, cur.pos.z, next.pos.x, UNIT[next.kind].bodyY + (next.alt || 0), next.pos.z); g.damage(next, base * k, by); cur = next;
   }
   if (g.vol(u.pos) > .1) sfx.hit();
 }
 /** Bloater: hunts fliers only. Its spit leaves Acid that makes every hit on the body land 2 harder for 10 s. */
 function aiBloater(g: Game, u: Unit, dt: number) {
   const B = G2.bloater;
-  aiRanged(g, u, dt, { range: B.range, cd: B.cd, dmg: (g, u) => B.spit * gMul(g, u.team, 'bloater'), mat: acidMat, y: 0, onHit: (_g, _u, t) => { if (isUnit(t)) ACID.set(t.id, B.acid.t); } });
+  aiRanged(g, u, dt, { range: B.range, cd: B.cd, dmg: (g, u) => B.spit * gMul(g, u.team, 'bloater'), mat: acidMat, y: 0, onHit: (_g, u, t) => { if (isUnit(t)) ACID.set(t.id, B.acid.t); g.look('gacid', u.pos.x, (u.alt || 0) + .4, u.pos.z, t.pos.x, isUnit(t) ? UNIT[t.kind].bodyY + (t.alt || 0) : 2, t.pos.z); } });
 }
 /** Sower: hangs over a foe out of reach of short guns and drops a Pup on it every 1.8 s. */
 function aiSower(g: Game, u: Unit, dt: number) {
@@ -219,7 +219,7 @@ function aiSower(g: Game, u: Unit, dt: number) {
 export function dropPup(g: Game, u: Unit, t: Unit | Building | { pos: THREE.Vector3 }) {
   const S = G2.sower, x = t.pos.x + R(-1, 1), z = t.pos.z + R(-1, 1), p = g.spawn('pup', u.team, x, z); giveLife(g, p, S.life);
   p.order = { type: 'amove', x, z }; if ('alive' in t) p.target = t as Unit | Building;
-  g.tracer(V3(u.pos.x, (u.alt || 0) + 1, u.pos.z), V3(x, .4, z), bileMat, .1); g.puff(TMP.set(x, .3, z), 3, .6, M.gS, .4);
+  g.tracer(V3(u.pos.x, (u.alt || 0) + 1, u.pos.z), V3(x, .4, z), bileMat, .1); g.look('gdrop', u.pos.x, (u.alt || 0) + 1, u.pos.z, x, 0, z); g.puff(TMP.set(x, .3, z), 3, .6, M.gS, .4);
   if ('alive' in t && (t as Unit).alive) g.damage(t as Unit | Building, S.land * gMul(g, u.team, 'sower'), u);
   u.swing = 1; if (g.vol(u.pos) > .1) sfx.throw();
 }

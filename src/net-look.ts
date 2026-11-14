@@ -45,3 +45,12 @@ export const CASTERS = new WeakMap<any[], Unit>();
 
 // A building lifted off to fly (src/core/air.ts): every screen eases it up and down itself, once it knows.
 defineBuildingLook({ key: 'air', get: (_g, b) => (b.air ? 1 : 0), set(_g, b, v) { b.air = !!v; } });
+
+// ---------------------------------------------------------------- one-off effects
+// A hit's own look that is not a cast (a Needler's line of spines, a Gnatwing's bite jumping on): the rules call g.look(key, numbers)
+// where it lands; offline it plays at once, and on a host the numbers go out as an 'lk' event to every screen that can see the spot
+// (the first three numbers are a point x, y, z; the next three, if there, a second one). A faction defines what each key draws.
+export type FxLook = (g: Game, n: number[]) => void;
+const FX = new Map<string, FxLook>();
+export function defineFxLook(key: string, f: FxLook) { FX.set(key, f); }
+export function playFxLook(g: Game, key: string, n: number[]) { const f = FX.get(key); if (f) try { f(g, n); } catch (e) { /* a look never stops the game */ } }

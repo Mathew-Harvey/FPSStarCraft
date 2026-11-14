@@ -1,6 +1,6 @@
 // The simulation and the player: entities, combat, effects, the first-person bodies,
 // and jumping between them. Strategy (economy AI, raids, squad plans) lives in director.ts.
-import { DEATHS } from './net-look';
+import { DEATHS, playFxLook } from './net-look';
 import * as THREE from 'three';
 import { Pipeline, ViewPipe, V3, M, G, R, mk, setLayer, L_FX, L_SELF, holoOK, holoBad, ringMat, tracerMat, makeSky, heldMaterial, makeCone, CONEU, SHARED } from './gfx';
 import * as MD from './models';
@@ -305,7 +305,7 @@ export class Game {
   foeK(team: number) { return this.human[team] ? 1 : this.diff.enemy; }
   gunMul(team: number, cat?: string) { const m = levelMul(this, team, 'atk', cat); return fac(team) ? m : m * (this.eco ? this.foeK(team) : 1); }
   /** With a full economy the Veyl pay for every body, so each one the AI drives is worth more than a free raider: it takes less from each hit and hits harder. */
-  vBoost = { hp: 1.65, dmg: 1.45 };
+  vBoost = { hp: 1.45, dmg: 1.3 };   // balance (L) round 1: was 1.65 / 1.45; Cantors beat every same-cost army but Dustbikes
   armorMul(team: number, cat?: string) { return levelMul(this, team, 'arm', cat); }
   /** What a Veyl body's hit is worth: the shift on a bot side, and the songs the Chorus has learned. */
   vMul(team: number) { return this.foeK(team) * (this.eco ? this.gunMul(team) * this.vBoost.dmg : 1); }
@@ -364,6 +364,9 @@ export class Game {
   moveTo(u: Unit, x: number, z: number, dt: number, stop = .4, mul = 1) {
     const w = T.via(u, x, z); if (w) { x = w[0]; z = w[1]; stop = 0; }   // terrain (J): to another level by way of a ramp; never 'arrived' on the way
     const dx = x - u.pos.x, dz = z - u.pos.z, d = Math.hypot(dx, dz); if (d < stop) return true;
+    // Standing exactly on a ramp waypoint (stop is 0 then) used to divide by zero: the body's position went NaN, and every body that steered by it
+    // (a Listener follows its army's middle) followed it into NaN. A winning army lost most of its bodies that way and matches ran to the time limit.
+    if (d < 1e-6) return !w;
     const st = Math.min(d, u.speed * mul * this.pace(u) * dt); u.pos.x += dx / d * st; u.pos.z += dz / d * st; u.yaw = Math.atan2(dx, dz); u.moving = true; this.collide(u, x, z); return false;
   }
   /** Follows the unit's order, walking any waypoints first. Returns true on arrival. */
@@ -376,6 +379,8 @@ export class Game {
   feed(who: string, msg: string, cls = '', team = -1) { if (this.evq) { this.evq.push(['fd', who, msg, cls, this.feedTo, team]); return; } if (team >= 0 && team !== this.myTeam) return; this.hud.feed(who, msg, cls); if (!this.noRender) babble(who, msg.length); }
 
   // ------------------------------------------------------------ effects
+  /** A hit's own look, for show only (src/net-look.ts defineFxLook): drawn here, or sent to every screen that can see it. */
+  look(key: string, ...n: number[]) { if (this.evq) { this.evq.push(['lk', key, ...n.map(r1)]); return; } if (!this.noRender) playFxLook(this, key, n); }
   tracer(a: THREE.Vector3, b: THREE.Vector3, mat: THREE.Material = tracerMat, w = .07) {
     if (this.evq) { this.evq.push(['tr', r1(a.x), r1(a.y), r1(a.z), r1(b.x), r1(b.y), r1(b.z), mat === tracerMat ? 0 : 1, w]); return; }
     if (this.net && !this.applying) this.net.cmd('tr', r1(a.x), r1(a.y), r1(a.z), r1(b.x), r1(b.y), r1(b.z), mat === tracerMat ? 0 : 1, w);

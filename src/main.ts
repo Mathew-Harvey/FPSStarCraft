@@ -3,8 +3,10 @@ import { TER, MADE } from './terrain';
 import { openMaker } from './mapmaker';
 import { usePlan, planMap } from './mapcode';
 import * as THREE from 'three';
-import { Pipeline, ViewPipe, V3, makeSky, TX, M } from './gfx';
-import { LAMP_ON } from './light';
+import { Pipeline, ViewPipe, V3, makeSky, TX, M, SHARED } from './gfx';
+import { LOD } from './meshes';
+import { plainBody } from './core/plain';
+import { LAMP_ON, LAMP_N, NOW, setLight } from './light';
 import * as MD from './models';
 import { GLOAM_BUILDINGS, bloomPatch } from './factions/gloam/look/art';
 import { Game } from './game';
@@ -22,6 +24,7 @@ import { isFriend, planTeams, type TeamPlan } from './core/sides';
 import { defineBuildings, unitRule } from './core/registry';
 import { defineAbilities } from './core/ability';
 import { artGate, artSoon } from './artgate';
+import { artHas } from './artfiles';
 import { TouchPad, TouchPref, touchDevice, touchWords } from './touch';
 import { PORTRAIT as VEYL_PORTRAIT } from './factions/veyl/look/figures';
 
@@ -57,24 +60,56 @@ function resize() {
   pipe.resize(w * sc, h * sc); hud.setSize(w, h);
 }
 
-/** Renders a small head-and-shoulders picture of each unit for the HUD. */
-function portraits() {
+/** Renders a small head-and-shoulders picture of every unit kind of all three factions for the HUD. A faction whose art has not come
+ *  yet gets pictures of its built-in stand-in shapes, so no card is ever empty, and is drawn again once its art is here (see fresh()). */
+const OLD_KINDS = ['rigger', 'linesman', 'breacher', 'gantry', 'longshot', 'patch', 'cantor', 'lancer', 'warden', 'tender', 'grazer', 'snapper', 'quillback', 'blister', 'mulcher'];
+const PORTRAIT_AS: Record<string, string> = { gantryflak: 'gantry' };
+const portraitArt = new Set<number>(); const PBOX = new THREE.Box3();
+/** The shared shader values as they stand before any match has run (taken at the first drawing), put back for each later drawing:
+ *  a match moves them every frame (rim light, mist, cloud shade), and a picture drawn under a match's values came out white. */
+let SHARED0: [any, any][] | null = null;
+const sharedSwap = (to: [any, any][]): [any, any][] => to.map(([u, v]) => { const was = (u.value as any)?.clone ? u.value.clone() : u.value; if ((u.value as any)?.copy && v?.clone) u.value.copy(v); else u.value = v; return [u, was]; });
+/** Where to aim and how far back to stand: the old fifteen keep their hand-set framing, the new Veyl use stream F's table, and the rest
+ *  are framed from their own size, the top four fifths of the body. */
+function framing(kind: Kind, obj: THREE.Object3D): { y: number; dist: number } {
+  const st = UNIT[kind], gl = st.team === 2;
+  if (OLD_KINDS.includes(kind)) return { y: st.headY * (kind === 'breacher' ? 1.0 : gl ? .8 : .97), dist: st.headY * 1.5 + (kind === 'warden' ? 2 : kind === 'mulcher' ? 3.2 : gl ? 1.3 : .3) };
+  if (VEYL_PORTRAIT[kind]) return VEYL_PORTRAIT[kind];
+  obj.updateMatrixWorld(true); PBOX.setFromObject(obj); const top = Math.max(.6, PBOX.max.y), lo = Math.max(0, PBOX.min.y), w = Math.max(PBOX.max.x - PBOX.min.x, PBOX.max.z - PBOX.min.z);
+  const span = Math.max(1.1, (top - lo) * .8, w * .55);
+  return { y: top - span * .45, dist: span / (2 * Math.tan(15 * Math.PI / 180)) * 1.05 + w * .25 };
+}
+function portraits(redo = false, only?: Kind[]) {
+  const todo = only || (Object.keys(UNIT) as Kind[]).filter(k => { const f = UNIT[k].team ?? 0; return f >= 0 && f <= 2 && (!hud.portraits[k] || (!portraitArt.has(f) && artHas([f]))); });
+  if (!todo.length) return;
   const scene = new THREE.Scene(); scene.add(makeSky());
   const cam = new THREE.PerspectiveCamera(30, 1, .1, 4000);
   pipe.resize(236, 236);
-  for (const kind of ['rigger', 'linesman', 'breacher', 'gantry', 'longshot', 'patch', 'cantor', 'lancer', 'warden', 'tender', 'grazer', 'snapper', 'quillback', 'blister', 'mulcher'] as Kind[]) {
-    const gl = UNIT[kind].team === 2, m = MD.unit(kind), st = UNIT[kind], y = st.headY * (kind === 'breacher' ? 1.0 : gl ? .8 : .97), dist = st.headY * 1.5 + (kind === 'warden' ? 2 : kind === 'mulcher' ? 3.2 : gl ? 1.3 : .3); m.obj.rotation.y = .5; scene.add(m.obj);
-    if (m.rig.flash) m.rig.flash.visible = false; if (m.rig.pack) m.rig.pack.visible = false;
-    cam.position.set(0, y + .15, dist); cam.lookAt(0, y, 0); cam.updateMatrixWorld();
+  // Every picture under the same noon light, whatever hour and weather the match before left set.
+  // and with the match's lamps off: they stand at world spots, and one near the middle of the map lit a picture white.
+  const was = { ...NOW }, lamps = LAMP_N.value; setLight(12, 'clear', 0); LAMP_N.value = 0;
+  const shared = Object.values(SHARED).filter((u: any) => u && 'value' in u && !(u.value?.isTexture) && !Array.isArray(u.value)) as any[];
+  if (!SHARED0) SHARED0 = shared.map(u => [u, u.value?.clone ? u.value.clone() : u.value]);
+  const back = sharedSwap(SHARED0);
+  // Always the near model: a 236 pixel picture is small enough that the detail switch would pick the far one (a pale shape).
+  const lodWas = LOD.force; LOD.force = 0;
+  // and no screen flash or static: the pipeline's flash is a whole-screen whiten, and on the menu it sits far above 1.
+  const pv = { flash: pipe.flash, static: pipe.static, sat: pipe.sat }; pipe.flash = 0; pipe.static = 0; pipe.sat = 1;
+  for (const kind of todo) {
+    // A kind that is another kind set up differently (the Gantry braced as flak) wears that kind's figure.
+    const as = (PORTRAIT_AS[kind] || kind) as Kind;
+    let m: MD.Model; try { m = unitRule(as).figure?.() ?? MD.unit(as); } catch { try { m = MD.unit(as); } catch { m = plainBody(kind); } }
+    m.obj.rotation.y = .5; m.obj.position.set(0, 0, 0); scene.add(m.obj);
+    if (m.rig?.flash) m.rig.flash.visible = false; if (m.rig?.pack) m.rig.pack.visible = false;
+    const P = framing(as, m.obj);
+    cam.position.set(0, P.y + .15, P.dist); cam.lookAt(0, P.y, 0); cam.updateMatrixWorld();
     pipe.draw(scene, cam, V3(0, 0, 0), 8);
     hud.portraits[kind] = canvas.toDataURL('image/jpeg', .85);
     scene.remove(m.obj);
-  }  // the new Veyl kinds: stream F's figures, framed by its PORTRAIT table (height to aim at, distance back)
-  for (const kind in VEYL_PORTRAIT) {
-    if (!UNIT[kind as Kind]) continue; let m: MD.Model; try { m = unitRule(kind as Kind).figure?.() ?? MD.unit(kind as Kind); } catch { continue; } const P = VEYL_PORTRAIT[kind]; m.obj.rotation.y = .5; scene.add(m.obj);
-    cam.position.set(0, P.y + .15, P.dist); cam.lookAt(0, P.y, 0); cam.updateMatrixWorld(); pipe.draw(scene, cam, V3(0, 0, 0), 8);
-    hud.portraits[kind] = canvas.toDataURL('image/jpeg', .85); scene.remove(m.obj);
   }
+  LOD.force = lodWas; Object.assign(pipe, pv); sharedSwap(back); setLight(was.hour, was.wx, was.w); LAMP_N.value = lamps;
+  for (const f of [0, 1, 2]) if (artHas([f])) portraitArt.add(f);
+  if (redo) resize();
 }
 
 portraits(); hud2.portraits = hud.portraits;
@@ -183,7 +218,7 @@ document.addEventListener('visibilitychange', () => { if (document.hidden) { pad
 document.addEventListener('pointerlockerror', () => { freeMouse = true; });
 document.addEventListener('pointerlockchange', () => { if (!locked() && live() && !freeMouse) pause(); });
 
-function fresh() { endSplit(); hush(); hud.reset(); reroll(); const w = want(); game.dispose(); game = new Game(pipe, hud, w.d, w.map, w.m, null, w.eco); game.sens = sens; ended = false; (window as any).__ore.game = game;
+function fresh() { portraits(true); endSplit(); hush(); hud.reset(); reroll(); const w = want(); game.dispose(); game = new Game(pipe, hud, w.d, w.map, w.m, null, w.eco); game.sens = sens; ended = false; (window as any).__ore.game = game;
   artSoon(matchFacs(), () => { if (!$('menu').hidden && game.phase !== 'play' && !game.net && !split) fresh(); }); }   // the art for sides picked in the menu comes while the player looks
 function start() { if (!artGate(matchFacs(), () => { fresh(); start(); })) return; if (mode === 'skirm' && sideI) { startVeyl(); return; } if (mode !== 'skirm' && MISSIONS[jobI].out) { startStory(MISSIONS[jobI]); return; } if (sidesCode() !== wantCode() || builtTeam !== teamKey()) fresh(); initAudio(); setVolume(vol); setMusic(mus); { const w = want(); if (game.diff !== w.d || game.mapI !== w.map || game.mission !== w.m || game.time > 0) fresh(); } $('menu').hidden = true; $('pause').hidden = true; $('end').hidden = true; hud.show(true); game.phase = 'play'; game.introT = 1.8; lock(); }
 /** The pause screen shows the whole tech tree: what is standing, what can be built next and what each building sells. */
@@ -287,6 +322,7 @@ function p2Labels() {
 /** The match a split screen or a solo Veyl run is playing: co-op, versus, or the Veyl side. */
 let splitMode: SplitMode = 'coop';
 function startSplit(how: SplitMode | boolean = splitMode) {
+  portraits(true);
   { const sm = how === true ? 'versus' : how === false ? 'coop' : how; if (!artGate(sidesWanted(sm === 'versus'), () => startSplit(how))) return; }
   splitMode = how === true ? 'versus' : how === false ? 'coop' : how; splitVs = splitMode === 'versus'; setSides(...sidesWanted(splitVs)); STORY.charter = -1; initAudio(); setVolume(vol); setMusic(mus); mode = 'skirm'; hud.reset(); hud2.reset();
   reroll(); const prev = split, m = split = new LocalMatch(playMap, diffI, 2, splitMode), mk = (i: number) => { const g = new Game(i ? view2 : view1, i ? hud2 : hud, DIFFS[diffI], playMap, null, m.seats[i], m.host.eco); g.sens = i ? 1 : sens; g.names = m.names; g.teams = m.teams; g.myTeam = m.teams[i + 1] ?? SIDE.home; g.phase = 'play'; g.introT = 1.8; return g; };
@@ -297,7 +333,7 @@ function startSplit(how: SplitMode | boolean = splitMode) {
 }
 /** A skirmish as the Veyl: the Ironhold bots run on a local host, and this screen is its only seat. */
 function startVeyl() {
-  endSplit(); splitMode = 'veyl'; splitVs = false; setWanted(); STORY.charter = -1; initAudio(); setVolume(vol); setMusic(mus); hush(); hud.reset();
+  portraits(true); endSplit(); splitMode = 'veyl'; splitVs = false; setWanted(); STORY.charter = -1; initAudio(); setVolume(vol); setMusic(mus); hush(); hud.reset();
   reroll(); const m = split = new LocalMatch(playMap, diffI, 1, 'veyl'), old = game;
   game = new Game(pipe, hud, DIFFS[diffI], playMap, null, m.seats[0], true); game.sens = sens; game.names = m.names; game.teams = m.teams; game.myTeam = SIDE.out; game.phase = 'play'; game.introT = 1.8; old.dispose(); ended = false; (window as any).__ore.game = game;
   $('menu').hidden = true; $('pause').hidden = true; $('end').hidden = true; hud.show(true); resize(); lock();
@@ -396,7 +432,7 @@ function showLobby(l: Lobby) {
 }
 /** A match starts on the server (or a replay starts in the page): the page's game becomes a copy of it. */
 function netBegin(n: Net, m: any) {
-    endSplit(); mode = 'multi'; hud.reset(); game.dispose(); usePlan(m.plan || null); setSidesCode(m.out ?? 1); setTeamGame(m.mt || null); STORY.charter = -1; game = new Game(pipe, hud, DIFFS[m.diff], m.map, null, n, !!m.eco); game.sens = sens; game.names = m.names; game.myTeam = (m.team ?? 0) >= 0 ? m.team ?? SIDE.home : SIDE.home; game.teams = m.teams || {}; if (m.ph) { game.applying = true; for (const r of m.ph) { const q = game.props[r[0]]; if (q && q.alive && q.hp > r[1]) game.damageProp(q, q.hp - r[1], null); } game.applying = false; } ended = false; (window as any).__ore.game = game;
+    portraits(true); endSplit(); mode = 'multi'; hud.reset(); game.dispose(); usePlan(m.plan || null); setSidesCode(m.out ?? 1); setTeamGame(m.mt || null); STORY.charter = -1; game = new Game(pipe, hud, DIFFS[m.diff], m.map, null, n, !!m.eco); game.sens = sens; game.names = m.names; game.myTeam = (m.team ?? 0) >= 0 ? m.team ?? SIDE.home : SIDE.home; game.teams = m.teams || {}; if (m.ph) { game.applying = true; for (const r of m.ph) { const q = game.props[r[0]]; if (q && q.alive && q.hp > r[1]) game.damageProp(q, q.hp - r[1], null); } game.applying = false; } ended = false; (window as any).__ore.game = game;
     initAudio(); setVolume(vol); setMusic(mus); $('menu').hidden = true; $('pause').hidden = true; $('end').hidden = true; hud.show(true); game.phase = 'play'; game.introT = 1.8; if (!m.watch) lock(); /* a watcher keeps the mouse for the watching bar */}
 async function mpConnect(then: (n: Net) => void) {
   artSoon([0, 1, 2]);   // any side may be picked in a lobby: fetch every faction's art while the players gather
@@ -525,5 +561,5 @@ function frame(now: number) {
   if (fast > 900 && quality < 1) { quality = Math.min(1, quality / .85); fast = 0; pipe.aa = aaFor(); pipe.ao = aoFor(); pipe.glow = pipe.shafts = glowFor(); LAMP_ON.value = (gfxI as number) !== 1; resize(); }
   requestAnimationFrame(frame);
 }
-(window as any).__ore = { MAP: () => MAP, ter: () => TER, models: MD, tx: TX, mats: M, gloamB: GLOAM_BUILDINGS, gloamBloom: bloomPatch, sounds: { ready: soundsReady, sfx }, quit, atlasUsed: MD.atlasUsed, game, start, pipe, hud, hud2, startSplit, startVeyl, pause, resume, touch: pad, setTouch, reg: { defineAbilities, defineBuildings, UNIT, BLD, isFriend }, padDrive: (p: Gamepad, dt = 1 / 30) => padDrive(game, p, 0, dt), split: () => split, game2: () => game2, setFree: (v: boolean) => { freeMouse = v; }, hold: (v: boolean) => { still = v; if (!v) { game.noRender = false; if (game2) game2.noRender = false; } }, pickMap, pickSize, setRaid: (v: boolean) => { raid = v; showSide(); if (mode === 'skirm' && builtTeam !== teamKey()) fresh(); }, pickSide: (s: number, f = 0) => { mode = "skirm"; sideI = s; foeI = s ? s - 1 : f; showSide(); fresh(); }, unlock: () => { camp = STORY_JOBS; mpOpen = true; mode = 'multi'; showMode(); }, net: () => net, pickJob: (i: number) => { mode = 'camp'; camp = Math.max(camp, Math.min(i, STORY_JOBS)); jobI = i; showMode(); fresh(); }, playCuts, cuts: CUTS, cutP, startStory: (i: number) => { mode = 'camp'; jobI = i; camp = Math.max(camp, Math.min(i, STORY_JOBS)); start(); } };
+(window as any).__ore = { MAP: () => MAP, ter: () => TER, models: MD, tx: TX, mats: M, gloamB: GLOAM_BUILDINGS, gloamBloom: bloomPatch, sounds: { ready: soundsReady, sfx }, quit, atlasUsed: MD.atlasUsed, game, start, pipe, hud, hud2, startSplit, startVeyl, pause, resume, touch: pad, setTouch, reg: { defineAbilities, defineBuildings, UNIT, BLD, isFriend }, padDrive: (p: Gamepad, dt = 1 / 30) => padDrive(game, p, 0, dt), split: () => split, game2: () => game2, setFree: (v: boolean) => { freeMouse = v; }, hold: (v: boolean) => { still = v; if (!v) { game.noRender = false; if (game2) game2.noRender = false; } }, pickMap, pickSize, portraits: (only?: Kind[]) => portraits(true, only), setRaid: (v: boolean) => { raid = v; showSide(); if (mode === 'skirm' && builtTeam !== teamKey()) fresh(); }, pickSide: (s: number, f = 0) => { mode = "skirm"; sideI = s; foeI = s ? s - 1 : f; showSide(); fresh(); }, unlock: () => { camp = STORY_JOBS; mpOpen = true; mode = 'multi'; showMode(); }, net: () => net, pickJob: (i: number) => { mode = 'camp'; camp = Math.max(camp, Math.min(i, STORY_JOBS)); jobI = i; showMode(); fresh(); }, playCuts, cuts: CUTS, cutP, startStory: (i: number) => { mode = 'camp'; jobI = i; camp = Math.max(camp, Math.min(i, STORY_JOBS)); start(); } };
 requestAnimationFrame(frame);

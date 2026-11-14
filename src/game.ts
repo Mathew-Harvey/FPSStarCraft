@@ -475,7 +475,7 @@ export class Game {
     if (this.evq) { const e = ['ku', u.id, from ? from.id : 0]; this.evq.push(e); DEATHS.set(e, u);   /* its looks are added when it is sent (K, src/net-look.ts) */ const kp = from && (from as Unit).pilot; if (kp && u.team !== from!.team && this.score[kp]) this.score[kp][0]++; }
     if (u.alive) unitRule(u.kind).dying?.(this, u, from);
     if (u.cargo?.length) spill(this, u, from); if (u.inside) { const c = u.inside; c.cargo = (c.cargo || []).filter(x => x !== u); u.inside = null; }
-    u.alive = false; const away = u.team !== SIDE.home, v = this.vol(u.pos), st = UNIT[u.kind];
+    if (u.alive) this.loseV(u.team, u.kind); u.alive = false; const away = u.team !== SIDE.home, v = this.vol(u.pos), st = UNIT[u.kind];
     this.hud.damage(V3(u.pos.x, st.headY + .4, u.pos.z), unitRule(u.kind).koWord || 'KO!', u.team !== this.myTeam ? 'ko' : 'kobad');
     u.ring.visible = false; if (u.rig.flash) u.rig.flash.visible = false; this.bodyLayer(u, false);
     R(-1, 1); R(-1, 1);   // two draws the old fall used: kept so the match's seeded random numbers run exactly as before
@@ -500,10 +500,23 @@ export class Game {
     if (!c) { if (this.craters.length < 16) { const m = new THREE.Group(); mk(G.blot, M.scorch, [0, .05, 0], [2.3, 2.3, 1], [-Math.PI / 2, 0, 0], m); for (let i = 0; i < 9; i++) { const a = i / 9 * 6.283 + R(-.2, .2); mk(G.dod, i % 3 ? M.rock : M.mesa, [Math.cos(a), .08, Math.sin(a)], [R(.3, .5), R(.14, .3), R(.24, .4)], [R(0, 3), R(0, 3), 0], m); } setLayer(m, L_FX); this.scene.add(m); c = { m, t: 0 }; this.craters.push(c); } else c = this.craters.reduce((a, b) => a.t < b.t ? a : b); }
     c.m.position.set(p.x, R(0, .02), p.z); c.m.rotation.y = R(0, 6); c.m.scale.set(r, Math.min(2.2, r * .55), r); c.m.visible = true; c.t = 150;
   }
+  /** Value (ore + Flux) each team has lost to deaths, for the points win at OVERTIME.limit. */
+  lostV: number[] = [];
+  loseV(t: number, k: Kind | BKind) { const [o, f] = costOf(k); this.lostV[t] = (this.lostV[t] || 0) + o + f; }
+  /** Ends a fair skirmish on points at OVERTIME.limit: the side (or alliance) that lost the least value wins. */
+  pointsWin() {
+    const all = multi() ? MATCH.teams : [SIDE.home, SIDE.out], lost = (t: number) => all.filter(o => isFriend(o, t)).reduce((a, o) => a + (this.lostV[o] || 0), 0);
+    const left = multi() ? MATCH.teams.filter(o => !this.outOf.includes(o)) : [SIDE.home, SIDE.out];
+    const best = left.reduce((b, t) => lost(t) < lost(b) ? t : b, left[0]);
+    this.winners = MATCH.teams.filter(o => isFriend(o, best)); this.byPoints = true;
+    this.feed('Signal', `Time. ${this.sideName(best)} win on points: they lost ${Math.round(lost(best))} worth, the rest more.`, 'al');
+    this.endT = 2.4; this.endWon = isFriend(best, this.myTeam); this.pipe.flash = 1;
+  }
+  byPoints = false;
   fallA = -1; possT = -9;
   killBuilding(b: Building) {
     if (b.cargo?.length) spill(this, b, null);
-    b.alive = false; if (b.holo) this.scene.remove(b.holo); const veyl = fac(b.team) !== 0, bad = b.team === this.myTeam, v = this.vol(b.pos);
+    if (b.alive && b.built !== false) this.loseV(b.team, b.kind); b.alive = false; if (b.holo) this.scene.remove(b.holo); const veyl = fac(b.team) !== 0, bad = b.team === this.myTeam, v = this.vol(b.pos);
     const tall = b.h > Math.max(b.hx, b.hz) * 1.9, a = this.fallA >= 0 ? this.fallA : R(0, 6.283); this.fallA = -1;
     if (this.evq) this.evq.push(['kb', b.id, Math.round(a * 100) / 100]);
     this.wrecks.push({ b, t: 0, dur: tall ? 1.5 : 1.7, tall, dx: Math.sin(a), dz: Math.cos(a), yaw: b.obj.rotation.y, puffT: 0 });
@@ -617,6 +630,7 @@ export class Game {
       if (this.endT > 0) { this.endT -= dtReal; this.shake = Math.max(this.shake, .5 * this.endT / 2.4); if (this.endT <= 0) { this.end(this.endWon); P.clear(); return; } }
       const dt = this.net ? dtReal * this.net.speed /* lobby rules (K) */ : dtReal * (this.endT > 0 ? .22 : this.tab ? .25 : this.hitStop > 0 ? .12 : 1);
       this.time += dt; this.safeT = Math.max(0, this.safeT - dt); this.jumpCd = Math.max(0, this.jumpCd - dtReal);
+      if (!this.net && this.fair && OVERTIME.limit > 0 && this.time >= OVERTIME.limit && this.endT <= 0 && this.phase === 'play') this.pointsWin();
       if (!this.net && !this.otSaid && this.overtime() > 0) { this.otSaid = true; this.feed('Signal', `Overtime. From here every building takes ${Math.round(OVERTIME.perMin * 100)}% more damage for each minute that passes, and every tower does that much less.`, 'al'); }
       if (this.staticT > 0) { this.staticT -= dtReal; if (this.staticT <= 0) this.respawn(); }
       else if (this.me?.alive && !this.tab && !this.cmd.on) this.updatePlayer(dt, P);

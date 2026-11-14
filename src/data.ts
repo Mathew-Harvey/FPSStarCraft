@@ -164,7 +164,10 @@ export const CHOIR_REACH = { m: 0 };
  *  before it breaks anything. With `start` set to a number of seconds, from then on in a match two economies fight (not a story job) every
  *  building takes `perMin` more damage for each minute that has passed and every tower does that much less to a body. In bot tables it cut
  *  the matches still undecided at 40 minutes from 10 in 80 to 5 in 80 at 18 minutes and .1, which is not enough to switch it on untested by people. */
-export const OVERTIME = { start: 0, perMin: .1 };
+/** The end rule for fair skirmishes (off while start and limit are 0). From `start` seconds every building takes `perMin` more damage for each
+ *  minute that passes and towers deal that much less. At `limit` seconds the match ends on points: the side that has lost the least value
+ *  (ore + Flux of every fighter, worker and finished building it lost) wins. The balance stream measured start 1200, perMin .2, limit 2400. */
+export const OVERTIME = { start: 0, perMin: .1, limit: 0 };
 
 export const isUnit = (t: any): t is Unit => !!t && t.rig !== undefined;
 export const isSoldier = (u: Unit) => u.kind === 'linesman' || u.kind === 'breacher' || u.kind === 'gantry' || u.kind === 'longshot' || u.kind === 'patch';

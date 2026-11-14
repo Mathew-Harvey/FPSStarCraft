@@ -549,7 +549,7 @@ def build_hooksail():
 def build_drifter():
     """A Spore Sac afloat: the ribbed bulb pulled up out of the ground, its roots hanging loose under it, two gill fins to steer by and a
     ring of glowing vents round its crown."""
-    fig = B.Figure('drifter', lo=(-2.8, -2.2, -2.8), hi=(2.8, 3.4, 2.8), paint=1536, brush=2.2)
+    fig = B.Figure('drifter', lo=(-2.8, -3.7, -2.8), hi=(2.8, 3.4, 2.8), paint=1536, brush=2.2)
     fig.group('body', (0, 0, 0))
     fig.group('halo', (0, 1.2, 0), 'body')                                                                          # the bulb: breathes
     fig.group('arms', (0, -.2, 0), 'body')                                                                          # the roots
@@ -575,6 +575,20 @@ def build_drifter():
         p0 = V(np.cos(a) * .55, 0, np.sin(a) * .55)
         roots.append(S.chain(S.bez(p0, p0 + V(np.cos(a) * .6, -.8, np.sin(a) * .6), p0 + V(np.cos(a + .6) * .3, -1.8 - (i % 3) * .2, np.sin(a + .6) * .3), 7), list(np.linspace(.13, .02, 8))))
     fig.add('roots', 'arms', 'gD', S.union(*roots), 1400, voxel=.007)
+    # what makes it more than a ball: a ragged frill skirt where it tore from the ground, spore blisters swelling through the hide on top,
+    # and three lime seed pods swinging on long cords under it (what it drops when it seeds)
+    skirt = [G.crescent_fin(C + V(np.cos(a) * 1.25, -.75, np.sin(a) * 1.2), .55 + .12 * (i % 2), .04, rot(0, -a + PI / 2, 0) @ rot(PI * .78, 0, 0), a0=-.8, a1=.8, n=5)
+             for i, a in enumerate(np.linspace(0, 2 * PI, 10)[:-1] + .15)]
+    fig.add('skirt', 'halo', 'gG', S.union(*skirt), 1600, voxel=.007, uv=('cyl', C))
+    bl = [C + V(np.cos(a) * r, np.sqrt(max(0, 1.6 ** 2 - r * r)) * .98, np.sin(a) * r) for a, r in ((.9, .95), (2.3, 1.15), (3.6, .8), (4.9, 1.2), (5.8, .6))]
+    fig.add('blisters', 'halo', 'gS', S.union(*[S.ellipsoid(q, (.24, .14, .24)) for q in bl]), 500, voxel=.006, glow=.45)
+    cords, pods = [], []
+    for a, d in ((.5, 2.4), (2.6, 2.0), (4.4, 2.7)):
+        p0 = V(np.cos(a) * .35, -.1, np.sin(a) * .35); p1 = p0 + V(np.cos(a) * .25, -d, np.sin(a) * .25)
+        cords.append(S.chain(S.bez(p0, p0 + V(np.cos(a) * .3, -d * .5, np.sin(a) * .3), p1, 6), list(np.linspace(.05, .03, 7))))
+        pods.append(G.bud(p1 + V(0, -.42, 0), .3, a)[0])
+    fig.add('cords', 'arms', 'gB', S.union(*cords), 500, voxel=.006)
+    fig.add('pods', 'arms', 'gS', S.union(*pods), 600, voxel=.006, glow=.5)
     return fig, (0, 0, .6, 6.2)
 
 
@@ -584,7 +598,7 @@ def build_lookoutsac():
     fig, _ = build_drifter()
     fig.name = 'lookoutsac'
     fig.hi = (2.8, 6.2, 2.8)
-    fig.parts = [p for p in fig.parts if p.name not in ('vents', 'ventglow')]
+    fig.parts = [p for p in fig.parts if p.name not in ('vents', 'ventglow', 'skirt', 'blisters', 'cords', 'pods')]
     C = V(0, 1.2, 0)
     fig.group('head', (0, 2.9, 0), 'body')
     st = S.chain(S.bez(C + V(0, 1.4, 0), C + V(.3, 2.8, .1), C + V(0, 4.0, .3), 10), list(np.linspace(.32, .16, 11)))

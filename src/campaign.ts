@@ -1,4 +1,4 @@
-// The story campaign: 28 jobs across four acts and three side jobs. Each job teaches part of one side and moves the story on.
+// The story campaign: 32 jobs across four acts and three side jobs. Each job teaches part of one side and moves the story on.
 // Act 1 plays the Ironhold Charter, Act 2 the Veyl, Act 3 the Gloam, and Act 4 one job for each against Charter Security.
 // Jobs where the player is at the outpost end of the map run on a hidden local host (see split.ts); the job's script runs there.
 import type { Game } from './game';
@@ -6,6 +6,8 @@ import type { BKind, Kind, Building, Unit } from './data';
 import { SIDE, FACTION, MAP, ROAD, VHOME, STORY, UNIT, roadPt, foeOf, fac } from './data';
 import { addStatus } from './core/status';
 import * as TR from './terrain';
+import { silent } from './factions/veyl/fields';
+import { setDug } from './factions/gloam/roster';
 
 export interface Objective { text: (g: Game) => string; done: (g: Game) => boolean }
 export interface Mission {
@@ -19,7 +21,7 @@ export interface Mission {
   raids: boolean; auto: boolean;
   /** Fixed light for the whole job, 0 day to 1 night. Left out, the light follows the clock as usual. */ dusk?: number;
   /** Charter Security: which end of the map wears company grey, if any. */ charter?: 'home' | 'out';
-  /** The builder cannot be switched on (job 11), weapons are locked (job 18), losing the home building does not end the job. */
+  /** The builder cannot be switched on (job 11), weapons are locked (job 21), losing the home building does not end the job. */
   lockAuto?: boolean; noFire?: boolean; noHq?: boolean;
   /** The words in front of a countdown in the goal line, when the job keeps `ms.clock`. */ clockLabel?: string;
   /** What the squad should go for when it pushes, if not the usual. */
@@ -41,7 +43,8 @@ const once = (g: Game, s: Record<string, number>, key: string, when: boolean, wh
 const nB = (g: Game, k: BKind, team = me(g)) => g.ownB(k, true, team).length;
 const nU = (g: Game, k: Kind, team = me(g)) => g.own(k, team).length;
 const army = (g: Game, team = me(g)) => g.army(team).length;
-const hq = (g: Game, team: number) => g.ownB(FACTION[team].hq, false, team);
+/** A team's home buildings, finished or not, refits and ripened Caps included (a Bastion is still a Headframe, an Elder Cap a Mother Cap). */
+const hq = (g: Game, team: number) => g.buildings.filter(b => b.alive && b.team === team && g.isHQ(b));
 const banked = (g: Game) => me(g) === SIDE.home ? g.stats.mined : g.stats.minedV;
 const upped = (g: Game, team = me(g)) => Object.values(g.upOf(team)).some(Boolean);
 const propUp = (g: Game, name: string) => g.props.filter(p => p.alive && p.name === name).length;
@@ -93,6 +96,24 @@ const mines = (g: Game) => g.units.filter(u => { if (!u.alive || u.kind !== 'sha
 /** Job 6: the top of the ledge over the Switchback canyon road (map 1). Job 10: the middle of the island south of the Needle's Eye road (map 20). */
 const LEDGE: [number, number] = [78.8, -47.6], ISLE: [number, number] = [91, -103];
 
+/** A Veyl building standing outside every song field, so it does nothing. */
+const quiet = (g: Game, b: Building) => silent(g, b);
+/** Ticks `s.c_<key>` once any body of the player's side has used an ability (its cooldown starts running when it is used). */
+const usedAb = (g: Game, s: Record<string, number>, key: string) => { if (!s['c_' + key] && g.units.some(u => u.alive && u.team === me(g) && (u.abCd?.[key] ?? 0) > 0)) s['c_' + key] = 1; return !!s['c_' + key]; };
+/** The same, but only for a body within `r` of a spot: ticks `s.c_<key>_isle`. */
+const castNear = (g: Game, s: Record<string, number>, key: string, [x, z]: [number, number], r: number) => { if (!s['c_' + key + '_isle'] && g.units.some(u => u.alive && u.team === me(g) && (u.abCd?.[key] ?? 0) > 0 && near(u, x, z, r))) s['c_' + key + '_isle'] = 1; };
+/** Counts fighters a Brood Pit sang in at a far field (Far Singing): new bodies that first show up more than 25 m from every Brood Pit.
+ *  With `at`, the ones that showed up within 20 m of that spot count in `s.isleSung` too. */
+const seenAt = new WeakMap<Game, WeakSet<Unit>>();
+const PIT_KINDS: Kind[] = ['cantor', 'lancer', 'tuner', 'mute', 'choirmaster'];
+function farSung(g: Game, s: Record<string, number>, at?: [number, number]) {
+  let seen = seenAt.get(g); if (!seen) seenAt.set(g, seen = new WeakSet());
+  const pits = g.ownB('broodpit', true, me(g));
+  for (const u of g.units) { if (!u.alive || u.team !== me(g) || seen.has(u)) continue; seen.add(u); if (!PIT_KINDS.includes(u.kind) || !pits.length || pits.some(b => near(u, b.pos.x, b.pos.z, 25))) continue; s.farSung = (s.farSung || 0) + 1; if (at && near(u, at[0], at[1], 20)) s.isleSung = (s.isleSung || 0) + 1; }
+}
+/** Puts a Gloam body under the ground, unseen and still, the way Dig In does. */
+const digIn = (g: Game, u: Unit) => { if (!setDug(g, u, true)) hide(u); };
+
 const QM = 'Quartermaster', AG = 'Aggie', MO = 'Moss', PIM = 'Pim', H5 = 'Held Fifth', PB = 'Phrasebook 3', AL = 'Abbot-Lyle', GL = 'The Gloam';
 const raiders = (g: Game) => g.units.filter(u => u.alive && u.team === 1 && u.order.type === 'raid').length;
 const own = (g: Game, k: Kind) => g.own(k).length;
@@ -102,8 +123,16 @@ const IRON_T1: BKind[] = ['bunkhouse', 'depot', 'watchpost', 'dugout', 'pumpjack
 const IRON_T3: BKind[] = [...IRON_T1, 'machineshop', 'twinbay', 'labbay', 'assay', 'flaktower', 'mast', 'foundry'];
 const IRON_ALL: BKind[] = [...IRON_T3, 'hangar', 'annex'];
 const IRON_UNITS: Kind[] = ['linesman', 'breacher', 'patch', 'sapper', 'longshot', 'dustbike', 'piledriver', 'gantry', 'hopper', 'flakkite', 'gadfly', 'surveyor', 'claimbarge'];
-const VEYL_ALL: BKind[] = ['broodpit', 'hushwell', 'thornspire', 'wardpylon', 'reedgate'];
-const VEYL_UNITS: Kind[] = ['tender', 'cantor', 'lancer', 'warden'];
+// The Veyl tree as the jobs open it up. Every building but a Choir Stone, a Hush Well and a Siphon Bell has to stand in a song field.
+const V1: BKind[] = ['choir', 'hushwell', 'siphonbell', 'broodpit', 'wardpylon', 'thornspire'];
+const V2: BKind[] = [...V1, 'reedgate', 'mendingpool'];
+const V3: BKind[] = [...V2, 'duskhall', 'quiethouse'];
+const V4: BKind[] = [...V3, 'kiln'];
+const V5: BKind[] = [...V4, 'songarchive'];
+const V6: BKind[] = [...V5, 'skyloft'];
+const V7: BKind[] = [...V6, 'tuningfork'];
+const VEYL_ALL: BKind[] = [...V7, 'highbeacon'];
+const VEYL_UNITS: Kind[] = ['tender', 'cantor', 'lancer', 'tuner', 'mute', 'choirmaster', 'warden', 'bell', 'listener', 'ferry', 'reedwalker', 'knell', 'swift', 'prism', 'omen', 'lyre', 'cantus'];
 const GLOAM_ALL: BKind[] = ['sporesac', 'warren', 'stinger', 'quillgarden', 'blisterbed', 'tuskhollow', 'oldgrowth'];
 const GLOAM_UNITS: Kind[] = ['grazer', 'snapper', 'quillback', 'blister', 'mulcher'];
 const DAY = .05, DUSK = .55, NIGHT = .85;
@@ -416,15 +445,18 @@ const ACT1: Mission[] = [
 ];
 
 // ================================================================ Act 2: Sing
+// Eleven jobs, one new piece of the Chorus each: Tenders and song fields (13), the Brood Pit and Flux (14), the Reed Gate and Far Singing (15),
+// the Ward Pylon, the Mending Pool and the Tuner (16), Mutes and unseen bodies (17), the Kiln and the Listener against dug-in Gloam (18),
+// Choirmasters and the Chord (19), fliers and the Ferry (20), no weapons (21), the Tuning Fork and high ground (22), all of it (23).
 const ACT2: Mission[] = [
   job(13, 2, {
-    name: 'Wrong Body', side: 1, foe: 2, map: 13, diff: 0, dusk: .35, teaches: 'Tenders humming ore, banking at a Choir Stone, singing buildings up, the Hush Well, shields growing back',
-    brief: 'You wake up in a Veyl Tender. Held Fifth pulled your mind into it and wants help. A Tender hums ore into its sling with the mouse button and carries it to the Choir Stone. Press 2 to sing a building up from bare ground. The Choir Stone is cracked. Tenders mend it if nothing is hitting it.',
+    name: 'Wrong Body', side: 1, foe: 2, map: 13, diff: 0, dusk: .35, teaches: 'Tenders humming ore, banking at a Choir Stone, song fields, the Hush Well, shields growing back',
+    brief: 'You wake up in a Veyl Tender. Held Fifth pulled your mind into it and wants help. A Tender hums ore into its sling with the mouse button and carries it to the Choir Stone. Press 2 to sing a building up. Every Veyl building except a Choir Stone, a Hush Well and a Siphon Bell has to stand inside a song field, the blue ring round a Choir Stone or a Hush Well. The Choir Stone is cracked. Tenders mend it if nothing is hitting it.',
     allow: ['hushwell', 'choir'], units: ['tender'], raids: false, auto: false, cutIn: ['wrongbody'],
     objectives: [
       { text: g => { const c = hq(g, me(g))[0]; return `Let the Tenders mend the Choir Stone (${c ? Math.floor(c.hp / c.maxHp * 100) : 0}%)`; }, done: g => { const c = hq(g, me(g))[0]; return !!c && c.hp >= c.maxHp * .95; } },
       { text: g => `Bank 200 ore at the Choir Stone (${Math.min(200, Math.floor(banked(g)))}/200)`, done: g => banked(g) >= 200 },
-      { text: () => 'Sing a Hush Well (press 2)', done: g => nB(g, 'hushwell') > 0 },
+      { text: () => 'Sing a Hush Well (press 2). It makes a song field of its own', done: g => nB(g, 'hushwell') > 0 },
       { text: g => `Wake eight Tenders at the Stone (${Math.min(8, nU(g, 'tender'))}/8)`, done: g => nU(g, 'tender') >= 8 },
       { text: g => g.ms.wave ? `See off the Gloam stragglers (${left(g, 'w')} left)` : 'Hold the Stone', done: g => g.ms.wave === 2 },
     ],
@@ -434,90 +466,198 @@ const ACT2: Mission[] = [
       once(g, s, 'l1', s.t0 > 2, H5, 'YOU BROKE OUR STONES. NOW YOU WILL HELP US FIX THEM. THAT IS FAIR.');
       once(g, s, 'l2', s.t0 > 14, PB, '[FREE VERSION] ORE. SLING. STONE. WALK. [WORDS LEFT THIS MONTH: 2]');
       once(g, s, 'l3', s.t0 > 60, PIM, '(on the radio, faint) Nineteen? Anybody? Is anybody on this channel?');
-      if (!s.wave && nU(g, 'tender') >= 8) { s.wave = 1; send(g, SIDE.home, ['snapper', 'snapper', 'snapper', 'snapper'], 'w'); say(g, H5, 'THE GLOAM SMELLS THE STONE GETTING WELL. TENDERS CAN FIGHT. HIT AND STEP BACK. YOUR SHIELD GROWS BACK IF NOTHING HITS IT.', 'al'); }
+      once(g, s, 'l4', nB(g, 'hushwell') > 0, H5, 'THE BLUE RING IS WHERE WE CAN HEAR EACH OTHER. A BUILDING OUTSIDE IT HEARS NOTHING AND DOES NOTHING.');
+      // Until the Chorus wakes, the Gloam tries the Stone every two and a half minutes from the sixth, a little harder each time.
+      if (!s.wave && s.t0 > (s.next || 360)) { s.next = s.t0 + 150; s.n = (s.n || 0) + 1; send(g, SIDE.home, ([] as Kind[]).concat(...Array(1 + s.n).fill(['snapper', 'snapper', 'snapper', 'quillback'])), 'early'); once(g, s, 'le', true, H5, 'THE GLOAM IS COMING FOR THE STONE AND THE CHORUS IS STILL ASLEEP. WAKE MORE TENDERS.', 'al'); }
+      if (!s.wave && nU(g, 'tender') >= 8) { s.wave = 1; send(g, SIDE.home, ['snapper', 'snapper', 'snapper', 'snapper', 'snapper', 'snapper'], 'w'); say(g, H5, 'THE GLOAM SMELLS THE STONE GETTING WELL. TENDERS CAN FIGHT. HIT AND STEP BACK. YOUR SHIELD GROWS BACK IF NOTHING HITS IT.', 'al'); }
       if (s.wave === 1 && !left(g, 'w')) s.wave = 2;
     },
     outro: 'The Choir Stone is whole again and the Chorus has hands. Most of them are yours.',
   }),
   job(14, 2, {
-    name: 'Brood', side: 1, foe: 2, map: 3, diff: 0, dusk: DAY, teaches: 'The Brood Pit, Cantors, Lancers, the Thorn Spire, spreading out against Blisters',
-    brief: 'The Gloam has a nest on the north ridge. Wake a Brood Pit to train Cantors, who dash in and cut, and Lancers, who shoot from cover. Raise Thorn Spires to guard the Stone. Blisters explode when they reach a crowd, so keep your fighters apart. Then burn the nest off the ridge.',
-    allow: ['hushwell', 'broodpit', 'thornspire', 'choir'], units: ['tender', 'cantor', 'lancer'], raids: false, auto: false,
+    name: 'Brood', side: 1, foe: 2, map: 3, diff: 0, dusk: DAY, teaches: 'The Brood Pit inside a song field, Cantors and Rush, the Siphon Bell and Flux, the Ward Pylon and the Thorn Spire',
+    brief: 'The Gloam has a nest on the north ridge. Wake a Brood Pit inside a song field to train Cantors, who run in and cut. Ward Pylons and Thorn Spires cost Flux, the blue gas that comes out of the vents. Sing a Siphon Bell onto a vent and send Tenders to carry the gas home. A Ward Pylon must stand before a Thorn Spire can. Then burn the nest off the ridge.',
+    allow: V1, units: ['tender', 'cantor'], raids: false, auto: false,
     objectives: [
-      { text: () => 'Wake a Brood Pit', done: g => nB(g, 'broodpit') > 0 },
-      { text: g => `Raise two Thorn Spires (${Math.min(2, nB(g, 'thornspire'))}/2)`, done: g => nB(g, 'thornspire') >= 2 },
-      { text: g => `Train six fighters (${Math.min(6, army(g))}/6)`, done: g => (g.ms.best || 0) >= 6 },
+      { text: () => 'Wake a Brood Pit inside a song field', done: g => g.ownB('broodpit', true, me(g)).some(b => !quiet(g, b)) },
+      { text: () => 'Sing a Siphon Bell onto a vent', done: g => nB(g, 'siphonbell') > 0 },
+      { text: g => `Carry 100 Flux home (${Math.min(100, Math.floor(g.ms.fluxIn || 0))}/100)`, done: g => (g.ms.fluxIn || 0) >= 100 },
+      { text: g => `Raise a Ward Pylon and two Thorn Spires (${Math.min(1, nB(g, 'wardpylon')) + Math.min(2, nB(g, 'thornspire'))}/3)`, done: g => nB(g, 'wardpylon') > 0 && nB(g, 'thornspire') >= 2 },
+      { text: g => `Train six Cantors (${Math.min(6, g.ms.best || 0)}/6)`, done: g => (g.ms.best || 0) >= 6 },
       { text: g => `Break the Gloam nest on the north ridge (${standing(g, 'nest')} left)`, done: g => g.ms.nest === 1 && !standing(g, 'nest') },
     ],
     setup: g => { const f = MAP.flank[1] || MAP.flank[0]; outpost(g, SIDE.home, f[0], f[1], ['sporesac', 'stinger', 'warren'], ['snapper', 'snapper', 'blister', 'quillback'], 'nest'); g.ms.nest = 1; hush(g, SIDE.home); },
     tick: (g, s, dt) => {
-      s.best = Math.max(s.best || 0, army(g)); s.t0 = (s.t0 || 0) + dt;
+      s.best = Math.max(s.best || 0, nU(g, 'cantor')); s.t0 = (s.t0 || 0) + dt; fluxIn(g, s);
       once(g, s, 'l1', nU(g, 'cantor') > 0, H5, 'HIT THEM AND GET OUT. IF YOU STAND STILL, THEY BITE.');
+      once(g, s, 'l2', g.ownB('broodpit', true, me(g)).some(b => quiet(g, b)), H5, 'THAT PIT IS OUTSIDE THE RING. IT CANNOT HEAR US, SO IT WILL NOT WAKE ANYONE. SING IT CLOSER, OR SING A HUSH WELL NEXT TO IT.', 'al');
+      once(g, s, 'l3', nB(g, 'siphonbell') > 0, H5, 'THE BELL RINGS ON THE VENT AND THE GAS COMES UP. THREE TENDERS ON A BELL IS ENOUGH.');
       if (!s.w1 && s.t0 > 150) { s.w1 = 1; send(g, SIDE.home, ['snapper', 'snapper', 'blister', 'blister'], 'w'); say(g, PB, '[FREE VERSION] BLISTERS. [WORDS LEFT THIS MONTH: 1]', 'al'); }
       if (!s.w2 && s.t0 > 330) { s.w2 = 1; send(g, SIDE.home, ['snapper', 'snapper', 'snapper', 'quillback', 'quillback', 'blister'], 'w'); }
-      once(g, s, 'l2', s.t0 > 240, 'Static', '...four to one...', '');
+      // After that the nest keeps sending, a little more each time, until it is gone.
+      if (s.w2 && standing(g, 'nest') && s.t0 > (s.next || 480)) { s.next = s.t0 + 120; s.n = (s.n || 0) + 1; send(g, SIDE.home, ([] as Kind[]).concat(...Array(2 + s.n).fill(['snapper', 'snapper', 'quillback'])), 'w'); }
+      once(g, s, 'l4', s.t0 > 240, 'Static', '...four to one...', '');
     },
     outro: 'The ridge is clear and the Bloom on it is drying out. Somebody on the radio sounded like Moss.',
   }),
   job(15, 2, {
-    name: 'Salt Road', side: 1, foe: 2, map: 22, diff: 1, dusk: DAY, teaches: 'A second Choir Stone on a far field, moving Tenders across open ground, killing Gloam buildings so the Bloom dies',
-    brief: 'Glass Flats, large. Walk a group of Tenders across the open flats and raise a Choir Stone on a far ore field. The Gloam has two camps out here. Each Gloam building spreads Bloom around it, and the Bloom dies when the building does. Break both camps.',
-    allow: ['hushwell', 'broodpit', 'thornspire', 'choir'], units: ['tender', 'cantor', 'lancer'], raids: false, auto: false,
+    name: 'Salt Road', side: 1, foe: 2, map: 22, diff: 1, dusk: DAY, teaches: 'The Reed Gate, Lancers, a second Choir Stone on a far field, Far Singing, killing Gloam buildings so the Bloom dies',
+    brief: 'Glass Flats, large. Wake a Reed Gate. It lets the Brood Pit train Lancers, who shoot from far off, and it sells Far Singing: with it, the Brood Pit sings each new body in at the song field nearest the front instead of at home. Walk Tenders across the flats, raise a Choir Stone on a far ore field and sing your fighters in there. The Gloam has two camps out here. Each Gloam building spreads Bloom around it, and the Bloom dies when the building does.',
+    allow: V2, units: ['tender', 'cantor', 'lancer'], raids: false, auto: false,
     objectives: [
+      { text: () => 'Wake a Reed Gate', done: g => nB(g, 'reedgate') > 0 },
       { text: g => `Raise a Choir Stone on a far field (${Math.min(2, nB(g, 'choir'))}/2)`, done: g => nB(g, 'choir') >= 2 },
+      { text: () => 'Learn Far Singing at the Reed Gate', done: g => !!g.upOf(me(g)).vfar },
+      { text: g => `Sing four fighters in at the far Stone (${Math.min(4, g.ms.farSung || 0)}/4)`, done: g => (g.ms.farSung || 0) >= 4 },
       { text: g => `Break the first Gloam camp (${standing(g, 'c1')} left)`, done: g => !standing(g, 'c1') },
       { text: g => `Break the second Gloam camp (${standing(g, 'c2')} left)`, done: g => !standing(g, 'c2') },
     ],
     setup: g => { const st = MAP.sites || []; const a = st[2] || st[0], b = st[3] || st[1] || st[0]; outpost(g, SIDE.home, a[0], a[1], ['sporesac', 'stinger'], ['snapper', 'snapper', 'quillback'], 'c1'); outpost(g, SIDE.home, b[0], b[1], ['sporesac', 'stinger', 'warren'], ['snapper', 'snapper', 'snapper', 'quillback'], 'c2'); hush(g, SIDE.home, 600); },
     tick: (g, s, dt) => {
-      s.t0 = (s.t0 || 0) + dt;
+      s.t0 = (s.t0 || 0) + dt; farSung(g, s);
       once(g, s, 'l1', s.t0 > 4, H5, 'WE HAVE SUNG HERE FOR NINE HUNDRED YEARS. YOU ARRIVED LAST WEEK. FOLLOW ME.');
       once(g, s, 'l2', standing(g, 'c1') < 2 || standing(g, 'c2') < 3, H5, 'KILL A GLOAM BUILDING AND ITS CARPET DIES. SO KILL THE BUILDINGS.');
       once(g, s, 'l3', nB(g, 'choir') >= 2, H5, 'WE SANG THE GROUND INTO GLASS TO KEEP THE GLOAM DOWN THERE. WE HAVE SUNG EVERY NIGHT SINCE, TO KEEP THE GLASS THICK.');
+      once(g, s, 'l4', !!g.upOf(me(g)).vfar, H5, 'NOW THE PIT SINGS EACH BODY OUT AT THE RING NEAREST YOUR FIGHTERS. KEEP THEM NEAR THE FAR STONE.');
+      // From ten minutes on, the camps come for the home Stone.
+      if (s.t0 > (s.next || 600) && (standing(g, 'c1') || standing(g, 'c2'))) { s.next = s.t0 + 150; s.n = (s.n || 0) + 1; send(g, SIDE.home, ([] as Kind[]).concat(...Array(2 + s.n).fill(['snapper', 'snapper', 'quillback', 'blister'])), 'w'); }
     },
     outro: 'Both camps are dead and the new Stone is singing. Held Fifth has told you how the glass was made.',
     cutOut: ['howsealed'],
   }),
   job(16, 2, {
-    name: 'Old Friends', side: 1, foe: 0, map: 0, diff: 1, dusk: NIGHT, teaches: 'The Ward Pylon, Watcher warnings, toppling buildings on attackers, Veyl upgrades',
-    brief: 'Aggie\'s yard thinks the Veyl opened the canyon and killed Moss. The Quartermaster is sending the crew up the road three times tonight. Raise a Ward Pylon, which halves every hit on the buildings near it, and hold the Choir Stone. Try not to kill the Riggers.',
-    allow: ['hushwell', 'broodpit', 'thornspire', 'wardpylon', 'choir'], units: ['tender', 'cantor', 'lancer'], raids: false, auto: false,
+    name: 'Old Friends', side: 1, foe: 0, map: 0, diff: 1, dusk: NIGHT, teaches: 'The Ward Pylon and its songs, the Mending Pool, the Tuner and its Glass Wall, energy, Watcher warnings',
+    brief: 'Aggie\'s yard thinks the Veyl opened the canyon and killed Moss. The Quartermaster is sending the crew up the road three times tonight. Learn a song at the Ward Pylon. Raise a Mending Pool, which puts shields back on everyone near it. Train a Tuner at the Brood Pit: R puts up a Glass Wall that nobody can walk or shoot through, and it costs 50 of the Tuner\'s energy. Block the road with one when the crew comes. Try not to kill the Riggers.',
+    allow: V2, units: ['tender', 'cantor', 'lancer', 'tuner'], raids: false, auto: false,
     objectives: [
-      { text: () => 'Raise a Ward Pylon', done: g => nB(g, 'wardpylon') > 0 },
-      { text: () => 'Learn a song at the Ward Pylon (Keener Edges or Thicker Glass)', done: g => upped(g) },
+      { text: () => 'Learn a song at the Ward Pylon (Ground Edge, Ground Glass or Shell)', done: g => ['vedge', 'vglass', 'vshell'].some(k => !!(g.upOf(me(g)) as any)[k]) },
+      { text: () => 'Raise a Mending Pool', done: g => nB(g, 'mendingpool') > 0 },
+      { text: () => 'Train a Tuner', done: g => nU(g, 'tuner') > 0 },
+      { text: () => 'Put up a Glass Wall on the road (R, as a Tuner)', done: g => !!g.ms.c_wall },
       { text: g => `Hold off three attacks from the yard (${Math.min(3, g.ms.done || 0)}/3)`, done: g => (g.ms.done || 0) >= 3 },
     ],
     setup: g => { hush(g, SIDE.home); },
     tick: (g, s, dt) => {
-      s.t0 = (s.t0 || 0) + dt;
-      const waves: Kind[][] = [['linesman', 'linesman', 'linesman', 'linesman'], ['linesman', 'linesman', 'breacher', 'breacher', 'patch', 'linesman'], ['breacher', 'breacher', 'linesman', 'linesman', 'linesman', 'patch', 'longshot', 'longshot']];
+      s.t0 = (s.t0 || 0) + dt; usedAb(g, s, 'wall');
+      once(g, s, 'l0', nU(g, 'tuner') > 0, H5, 'THE TUNER HAS A BAR OF ENERGY UNDER ITS SHIELD. THE WALL SPENDS HALF OF IT. THE BAR FILLS BACK SLOWLY.');
+      const waves: Kind[][] = [['linesman', 'linesman', 'linesman', 'linesman', 'linesman'], ['linesman', 'linesman', 'breacher', 'breacher', 'patch', 'linesman', 'linesman'], ['breacher', 'breacher', 'breacher', 'linesman', 'linesman', 'linesman', 'patch', 'longshot', 'longshot', 'dustbike', 'dustbike']];
       const n = s.done || 0;
-      if (!s.live && n < 3 && s.t0 > (s.next || 120)) { s.live = 1; send(g, SIDE.home, waves[n], 'yard'); say(g, 'Watcher', n === 2 ? 'IRONHOLD ON THE ROAD. MANY OF THEM. LOUD BOOTS. SHIELDS IN FRONT.' : 'IRONHOLD ON THE ROAD. LOUD BOOTS.', 'al'); if (n === 0) say(g, AG, '(on the yard channel) Push them! They took Moss!', 'al'); if (n === 1) say(g, PIM, 'That Lancer walks like Nineteen. Why does it walk like Nineteen?'); if (n === 2) say(g, PIM, 'I can see Gary up there. Hi, Gary.'); }
-      if (s.live && !left(g, 'yard')) { s.live = 0; s.done = n + 1; s.next = s.t0 + 90; }
+      if (!s.live && n < 3 && s.t0 > (s.next || 150)) { s.live = 1; send(g, SIDE.home, waves[n], 'yard'); say(g, 'Watcher', n === 2 ? 'IRONHOLD ON THE ROAD. MANY OF THEM. LOUD BOOTS. SHIELDS IN FRONT.' : 'IRONHOLD ON THE ROAD. LOUD BOOTS.', 'al'); if (n === 0) say(g, AG, '(on the yard channel) Push them! They took Moss!', 'al'); if (n === 1) say(g, PIM, 'That Lancer walks like Nineteen. Why does it walk like Nineteen?'); if (n === 2) say(g, PIM, 'I can see Gary up there. Hi, Gary.'); }
+      // A wave only counts as held off once the player has walled the road; without a wall the yard keeps coming with the same wave.
+      if (s.live && !left(g, 'yard')) { s.live = 0; if (s.c_wall || n === 0) s.done = n + 1; else once(g, s, 'lw', true, H5, 'THEY WILL COME AGAIN THE SAME WAY. PUT A WALL ACROSS THE ROAD THIS TIME.', 'al'); s.next = s.t0 + 90; }
     },
     outro: 'The crew went home three times. Pim kept calling your name on the old frequency.',
   }),
   job(17, 2, {
-    name: 'Hold the Note', side: 1, foe: 2, map: 3, diff: 1, dusk: DAY, teaches: 'The Reed Gate, the Warden and its Low Note, the Conductor (G), Chorus Lead plans',
-    brief: 'The crack is still open. A Warden standing near it can hold the Gloam back, but only while it is alive. Wake a Reed Gate, train a Warden and keep it within the ring by the crack for eight minutes. The Conductor builds for you on this job (G). The Chorus Lead pitches plans: Z says yes.',
-    allow: [...VEYL_ALL, 'choir'], units: VEYL_UNITS, raids: false, auto: true,
+    name: 'Quiet Feet', side: 1, foe: 0, map: 1, diff: 1, dusk: NIGHT, teaches: 'The Dusk Hall, the Quiet House, Mutes, unseen bodies and the buildings that can see them',
+    brief: 'The Quartermaster has put three Pump Jacks on the vents behind the yard to pay for the next attack. Watchposts guard them. A Mute is unseen: nobody can shoot it unless a detector is near, and a Watchpost is not a detector. Wake a Dusk Hall, then a Quiet House, train three Mutes and break the three Pump Jacks. Keep away from the Flak Tower by the gate, which sees unseen bodies.',
+    allow: V3, units: ['tender', 'cantor', 'lancer', 'tuner', 'mute'], raids: false, auto: false,
     objectives: [
-      { text: () => 'Wake a Reed Gate', done: g => nB(g, 'reedgate') > 0 },
+      { text: () => 'Wake a Dusk Hall', done: g => nB(g, 'duskhall') > 0 },
+      { text: () => 'Wake a Quiet House', done: g => nB(g, 'quiethouse') > 0 },
+      { text: g => `Train three Mutes (${Math.min(3, g.ms.mutes || 0)}/3)`, done: g => (g.ms.mutes || 0) >= 3 },
+      { text: g => `Break the Pump Jacks behind the yard (${standing(g, 'jacks')} left)`, done: g => g.ms.jacks === 1 && !standing(g, 'jacks') },
+    ],
+    setup: g => {
+      hush(g, SIDE.home);
+      // Three Pump Jacks on the vents nearest the yard, a Watchpost by each, and a Flak Tower on the road out of the gate.
+      const vs = g.vents.filter(v => !v.tap).sort((a, b) => Math.hypot(a.pos.x, a.pos.z) - Math.hypot(b.pos.x, b.pos.z)).slice(0, 3);
+      const bs = vs.map(v => g.addBuilding('pumpjack', SIDE.home, v.pos.x, v.pos.z, true));
+      vs.forEach(v => g.addBuilding('watchpost', SIDE.home, v.pos.x + 5, v.pos.z + 4, true));
+      const [gx, gz] = roadPt(26, 6); g.addBuilding('flaktower', SIDE.home, gx, gz, true);
+      (g as any)._b_jacks = bs.filter(Boolean); g.ms.jacks = 1;
+    },
+    tick: (g, s, dt) => {
+      s.t0 = (s.t0 || 0) + dt; s.mutes = Math.max(s.mutes || 0, nU(g, 'mute'));
+      once(g, s, 'l1', s.t0 > 3, H5, 'THEY DIG GAS OUT OF OUR VENTS TO PAY FOR THE NEXT FIGHT. TAKE THE VENTS BACK. QUIETLY.');
+      once(g, s, 'l2', nU(g, 'mute') > 0, H5, 'A MUTE MAKES NO SOUND AND NOBODY SEES IT. A FLAK TOWER, A SURVEYOR OR A SPOTLIT WATCHPOST CAN.');
+      once(g, s, 'l3', standing(g, 'jacks') < 3, PIM, '(on the yard channel) Pump Jack two just fell over. Nobody was near it. Aggie, nobody was near it.', 'al');
+      once(g, s, 'l4', standing(g, 'jacks') < 2, QM, '(on the yard channel) Put a Surveyor up. Charge it to the Veyl.', 'al');
+      // The yard pays for an attack every four minutes from the Pump Jacks still standing.
+      if (s.t0 > (s.next || 240)) { s.next = s.t0 + 240; const n = standing(g, 'jacks'); if (n) send(g, SIDE.home, ([] as Kind[]).concat(...Array(1 + n).fill(['linesman', 'linesman', 'breacher', 'longshot'])), 'w'); }
+      if (standing(g, 'jacks') < 2 && !s.sv) { s.sv = 1; const [x, z] = homeOf(g, SIDE.home); const u = g.spawn('surveyor', SIDE.home, x, z + 6); u.order = { type: 'guard', x, z }; }
+    },
+    outro: 'The Pump Jacks are scrap and the vents are quiet. The yard will not attack again for a while.',
+  }),
+  job(18, 2, {
+    name: 'Listening Post', side: 1, foe: 2, map: 2, diff: 1, dusk: DUSK, teaches: 'The Kiln, the Listener as a flying detector, the Bell, Gloam that dig in and wait',
+    brief: 'The Gloam has dug Needlers into the causeway. A dug-in Needler cannot be seen or shot, and it stabs anything that walks over it. Wake a Kiln and fire a Listener: it flies, and every hidden body near it shows up. Fly it ahead of your fighters, kill the dug-in Gloam, then bring Bells up the causeway and break the Gloam camp at the end of it.',
+    allow: V4, units: ['tender', 'cantor', 'lancer', 'tuner', 'mute', 'bell', 'listener'], raids: false, auto: false,
+    objectives: [
+      { text: () => 'Wake a Kiln', done: g => nB(g, 'kiln') > 0 },
+      { text: () => 'Fire a Listener at the Kiln', done: g => nU(g, 'listener') > 0 },
+      { text: g => `Kill the dug-in Gloam on the causeway (${left(g, 'dug')} left)`, done: g => g.ms.dug === 1 && !left(g, 'dug') },
+      { text: g => `Fire two Bells (${Math.min(2, g.ms.bells || 0)}/2)`, done: g => (g.ms.bells || 0) >= 2 },
+      { text: g => `Break the Gloam camp at the end of the causeway (${standing(g, 'camp')} left)`, done: g => !standing(g, 'camp') },
+    ],
+    setup: g => {
+      hush(g, SIDE.home);
+      const us: Unit[] = []; for (let i = 0; i < 8; i++) { const [x, z] = roadPt(ROAD.len * (.35 + i * .05), i % 2 ? 3 : -3); const u = g.spawn(vk('needler', 'snapper'), SIDE.home, x, z); u.order = { type: 'guard', x, z }; digIn(g, u); us.push(u); }
+      track(g, 'dug', us); g.ms.dug = 1;
+      const [cx, cz] = roadPt(ROAD.len * .2, 10); outpost(g, SIDE.home, cx, cz, ['sporesac', 'stinger', 'warren'], ['snapper', 'snapper', 'quillback', 'quillback'], 'camp');
+    },
+    tick: (g, s, dt) => {
+      s.t0 = (s.t0 || 0) + dt; s.bells = Math.max(s.bells || 0, nU(g, 'bell'));
+      once(g, s, 'l1', s.t0 > 3, H5, 'SOMETHING IS UNDER THE CAUSEWAY. WE CAN FEEL IT BREATHING. WE CANNOT SEE IT.');
+      once(g, s, 'l2', nU(g, 'listener') > 0, H5, 'THE LISTENER HEARS THE ONES UNDER THE GROUND. FLY IT IN FRONT. WHAT IT HEARS, EVERYONE CAN SHOOT.');
+      once(g, s, 'l3', nU(g, 'bell') > 0, H5, 'A BELL RINGS ONCE AND THE GROUND IN FRONT OF IT BREAKS. IT IS SLOW. KEEP IT BEHIND THE LANCERS.');
+      once(g, s, 'l4', s.t0 > 200, MO, '(very quietly, from under the glass) ...left a bit... left a bit...', '');
+      if (s.t0 > (s.next || 300) && standing(g, 'camp')) { s.next = s.t0 + 160; s.n = (s.n || 0) + 1; send(g, SIDE.home, ([] as Kind[]).concat(...Array(2 + s.n).fill(['snapper', 'snapper', 'quillback'])), 'w'); }
+    },
+    outro: 'The causeway is clear and the camp is down. Moss\'s voice came up through the glass for a second and then stopped.',
+  }),
+  job(19, 2, {
+    name: 'Hold the Note', side: 1, foe: 2, map: 3, diff: 1, dusk: DAY, teaches: 'The Song Archive, the Warden, Choirmasters, Join and the Chord, the Conductor (G), Chorus Lead plans',
+    brief: 'The crack is still open. A Warden standing near it can hold the Gloam back, but only while it is alive. The Song Archive lets the Reed Gate wake Wardens and the Brood Pit train Choirmasters. Walk two Choirmasters within 8 m of each other and press V on one of them: both stand still, and in ten seconds they join into a Chord, which hits everything around what it shoots. Keep a Warden by the crack for six minutes. The Conductor builds for you on this job (G). The Chorus Lead pitches plans: Z says yes.',
+    allow: V5, units: ['tender', 'cantor', 'lancer', 'tuner', 'mute', 'bell', 'listener', 'choirmaster', 'warden'], raids: false, auto: true,
+    objectives: [
+      { text: () => 'Wake a Song Archive', done: g => nB(g, 'songarchive') > 0 },
       { text: () => 'Train a Warden', done: g => nU(g, 'warden') > 0 },
-      { text: g => `Keep a Warden by the crack (${mmss(480 - (g.ms.hold || 0))})`, done: g => (g.ms.hold || 0) >= 480 },
+      { text: () => 'Join two Choirmasters into a Chord (V, as a Choirmaster)', done: g => nU(g, 'chord') > 0 },
+      { text: g => `Keep a Warden and a Chord by the crack (${mmss(360 - (g.ms.hold || 0))})`, done: g => (g.ms.hold || 0) >= 360 },
     ],
     setup: g => { hush(g, SIDE.home, 420); },
     tick: (g, s, dt) => {
-      const c = roadPt(ROAD.len * .52, 34), w = g.own('warden', me(g)).some(u => near(u, c[0], c[1], 30));
+      const c = roadPt(ROAD.len * .52, 34), w = g.own('warden', me(g)).some(u => near(u, c[0], c[1], 30)) && g.own('chord', me(g)).some(u => near(u, c[0], c[1], 30));
       held(s, 'hold', dt, w); s.t0 = (s.t0 || 0) + dt;
       once(g, s, 'l1', nU(g, 'warden') > 0, H5, 'TAKE THE WARDEN TO THE CRACK. STAY INSIDE ITS PINK RING. OUTSIDE IT, THE WARDEN CANNOT PROTECT YOU.');
+      once(g, s, 'l2', nU(g, 'choirmaster') > 1, H5, 'TWO CHOIRMASTERS SINGING THE SAME NOTE BECOME ONE BODY. IT IS BIGGER THAN BOTH, AND IT CANNOT COME APART AGAIN.');
+      once(g, s, 'l3', nU(g, 'chord') > 0, PB, '[FREE VERSION] TWO. NOW ONE. [WORDS LEFT THIS MONTH: 0]', 'al');
       if ((s.hold || 0) > 1 && !s.w1) { s.w1 = 1; send(g, SIDE.home, ['snapper', 'snapper', 'snapper', 'quillback', 'blister'], 'w', c); }
-      if ((s.hold || 0) > 200 && !s.w2) { s.w2 = 1; send(g, SIDE.home, ['mulcher', 'snapper', 'snapper', 'snapper', 'quillback', 'quillback'], 'w', c); say(g, 'Watcher', 'A BIG ONE. IT HAS TUSKS. IT IS COMING FOR THE WARDEN.', 'al'); }
-      if ((s.hold || 0) > 360 && !s.w3) { s.w3 = 1; send(g, SIDE.home, ['mulcher', 'snapper', 'snapper', 'snapper', 'snapper', 'blister', 'blister'], 'w', c); }
+      if ((s.hold || 0) > 150 && !s.w2) { s.w2 = 1; send(g, SIDE.home, ['mulcher', 'snapper', 'snapper', 'snapper', 'quillback', 'quillback'], 'w', c); say(g, 'Watcher', 'A BIG ONE. IT HAS TUSKS. IT IS COMING FOR THE WARDEN.', 'al'); }
+      if ((s.hold || 0) > 270 && !s.w3) { s.w3 = 1; send(g, SIDE.home, ['mulcher', 'snapper', 'snapper', 'snapper', 'snapper', 'blister', 'blister'], 'w', c); }
     },
-    outro: 'The Warden held the note for eight minutes. Held Fifth says the Chorus will do this every night, forever.',
+    outro: 'The Warden and the Chord held the note for six minutes. Held Fifth says the Chorus will do this every night, forever.',
   }),
-  job(18, 2, {
+  job(20, 2, {
+    name: 'Sky Choir', side: 1, foe: 0, map: 20, diff: 1, dusk: DUSK, teaches: 'The Skyloft, Swifts against fliers, Prisms and Omens, the Ferry carrying fighters and unfolding a song field',
+    brief: 'The Charter has put a drill on the island south of the road, where nobody can walk. Gadflies guard it. Wake a Skyloft and grow two Swifts, which only shoot fliers, to clear the sky. Then fire a Ferry at the Kiln: R takes on everyone within 4 m, V lets them out. Fly it to the island and press C to unfold it into a song field. With Far Singing, the Brood Pit sings new fighters in at the field nearest your army, and that can be the Ferry\'s. Sing four fighters in on the island and break the drill.',
+    allow: V6, units: ['tender', 'cantor', 'lancer', 'tuner', 'mute', 'bell', 'listener', 'ferry', 'choirmaster', 'warden', 'swift', 'prism', 'omen'], raids: false, auto: false,
+    objectives: [
+      { text: () => 'Wake a Skyloft', done: g => nB(g, 'skyloft') > 0 },
+      { text: g => `Shoot down the Gadflies over the island (${left(g, 'sky')} left)`, done: g => g.ms.sky === 1 && !left(g, 'sky') },
+      { text: () => 'Fly a Ferry to the island and unfold it (C)', done: g => !!g.ms.c_unfold_isle },
+      { text: g => `Sing four fighters in on the island with Far Singing (${Math.min(4, g.ms.isleSung || 0)}/4)`, done: g => (g.ms.isleSung || 0) >= 4 },
+      { text: g => `Break the Charter drill on the island (${standing(g, 'drill')} left)`, done: g => !standing(g, 'drill') },
+    ],
+    setup: g => {
+      hush(g, SIDE.home);
+      const [ix, iz] = ISLE; outpost(g, SIDE.home, ix, iz, ['pumpjack', 'watchpost'], ['linesman', 'linesman', 'longshot'], 'drill');
+      const fl: Unit[] = []; for (let i = 0; i < 4; i++) { const u = g.spawn('gadfly', SIDE.home, ix + (i % 2) * 4 - 2, iz + Math.floor(i / 2) * 4 - 2); u.order = { type: 'guard', x: ix, z: iz }; fl.push(u); } track(g, 'sky', fl); g.ms.sky = 1;
+    },
+    tick: (g, s, dt) => {
+      s.t0 = (s.t0 || 0) + dt; castNear(g, s, 'unfold', ISLE, 20); farSung(g, s, ISLE);
+      once(g, s, 'l1', s.t0 > 3, H5, 'THEY DRILL WHERE THEY THINK WE CANNOT GO. WE HAVE WINGS. WE FORGOT FOR A WHILE.');
+      once(g, s, 'l2', nU(g, 'swift') > 0, H5, 'A SWIFT ONLY SHOOTS AT THINGS IN THE AIR. C ON A SWIFT LIFTS A GROUND BODY OFF ITS FEET FOR EIGHT SECONDS.');
+      once(g, s, 'l3', nU(g, 'ferry') > 0, H5, 'AN UNFOLDED FERRY IS A RING OF ITS OWN. ANYTHING YOU SING INSIDE IT HEARS US.');
+      once(g, s, 'l4', nU(g, 'omen') > 0, H5, 'AN OMEN PRESSED ON C SHOWS EVERY HIDDEN BODY NEAR WHERE YOU POINT. V LEAVES A STONE THAT HOLDS THE FIRST ONE TO STEP ON IT.');
+      once(g, s, 'l5', standing(g, 'drill') < 2, QM, '(on the yard channel) The island drill was a write-off anyway. Raise a claim against the Chorus for flying.', 'al');
+      // The yard sends fliers and a column every four minutes while the drill stands.
+      if (s.t0 > (s.next || 300) && standing(g, 'drill')) { s.next = s.t0 + 240; s.n = (s.n || 0) + 1; send(g, SIDE.home, ([] as Kind[]).concat(...Array(1 + s.n).fill(['linesman', 'linesman', 'breacher', 'gadfly'])), 'w'); }
+    },
+    outro: 'The drill is in the sea and the Ferry is folding up again. Held Fifth wants to know what else the Chorus has forgotten.',
+  }),
+  job(21, 2, {
     name: 'Open Hands', side: 1, foe: 0, map: 10, diff: 0, dusk: DUSK, teaches: 'Walking and dashing with weapons locked, reading Watchpost fire lines',
     brief: 'Weapons are locked for this job. Walk a single Lancer down the road to the yard gate without firing a shot, and stand in front of the Headframe. Pim has bought the paid version of the phrasebook. Nobody on either side will shoot unless somebody starts it.',
     allow: [], units: [], raids: false, auto: false, noFire: true, noHq: true,
@@ -539,22 +679,50 @@ const ACT2: Mission[] = [
     outro: 'The yard has stood down. Aggie heard the whole warning for the first time, thirty-one years late.',
     cutOut: ['warning', 'clause9queue'],
   }),
-  job(19, 2, {
-    name: 'The Last Verse', side: 1, foe: 2, map: 23, diff: 2, dusk: .3, teaches: 'Everything Veyl on a large map, holding three Choir Stones at once, and one choice',
-    brief: 'The Chorus is going to sing the crack shut. Raise a Choir Stone on each of the three marked spots around the crack. The song needs your voice too, so stand between the Stones and keep all three standing for three minutes while the Gloam attacks with everything it has.',
-    allow: [...VEYL_ALL, 'choir'], units: VEYL_UNITS, raids: false, auto: true, clockLabel: 'The verse ends in',
+  job(22, 2, {
+    name: 'Long Stride', side: 1, foe: 2, map: 1, diff: 1, dusk: .3, teaches: 'The Tuning Fork, Reedwalkers climbing cliffs, high ground, the Knell and its Toll',
+    brief: 'The Gloam is coming up the canyon road to the crack in a long column. The ledge above the road is the only place that sees all of it. A body on high ground sees the road below, and nobody on the road can see it until they climb. Wake a Tuning Fork and fire a Reedwalker at the Kiln: it is tall enough to walk straight up the cliff. Hold the ledge top with it. Fire a Knell too. The mouse button rolls an orb that bursts on everything around where it stops. Roll one into the column.',
+    allow: V7, units: ['tender', 'cantor', 'lancer', 'tuner', 'mute', 'bell', 'listener', 'ferry', 'choirmaster', 'warden', 'swift', 'prism', 'omen', 'reedwalker', 'knell'], raids: false, auto: false,
     objectives: [
+      { text: () => 'Wake a Tuning Fork', done: g => nB(g, 'tuningfork') > 0 },
+      { text: () => 'Walk a Reedwalker up onto the ledge', done: g => g.own('reedwalker', me(g)).some(u => near(u, LEDGE[0], LEDGE[1], 12) && TR.h(u.pos.x, u.pos.z) > 2) },
+      { text: () => 'Roll a Knell\'s orb into the column (mouse button, as a Knell)', done: g => !!g.ms.c_toll },
+      { text: g => `Hold the ledge while the column passes (${mmss(240 - (g.ms.hold || 0))})`, done: g => (g.ms.hold || 0) >= 240 },
+    ],
+    setup: g => { hush(g, SIDE.home); },
+    tick: (g, s, dt) => {
+      s.t0 = (s.t0 || 0) + dt; usedAb(g, s, 'toll');
+      const up = g.own('reedwalker', me(g)).some(u => near(u, LEDGE[0], LEDGE[1], 12) && TR.h(u.pos.x, u.pos.z) > 2);
+      if (up && !s.col) { s.col = 1; s.next = s.t0; say(g, 'Watcher', 'THE GLOAM ON THE CANYON ROAD. A LONG LINE OF THEM. THEY ARE GOING TO THE CRACK.', 'al'); }
+      if (s.col) held(s, 'hold', dt, up);
+      once(g, s, 'l1', s.t0 > 3, H5, 'FROM THE TOP OF THE LEDGE YOU CAN SEE THE WHOLE ROAD. FROM THE ROAD YOU CANNOT SEE THE LEDGE.');
+      once(g, s, 'l2', nU(g, 'reedwalker') > 0, H5, 'THE REEDWALKER STEPS OVER CLIFFS THE REST OF US WALK ROUND. ITS BEAM SWEEPS A LINE ON THE GROUND.');
+      once(g, s, 'l3', !!s.c_toll, MO, '(from under the glass) That one landed on my foot. I don\'t have feet any more. It still landed on it.', '');
+      // The column: waves up the road every minute while the ledge is held. With nobody on the ledge, the Gloam comes for the Stone.
+      if (s.col && (s.hold || 0) < 240 && s.t0 >= s.next) { s.next = s.t0 + 60; send(g, SIDE.home, ['snapper', 'snapper', 'snapper', 'quillback', 'quillback', 'blister', 'shellback' as Kind].map(k => vk(k, 'quillback')), 'w'); }
+      if (!s.col && s.t0 > (s.late || 420)) { s.late = s.t0 + 180; s.n = (s.n || 0) + 1; send(g, SIDE.home, ([] as Kind[]).concat(...Array(2 + s.n).fill(['snapper', 'snapper', 'quillback', 'mulcher'])), 'w'); }
+    },
+    outro: 'The column broke up on the canyon road. The Reedwalker is still standing on the ledge, looking down at the crack.',
+  }),
+  job(23, 2, {
+    name: 'The Last Verse', side: 1, foe: 2, map: 23, diff: 2, dusk: .3, teaches: 'Everything Veyl on a large map, the High Beacon, the Lyre and the Cantus, holding three Choir Stones at once, and one choice',
+    brief: 'The Chorus is going to sing the crack shut. Wake a High Beacon and grow a Lyre or a Cantus at the Skyloft or the Choir Stone; nothing smaller lasts long enough. Raise a Choir Stone on each of the three marked spots around the crack. The song needs your voice too, so stand between the Stones and keep all three standing for three minutes while the Gloam attacks with everything it has.',
+    allow: [...VEYL_ALL], units: VEYL_UNITS, raids: false, auto: true, clockLabel: 'The verse ends in',
+    objectives: [
+      { text: () => 'Wake a High Beacon and grow a Lyre or a Cantus', done: g => nB(g, 'highbeacon') > 0 && nU(g, 'lyre') + nU(g, 'cantus') > 0 },
       { text: g => `Raise a Choir Stone on each marked spot (${spots(g)}/3)`, done: g => (g.ms.raised || 0) > 0 },
       { text: g => g.ms.raised ? `Stand between the Stones and hold all three (${mmss(180 - (g.ms.hold || 0))})` : 'Stand between the Stones and hold all three', done: g => (g.ms.hold || 0) >= 180 },
       { text: g => g.ms.turn ? 'Stop singing: walk out from between the Stones' : 'Finish the verse', done: g => g.ms.out === 1 },
     ],
     setup: g => { hush(g, SIDE.home, 300); },
     tick: (g, s, dt) => {
-      const c = roadPt(ROAD.len * .52, 34), b = body(g), inRing = near(b, c[0], c[1], 55);
-      if (spots(g) >= 3) s.raised = 1;
+      const c = roadPt(ROAD.len * .52, 34), b = body(g), inRing = near(b, c[0], c[1], 55), big = nB(g, 'highbeacon') > 0 && nU(g, 'lyre') + nU(g, 'cantus') > 0;
+      if (big) s.big = 1;
+      if (spots(g) >= 3 && s.big) s.raised = 1;
       if (s.raised && !s.turn) held(s, 'hold', dt, spots(g) >= 3 && inRing);
       s.t0 = (s.t0 || 0) + dt;
       once(g, s, 'l1', s.t0 > 3, H5, 'THREE STONES AROUND THE CRACK. EVERY VOICE WE HAVE. THEN THE GLASS CLOSES.');
+      once(g, s, 'l1b', spots(g) >= 3 && !s.big, H5, 'THE STONES ARE UP, BUT THE SONG NEEDS A BIG VOICE OVER THEM. A LYRE OR A CANTUS. WE WAIT FOR IT.', 'al');
       once(g, s, 'l2', !!s.raised, QM, '(on the yard channel) The claim is impaired. Clause 9 is in the queue.', 'al');
       once(g, s, 'lr', !!s.raised && !s.turn && !!b && !inRing && (s.hold || 0) > 5, H5, 'THE SONG NEEDS YOUR VOICE. STAND BETWEEN THE STONES.', 'al');
       if (s.raised && !s.p) { s.p = 1; hush(g, SIDE.home, g.time + 20); }
@@ -579,13 +747,13 @@ const ACT2: Mission[] = [
     cutOut: ['lastverse'],
   }),
 ];
-/** The three marked spots around the crack for job 19 (The Last Verse), and how many have a Choir Stone on them. */
+/** The three marked spots around the crack for The Last Verse, and how many have a Choir Stone on them. */
 const crackSpots = () => [-30, 0, 30].map(k => { const c = roadPt(ROAD.len * .52 + k, 34 + (k ? -14 : 16)); return c; });
 const spots = (g: Game) => crackSpots().filter(([x, z]) => g.ownB('choir', true, me(g)).some(b => Math.hypot(b.pos.x - x, b.pos.z - z) < 16)).length;
 
 // ================================================================ Act 3: Grow
 const ACT3: Mission[] = [
-  job(20, 3, {
+  job(24, 3, {
     name: 'Rooted', side: 2, foe: 1, map: 13, diff: 0, dusk: .35, teaches: 'Grazers, the Mother Cap and its Buds, rooting buildings, the Bloom',
     brief: 'You wake up as a Gloam Grazer, and the Gloam talks to you in Moss\'s voice. A Grazer chews ore. Each Gloam building is a Grazer that puts down roots, so building costs a body. A Mother Cap ripens three Buds, one every seven seconds, and they all hatch at once. Your fighters run faster and heal on the Bloom.',
     allow: ['sporesac', 'mothercap'], units: ['grazer', 'snapper'], raids: false, auto: false, cutIn: ['longshift'],
@@ -607,7 +775,7 @@ const ACT3: Mission[] = [
     },
     outro: 'The Bloom reaches the canyon wall. Moss is still running his book, and you are on it.',
   }),
-  job(21, 3, {
+  job(25, 3, {
     name: 'Two to a Bud', side: 2, foe: 0, map: 3, diff: 1, dusk: NIGHT, charter: 'home', teaches: 'The Warren, Snappers, Gloam upgrades, the Stinger Stalk, scattering from grenades',
     brief: 'Charter Security has landed. They wear the same Ironhold kit as Aggie\'s crew, in company grey, and the Quartermaster runs them. Three survey teams are mapping the Bloom. Grow a Warren so each Bud hatches two Snappers, and hunt all three teams down before the survey finishes.',
     allow: ['sporesac', 'warren', 'stinger', 'mothercap'], units: ['grazer', 'snapper'], raids: false, auto: false, clockLabel: 'Survey done in',
@@ -626,7 +794,7 @@ const ACT3: Mission[] = [
     outro: 'No survey team made it home. Charter Security is not Aggie\'s crew. It answers to head office, and head office wants the glass.',
     fail: 'The survey finished. Charter Security knows where the Bloom is now.',
   }),
-  job(22, 3, {
+  job(26, 3, {
     name: 'The Garden', side: 2, foe: 1, map: 0, diff: 1, dusk: DAY, teaches: 'The Quill Garden, Quillbacks, the Blister Bed, Blisters, Gloam armour and Volatile Sap',
     brief: 'Held Fifth\'s Chorus is singing glass over the Bloom from three Choir Stones at the yard end. Grow a Quill Garden for Quillbacks, which shoot from range, and a Blister Bed for Blisters, which run in and burst. Break the Ward Pylon first, then all three Stones.',
     allow: ['sporesac', 'warren', 'stinger', 'quillgarden', 'blisterbed', 'mothercap'], units: ['grazer', 'snapper', 'quillback', 'blister'], raids: false, auto: false,
@@ -647,7 +815,7 @@ const ACT3: Mission[] = [
     target: g => g.ownB('wardpylon', false, SIDE.home)[0] || null,
     outro: 'The three Stones have gone quiet. Held Fifth knew it was you the whole time.',
   }),
-  job(23, 3, {
+  job(27, 3, {
     name: 'What It Remembers', side: 2, foe: 1, map: 24, diff: 1, dusk: DAY, teaches: 'The Tusk Hollow, Mulchers and their charge, Old Growth, the Overgrowth (G), Swarm Lead plans',
     brief: 'First Stone, large. The oldest Veyl site on Tithe sits behind the yard end, past two old glass walls across the road. Grow a Tusk Hollow and send Mulchers through the walls. Then get a Mulcher to the First Stone. The Overgrowth builds for you on this job (G), and the Swarm Lead pitches plans.',
     allow: GLOAM_ALL.concat(['mothercap']), units: GLOAM_UNITS, raids: false, auto: true,
@@ -667,7 +835,7 @@ const ACT3: Mission[] = [
     outro: 'At the First Stone the Gloam showed you what happened nine hundred years ago. It was on the surface first.',
     cutOut: ['beforeglass'],
   }),
-  job(24, 3, {
+  job(28, 3, {
     name: 'Spore Season', side: 2, foe: 0, map: 25, diff: 2, dusk: NIGHT, charter: 'home', teaches: 'Everything Gloam on a large map',
     brief: 'Drill Site, large, at night. Charter Security has built a drill tower on the Glass Flats, and the hole under it goes deeper than any seam. Break the tower, then root a Mother Cap on the shaft so the Bloom reaches open sky.',
     allow: GLOAM_ALL.concat(['mothercap']), units: GLOAM_UNITS, raids: false, auto: true,
@@ -690,7 +858,7 @@ const ACT3: Mission[] = [
 
 // ================================================================ Act 4: Or Else
 const ACT4: Mission[] = [
-  job(25, 4, {
+  job(29, 4, {
     name: 'Old Opening', side: 0, foe: 0, map: 21, diff: 1, dusk: NIGHT, charter: 'out', teaches: 'Anti-air: Flak Towers, Flak Kites and the Gantry\'s flak mode; the Surveyor as a flying detector; Ironhold against Ironhold',
     brief: 'Pim\'s receiver pulled your mind out of the Gloam and into a Rigger. Charter Security holds the old Veyl end of Switchback, and the Quartermaster runs it with the build orders you used in Act 1, plus Gadflies: gunships that hide in smoke. A Flak Tower shoots fliers and sees hidden ones near it. Flak Kites are fliers that only shoot fliers. A Gantry can press T to swap its cannons for flak. A Surveyor flies over the fight and sees hidden bodies around it. Shoot down the Charter\'s fliers, then break every Charter Headframe.',
     allow: IRON_ALL, units: IRON_UNITS, raids: false, auto: false, cutIn: ['receiver'],
@@ -713,7 +881,7 @@ const ACT4: Mission[] = [
     },
     outro: 'Switchback is the crew\'s again. The Quartermaster lost to its own copy of your opening, and its gunships are scrap in the canyon.',
   }),
-  job(26, 4, {
+  job(30, 4, {
     name: 'Needle\'s Eye Road', side: 1, foe: 0, map: 0, diff: 1, dusk: DUSK, charter: 'home', teaches: 'The Warden as your own body, dropping the arch from the other side',
     brief: 'Charter Security is marching up the Needle\'s Eye road. Held Fifth\'s Chorus is holding it to protect the yard it planned to bury. Jump into a Warden, hold the road through three columns, and bring the arch down on one of them.',
     allow: [...VEYL_ALL, 'choir'], units: VEYL_UNITS, raids: false, auto: true,
@@ -734,7 +902,7 @@ const ACT4: Mission[] = [
     },
     outro: 'The road held. Held Fifth fought for the yard it meant to bury.',
   }),
-  job(27, 4, {
+  job(31, 4, {
     name: 'Rig Breakers', side: 2, foe: 0, map: 25, diff: 1, dusk: NIGHT, charter: 'home', teaches: 'Three objectives at once with the Swarm Lead',
     brief: 'Three Deep Charge rigs stand on the far fields of the Drill Site. Break all three before Charter Security arms the charge. The Swarm Lead (Moss) will pitch pushes. Split the swarm or move fast.',
     allow: GLOAM_ALL.concat(['mothercap']), units: GLOAM_UNITS, raids: false, auto: true, clockLabel: 'Charge armed in',
@@ -751,7 +919,7 @@ const ACT4: Mission[] = [
     outro: 'All three rigs are wrecked and the charge can\'t be armed from here. Moss is staying with the Gloam.',
     fail: 'The charge is armed.', cutOut: ['mossstays'],
   }),
-  job(28, 4, {
+  job(32, 4, {
     name: 'Fourteen Twenty', side: 0, foe: 0, map: 20, diff: 2, dusk: .62, charter: 'home', out: true, noHq: false, teaches: 'Everything, against the clock',
     brief: 'Needle\'s Eye, large, at sunset. Charter Security holds the yard, and the Quartermaster is inside the first Headframe, the one where you banked your first ore. The detonation order lands in forty minutes and nothing can stop it. Break that Headframe before it lands, so nobody is left to carry the order out.',
     allow: IRON_ALL, units: IRON_UNITS, raids: false, auto: false, clockLabel: 'Order lands in',
@@ -784,13 +952,13 @@ const SIDES: Mission[] = [
     objectives: [{ text: g => `Smash the Choir Stones without a Watchpost (${3 - g.stones().length}/3)`, done: g => !g.stones().length }],
     tick: (g, s, dt) => { s.t0 = (s.t0 || 0) + dt; once(g, s, 'l1', s.t0 > 3, MO, 'No Watchposts. Not one. Five to one says you crack and build one.'); },
     outro: 'Moss pays out. He says he knew you\'d do it, which is not what he said this morning.' },
-  { name: 'Discord', tag: 'Side job', act: 0, opens: 17, side: 1, foe: 1, out: true, map: 3, diff: 1, dusk: .3, teaches: 'Veyl against Veyl',
+  { name: 'Discord', tag: 'Side job', act: 0, opens: 19, side: 1, foe: 1, out: true, map: 3, diff: 1, dusk: .3, teaches: 'Veyl against Veyl',
     brief: 'A second Chorus wants to sing the yard under the glass right now, without waiting. Held Fifth disagrees. Silence every Choir Stone of the other Chorus.',
     allow: [...VEYL_ALL, 'choir'], units: VEYL_UNITS, raids: false, auto: true,
     objectives: [{ text: g => `Silence the other Chorus (${hq(g, them(g)).length} Stones left)`, done: g => !hq(g, them(g)).length }],
     tick: (g, s, dt) => { s.t0 = (s.t0 || 0) + dt; once(g, s, 'l1', s.t0 > 3, H5, 'THEY SING THE SAME SONG AS US, TOO SOON. STOP THEM.'); },
     outro: 'The other Chorus has stopped singing. The yard is still above the glass.' },
-  { name: 'Rot', tag: 'Side job', act: 0, opens: 23, side: 2, foe: 2, out: true, map: 3, diff: 1, dusk: .4, teaches: 'Gloam against Gloam',
+  { name: 'Rot', tag: 'Side job', act: 0, opens: 27, side: 2, foe: 2, out: true, map: 3, diff: 1, dusk: .4, teaches: 'Gloam against Gloam',
     brief: 'An older, sour patch of Gloam doesn\'t want to share the sky. Squash every one of its Mother Caps.',
     allow: GLOAM_ALL.concat(['mothercap']), units: GLOAM_UNITS, raids: false, auto: true,
     objectives: [{ text: g => `Squash the old Mother Caps (${hq(g, them(g)).length} left)`, done: g => !hq(g, them(g)).length }],

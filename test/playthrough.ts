@@ -18,9 +18,10 @@ import { addonOf } from '../src/factions/ironhold/bases';
 import { MISSIONS, missionSides, charterTeam, Mission } from '../src/campaign';
 
 initHeadless();
+const VENT_TAPS: BKind[] = ['pumpjack', 'siphonbell', 'ventbladder' as BKind];
 const quick = process.argv.includes('--quick'), only = process.argv.slice(2).filter(a => !a.startsWith('--')).map(Number);
 let seed = 11; Math.random = () => { seed = (seed * 16807) % 2147483647; return (seed - 1) / 2147483646; };
-const fails: string[] = []; const check = (ok: boolean, what: string) => { console.log((ok ? 'PASS ' : 'FAIL ') + what); if (!ok) fails.push(what); };
+const fails: string[] = []; const check = (ok: boolean, what: string) => chk(ok, what); const chk = (ok: boolean, what: string) => { console.log((ok ? 'PASS ' : 'FAIL ') + what); if (!ok) fails.push(what); };
 const T = 1 / 20;
 
 class Play {
@@ -53,8 +54,8 @@ class Play {
   /** Stakes a building on the nearest spot the build rules allow, around a point (the player's base by default), and finishes it. */
   build(k: BKind, at?: [number, number], r0 = 10, r1 = 60): boolean {
     const g = this.g; if (!this.may(k)) return false; for (const n of g.missing(k, this.me)) if (!this.build(n)) return false;
-    if (k === 'pumpjack' && !at) { const h = this.hq(), v = g.vents.filter(v => !v.tap).sort((a, b) => Math.hypot(a.pos.x - (h?.pos.x || 0), a.pos.z - (h?.pos.z || 0)) - Math.hypot(b.pos.x - (h?.pos.x || 0), b.pos.z - (h?.pos.z || 0)))[0]; if (!v) { this.log.push('no vent'); return false; } at = [v.pos.x, v.pos.z]; r0 = 0; r1 = 0; }
-    const h = this.hq(), [cx, cz] = at || (h ? [h.pos.x, h.pos.z] : [0, 0]);
+    if (VENT_TAPS.includes(k) && !at) { const h = this.hq(), v = g.vents.filter(v => !v.tap).sort((a, b) => Math.hypot(a.pos.x - (h?.pos.x || 0), a.pos.z - (h?.pos.z || 0)) - Math.hypot(b.pos.x - (h?.pos.x || 0), b.pos.z - (h?.pos.z || 0)))[0]; if (!v) { this.log.push('no vent'); return false; } at = [v.pos.x, v.pos.z]; r0 = 0; r1 = 0; }
+    const h = this.hq(), [cx, cz] = at || (h ? [h.pos.x, h.pos.z] : [0, 0]); if (!at && FACTION[this.me].hq === 'choir') r0 = Math.min(r0, 5);   // a Veyl building has to touch a song field
     for (let r = r0; r <= r1; r += 3) for (let a = 0; a < 6.28; a += r ? .35 : 9) {
       const x = cx + Math.cos(a) * r, z = cz + Math.sin(a) * r;
       if (!g.unlocked(k, this.me) || !g.canPlace(k, x, z, false, this.me)) continue;
@@ -132,18 +133,34 @@ const SCRIPTS: Record<string, (p: Play) => void> = {
     for (const s of MAP.sites!.slice(1)) if (g.hqs(p.me).length < 3) p.build('headframe', s as [number, number], 8, 30); p.defend(500, () => p.done(4)); },
   'Ore Else': p => { const g = p.g; p.build('annex'); p.bolt('hangar', 'labbay'); p.train('claimbarge', 1); p.raze('wardpylon'); p.raze('broodpit'); p.raze('reedgate'); p.run(2); p.raze('choir'); p.run(3); check(!!g.ms.erupt, 'Ore Else: the canyon opens when the last Stone breaks'); p.defend(100, () => g.endT > 0); },
   'Wrong Body': p => { const g = p.g; p.run(400, () => p.done(0)); p.run(300, () => p.done(1)); p.build('hushwell'); p.build('hushwell'); p.train('tender', 8); p.run(5); p.defend(60, () => g.ms.wave === 2); },
-  'Brood': p => { p.build('broodpit'); p.build('thornspire'); p.build('thornspire'); p.build('hushwell'); p.train('cantor', 3); p.train('lancer', 3); p.run(2); p.raze('sporesac', SIDE.home); p.raze('stinger', SIDE.home); p.raze('warren', SIDE.home); p.defend(10); },
+  'Brood': p => { const g = p.g; p.build('broodpit'); if (p.build('siphonbell')) { const v = g.vents.find(v => v.tap && v.tap.team === p.me); for (const u of g.own('tender', p.me).slice(0, 3)) sendToVent(g, u, v || null); }
+    p.run(300, () => (g.ms.fluxIn || 0) >= 100); p.build('wardpylon'); p.build('thornspire'); p.build('thornspire'); p.train('cantor', 6); p.run(2); p.raze('sporesac', SIDE.home); p.raze('stinger', SIDE.home); p.raze('warren', SIDE.home); p.defend(10); },
   'Salt Road': p => { const g = p.g, st = MAP.sites!; const far = st.filter(s => Math.hypot(s[0] - MAP.out[0], s[1] - MAP.out[1]) > 60).sort((a, b) => Math.hypot(a[0] - MAP.out[0], a[1] - MAP.out[1]) - Math.hypot(b[0] - MAP.out[0], b[1] - MAP.out[1]));
-    for (const s of far) { if (g.ownB('choir', true, p.me).length >= 2) break; p.build('choir', s as [number, number], 6, 30); } p.raze('sporesac', SIDE.home); p.raze('stinger', SIDE.home); p.raze('warren', SIDE.home); p.kill(() => true); p.defend(10); },
-  'Old Friends': p => { const g = p.g; p.build('wardpylon'); p.up('vedge'); p.defend(600, () => (g.ms.done || 0) >= 3); },
-  'Hold the Note': p => { const g = p.g; p.build('broodpit'); p.build('reedgate'); p.build('hushwell'); p.train('warden', 1); const c = roadPt(ROAD.len * .52, 34);
-    p.run(500, () => { for (const u of g.own('warden', p.me)) { u.pos.x = c[0]; u.pos.z = c[1]; u.order = { type: 'guard', x: c[0], z: c[1] }; } p.kill(u => u.order.type === 'raid'); return p.done(2); }, true); },
+    p.build('reedgate'); for (const s of far) { if (g.ownB('choir', true, p.me).length >= 2) break; p.build('choir', s as [number, number], 6, 30); } p.up('vfar'); p.train('cantor', 1);
+    const st2 = g.ownB('choir', true, p.me).find(b => Math.hypot(b.pos.x - MAP.out[0], b.pos.z - MAP.out[1]) > 40); const herd = () => { if (st2) for (const u of g.army(p.me)) { u.pos.x = st2.pos.x + 3; u.pos.z = st2.pos.z + 3; u.order = { type: 'guard', x: u.pos.x, z: u.pos.z }; } };
+    herd(); for (let k = 0; k < 6 && !p.done(3); k++) { p.train('lancer', g.own('lancer', p.me).length + 1); herd(); }
+    p.raze('sporesac', SIDE.home); p.raze('stinger', SIDE.home); p.raze('warren', SIDE.home); p.kill(() => true); p.defend(10); },
+  'Old Friends': p => { const g = p.g; p.build('wardpylon'); p.up('vglass'); p.build('mendingpool'); p.train('tuner', 1); const tu = g.own('tuner', p.me)[0];
+    p.defend(900, () => { if (g.ms.live && tu && tu.alive && !g.ms.c_wall) { const [x, z] = roadPt(ROAD.len * .7, 0); tu.pos.x = x + 4; tu.pos.z = z; p.cast(tu, 'wall', x, z); } return (g.ms.done || 0) >= 3; }); },
+  'Quiet Feet': p => { const g = p.g; p.build('duskhall'); p.build('quiethouse'); p.train('mute', 3); p.raze('pumpjack', SIDE.home); p.defend(20, () => g.endT > 0); },
+  'Listening Post': p => { const g = p.g; p.build('kiln'); p.train('listener', 1); p.kill(u => u.kind === 'needler' || u.kind === 'snapper' && u.order.type === 'guard'); p.train('bell', 2); p.raze('sporesac', SIDE.home); p.raze('stinger', SIDE.home); p.raze('warren', SIDE.home); p.defend(20, () => g.endT > 0); },
+  'Hold the Note': p => { const g = p.g; p.build('songarchive'); p.train('warden', 1); p.train('choirmaster', 2); const c = roadPt(ROAD.len * .52, 34);
+    const cm = g.own('choirmaster', p.me).slice(0, 2); cm.forEach((u, i) => { u.pos.x = c[0] + i * 2; u.pos.z = c[1]; }); p.cast(cm[0], 'join'); p.run(14, undefined, true);
+    p.run(500, () => { for (const u of [...g.own('warden', p.me), ...g.own('chord', p.me)]) { u.pos.x = c[0]; u.pos.z = c[1]; u.order = { type: 'guard', x: c[0], z: c[1] }; } p.kill(u => u.order.type === 'raid'); return p.done(3); }, true); },
+  'Sky Choir': p => { const g = p.g, [ix, iz] = [91, -103]; p.build('skyloft'); p.train('swift', 2); p.kill(u => u.kind === 'gadfly'); p.build('kiln'); p.up('vfar'); p.train('ferry', 1);
+    const fe = g.own('ferry', p.me)[0]; p.kill(u => Math.hypot(u.pos.x - ix, u.pos.z - iz) < 20 && !u.air); const herd = () => { for (const u of g.army(p.me)) { u.pos.x = ix + 2; u.pos.z = iz + 2; u.order = { type: 'guard', x: ix, z: iz }; } };
+    herd(); if (fe) p.cast(fe, 'unfold'); p.run(3, undefined, true); for (let k = 0; k < 6 && !p.done(3); k++) { p.train('cantor', g.own('cantor', p.me).length + 1); herd(); }
+    p.raze('pumpjack', SIDE.home); p.raze('watchpost', SIDE.home); p.defend(20, () => g.endT > 0); },
   'Open Hands': p => { const g = p.g; p.run(3); p.walk(ROAD.x, ROAD.z); p.run(2); p.walk(3, 8); p.run(40, () => g.endT > 0); },
-  'The Last Verse': p => { const g = p.g; const c = roadPt(ROAD.len * .52, 34), spots = [-30, 0, 30].map(k => roadPt(ROAD.len * .52 + k, 34 + (k ? -14 : 16))); for (const s of spots) p.build('choir', s as [number, number], 0, 14);
-    p.defend(30, () => false); check((g.ms.hold || 0) < 1 || near(p, c), 'job 15: the verse only counts while the player stands between the Stones');
-    p.run(260, () => { p.walk(c[0], c[1]); p.kill(u => u.order.type === 'raid'); return !!g.ms.turn; }, true); check(g.ms.turn === 1 && !p.done(2), 'job 15: after three minutes Held Fifth says where the glass stops, and the job waits for the player');
-    p.run(8, () => { p.walk(c[0], c[1]); return false; }, true); check(g.endT <= 0 && !g.ms.out, 'job 15: staying between the Stones does not end the job'); const n = g.ownB('choir', false, p.me).length;
-    p.run(6, () => { p.walk(c[0] + 80, c[1]); return !!g.ms.out; }, true); check(g.ms.out === 1 && g.ownB('choir', false, p.me).length === n - 1, 'job 15: walking out stops the verse and the Gloam takes the nearest Stone'); },
+  'Long Stride': p => { const g = p.g, [lx, lz] = [78.8, -47.6]; p.build('tuningfork'); p.train('reedwalker', 1); p.train('knell', 1); const rw = g.own('reedwalker', p.me)[0], kn = g.own('knell', p.me)[0];
+    const hold = () => { if (rw && rw.alive && p.may('ledge')) { rw.pos.x = lx; rw.pos.z = lz; rw.order = { type: 'guard', x: lx, z: lz }; } };
+    hold(); p.run(2, undefined, true); if (kn) { const [x, z] = roadPt(ROAD.len * .5, 0); kn.pos.x = x + 6; kn.pos.z = z; p.cast(kn, 'toll', x, z); }
+    p.defend(400, () => { hold(); return p.done(3); }); },
+  'The Last Verse': p => { const g = p.g, check = (ok: boolean, what: string) => { if (!p.ban.size) chk(ok, what); }; p.build('highbeacon'); p.train('cantus', 1); const c = roadPt(ROAD.len * .52, 34), spots = [-30, 0, 30].map(k => roadPt(ROAD.len * .52 + k, 34 + (k ? -14 : 16))); for (const s of spots) p.build('choir', s as [number, number], 0, 14);
+    p.defend(30, () => false); check((g.ms.hold || 0) < 1 || near(p, c), 'The Last Verse: the verse only counts while the player stands between the Stones');
+    p.run(260, () => { p.walk(c[0], c[1]); p.kill(u => u.order.type === 'raid'); return !!g.ms.turn; }, true); check(g.ms.turn === 1 && !p.done(3), 'The Last Verse: after three minutes Held Fifth says where the glass stops, and the job waits for the player');
+    p.run(8, () => { p.walk(c[0], c[1]); return false; }, true); check(g.endT <= 0 && !g.ms.out, 'The Last Verse: staying between the Stones does not end the job'); const n = g.ownB('choir', false, p.me).length;
+    p.run(6, () => { p.walk(c[0] + 80, c[1]); return !!g.ms.out; }, true); check(g.ms.out === 1 && g.ownB('choir', false, p.me).length === n - 1, 'The Last Verse: walking out stops the verse and the Gloam takes the nearest Stone'); },
   'Rooted': p => { const g = p.g; p.run(400, () => p.done(0)); p.build('sporesac'); const cap = g.ownB('mothercap', true, p.me)[0]; p.cash(200); for (let i = 0; i < 3; i++) g.train(cap, 'grazer'); p.run(40, () => p.done(2));
     p.cash(400); p.train('grazer', 8); const fields = MAP.sites!.filter(s => Math.hypot(s[0] - cap.pos.x, s[1] - cap.pos.z) > 40).sort((a, b) => Math.hypot(a[0] - cap.pos.x, a[1] - cap.pos.z) - Math.hypot(b[0] - cap.pos.x, b[1] - cap.pos.z));
     for (const s of fields) { if (g.ownB('mothercap', true, p.me).length >= 2) break; p.build('mothercap', s as [number, number], 6, 30); } p.run(5); },
@@ -188,6 +205,16 @@ const TEACH: Record<string, { ban: string[]; lose: number }> = {
   'Air Freight': { ban: ['hopper'], lose: 1200 },
   'Off the Books': { ban: ['lift'], lose: 1200 },
   'Ore Else': { ban: ['annex'], lose: 1500 },
+  'Wrong Body': { ban: ['hushwell'], lose: 900 },
+  'Brood': { ban: ['siphonbell'], lose: 1200 },
+  'Salt Road': { ban: ['vfar'], lose: 1500 },
+  'Old Friends': { ban: ['wall'], lose: 1200 },
+  'Quiet Feet': { ban: ['mute'], lose: 1200 },
+  'Listening Post': { ban: ['listener'], lose: 1200 },
+  'Hold the Note': { ban: ['join'], lose: 1200 },
+  'Sky Choir': { ban: ['unfold'], lose: 1500 },
+  'Long Stride': { ban: ['reedwalker'], lose: 1200 },
+  'The Last Verse': { ban: ['highbeacon'], lose: 1500 },
   'Old Opening': { ban: ['flaktower'], lose: 1500 },
 };
 const result = (p: Play) => { const g = p.g; return g.phase === 'over' ? (g.won ? 'won' : 'lost') : g.endT > 0 ? (g.endWon ? 'won' : 'lost') : 'running'; };

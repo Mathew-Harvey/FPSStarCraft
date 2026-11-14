@@ -9,7 +9,6 @@ import type { Game } from '../../game';
 import { TMP, r1, beamMat } from '../../game';
 import { UNIT, BLD, Unit, Building, isUnit, foeOf, fac, SIDE, CLEAVE, isFoe, type BKind } from '../../data';
 import { isEnemy } from '../../core/sides';
-import { storyVeyl } from './story-tree';   // STORY STAND-IN: see story-tree.ts
 import { defineUnits, defineBuildings, defineFaction } from '../../core/registry';
 import { defineAbilities } from '../../core/ability';
 import { canHit } from '../../core/combat';
@@ -129,8 +128,8 @@ defineFaction(1, { ai: aiWarden, drive: (g, dt, P, eye, dir, look) => updateVeyl
 // Song fields, seeds and the training queue (src/factions/veyl/fields.ts).
 defineFaction(1, {
   // Tech: a body whose building is not up yet is refused, for a person, the Conductor and the network alike ("Mute needs a Quiet House first").
-  gate: (g, team, what) => { if (storyVeyl(g)) return ''; const nb = (V_NEEDS as Record<string, BKind>)[what]; return nb && !g.ownB(nb, true, team).length ? BLD[nb].name : ''; },
-  grows: true, placeOK: (g, k, x, z, team) => placeWhy(g, k, x, z, team), works: (g, b) => rateOf(g, b), each: (g, b, dt) => { storyVeyl(g); veylTick(g, dt); eachVeyl(g, b, dt); showSilent(g, b); },
+  gate: (g, team, what) => { const nb = (V_NEEDS as Record<string, BKind>)[what]; return nb && !g.ownB(nb, true, team).length ? BLD[nb].name : ''; },
+  grows: true, placeOK: (g, k, x, z, team) => placeWhy(g, k, x, z, team), works: (g, b) => rateOf(g, b), each: (g, b, dt) => { veylTick(g, dt); eachVeyl(g, b, dt); showSilent(g, b); },
   whySilent: (g, b) => silent(g, b) ? `The ${BLD[b.kind].name} is silent: it stands outside every song field. Grow a Hush Well or a Choir Stone next to it.` : '',
   bought(g, team, key) {
     // Shell levels: every Veyl shield 10% bigger. Air Glass: Veyl fliers get more health and shield.

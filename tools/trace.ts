@@ -18,13 +18,15 @@ const side = (t: number) => {
   const hf = g.buildings.filter(b => b.alive && b.team === t && b.kind === hq).map(b => `${Math.round(Math.hypot(b.pos.x - hx, b.pos.z - hz))}${b.built ? '' : '?'}`).join(',');
   return `w${ws} a${ar.length}(${ar.reduce((a, u) => a + (UNIT[u.kind].cost || 0), 0)}) ore${Math.round(g.cash(t))} flux${Math.round(g.flux(t))} taps${(g as any).vents.filter((v: any) => v.tap && v.tap.alive && v.tap.team === t).map((v: any) => Math.round(Math.hypot(v.pos?.x ?? v.x, v.pos?.z ?? v.z)) + (v.tap.built ? '' : '?')).join(',')} hf[${hf}] b${g.buildings.filter(b => b.alive && b.team === t).length}`;
 };
-let next = 60, m0 = 0, m1 = 0, nextP = 0;
+let next = 60, m0 = 0, m1 = 0, nextP = (spec.from || 0) * 60, nan = 0;
 const ph = (S: any, t: number) => { const a = g.army(t), [hx, hz] = homeXZ(t), [fx, fz] = homeXZ(t === H ? O : H), d = (u: any, x: number, z: number) => Math.hypot(u.pos.x - x, u.pos.z - z);
-  const mv = a.filter(u => u.order.type === 'amove'); return `${S.plan ? S.plan.phase : '-'} n${a.length} mv${mv.length} home${Math.round(a.reduce((q, u) => q + d(u, hx, hz), 0) / Math.max(1, a.length))} foe${Math.round(mv.reduce((q, u) => q + d(u, fx, fz), 0) / Math.max(1, mv.length))} tgt${a.filter(u => u.target).length}`; };
+  const fin = (u: any) => Number.isFinite(u.pos.x + u.pos.z); const mv = a.filter(u => u.order.type === 'amove' && fin(u)); a.splice(0, a.length, ...a.filter(fin)); const tg = S.plan?.target; return `${S.plan ? S.plan.phase + (tg ? '>' + tg.kind + '@' + Math.round(Math.hypot(tg.pos.x - fx, tg.pos.z - fz)) : '') : '-'} n${a.length} mv${mv.length} home${Math.round(a.reduce((q, u) => q + d(u, hx, hz), 0) / Math.max(1, a.length))} foe${Math.round(mv.reduce((q, u) => q + d(u, fx, fz), 0) / Math.max(1, mv.length))} tgt${a.filter(u => u.target).length}`; };
 while (g.phase !== 'over' && g.time < mins * 60) {
   g.update(1 / 30); g.evq!.length = 0;
-  if (spec.fine && g.time >= nextP && g.time < spec.fine * 60) { nextP += 5; console.log(`  ${Math.round(g.time)}s yard ${ph(g.dir, H)} | far ${ph(g.dir.vs, O)}`); }
+  if (spec.fine && g.time >= nextP && g.time >= (spec.from || 0) * 60 && g.time < spec.fine * 60) { nextP += 5; console.log(`  ${Math.round(g.time)}s yard ${ph(g.dir, H)} | far ${ph(g.dir.vs, O)}`); }
+  if (!nan) { const bad = g.units.filter(u => u.alive && !Number.isFinite(u.pos.x + u.pos.z)); if (bad.length) { nan = 1; console.log(`  NaN at ${g.time.toFixed(1)}s:`, bad.map(u => `${u.kind}/t${u.team} ${u.state} ${u.order.type}`).join(', ')); } }
   if (g.time >= next) { next += 60; const a = g.stats.mined - m0, b = g.stats.minedV - m1; m0 = g.stats.mined; m1 = g.stats.minedV;
     console.log(`${Math.round(g.time / 60)}m yard +${Math.round(a)} ${side(H)} push ${g.dir.pushes}/${g.dir.fails} | far +${Math.round(b)} ${side(O)} push ${g.dir.vs.pushes}/${g.dir.vs.fails}`); }
 }
+if (spec.left) for (const t of [H, O]) { const [hx, hz] = homeXZ(t); console.log(t === H ? 'yard' : 'far', 'buildings left:', g.buildings.filter(b => b.alive && b.team === t).map(b => `${b.kind}@${Math.round(Math.hypot(b.pos.x - hx, b.pos.z - hz))}${b.built ? '' : '?'}`).join(' ')); }
 console.log(g.phase === 'over' ? (g.won ? 'yard won' : 'far won') : 'draw', Math.round(g.time));

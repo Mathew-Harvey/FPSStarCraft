@@ -15,6 +15,8 @@ import { costOf } from '../../src/core/econ';
 import { V_UNIT, V_BLD, V_TUNE, V_NEEDS, type VKind } from '../../src/factions/veyl/numbers';
 import { silent, inField, energyOf, setEnergy, quickLeft, unfolded, restOf, quicken } from '../../src/factions/veyl/fields';
 import { echo, GUNS, FP, driveMute } from '../../src/factions/veyl/units';
+import { weights, pickKind, MIX_KINDS, type SeenMix } from '../../src/factions/veyl/mix';
+import { isHunting } from '../../src/core/brainkit';
 
 initHeadless();
 const fail: string[] = []; const check = (ok: boolean, what: string) => { console.log((ok ? 'PASS ' : 'FAIL ') + what); if (!ok) fail.push(what); };
@@ -265,6 +267,41 @@ const spawnI = (g: Game, k: Kind, x: number, z: number) => { const u = g.spawn(k
   const never = [...want].filter(k => !cast[k]);
   check(!never.length, `bot Veyl bodies use every ability (${never.length ? 'never: ' + never.join(', ') : [...want].map(k => k + ' ' + cast[k]).join(', ')})`);
   check(shards > 0, `a bot Lyre puts Shards out (${shards} at once)`);
+}
+
+// ---------------------------------------------------------------- 3d. the Conductor's army mix and the finish (stream L's brain spec)
+// Directions, not numbers: what it has seen moves the weights the right way, no kind runs past the cap, every kind keeps some weight,
+// a Conductor that sees fliers trains Swifts, and one whose enemy has nothing left to fight with hunts the last buildings down.
+{
+  const none: SeenMix = { soft: 0, plated: 0, huge: 0, air: 0, unseen: 0, melee: 0, swarm: false, total: 0 }, all = () => true;
+  const w0 = weights(none, all), wPl = weights({ ...none, plated: 20, total: 20 }, all), wAir = weights({ ...none, air: 20, total: 20 }, all), wSw = weights({ ...none, soft: 20, swarm: true, total: 20 }, all), wUn = weights({ ...none, unseen: 4, total: 4 }, all);
+  check(wPl.lancer! > w0.lancer! && wPl.bell! > w0.bell! && wPl.cantor === w0.cantor, 'seeing a plated army puts more weight on Lancers and Bells, none on Cantors');
+  check(wAir.swift! > wAir.prism! && wAir.swift! > wAir.omen! && wAir.swift! > wAir.lyre! && wAir.swift! > w0.swift!, 'seeing fliers makes the Swift the Skyloft\'s first pick');
+  check(wSw.knell! > w0.knell! && wSw.cantor! > w0.cantor! && wSw.choirmaster! > w0.choirmaster!, 'seeing a swarm of soft bodies puts more weight on Knells, Cantors and Choirmasters');
+  check(wUn.listener! > w0.listener!, 'seeing unseen bodies puts more weight on Listeners');
+  check(MIX_KINDS.every(k => (w0[k] ?? 0) > 0), 'every Veyl fighter keeps some weight when nothing is seen, so each turns up in a long match');
+  check(pickKind(['cantor', 'lancer'], w0, () => 0, k => k === 'cantor') === 'lancer' && pickKind(['cantor'], w0, () => 0, k => k === 'cantor') === null, 'a kind at the cap is not picked');
+  // a Conductor that sees fliers puts Swifts out of its Skyloft
+  {
+    const g = world(); beds(g); g.truce = false; g.human = [true, false]; g.dir.vs.auto = true; const [hx, hz] = homeXZ(T);
+    for (const k of ['skyloft', 'kiln', 'reedgate', 'broodpit'] as BKind[]) put(g, k, k === 'skyloft' ? 14 : k === 'kiln' ? -14 : k === 'reedgate' ? 0 : 0, k === 'reedgate' ? 16 : k === 'broodpit' ? -16 : 0);
+    const F: Unit[] = []; for (let i = 0; i < 6; i++) { const u = g.spawn('gadfly', 0, hx - 6 + i * 2, hz - 24); u.maxHp = u.hp = 1e5; F.push(u); }
+    let made = 0; const seenK = new Set<Unit>(); run(g, 80, () => { for (const u of F) { addStatus(u, 'stun', 1); u.hp = u.maxHp; } for (const u of g.units) if (u.alive && u.team === T && !seenK.has(u)) { seenK.add(u); if (u.kind === 'swift') made++; } });
+    check(made > 0, `a Conductor that sees fliers trains Swifts (${made})`);
+  }
+  // the finish: the enemy has buildings but no fighters, and the Veyl army goes after them
+  {
+    const g = world(); beds(g); g.truce = false; g.human = [true, false]; g.dir.vs.auto = true;
+    for (const u of g.units) if (u.alive && u.team === 0 && UNIT[u.kind] && !['rigger'].includes(u.kind)) { u.alive = false; u.hp = 0; g.scene.remove(u.obj); }
+    const [hx, hz] = homeXZ(T); for (let i = 0; i < 10; i++) spawnV(g, i % 2 ? 'cantor' : 'lancer', -6 + i, -12);
+    // what the enemy had, seen once near the Veyl base, then gone
+    const ghost = g.spawn('linesman', 0, hx, hz - 20); run(g, 2); ghost.alive = false; ghost.hp = 0; g.scene.remove(ghost.obj);
+    const foeB = g.buildings.filter(b => b.alive && b.team === 0), hp0 = foeB.reduce((a, b) => a + b.hp, 0);
+    let hunted = false; run(g, 150, () => { hunted ||= isHunting(g.dir.vs); });
+    const hp1 = g.buildings.filter(b => b.team === 0).reduce((a, b) => a + (b.alive ? b.hp : 0), 0);
+    check(hunted, 'once the enemy has had no fighters for 30 s, the Conductor hunts');
+    check(hp1 < hp0 * .9 || g.phase === 'over', `and its army breaks the enemy's buildings (${Math.round(hp0)} to ${Math.round(hp1)} hp${g.phase === 'over' ? ', match over' : ''})`);
+  }
 }
 
 // ---------------------------------------------------------------- 4. bot matches: every kind gets made

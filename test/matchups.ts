@@ -70,6 +70,9 @@ for (const out of [1, 2]) {
   // 6. A push that breaks nothing for a long time ends, so both armies do not stand still for the rest of the match.
   {
     const g = match(out), D = g.dir; g.purse = g.purse.map(() => 0);
+    // The push must break nothing, so the far end's buildings cannot fall: with the map's own vents laid every time (they used to go
+    // missing after the first match in a run) three Linesmen broke an unguarded Mother Cap in 141 s, and the test was no longer about a stale push.
+    for (const b of g.buildings) if (b.team === out) b.hp = b.maxHp = 1e7;
     const sq: any[] = []; for (let i = 0; i < 3; i++) { const u = g.spawn('linesman', 0, 10 + i, 30); u.order = { type: 'amove', x: 900, z: 900 }; u.pilot = 0; sq.push(u); }
     D.plan = { phase: 'go', t: 0, target: hq(g, out), book: 0, label: '', goT: g.time }; D.incoming(D, 0);
     check(D.vs.raidLive, `vs ${name}: the defenders see the push coming`);

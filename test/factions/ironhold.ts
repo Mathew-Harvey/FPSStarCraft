@@ -180,7 +180,8 @@ const bolt = (g: Game, host: Building, k: 'labbay' | 'twinbay') => { const ok = 
   check(!g.buildingAction(bunk, 'labbay'), 'a host takes only one add-on');
   g.train(bunk, 'linesman'); g.train(bunk, 'linesman'); const before = g.own('linesman', T).length; run(g, UNIT.linesman.time + 1); check(g.own('linesman', T).length - before === 2, 'with a Twin Bay two Linesmen come out at once');
   const twin = addonOf(bunk)!; const ox = bunk.pos.x; bunk.queue.length = 0;
-  check(g.buildingAction(bunk, 'crawl'), 'a Bunkhouse packs up to crawl'); run(g, 12); check(Math.abs(bunk.pos.x - ox) > 3 && !addonOf(bunk) && twin.alive, 'it crawls away and leaves its add-on behind');
+  // Aimed 15 m off: with no aim it picks a random spot within 20 m, and one that lands within 3 m failed the check below by chance.
+  check(g.buildingAction(bunk, 'crawl', false, { x: ox + 15, z: bunk.pos.z }), 'a Bunkhouse packs up to crawl'); run(g, 12); check(Math.abs(bunk.pos.x - ox) > 3 && !addonOf(bunk) && twin.alive, 'it crawls away and leaves its add-on behind');
   check(!g.train(bunk, 'linesman') || !!(require('../../src/factions/ironhold/kit').mem(bunk).crawl) === false, 'it does not train while crawling');
   const hq = g.hqs(T)[0]; g.purse[T] = 1e5; g.fluxPurse[T] = 1e5; hq.queue.length = 0;
   check(g.buildingAction(hq, 'surveyrig'), 'the Headframe starts refitting into a Survey Rig'); run(g, BLD.surveyrig.time + 2); check(hq.kind === 'surveyrig' && g.isHQ(hq), 'and becomes one, still a home building');

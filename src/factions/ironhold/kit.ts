@@ -8,7 +8,7 @@ import { UNIT, Unit, Building, isUnit } from '../../data';
 import { canHit, hasTag, catOf, type Tag } from '../../core/combat';
 import { seenBy } from '../../core/sight';
 import { isEnemy } from '../../core/sides';
-import { altOf } from '../../core/air';
+import { altOf, AIR } from '../../core/air';
 import { I_TUNE } from './numbers';
 
 export const TUNE = I_TUNE;
@@ -125,7 +125,11 @@ export function driveGun(g: Game, dt: number, P: Set<string>, eye: THREE.Vector3
   const mul = mulOf(g, me), from = V3(me.pos.x + dir.x * .8, eye.y - .35, me.pos.z + dir.z * .8); let any: Tgt | null = null, total = 0;
   for (let i = 0; i < (o.pellets || 1); i++) {
     const sp = (o.spread ?? .012) * (1 + g.bloom), d = V3().copy(dir); d.x += R(-sp, sp); d.y += R(-sp, sp); d.z += R(-sp, sp); d.normalize();
-    let hit = g.ray(eye, d, gun.range, -1, me); if (hit && ((hit.unit && !isEnemy(me.team, hit.unit.team)) || (hit.b && !isEnemy(me.team, hit.b.team)))) hit = null;
+    // A gun's reach is measured along the ground, the way a bot's is (aiGun). The ray runs from the eye, so a flier looking down, or a
+    // walker looking up at one, needs the height added on or a short gun cannot touch what its own bot would hit from the same spot.
+    const far = Math.hypot(gun.range, AIR.high + 2);
+    let hit = g.ray(eye, d, far, -1, me); if (hit && ((hit.unit && !isEnemy(me.team, hit.unit.team)) || (hit.b && !isEnemy(me.team, hit.b.team)))) hit = null;
+    if (hit && hit.dist > gun.range) { const t = hit.unit || hit.b; if (!t || gap(g, me, t) - (hit.unit ? UNIT[hit.unit.kind].rad : 0) > gun.range) hit = null; }
     let dl = hit ? hit.dist : gun.range; if (!hit && d.y < 0) dl = Math.min(dl, -eye.y / d.y);
     const end = V3().copy(eye).addScaledVector(d, dl); if (i % 2 === 0) g.tracer(from, end, tracerMat, o.tracer ?? .08);
     const t = hit && (hit.unit || hit.b) || null;

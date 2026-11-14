@@ -169,4 +169,6 @@ defineFaction(1, {
 
 // The Warden's low note: every friend within 16 m gets 60 shield back. Online the server casts it when the player's browser asks.
 defineAbilities('warden', [{ key: 'lownote', name: 'Low Note', hotkey: 'Mouse2', energy: 0, cd: 19, cast: 0, range: 0, target: 'self', radius: 16, blurb: 'Every friend close by gets 60 shield back.',
-  effect: (g, u) => { for (const o of g.units) if (o.alive && o.team === u.team && Math.hypot(o.pos.x - u.pos.x, o.pos.z - u.pos.z) < 16) { o.shield = Math.min(o.maxShield, o.shield + 60); o.pop = .6; } } }]);
+  effect: (g, u) => { for (const o of g.units) if (o.alive && o.team === u.team && Math.hypot(o.pos.x - u.pos.x, o.pos.z - u.pos.z) < 16) { o.shield = Math.min(o.maxShield, o.shield + 60); o.pop = .6; } },
+  // a bot Warden sings it once the friends close by have lost 150 shield between them (the note gives up to 60 to each)
+  ai: (g, u) => g.units.reduce((n, o) => n + (o.alive && o.team === u.team && Math.hypot(o.pos.x - u.pos.x, o.pos.z - u.pos.z) < 16 ? Math.min(60, o.maxShield - o.shield) : 0), 0) >= 150 ? { x: u.pos.x, z: u.pos.z } : null }]);

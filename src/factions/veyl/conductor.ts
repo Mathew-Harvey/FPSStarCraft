@@ -9,7 +9,6 @@ import { costOf, canPay, sendToVent, tapped, ventAt } from '../../core/econ';
 import { isHidden } from '../../core/sight';
 import { hasTag } from '../../core/combat';
 import { useAbility } from '../../core/ability';
-import { load, unload } from '../../core/cargo';
 import { V_TRAINS, V_NEEDS, FIELD, type VKind, type VBKind } from './numbers';
 import { fieldsOf, inField, quicken, energyOf, unfolded } from './fields';
 
@@ -232,9 +231,11 @@ function ferryDrop(D: Director, V: VS, _dt: number) {
   if (d) {
     const f = d.ferry; if (!f.alive) { V.drop = null; return; } d.t += 1;
     if (d.phase === 'load') { const riders = g.army(T).filter(u => (u.kind === 'cantor' || u.kind === 'mute') && !u.inside && u.order.type === 'guard' && !u.pilot && u !== g.me).slice(0, 4);
-      for (const u of riders) { if (Math.hypot(u.pos.x - f.pos.x, u.pos.z - f.pos.z) < 5) load(g, f, u); else u.order = { type: 'guard', x: f.pos.x, z: f.pos.z }; }
-      if ((f.cargo?.length ?? 0) >= 4 || (d.t > 25 && (f.cargo?.length ?? 0) >= 2)) { d.phase = 'fly'; d.t = 0; f.order = { type: 'amove', x: d.x, z: d.z }; } else if (d.t > 40) { unload(g, f); V.drop = null; } return; }
-    if (d.phase === 'fly') { f.order = { type: 'amove', x: d.x, z: d.z }; f.target = null; if (Math.hypot(f.pos.x - d.x, f.pos.z - d.z) < 6 || d.t > 70 || f.shield <= 0) { const out = (f.cargo || []).slice(); unload(g, f); const hq = g.ownB(undefined, true, foe).sort((a, b) => Math.hypot(a.pos.x - f.pos.x, a.pos.z - f.pos.z) - Math.hypot(b.pos.x - f.pos.x, b.pos.z - f.pos.z))[0]; for (const u of out) u.order = { type: 'amove', x: hq ? hq.pos.x : d.x, z: hq ? hq.pos.z : d.z }; d.phase = 'home'; d.t = 0; D.say('Conductor', 'The Ferry let four blades out by their seams.', '', T); } return; }
+      // through the Ferry's own Load and Unload, so every screen online sees them used
+      for (const u of riders) if (Math.hypot(u.pos.x - f.pos.x, u.pos.z - f.pos.z) >= 4 + UNIT.ferry.rad) u.order = { type: 'guard', x: f.pos.x, z: f.pos.z };
+      if (riders.some(u => Math.hypot(u.pos.x - f.pos.x, u.pos.z - f.pos.z) < 4 + UNIT.ferry.rad)) useAbility(g, f, 'load');
+      if ((f.cargo?.length ?? 0) >= 4 || (d.t > 25 && (f.cargo?.length ?? 0) >= 2)) { d.phase = 'fly'; d.t = 0; f.order = { type: 'amove', x: d.x, z: d.z }; } else if (d.t > 40) { useAbility(g, f, 'drop'); V.drop = null; } return; }
+    if (d.phase === 'fly') { f.order = { type: 'amove', x: d.x, z: d.z }; f.target = null; if (Math.hypot(f.pos.x - d.x, f.pos.z - d.z) < 6 || d.t > 70 || f.shield <= 0) { const out = (f.cargo || []).slice(); useAbility(g, f, 'drop'); const hq = g.ownB(undefined, true, foe).sort((a, b) => Math.hypot(a.pos.x - f.pos.x, a.pos.z - f.pos.z) - Math.hypot(b.pos.x - f.pos.x, b.pos.z - f.pos.z))[0]; for (const u of out) u.order = { type: 'amove', x: hq ? hq.pos.x : d.x, z: hq ? hq.pos.z : d.z }; d.phase = 'home'; d.t = 0; D.say('Conductor', 'The Ferry let four blades out by their seams.', '', T); } return; }
     if (d.phase === 'home') { const [hx, hz] = homeXZ(T); f.order = { type: 'guard', x: hx, z: hz }; if (d.t > 10) V.drop = null; return; }
   }
   if (now < (V.dropT ?? 600)) return;

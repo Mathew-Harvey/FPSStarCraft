@@ -75,8 +75,12 @@ function zap(g: Game, u: Unit, t: Unit | Building, dmg: number, w = .08, mat: TH
   g.tracer(from(u), V3(t.pos.x, yOf(t), t.pos.z), mat, w); g.damage(t, dmg, u); if (g.vol(u.pos) > .05) sfx.zap(g.vol(u.pos) * .7); g.puff(TMP.set(t.pos.x, yOf(t), t.pos.z), 1, .4, M.teal, .4);
 }
 /** Where a bot caster stands: a few metres behind the nearest friendly fighter, else its order. */
+/** The bodies that hang back behind the line (a hanger follows the nearest body that is not one; it used to follow only bodies with no
+ *  abilities at all, and once Cantors got Rush that left Choirmasters and Knells idle at home with nothing to follow). */
+const HANGS = new Set<string>(['choirmaster', 'knell', 'tender']);
 function hangBack(g: Game, u: Unit, dt: number, back = 6) {
-  let best: Unit | null = null, bd = 40; for (const o of g.units) if (o.alive && o !== u && o.team === u.team && isFighter(o) && !abilitiesOf(o.kind).length && !UNIT[o.kind].air) { const d = Math.hypot(o.pos.x - u.pos.x, o.pos.z - u.pos.z); if (d < bd) { bd = d; best = o; } }
+  // the friend at the front: the one closest to what it is fighting (or, with no fight, the nearest)
+  let best: Unit | null = null, bd = Infinity; for (const o of g.units) if (o.alive && o !== u && o.team === u.team && isFighter(o) && !HANGS.has(o.kind) && !UNIT[o.kind].air) { const d = Math.hypot(o.pos.x - u.pos.x, o.pos.z - u.pos.z); if (d > 40) continue; const f = o.target && o.target.alive ? Math.hypot(o.target.pos.x - o.pos.x, o.target.pos.z - o.pos.z) : 99 + d; if (f < bd) { bd = f; best = o; } }
   if (!best) { g.vIdle(u, dt, 2, 1); return; }
   const tgt = best.target && best.target.alive ? best.target : null, dx = tgt ? best.pos.x - tgt.pos.x : 0, dz = tgt ? best.pos.z - tgt.pos.z : 0, l = Math.hypot(dx, dz) || 1;
   g.moveTo(u, best.pos.x + (tgt ? dx / l * back : 0), best.pos.z + (tgt ? dz / l * back : -2), dt, 2.5, 1);
@@ -225,7 +229,13 @@ function sweep(g: Game, u: Unit, x: number, z: number) {
   for (const b of g.buildings) if (b.alive && foe(u, b) && g.distToBox(b, x, z) < 1) g.damage(b, T.reedwalker.dmg * 2 * k, u);
   if (g.vol(u.pos) > .05) sfx.zap(g.vol(u.pos)); g.puff(TMP.set(x, .4, z), 3, 1, M.cyan, .6, L / 2);
 }
-const aiSwift = (g: Game, u: Unit, dt: number) => gunAI(g, u, dt, { range: T.swift.range + (g.upOf(u.team).vswift ? T.swift.far : 0), cd: T.swift.cd, bRange: 0, fire: t => { const k = hitK(g, u); zap(g, u, t, T.swift.dmg * k, .05); zap(g, u, t, T.swift.dmg * k, .05); } });
+/** The Swift fights fliers, and with Lift ready flies in over a costly ground body to hold it up (its Lift trigger then fires). */
+const liftable = (g: Game, u: Unit, r: number) => near(g, u.pos.x, u.pos.z, r, o => foe(u, o) && !o.air && !hasTag(o, 'huge') && !hasStatus(o, 'lifted') && isFighter(o) && seenBy(g, u.team, o)).sort((a, b) => UNIT[b.kind].cost - UNIT[a.kind].cost);
+const aiSwift = (g: Game, u: Unit, dt: number) => {
+  if ((u.energy ?? 0) >= T.swift.lift && !(u.abCd?.lift > 0) && near(g, u.pos.x, u.pos.z, T.swift.range + 6, o => foe(u, o) && o.air).length < 2) { const t = liftable(g, u, T.swift.liftRange + 10)[0]; if (t && Math.hypot(t.pos.x - u.pos.x, t.pos.z - u.pos.z) > T.swift.liftRange - 2) { g.moveTo(u, t.pos.x, t.pos.z, dt, T.swift.liftRange - 3, 1); return; } }
+  swiftGun(g, u, dt);
+};
+const swiftGun = (g: Game, u: Unit, dt: number) => gunAI(g, u, dt, { range: T.swift.range + (g.upOf(u.team).vswift ? T.swift.far : 0), cd: T.swift.cd, bRange: 0, fire: t => { const k = hitK(g, u); zap(g, u, t, T.swift.dmg * k, .05); zap(g, u, t, T.swift.dmg * k, .05); } });
 const burning = (g: Game, u: Unit) => ((u as any).burnT ?? 0) > g.time;
 const aiPrism = (g: Game, u: Unit, dt: number) => gunAI(g, u, dt, { range: T.prism.range, cd: T.prism.cd, fire: t => zap(g, u, t, (T.prism.dmg + (burning(g, u) && hasTag(t, 'plated') ? T.prism.burn : 0)) * hitK(g, u), burning(g, u) ? .2 : .1) });
 const aiOmen = (g: Game, u: Unit, dt: number) => {
@@ -246,7 +256,12 @@ const aiListener = (g: Game, u: Unit, dt: number) => {
 };
 
 // ---------------------------------------------------------------- abilities
-const reach = (g: Game, u: Unit) => g.upOf(u.team).vreach ? 3 : 0;
+/** Bodies that fight close: the ones a Glass Wall shuts out and a Lancer skips away from. */
+const BLADES = new Set<string>(['cantor', 'mute', 'snapper', 'breacher', 'dustbike', 'mulcher']);
+const FAR = 3, reach = (g: Game, u: Unit) => g.upOf(u.team).vreach ? FAR : 0;
+/** Far Reach (Song Archive): the Tuner's and Choirmaster's aimed abilities are listed at their longest range, and refused past the
+ *  short one until it is learned (the shared range check has no per-side hook). */
+const within = (g: Game, u: Unit, t: Target, base: number) => { const o = t.id ? g.units.find(x => x.id === t.id) : null, x = o ? o.pos.x : t.x, z = o ? o.pos.z : t.z; return Math.hypot(x - u.pos.x, z - u.pos.z) <= base + reach(g, u) + 1; };
 const known = (g: Game, u: Unit, key: string) => !!(g.upOf(u.team) as any)[key];
 /** The densest spot of enemy bodies within `range` of a caster, with how many are within r of it. */
 function cluster(g: Game, u: Unit, range: number, r: number, pick: (o: Unit) => boolean = o => foe(u, o) && !o.air): { x: number; z: number; n: number; friends: number } | null {
@@ -265,19 +280,21 @@ const ABS: Record<string, AbilityDef[]> = {
     ai: (g, u) => { const t = u.target; return t && t.alive && isUnit(t) && known(g, u, 'vrush') ? (d => d > 4 && d < T.cantor.rushRange ? { x: t.pos.x, z: t.pos.z, id: t.id } : null)(gap(g, u, t)) : null; } }],
   lancer: [{ key: 'skip', name: 'Skip', hotkey: 'C', energy: 0, cd: T.lancer.skipCd, cast: 0, range: T.lancer.skip, target: 'point', blurb: 'Steps 8 m in a blink. Needs Skip from a Dusk Hall.',
     can: (g, u) => known(g, u, 'vskip'), effect: (g, u, t) => blink(g, u, t, T.lancer.skip), show: (g, u) => showBlink(g, u),
-    ai: (g, u) => { const t = u.target; if (!t || !t.alive || !isUnit(t) || !known(g, u, 'vskip') || u.shield > u.maxShield * .3) return null; const d = gap(g, u, t); if (d > 10) return null; const ax = u.pos.x - t.pos.x, az = u.pos.z - t.pos.z, l = Math.hypot(ax, az) || 1; return { x: u.pos.x + ax / l * T.lancer.skip, z: u.pos.z + az / l * T.lancer.skip }; } }],
+    ai: (g, u) => { const t = u.target; if (!t || !t.alive || !isUnit(t) || !known(g, u, 'vskip')) return null; const d = gap(g, u, t); if (d > T.lancer.range + 2) return null;
+      // away when its shield is nearly gone, or when a blade has closed on it (a Lancer wants range)
+      if (u.shield > u.maxShield * .4 && !near(g, u.pos.x, u.pos.z, 4, o => foe(u, o) && BLADES.has(o.kind)).length) return null; const ax = u.pos.x - t.pos.x, az = u.pos.z - t.pos.z, l = Math.hypot(ax, az) || 1; return { x: u.pos.x + ax / l * T.lancer.skip, z: u.pos.z + az / l * T.lancer.skip }; } }],
   tuner: [
-    { key: 'wall', name: 'Glass Wall', hotkey: 'R', energy: 50, cd: 2, cast: 0, range: 9, target: 'point', blurb: 'Puts up a glass pane 7 m wide for 11 s. Bodies cannot walk through it; shots can break it.',
-      effect: (g, u, t) => glassWall(g, u, t), show: (g, u, t) => showWall(g, u, t),
+    { key: 'wall', name: 'Glass Wall', hotkey: 'R', energy: 50, cd: 2, cast: 0, range: 9 + FAR, target: 'point', blurb: 'Puts up a glass pane 7 m wide for 11 s. Bodies cannot walk through it; shots can break it.',
+      can: (g, u, t) => within(g, u, t, 9), effect: (g, u, t) => glassWall(g, u, t), show: (g, u, t) => showWall(g, u, t),
       ai: (g, u) => { const t = u.target; if (!t || !t.alive || !isUnit(t) || UNIT[t.kind].air) return null; // cut the enemy's melee off from our casters, or block a retreat
-        const melee = near(g, u.pos.x, u.pos.z, 12, o => foe(u, o) && (o.kind === 'cantor' || o.kind === 'mute' || o.kind === 'snapper' || o.kind === 'breacher' || (o.kind as string) === 'dustbike')).length; if (melee < 3) return null;
+        const melee = near(g, u.pos.x, u.pos.z, 16, o => foe(u, o) && BLADES.has(o.kind)).length; if (melee < 2) return null;
         const ax = t.pos.x - u.pos.x, az = t.pos.z - u.pos.z, l = Math.hypot(ax, az) || 1; return { x: u.pos.x + ax / l * Math.min(7, l * .6), z: u.pos.z + az / l * Math.min(7, l * .6) }; } },
     { key: 'hum', name: 'Ward Hum', hotkey: 'C', energy: 75, cd: 2, cast: 0, range: 0, target: 'self', radius: T.tuner.humR, blurb: 'For 11 s every friend within 5 m takes 2 less from each shot.',
       effect: (g, u) => { (u as any).humT = g.time + T.tuner.humT; g.warn(u.pos.x, u.pos.z, T.tuner.humR, 1); },
       show: (g, u) => { g.puff(TMP.set(u.pos.x, 1.4, u.pos.z), 6, T.tuner.humR * .5, M.cyan, .6, T.tuner.humR * .6); sfx.charge(g.vol(u.pos)); },
       ai: (g, u) => near(g, u.pos.x, u.pos.z, 18, o => foe(u, o) && !!o.target).length >= 4 && near(g, u.pos.x, u.pos.z, T.tuner.humR, o => o.team === u.team).length >= 3 ? { x: u.pos.x, z: u.pos.z } : null },
-    { key: 'voice', name: 'False Voice', hotkey: 'V', energy: 100, cd: 2, cast: 0, range: 9, target: 'body', who: 'ally', blurb: 'Makes two copies of a friend for 30 s. Copies deal no damage and take double.',
-      can: (g, u, t) => { const o = g.uById?.get(t.id!) || g.units.find(x => x.id === t.id); return !!o && isUnit(o) && !echo(o) && !UNIT[o.kind].air && o.kind !== 'tender'; }, effect: (g, u, _t, o) => falseVoice(g, u, o as Unit),
+    { key: 'voice', name: 'False Voice', hotkey: 'V', energy: 100, cd: 2, cast: 0, range: 9 + FAR, target: 'body', who: 'ally', blurb: 'Makes two copies of a friend for 30 s. Copies deal no damage and take double.',
+      can: (g, u, t) => { if (!within(g, u, t, 9)) return false; const o = g.uById?.get(t.id!) || g.units.find(x => x.id === t.id); return !!o && isUnit(o) && !echo(o) && !UNIT[o.kind].air && o.kind !== 'tender'; }, effect: (g, u, _t, o) => falseVoice(g, u, o as Unit),
       show: (g, u, _t, o) => { if (!o) return; for (const a of [-1, 1]) g.puff(TMP.set(o.pos.x + a * 2, 1.2, o.pos.z), 4, .9, M.violet, .8); sfx.charge(g.vol(o.pos)); },
       ai: (g, u) => { if ((u.energy ?? 0) < 150) return null; const big = near(g, u.pos.x, u.pos.z, 9, o => o.team === u.team && (o.kind === 'warden' || o.kind === 'bell' || o.kind === 'reedwalker') && !echo(o))[0]; return big && near(g, u.pos.x, u.pos.z, 25, o => foe(u, o)).length >= 3 ? { x: big.pos.x, z: big.pos.z, id: big.id } : null; } },
   ],
@@ -285,22 +302,25 @@ const ABS: Record<string, AbilityDef[]> = {
     can: (g, u) => known(g, u, 'vstepthru'), effect: (g, u, t) => blink(g, u, t, T.mute.stepRange), show: (g, u) => showBlink(g, u),
     ai: (g, u) => { const t = u.target; if (!t || !t.alive || !known(g, u, 'vstepthru')) return null; const d = gap(g, u, t); return d > 4 && d < T.mute.stepRange ? { x: t.pos.x, z: t.pos.z } : null; } }],
   choirmaster: [
-    { key: 'shatter', name: 'Shatter Note', hotkey: 'R', energy: 75, cd: 1.5, cast: .25, range: 9, target: 'area', radius: T.choirmaster.shatterR, blurb: 'Marks a 3 m circle; a second later it cracks for 80 damage over 4 s to everyone in it, friends too. Needs Shatter Note from a Song Archive.',
-      can: (g, u) => known(g, u, 'vshatter'), effect: (g, u, t) => shatter(g, u, t), show: (g, u, t) => showShatter(g, u, t),
-      ai: (g, u) => { if (!known(g, u, 'vshatter')) return null; const c = cluster(g, u, 9 + reach(g, u), T.choirmaster.shatterR); return c && c.n >= 3 && c.friends <= 1 ? c : null; } },
-    { key: 'drain', name: 'Drain', hotkey: 'C', energy: 50, cd: 1, cast: 0, range: T.choirmaster.range, target: 'body', blurb: 'Takes up to 50 energy from an enemy body and deals that much damage to it.',
-      can: (g, u, t) => { const o = g.units.find(x => x.id === t.id); return !!o && (o.energy ?? 0) > 0; },
+    { key: 'shatter', name: 'Shatter Note', hotkey: 'R', energy: 75, cd: 1.5, cast: .25, range: 9 + FAR, target: 'area', radius: T.choirmaster.shatterR, blurb: 'Marks a 3 m circle; a second later it cracks for 80 damage over 4 s to everyone in it, friends too. Needs Shatter Note from a Song Archive.',
+      can: (g, u, t) => known(g, u, 'vshatter') && within(g, u, t, 9), effect: (g, u, t) => shatter(g, u, t), show: (g, u, t) => showShatter(g, u, t),
+      ai: (g, u) => { if (!known(g, u, 'vshatter')) return null; const c = cluster(g, u, 9 + reach(g, u), T.choirmaster.shatterR); return c && c.n >= 3 && c.friends * 3 <= c.n ? c : null; } },
+    { key: 'drain', name: 'Drain', hotkey: 'C', energy: 50, cd: 1, cast: 0, range: T.choirmaster.range + FAR, target: 'body', blurb: 'Takes up to 50 energy from an enemy body and deals that much damage to it.',
+      can: (g, u, t) => { const o = g.units.find(x => x.id === t.id); return !!o && (o.energy ?? 0) > 0 && within(g, u, t, T.choirmaster.range); },
       effect: (g, u, _t, o) => { const t = o as Unit, n = Math.min(t.energy ?? 0, T.choirmaster.drain); t.energy = (t.energy ?? 0) - n; zap(g, u, t, n * (echo(u) ? 0 : 1), .2, beamMat); g.hud.damage(V3(t.pos.x, UNIT[t.kind].headY + .6, t.pos.z), 'DRAINED', 'shield'); },
-      ai: (g, u) => { const t = near(g, u.pos.x, u.pos.z, T.choirmaster.range + reach(g, u), o => foe(u, o) && (o.energy ?? 0) >= 40 && seenBy(g, u.team, o)).sort((a, b) => (b.energy ?? 0) - (a.energy ?? 0))[0]; return t ? { x: t.pos.x, z: t.pos.z, id: t.id } : null; } },
+      // with Shatter Note learned it keeps 75 energy back for it
+      ai: (g, u) => { if (known(g, u, 'vshatter') && (u.energy ?? 0) < 50 + 75) return null; const t = near(g, u.pos.x, u.pos.z, T.choirmaster.range + reach(g, u), o => foe(u, o) && (o.energy ?? 0) >= 40 && seenBy(g, u.team, o)).sort((a, b) => (b.energy ?? 0) - (a.energy ?? 0))[0]; return t ? { x: t.pos.x, z: t.pos.z, id: t.id } : null; } },
     { key: 'join', name: 'Join', hotkey: 'V', energy: 0, cd: 2, cast: 0, range: 0, target: 'self', blurb: 'Joins with another Choirmaster within 8 m. In 10 s the two become one Chord.',
       can: (g, u) => near(g, u.pos.x, u.pos.z, 8, o => o !== u && o.team === u.team && o.kind === 'choirmaster' && !JOIN.has(o)).length > 0, effect: (g, u) => joinUp(g, u), show: (g, u) => { sfx.charge(g.vol(u.pos)); g.puff(TMP.set(u.pos.x, 1.6, u.pos.z), 5, .9, M.cyan, .8); },
       ai: (g, u) => (u.energy ?? 0) < 50 && !near(g, u.pos.x, u.pos.z, 20, o => foe(u, o)).length && near(g, u.pos.x, u.pos.z, 8, o => o !== u && o.team === u.team && o.kind === 'choirmaster' && (o.energy ?? 0) < 75 && !JOIN.has(o)).length ? { x: u.pos.x, z: u.pos.z } : null },
   ],
   knell: [{ key: 'toll', name: 'Toll', hotkey: 'Mouse0', energy: 0, cd: T.knell.cd, cast: 0, range: T.knell.range, target: 'area', radius: T.knell.r, blurb: 'Rolls an orb to a spot. After 3 s it bursts for 145 on everything within 3 m, friends too.',
     can: (g, u) => true, effect: (g, u, t) => { toll(g, u, t); if (g.upOf(u.team).vtoll && u.abCd) u.abCd.toll = T.knell.quickCd; }, show: (g, u, t) => showToll(g, u, t),
-    ai: (g, u) => { const c = cluster(g, u, T.knell.range, T.knell.r); return c && c.n >= 3 && c.friends <= 1 ? c : null; } }],
+    ai: (g, u) => { const c = cluster(g, u, T.knell.range, T.knell.r); return c && c.n >= 3 && c.friends * 3 <= c.n ? c : null; } }],
   listener: [{ key: 'settle', name: 'Settle', hotkey: 'C', energy: 0, cd: 1, cast: 0, range: 0, target: 'self', blurb: 'Stops and sees further. Use again to fly on.',
-    effect: (g, u) => { const L = u as any; L.settled = !L.settled; if (!L.settled) clearStatus(u, 'root'); } }],
+    effect: (g, u) => { const L = u as any; L.settled = !L.settled; if (!L.settled) clearStatus(u, 'root'); },
+    // settles where a fight is close but not on top of it; flies on when the fight has gone, or comes too close
+    ai: (g, u) => { const L = u as any, f = (r: number) => near(g, u.pos.x, u.pos.z, r, o => foe(u, o)).length > 0; return (!L.settled && f(22) && !f(7)) || (L.settled && (!f(28) || f(5))) ? { x: u.pos.x, z: u.pos.z } : null; } }],
   ferry: [
     { key: 'unfold', name: 'Unfold', hotkey: 'C', energy: 0, cd: 1.5, cast: 0, range: 0, target: 'self', blurb: 'Lands and opens into a song field (5 m). Use again to fold up and fly.',
       effect: (g, u) => { const on = !unfolded(u); setUnfolded(u, on); if (on) addStatus(u, 'root', Infinity); else clearStatus(u, 'root'); g.warn(u.pos.x, u.pos.z, T.ferry.fold * 3, 1); },
@@ -313,15 +333,15 @@ const ABS: Record<string, AbilityDef[]> = {
   swift: [{ key: 'lift', name: 'Lift', hotkey: 'C', energy: T.swift.lift, cd: 1, cast: 0, range: T.swift.liftRange, target: 'body', blurb: 'Holds an enemy ground body in the air for 8 s: it cannot move or fight.',
     can: (g, u, t) => { const o = g.units.find(x => x.id === t.id); return !!o && !o.air && !hasTag(o, 'huge') && !hasStatus(o, 'lifted'); },
     effect: (g, u, _t, o) => { addStatus(o as Unit, 'lifted', T.swift.liftT); (o as Unit).target = null; zap(g, u, o as Unit, 0, .2); },
-    ai: (g, u) => { if (near(g, u.pos.x, u.pos.z, T.swift.range + 6, o => foe(u, o) && o.air).length) return null; const t = near(g, u.pos.x, u.pos.z, T.swift.liftRange, o => foe(u, o) && !o.air && !hasTag(o, 'huge') && !hasStatus(o, 'lifted') && isFighter(o) && seenBy(g, u.team, o)).sort((a, b) => UNIT[b.kind].cost - UNIT[a.kind].cost)[0]; return t ? { x: t.pos.x, z: t.pos.z, id: t.id } : null; } }],
+    ai: (g, u) => { if (near(g, u.pos.x, u.pos.z, T.swift.range + 6, o => foe(u, o) && o.air).length >= 2) return null; const t = liftable(g, u, T.swift.liftRange)[0]; return t ? { x: t.pos.x, z: t.pos.z, id: t.id } : null; } }],
   prism: [{ key: 'burn', name: 'Burn Bright', hotkey: 'C', energy: 0, cd: T.prism.burnCd, cast: 0, range: 0, target: 'self', blurb: 'For 12 s the beam does 10 more to plated bodies.',
     effect: (g, u) => { (u as any).burnT = g.time + T.prism.burnT; },
     show: (g, u) => { sfx.charge(g.vol(u.pos)); g.puff(TMP.set(u.pos.x, (u.alt || 0) + 1, u.pos.z), 5, .8, M.cyan, .6); },
-    ai: (g, u) => { const t = u.target; return t && t.alive && hasTag(t, 'plated') && gap(g, u, t) < T.prism.range + 2 ? { x: u.pos.x, z: u.pos.z } : null; } }],
+    ai: (g, u) => { const t = u.target; return t && t.alive && gap(g, u, t) < T.prism.range + 2 && (hasTag(t, 'plated') || near(g, u.pos.x, u.pos.z, T.prism.range + 2, o => foe(u, o) && hasTag(o, 'plated')).length >= 2) ? { x: u.pos.x, z: u.pos.z } : null; } }],
   omen: [
     { key: 'shrill', name: 'Shrill', hotkey: 'Mouse0', energy: T.omen.shrill, cd: 1, cast: 0, range: 0, target: 'self', blurb: 'Turns the beam on: it burns energy while on and hits soft bodies hard. Use again to turn it off.',
       effect: (g, u) => { const O = u as any; O.shrill = !O.shrill; if (!O.shrill) u.energy = (u.energy ?? 0) + T.omen.shrill; },
-      ai: (g, u) => { const O = u as any, soft = near(g, u.pos.x, u.pos.z, T.omen.range + 6, o => foe(u, o) && !o.air && hasTag(o, 'soft') && seenBy(g, u.team, o)).length, guns = near(g, u.pos.x, u.pos.z, 20, o => foe(u, o) && isFighter(o) && !hasTag(o, 'soft')).length; return (!O.shrill && soft >= 2 && guns <= 2 && (u.energy ?? 0) > 60) || (O.shrill && !soft) ? { x: u.pos.x, z: u.pos.z } : null; } },
+      ai: (g, u) => { const O = u as any, soft = near(g, u.pos.x, u.pos.z, T.omen.range + 6, o => foe(u, o) && !o.air && hasTag(o, 'soft') && seenBy(g, u.team, o)).length, guns = near(g, u.pos.x, u.pos.z, 20, o => foe(u, o) && isFighter(o) && !hasTag(o, 'soft')).length; return (!O.shrill && soft >= 2 && soft >= guns && (u.energy ?? 0) > 60) || (O.shrill && !soft) ? { x: u.pos.x, z: u.pos.z } : null; } },
     { key: 'reveal', name: 'Reveal', hotkey: 'C', energy: T.omen.reveal, cd: 1, cast: 0, range: 12, target: 'area', radius: T.omen.revealR, blurb: 'Every enemy body in an 8 m circle can be seen for 20 s, unseen or not.',
       effect: (g, u, t) => { for (const o of near(g, t.x, t.z, T.omen.revealR, o => foe(u, o))) addStatus(o, 'revealed', T.omen.revealT); g.warn(t.x, t.z, T.omen.revealR, 1.2); },
       show: (g, u, t) => { g.puff(TMP.set(t.x, 1, t.z), 8, T.omen.revealR * .5, M.indigoL, .6, T.omen.revealR); sfx.charge(g.vol(u.pos) * .6); },

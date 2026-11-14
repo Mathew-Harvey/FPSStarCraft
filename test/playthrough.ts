@@ -15,13 +15,9 @@ import { useAbility, whyNot } from '../src/core/ability';
 import { load, unload } from '../src/core/cargo';
 import { sendToVent } from '../src/core/econ';
 import { addonOf } from '../src/factions/ironhold/bases';
-import { G_TUNE, bloomOf } from '../src/factions/gloam/numbers';
 import { MISSIONS, missionSides, charterTeam, Mission } from '../src/campaign';
 
 initHeadless();
-// Until stream D's fix lands on the lead: G_TUNE.bloomR has no rows for the Elder and Ancient Caps, so a ripened Cap's Bloom shrinks from
-// 20 m to 6 m and nothing more can be grown round it. The Gloam tier jobs set the dial here so they can be played. Take this out with D's fix.
-if (bloomOf('eldercap') < bloomOf('mothercap')) { G_TUNE.bloomR.eldercap = G_TUNE.bloomR.ancientcap = bloomOf('mothercap'); console.log('note: Elder and Ancient Cap Bloom set to the Mother Cap\'s for this run (stream D fix pending)'); }
 const VENT_TAPS: BKind[] = ['pumpjack', 'siphonbell', 'ventbladder' as BKind];
 const quick = process.argv.includes('--quick'), only = process.argv.slice(2).filter(a => !a.startsWith('--')).map(Number);
 let seed = 11; Math.random = () => { seed = (seed * 16807) % 2147483647; return (seed - 1) / 2147483646; };
@@ -73,7 +69,15 @@ class Play {
       this.cash(BLD[k].cost); const by = g.units.find(u => u.alive && u.team === this.me && (u.kind === 'grazer' || u.kind === 'rigger' || u.kind === 'tender')) || null;
       const b = g.place(k, x, z, false, this.me, by); if (!b) continue; b.progress = 1; this.run(FACTION[this.me].hq === 'mothercap' ? 14 : 1); return true;   // a Gloam building's Bloom takes a few seconds to spread
     }
-    if (FACTION[this.me].hq === 'mothercap' && k !== 'sporesac' && k !== 'mothercap' && !at && (this as any)._sp !== k) { (this as any)._sp = k; const n0 = this.log.length; this.cash(400); this.train('grazer', this.g.own('grazer', this.me).length + 2); if (this.build('sporesac') && this.build('sporesac')) { const sacs = g.ownB('sporesac', true, this.me).slice(-2); for (const s of [null, ...sacs]) if (s ? this.build(k, [s.pos.x, s.pos.z], 0, 12) : this.build(k)) { (this as any)._sp = ''; this.log.length = n0; return true; } } this.log.length = n0; }   // more Bloom, the way a player would spread it
+    // More Bloom, the way a player would spread it: up to three rounds of two more Spore Sacs, trying round each new Sac.
+    if (FACTION[this.me].hq === 'mothercap' && k !== 'sporesac' && k !== 'mothercap' && !at && (this as any)._sp !== k) {
+      (this as any)._sp = k; const n0 = this.log.length;
+      for (let round = 0; round < 3; round++) {
+        this.cash(400); this.train('grazer', this.g.own('grazer', this.me).length + 2); this.build('sporesac'); this.build('sporesac');
+        for (const s of [null, ...g.ownB('sporesac', true, this.me).slice(-2 * (round + 1))]) if (s ? this.build(k, [s.pos.x, s.pos.z], 0, 16) : this.build(k)) { (this as any)._sp = ''; this.log.length = n0; return true; }
+      }
+      (this as any)._sp = ''; this.log.length = n0;
+    }
     this.log.push(`could not stake a ${k}${FACTION[this.me].hq === 'mothercap' ? ` (${g.own('grazer', this.me).length} Grazers, unlocked ${g.unlocked(k, this.me)})` : ''}`); return false;
   }
   /** Trains n of a unit at the building that makes it, as many rounds as it takes. */

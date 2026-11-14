@@ -175,7 +175,9 @@ try {
   check(r.z1 < r.z0 && r.on, `two fingers spread apart zoom in (${r.z0.toFixed(2)} → ${r.z1.toFixed(2)})`);
   await p.evaluate(() => { __ore.setTouch(false); __ore.setFree(true); window.dispatchEvent(new Event('resize')); tframe(); step(1); });
 
-  // ---- a controller: a fake pad, driven through the same code the page polls
+  // ---- a controller, on its own fresh page: a fake pad, driven through the same code the page polls. Nothing here leans on what the
+  // touch section left set, and the page's memory starts low again.
+  await p.close(); p = await open();
   await p.evaluate(() => { window.pad = { connected: true, buttons: Array.from({ length: 17 }, () => ({ pressed: false, value: 0 })), axes: [0, 0, 0, 0] };
     window.pbtn = (i, on) => { pad.buttons[i] = { pressed: on, value: on ? 1 : 0 }; };
     window.pdrive = () => { __ore.padDrive(pad); step(1); };
@@ -186,7 +188,12 @@ try {
   check(!r.was && r.on && r.still, 'holding View on a controller lifts the player into the command view (a short press still calls the squad)');
   r = await p.evaluate(() => { const g = __ore.game, C = g.cmd, z0 = C.zt; ptap(12); return { z0, z1: C.zt }; });
   check(r.z1 < r.z0, `D-pad up zooms in from above (${r.z0.toFixed(2)} → ${r.z1.toFixed(2)})`);
-  r = await p.evaluate(() => { const g = __ore.game, C = g.cmd, hf = g.ownB('headframe')[0]; C.sel.clear(); C.selB = hf; step(1); C.padFocus = -1; ptap(15); const f = C.padFocus, lit = document.querySelector('#ccard .cb.pf')?.dataset.cb; const n = hf.queue.length; ptap(0); return { f, lit, n0: n, n1: hf.queue.length }; });
+  // This section stands on its own: it sets its own supply room rather than leaning on the touch section's. With the six extra fighters
+  // in the starting beds, the Rigger button is greyed for want of beds, and A must say so instead of training.
+  r = await p.evaluate(() => { const g = __ore.game, C = g.cmd, hf = g.ownB('headframe')[0], cap = g.supplyCap; hf.queue.length = 0; g.supplyCap = () => g.supplyUsed(g.myTeam);
+    C.sel.clear(); C.selB = hf; step(1); C.padFocus = -1; ptap(15); const off = C.card[C.padFocus]?.off || '', n0 = hf.queue.length; ptap(0); const full = hf.queue.length;
+    g.supplyCap = () => 60; step(1); const f = C.padFocus, lit = document.querySelector('#ccard .cb.pf')?.dataset.cb; ptap(0); return { off, n0, full, f, lit, n1: hf.queue.length }; });
+  check(r.off && r.full === r.n0, `with no beds, A on the outlined Rigger trains nothing and the button says why ("${r.off}")`);
   check(r.f === 0 && r.lit === 'tr:rigger' && r.n1 === r.n0 + 1, `D-pad right steps onto the card (outlined: ${r.lit}) and A presses it (queue ${r.n0} → ${r.n1})`);
   r = await p.evaluate(() => { const g = __ore.game, C = g.cmd; C.selB = null; step(1); ptap(3); const army = C.sel.size; ptap(8); step(25); return { army, on: C.on }; });
   check(r.army >= 5 && !r.on, `Y picks the whole army (${r.army}) and a tap of View drops back into the body`);

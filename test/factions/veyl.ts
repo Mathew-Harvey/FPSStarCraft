@@ -234,7 +234,7 @@ const spawnI = (g: Game, k: Kind, x: number, z: number) => { const u = g.spawn(k
 // ---------------------------------------------------------------- 3c. bot bodies use every ability
 // A Veyl bot army with everything learned against a passive enemy (stunned, unkillable, it never shoots back), so nothing here swings
 // with balance numbers. A battle at mid-map, where the test's own "fire" falls on the Veyl at random; then the quiet set pieces a battle
-// does not make: two tired Choirmasters at home, an Omen at home, a Lancer with a blade on it, a Tuner with two blades near, a losing group far from its Cantus, and
+// does not make: two tired Choirmasters at home, an Omen at home, a Lancer with a blade on it, a Tuner with two blades near, a Tuner in a tight group under fire, a losing group far from its Cantus, and
 // the Conductor's Ferry drop. Each ability on every Veyl kind must be cast by a bot at least once, and the Lyre must put Shards out.
 {
   const cast: Record<string, number> = {}; let shards = 0;
@@ -258,6 +258,11 @@ const spawnI = (g: Game, k: Kind, x: number, z: number) => { const u = g.spawn(k
   { const g = botWorld(); ORG = null; const a = spawnV(g, 'choirmaster', 0, 12), b = spawnV(g, 'choirmaster', 2, 12); a.energy = b.energy = 20; const om = spawnV(g, 'omen', -6, 12); om.energy = 200; play(g, 6); }
   { const g = botWorld(), [mx, mz] = MAP.mid!, F = [passive(g, 'breacher', mx + 2, mz)], la = g.spawn('lancer', T, mx, mz); la.order = { type: 'guard', x: mx, z: mz }; play(g, 4, f => { if (!(f % 30)) still(F); }); }
   { const g = botWorld(), [mx, mz] = MAP.mid!, F = [passive(g, 'dustbike', mx + 8, mz), passive(g, 'breacher', mx + 8, mz + 2)], tu = g.spawn('tuner', T, mx, mz); tu.order = { type: 'guard', x: mx, z: mz }; tu.energy = 60; play(g, 4, f => { if (!(f % 30)) still(F); }); }
+  // a Tuner in a tight group with four foes on it (Ward Hum), set up here because the battle only makes it by chance
+  { const g = botWorld(), [mx, mz] = MAP.mid!, tu = g.spawn('tuner', T, mx, mz), G = [tu, ...[0, 1, 2].map(i => g.spawn('cantor', T, mx - 1 + i, mz + 1.5))];
+    for (const u of G) u.order = { type: 'guard', x: u.pos.x, z: u.pos.z }; tu.energy = tu.maxEnergy;
+    const F = [0, 1, 2, 3].map(i => passive(g, 'linesman', mx - 3 + i * 2, mz - 10));
+    play(g, 4, f => { if (f % 15) return; still(F); for (const u of F) u.target = tu; }); }
   { const g = botWorld(), [mx, mz] = MAP.mid!, [hx, hz] = homeXZ(T), F: Unit[] = []; g.spawn('cantus', T, hx, hz - 8).order = { type: 'guard', x: hx, z: hz - 8 };
     for (let i = 0; i < 10; i++) F.push(passive(g, 'linesman', mx - 5 + i, mz)); const G = [0, 1, 2, 3].map(i => { const u = g.spawn('cantor', T, mx - 2 + i, mz + 3); u.order = { type: 'guard', x: u.pos.x, z: u.pos.z }; return u; });
     play(g, 4, f => { if (f % 30) return; still(F); for (const u of G) u.shield = 0; }); }

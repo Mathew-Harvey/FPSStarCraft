@@ -200,6 +200,31 @@ const bolt = (g: Game, host: Building, k: 'labbay' | 'twinbay') => { const ok = 
   const flak = raise(g, 'flaktower'); const bird = g.spawn('flakkite', O(), flak.pos.x + 5, flak.pos.z + 5); bird.order = { type: 'guard', x: bird.pos.x, z: bird.pos.z }; const bh = bird.hp; run(g, 4); check(bird.hp < bh || !bird.alive, 'a Flak Tower shoots a flier');
   const sneak = g.spawn('gadfly', O(), flak.pos.x + 6, flak.pos.z); addStatusUnseen(sneak); check(require('../../src/core/sight').seenBy(g, T, sneak), 'a Flak Tower sees a cloaked flier near it');
 }
+// ---------------------------------------------------------------- 4b. The Quartermaster reads the foe army and finishes a won match
+{
+  const BK = require('../../src/core/brainkit'), g = world(), T = H(), S = g.dir as any, D = g.dir as any, [hx, hz] = [0, 0];
+  const crew: Unit[] = []; for (let i = 0; i < 24; i++) { const u = g.spawn('linesman', T, hx + 20 + (i % 6) * 2, hz + 10 + Math.floor(i / 6) * 2); u.order = { type: 'guard', x: u.pos.x, z: u.pos.z }; crew.push(u); }
+  // what it has seen: a flier and a plated body near our crew count under their tags, a body far off in the dark does not
+  const bird = g.spawn('flakkite', O(), hx + 26, hz + 14), plate = g.spawn('lancer' as Kind, O(), hx + 24, hz + 16), far = g.spawn('cantor' as Kind, O(), hx + 400, hz + 400);
+  for (const u of [bird, plate, far]) u.order = { type: 'guard', x: u.pos.x, z: u.pos.z };
+  const s1 = BK.seenFoe(g, S); check(s1.tags.air > 0 && s1.tags.plated > 0, 'the Quartermaster counts the fliers and plate it has seen'); check(!s1.kinds.cantor, 'and nothing it has not seen');
+  // the cap: a kind that has taken most of the fighter spend waits, the rest do not
+  g.time = Math.max(g.time, BK.CAP_FROM + 1); for (let i = 0; i < 60; i++) BK.spent(g, S, 'linesman'); BK.spent(g, S, 'breacher');
+  check(BK.capped(S, 'linesman') && !BK.capped(S, 'breacher'), 'a kind over the share cap of fighter spend waits, the others do not');
+  // no hunt while the foe army is about
+  BK.hunt(D, S, 3); check(!BK.isHunting(S), 'no hunt while foe fighters are in sight');
+  // the foe army dies; 30 s later the side hunts, keeping four at home and sending the rest at foe buildings
+  for (const u of [bird, plate, far]) { u.alive = false; u.obj.visible = false; }
+  for (const u of g.units) if (u.alive && u.team === O() && require('../../src/data').isFighter(u)) { u.alive = false; u.obj.visible = false; }
+  BK.seenFoe(g, S); g.time += 31; BK.seenFoe(g, S); BK.hunt(D, S, 3);
+  const out = crew.filter(u => u.order.type === 'amove'), foeB = g.buildings.filter(b => b.alive && b.team === O());
+  check(BK.isHunting(S) && out.length === crew.length - 4, `with the foe army gone the side hunts, four stay home (${out.length} of ${crew.length} out)`);
+  check(out.every(u => foeB.some(b => Math.hypot(b.pos.x - u.order.x, b.pos.z - u.order.z) < 9)) || !g.intel.known(T).length, 'the hunters walk at foe buildings it knows of');
+  // the foe army comes back stronger than half of ours: the hunt stops
+  const back: Unit[] = []; for (let i = 0; i < 8; i++) { const u = g.spawn('lancer' as Kind, O(), hx + 22 + i, hz + 12); u.order = { type: 'guard', x: u.pos.x, z: u.pos.z }; back.push(u); }
+  g.time += 1; BK.hunt(D, S, 3); check(!BK.isHunting(S), 'the hunt stops when a foe army comes back');
+  for (const u of back) { u.alive = false; u.obj.visible = false; }
+}
 function addStatusUnseen(u: Unit) { require('../../src/core/status').addStatus(u, 'unseen', 30); }
 
 // ---------------------------------------------------------------- 5. The Quartermaster: every kind made across seeded bot matches, and what got used

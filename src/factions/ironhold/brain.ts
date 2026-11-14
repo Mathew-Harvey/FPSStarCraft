@@ -12,6 +12,7 @@ import { mem } from './kit';
 import { addonOf, hasLab, hasTwin, scan, fillDugout, crawl } from './bases';
 import { I_TUNE as TUNE } from './numbers';
 import { defineFaction } from '../../core/registry';
+import { seenFoe, spent, capped, hunt, type SeenTag } from '../../core/brainkit';
 const LOOKOUT = ['Lookout', 'Watcher', 'Rootwatch'];
 
 export const HINTS: [number, string, string][] = [
@@ -53,6 +54,16 @@ const MIX: Record<Lean, Partial<Record<Kind, number>>> = {
   mech: { linesman: 5, breacher: 2, patch: 1, sapper: 1.5, longshot: .8, dustbike: 3, piledriver: 4, gantry: 3, flakkite: 1, gadfly: .8, surveyor: .6, hopper: .4, claimbarge: .8 },
   air: { linesman: 6, breacher: 2, patch: 1, sapper: 1, longshot: .8, dustbike: 1.5, piledriver: 1, gantry: 1, flakkite: 3, gadfly: 3, surveyor: 1, hopper: .8, claimbarge: 2 },
 };
+/** What each kind answers, by what the foe army was seen with (balance spec 2026-11-14 and the plan's counter rule): soft bodies and
+ *  swarms burn to Dustbikes and Pile Driver splash, plate opens to Breachers, the huge to Breachers and Longshots, fliers fall to Flak Kites
+ *  and Linesmen, and melee is held off by Linesmen with Breachers in front. The numbers are how much a kind's share rises when the whole
+ *  seen army is of that tag. Living counts a little like soft: a Gloam army is living and mostly unarmoured. */
+const ANSWERS: Partial<Record<Kind, Partial<Record<SeenTag | 'swarm', number>>>> = {
+  dustbike: { soft: .5, living: .3, swarm: .4, melee: .2 }, piledriver: { soft: .25, living: .15, swarm: .3 }, sapper: { swarm: .1, melee: .1 },
+  breacher: { plated: .5, huge: .4, melee: .2 }, longshot: { huge: .3, soft: .05 }, gantry: { plated: .15, soft: .1 },
+  flakkite: { air: .9 }, linesman: { air: .3, melee: .2 }, gadfly: { soft: .05, huge: .1 }, claimbarge: { plated: .1, huge: .1 },
+  patch: { soft: .05, melee: .05 },
+};
 const WHERE: Partial<Record<Kind, BKind>> = { linesman: 'bunkhouse', breacher: 'bunkhouse', patch: 'bunkhouse', sapper: 'bunkhouse', longshot: 'bunkhouse', dustbike: 'machineshop', piledriver: 'machineshop', gantry: 'foundry', hopper: 'hangar', flakkite: 'hangar', gadfly: 'hangar', surveyor: 'hangar', claimbarge: 'hangar' };
 const LINES: Partial<Record<BKind, string>> = {
   pumpjack: 'Pump Jack on the vent. Flux is extra, like everything else.', assay: 'Assay Office going up. Bigger guns for the foot soldiers, eventually.', machineshop: 'Machine Shop going in out back. Bikes first, big guns later.',
@@ -61,7 +72,10 @@ const LINES: Partial<Record<BKind, string>> = {
 };
 
 export function quartermaster(D: Director, dt: number, S: Side = D) {
-  const g = D.g, T = S.team, U = g.upOf(T), [HX, HZ] = homeXZ(T), P = (x: number, z: number) => endPt(T, x, z, true); S.qmT -= dt; if (S.qmT > 0 || !S.auto) return; S.qmT = 1;
+  const g = D.g, T = S.team, U = g.upOf(T), [HX, HZ] = homeXZ(T), P = (x: number, z: number) => endPt(T, x, z, true);
+  // a bot side with the foe's army gone hunts down the last buildings (src/core/brainkit.ts); never on a side a person plays
+  if (S.auto && !g.human[T]) hunt(D, S, dt);
+  S.qmT -= dt; if (S.qmT > 0 || !S.auto) return; S.qmT = 1;
   const pays = (c: [number, number], extra = 0) => g.cash(T) >= c[0] + extra && g.flux(T) >= c[1];
   const own = (k: BKind) => g.ownB(k, false, T), up = (k: BKind) => g.ownB(k, true, T);
   const hqs = g.hqs(T), hq = hqs[0], bunk = own('bunkhouse'), bunkUp = up('bunkhouse'), sites = g.ownB(undefined, false, T).filter(b => !b.built);
@@ -150,7 +164,17 @@ export function quartermaster(D: Director, dt: number, S: Side = D) {
   for (const b of g.ownB(undefined, true, T)) for (const q of b.queue) have[q.kind] = (have[q.kind] || 0) + UNIT[q.kind].supply;
   const total = Object.values(have).reduce((a, n) => a + n!, 0) + 1, wsum = Object.values(mix).reduce((a, n) => a + n!, 0);
   // Fliers are wanted at all only against fliers, or for an air lean, or late; detectors once something unseen has shown up.
-  const want = (k: Kind) => { let w = (mix[k] || 0) / wsum; if (k === 'flakkite' && foeAir) w *= 3; if (k === 'surveyor' && mem(S).hidT) w = Math.max(w, .06); if (k === 'hopper' && army < 10) w = 0; if (k === 'claimbarge' && army < 14) w = 0; if (w > 0 && !have[k] && army >= 8) w = Math.max(w, k === 'claimbarge' ? .25 : .15); return w; };
+  // On top of the lean's shares, each kind gains for what it answers in the foe army seen lately, and a kind over 30% of fighter spend
+  // waits until it falls back (src/core/brainkit.ts). Every kind keeps a floor, so a long match sees all of them.
+  const seen = seenFoe(g, S), seenN = Object.values(seen.kinds).reduce((a, n) => a + n!, 0) || 1;
+  const answer = (k: Kind) => { const a = ANSWERS[k]; if (!a) return 0; let x = 0; for (const t in a) x += (t === 'swarm' ? (seen.swarm ? 1 : 0) : seen.tags[t as SeenTag] / seenN) * a[t as SeenTag]!; return x; };
+  // a detector within 30 s of seeing something hidden (plan rule): a Surveyor goes to the top of the list while none is out
+  const needEye = seen.tags.unseen > 0 && !g.own('surveyor', T).length && !g.ownB('hangar', true, T).some(h => h.queue.some(q => q.kind === 'surveyor'));
+  const want = (k: Kind) => {
+    let w = (mix[k] || 0) / wsum + answer(k); if (k === 'flakkite' && foeAir) w *= 2; if (k === 'surveyor' && (mem(S).hidT || needEye)) w = Math.max(w, needEye ? .6 : .06);
+    if (k === 'hopper' && army < 10) w = 0; if (k === 'claimbarge' && army < 14) w = 0; if (w > 0 && !have[k] && army >= 8) w = Math.max(w, k === 'claimbarge' ? .25 : .15);
+    if (w > 0) w = Math.max(w, .03); if (capped(S, k)) w = 0; return w;
+  };
   const hosts = [...bunkUp, ...shopUp, ...fdyUp, ...hangUp].filter(b => b.queue.length < (hasTwin(b) ? 3 : 2) && !mem(b).crawl);
   const optsOf = (b: Building) => (TRAINS[b.kind] || []).filter(k => !g.gated(T, k) && !bldRule(b.kind).trains?.(g, b, k) && (!UNIT_NEEDS[k] || g.ownB(UNIT_NEEDS[k]!, true, T).length));
   const gapOf = (k: Kind) => (have[k] || 0) / total - want(k), best = (ks: Kind[]) => ks.filter(k => want(k) > 0).sort((a, c) => gapOf(a) - gapOf(c))[0];
@@ -162,7 +186,7 @@ export function quartermaster(D: Director, dt: number, S: Side = D) {
       const opts = optsOf(b), pick = best(opts) || (opts.includes('linesman') ? 'linesman' : null); if (!pick) continue;
       if (free < UNIT[pick].supply || (top && pick !== top && free - UNIT[pick].supply < UNIT[top].supply && g.supplyCap(T) >= 200)) continue;
       const c = costOf(pick), extra = top && pick !== top ? costOf(top) : [0, 0], res = pick === holdKind ? [0, 0] : reserve;
-      if (pays(c, res[0] + extra[0]) && (!c[1] || g.flux(T) >= c[1] + res[1] + extra[1])) { g.train(b, pick); have[pick] = (have[pick] || 0) + UNIT[pick].supply; done = true; break; }
+      if (pays(c, res[0] + extra[0]) && (!c[1] || g.flux(T) >= c[1] + res[1] + extra[1])) { if (g.train(b, pick)) spent(g, S, pick); have[pick] = (have[pick] || 0) + UNIT[pick].supply; done = true; break; }
     }
     if (!done) break;
   }

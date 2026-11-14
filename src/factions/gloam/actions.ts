@@ -47,7 +47,7 @@ export function lift(g: Game, b: Building) { b.alive = false; g.scene.remove(b.o
 export function uproot(g: Game, b: Building, to: GKind) {
   const k = b.hp / b.maxHp, u = g.spawn(to, b.team, b.pos.x, b.pos.z); u.hp = Math.max(1, u.maxHp * k); u.yaw = b.obj.rotation.y;
   if (to !== 'drifter') { addStatus(u, 'root', G2.uproot.t); (u as any).pullT = G2.uproot.t; }
-  u.order = { type: 'guard', x: b.pos.x, z: b.pos.z }; lift(g, b); g.puff(TMP.set(b.pos.x, .5, b.pos.z), 8, 1.4, M.dust, .8, 2); if (g.vol(b.pos) > .2) sfx.place(); return u;
+  u.order = { type: 'guard', x: b.pos.x, z: b.pos.z }; (u as any).from = { x: b.pos.x, z: b.pos.z }; lift(g, b); g.puff(TMP.set(b.pos.x, .5, b.pos.z), 8, 1.4, M.dust, .8, 2); if (g.vol(b.pos) > .2) sfx.place(); return u;
 }
 /** A walker that has finished rooting turns back into its building, on the spot, with the same share of health. */
 export function reroot(g: Game, u: Unit) {

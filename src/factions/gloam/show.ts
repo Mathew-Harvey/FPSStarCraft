@@ -8,6 +8,7 @@ import { abilitiesOf, type Target } from '../../core/ability';
 import { FxKit } from '../../fx/kit';
 import { GLOAM_FX, type GfxAt } from './look/effects';
 import { G2 } from './numbers';
+import { defineFxLook } from '../../net-look';
 
 const KITS = new WeakMap<Game, FxKit>();
 function kitOf(g: Game): FxKit | null {
@@ -53,3 +54,8 @@ export function wrapGloamCasts() {
   }
 }
 queueMicrotask(wrapGloamCasts);
+
+// The hits that are not casts, on every screen that can see them (g.look in roster.ts): a Needler's spines, a Gnatwing's bite jumping
+// on, a Bloater's acid and a Sower's Pup dropping. Each sends two points, from and to.
+for (const [key, name] of [['gfire', 'fire'], ['gbite', 'bite'], ['gacid', 'acid'], ['gdrop', 'drop']] as const)
+  defineFxLook(key, (g, n) => gloamShow(g, name, { from: V(n[0], n[1], n[2]), to: V(n[3], n[4], n[5]), ...(name === 'drop' ? { n: 1 } : {}) }));

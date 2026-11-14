@@ -17,7 +17,7 @@ function sum(rows) {
     else say(`${N[a]} mirror: yard ${n(rs, r => r.res === 'home')}, far end ${n(rs, r => r.res === 'out')}, ${n(rs, r => r.res === 'draw')} undecided | by map ` + [...new Set(rs.map(r => r.map))].map(m => `${m}: ${n(rs, r => r.map === m && r.res === 'home')} to ${n(rs, r => r.map === m && r.res === 'out')}`).join(', '));
   }
   const dec = rows.filter(r => r.res !== 'draw'), T = dec.map(r => r.t / 60), sorted = [...T].sort((a, b) => a - b), q = p => sorted[Math.min(sorted.length - 1, Math.floor(sorted.length * p))] || 0;
-  say(`All: yard ${n(rows, r => r.res === 'home')}, far end ${n(rows, r => r.res === 'out')}, undecided at the time limit ${n(rows, r => r.res === 'draw')}`);
+  say(`All: yard ${n(rows, r => r.res === 'home')}, far end ${n(rows, r => r.res === 'out')}, undecided at the time limit ${n(rows, r => r.res === 'draw')}, won on points ${n(rows, r => r.pts)}`);
   say(`Length of a decided match: middle ${med(T).toFixed(1)} min, one in ten under ${q(.1).toFixed(1)}, one in ten over ${q(.9).toFixed(1)}`);
   say(`First fighter dies at ${(med(rows.filter(r => r.firstBlood > 0).map(r => r.firstBlood)) / 60).toFixed(1)} min, first building falls at ${(med(rows.filter(r => r.firstB > 0).map(r => r.firstB)) / 60).toFixed(1)} min (middle match)`);
   say(`The lead never changed in ${n(dec, r => r.changes === 0)} of ${dec.length} decided matches, changed once in ${n(dec, r => r.changes === 1)}, more in ${n(dec, r => r.changes > 1)}`);

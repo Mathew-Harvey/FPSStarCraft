@@ -12,7 +12,7 @@ const NEED: Partial<Record<Kind, BKind>> = { snapper: 'warren', quillback: 'quil
 /** Base weights: a Snapper pair is still the swarm's body, Quillbacks its spine; the rest get a floor so each appears. */
 // Stream L's duels at equal value (duels-r2-rank.txt, 2026-11-14): Mulcher, Quillback and Snapper win 68%, Bloater 64%, Blister 63%,
 // Shellback 57%; Seeder 29%, Gnatwing 14%, Smother 2%, Hooksail 0%. The weak and the casters get only the floor that keeps them seen.
-const BASE: Partial<Record<Kind, number>> = { snapper: 3, quillback: 2.4, blister: 1.2, shellback: 1, mulcher: 1.2, smother: .25, gnatwing: .25, seeder: .25, bloater: .3, hooksail: .2 };
+export const BROOD_BASE: Partial<Record<Kind, number>> = { snapper: 3, quillback: 2.4, blister: 1.2, shellback: 1, mulcher: 1.2, smother: .25, gnatwing: .25, seeder: .25, bloater: .3, hooksail: .2 };
 /** The plan's counter table, Gloam column: for each thing the foe has a lot of, what answers it. */
 const ANSWER: Partial<Record<SeenTag | 'swarm', Partial<Record<Kind, number>>>> = {
   soft: { blister: 2, mulcher: 1.5, gnatwing: .3 },
@@ -30,7 +30,7 @@ const PULL = 3;
 export function broodWants(D: Director, S: Side): Partial<Record<Kind, number>> {
   const g = D.g, T = S.team, seen = seenFoe(g, S), total = Object.values(seen.kinds).reduce((a, b) => a + (b || 0), 0);
   const w: Partial<Record<Kind, number>> = {};
-  for (const k in BASE) { const need = NEED[k as Kind]; if (!g.gated(T, k as Kind) && need && g.ownB(need, true, T).length) w[k as Kind] = BASE[k as Kind]!; }
+  for (const k in BROOD_BASE) { const need = NEED[k as Kind]; if (!g.gated(T, k as Kind) && need && g.ownB(need, true, T).length) w[k as Kind] = BROOD_BASE[k as Kind]!; }
   if (total > 0) {
     for (const tag in ANSWER) {
       const f = tag === 'swarm' ? (seen.swarm ? 1 : 0) : (seen.tags[tag as SeenTag] || 0) / total; if (f <= 0) continue;

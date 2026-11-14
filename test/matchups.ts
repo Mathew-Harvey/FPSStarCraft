@@ -173,21 +173,21 @@ for (const f of [0, 1, 2]) {
     usePlan(null);
     check(g.fair && worst <= 8 && off < .02 && odd <= 1, `map ${m < 0 ? 'made on 1' : m}, ${['Ironhold', 'Veyl', 'Gloam'][h]} v ${['Ironhold', 'Veyl', 'Gloam'][o]}: both ends have the same ore at the same walks (${yard.length} seams, the worst one ${worst} m different, ore in reach ${(off * 100).toFixed(1)}% apart, ${twins} twinned fields and ${odd} in the middle)`);
   }
-  // Overtime is a dial that is off. Switched on, a building takes more from each hit for each minute past the start, a tower does that much less
+  // Overtime (on since round 3 of stream L: Mat's end rule). Switched off, nothing changes; switched on, a building takes more from each hit for each minute past the start, a tower does that much less
   // to a body, and a body's hit on a body is what it always was.
   { const g = match(1, 0, 0), hq = g.ownB('choir', true, SIDE.out)[0], body = g.units.find(u => u.alive && u.team === SIDE.out)!, foe = g.units.find(u => u.alive && u.team === SIDE.home)!;
     const hit = (t: Unit | Building, from: Unit | Building | null) => { const was = t.hp + ((t as Unit).shield || 0); g.damage(t, 4, from); return was - t.hp - ((t as Unit).shield || 0); };
-    g.time = 30 * 60; const off = [g.overtime(), hit(hq, null)];
+    const ship = { ...OVERTIME }; OVERTIME.start = 0; OVERTIME.limit = 0; g.time = 30 * 60; const off = [g.overtime(), hit(hq, null)];
     OVERTIME.start = 18 * 60; OVERTIME.perMin = .1; g.time = 23 * 60; const b1 = hit(hq, null), u1 = hit(body, foe), t1 = hit(body, hq);
     check(off[0] === 0 && Math.abs(b1 / off[1] - 1.5) < .02 && Math.abs(t1 / u1 - 1 / 1.5) < .02, `overtime: off, a building takes the same at minute 30 as ever; switched on for minute 18, five minutes in a hit on a building does ${(b1 / off[1]).toFixed(2)} times as much and a tower's hit on a body ${(t1 / u1).toFixed(2)} times`);
-    setSides(0, 1); LAYOUT.fair = false; const classic = new Game(noPipe(), noHud, DIFFS[1], 0); classic.time = 23 * 60; check(classic.overtime() === 0, 'overtime: the classic match against the raid outpost never has any'); OVERTIME.start = 0; }
+    setSides(0, 1); LAYOUT.fair = false; const classic = new Game(noPipe(), noHud, DIFFS[1], 0); classic.time = 23 * 60; check(classic.overtime() === 0, 'overtime: the classic match against the raid outpost never has any'); Object.assign(OVERTIME, ship); }
 }
 
 // 13. Every pairing, bots on both sides, plays out to a result without the stalemates the sweep found.
 // Each match has its own seed, so a change to an earlier section of this file no longer moves these six (it used to: the whole file
 // shared one stream of dice). Stalls are still real elsewhere: in the 810-match table
 // (tools/table.mjs 30) 51 matches were undecided at 40 minutes, 30 of them Veyl mirrors, where every push dies to the defenders before
-// it breaks a building. Ending those is either balance work or a hard end rule (OVERTIME, switched off), and the end rule is Mat's call.
+// it breaks a building. Mat chose the end rule on 2026-11-14 (OVERTIME, on since stream L round 3), so these matches now run with it; they must still finish by a broken base, not on points.
 // Each of the six runs on two seeds, and 10 of the 12 must finish. One seed each flipped with changes that never touched the match:
 // three.js draws from Math.random when it builds something lazily, so any code change moves the dice (a Veyl brain change stalled
 // the Gloam mirror). Two stalls in twelve are allowed and named; picking seeds to hide a stall would be cheating.

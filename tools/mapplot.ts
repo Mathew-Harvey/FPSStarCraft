@@ -1,4 +1,4 @@
-// Draws every skirmish map's ground from above as SVG, for checking the layout by eye.
+// Draws every skirmish map's ground from above as SVG, for checking the layout by eye. Run: node tools/run-ts.mjs tools/mapplot.ts
 import { setMap, setSides, MAP, LAYOUT, SIZES, MAPS, ROAD, roadPt, VHOME, OUTPOST } from '../src/data';
 import { TER } from '../src/terrain';
 import { writeFileSync } from 'node:fs';

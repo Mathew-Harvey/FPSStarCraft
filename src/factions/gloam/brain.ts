@@ -66,21 +66,24 @@ export function overgrowth(D: Director, dt: number, V: Side = D.vs) {
   const homeLeft = g.ores.filter(n => Math.hypot(n.pos.x - HX, n.pos.z - HZ) < 40).reduce((a, n) => [a[0] + n.amount, a[1] + n.max], [0, 0]);
   const DOC = V.doc || DOCTRINES[0], wantCaps = Math.min((MAP.sites || []).length + 1, 1 + (g.time > DOC.expT - 60 || homeLeft[0] < homeLeft[1] * .5 ? 1 : 0) + (g.time > 900 ? 1 : 0) + (g.time > 1380 ? 1 : 0));
   const wantSac = free <= 3 && !sites.some(b => b.kind === 'sporesac') && own('sporesac').length < 7;
-  const wantStingers = Math.max(0, (army >= 3 ? 1 + (g.time > 420 ? 1 : 0) + (g.time > 840 ? 1 : 0) : 0) + DOC.towers);
+  const wantStingers = Math.min(BROOD_MID.on && BROOD_MID.towers >= 0 ? BROOD_MID.towers : 99, Math.max(0, (army >= 3 ? 1 + (g.time > 420 ? 1 : 0) + (g.time > 840 ? 1 : 0) : 0) + DOC.towers));
   const exp = expansion(D, T);
   // A new Cap goes ten metres from the seam on the side facing home, or a little further back if the ore is in the way there.
   const capSpot = ([sx, sz]: number[]) => { const dx = HX - sx, dz = HZ - sz, l = Math.hypot(dx, dz) || 1; return [10, 12, 14, 16, 18].map(r => [Math.round(sx + dx / l * r), Math.round(sz + dz / l * r)]).find(p => g.canPlace('mothercap', p[0], p[1], false, T)) || null; };
   if (!warren.length) put('warren', 'A Warren first. The Snappers need somewhere to sleep.');
   else if (wantSac) put('sporesac', 'We are crowded. Rooting a Spore Sac.');
   else if (growing) saving = false;
+  // The Quill Garden before the outnumbered rule, with the Buds holding its price: without this a third of the Brood never grew one
+  // against an Ironhold that kept its army bigger, and Snappers were 56-72% of the swarm's army spend (stream L round 3).
+  else if (BROOD_EARLY.garden && warrenUp && !garden.length && army >= BROOD_EARLY.garden) { hold = BLD.quillgarden.cost; put('quillgarden', 'A Quill Garden. Spitters, and the first new tricks.'); }
   // Outnumbered: no new tech until the swarm has caught up, or the side that rooted a Garden first is the side that gets run over.
   else if (warrenUp && g.army(foeOf(T)).length > army + 3) saving = false;
   else if (DOC.key === 'boom' && warrenUp && exp.site && caps.length < Math.min(2, wantCaps)) { hold = BLD.mothercap.cost; const at = capSpot(exp.site);
     if (cash() >= BLD.mothercap.cost && canRoot && at && g.place('mothercap', at[0], at[1], false, T, null)) D.say('Overgrowth', 'A Grazer goes to the far seam early. Ore first, teeth later.', '', T); }
   else if (warrenUp && stingers < Math.min(1, wantStingers)) put('stinger', 'A Stinger Stalk by the road. It will whip anything that sniffs too close.');
   // BROOD_MID (round 4, off by default): the Garden waits until the swarm holds, then the Buds save for it.
-  else if (BROOD_MID.on && warrenUp && !garden.length) { if (holding()) { hold = BLD.quillgarden.cost; put('quillgarden', 'A Quill Garden. Spitters, and the first new tricks.'); } }
-  else if (warrenUp && !garden.length && army >= 4 + DOC.tech) put('quillgarden', 'A Quill Garden. Spitters, and the first new tricks.');
+  else if (BROOD_MID.on && warrenUp && !garden.length) { if (holding()) { if (BROOD_MID.save) hold = BLD.quillgarden.cost; put('quillgarden', 'A Quill Garden. Spitters, and the first new tricks.'); } }
+  else if (warrenUp && !garden.length && army >= 4 + DOC.tech) { if (BROOD_EARLY.hold) hold = BLD.quillgarden.cost; put('quillgarden', 'A Quill Garden. Spitters, and the first new tricks.'); }
   // Fat Buds once the Garden is down, never before: bought at exactly three fighters it starved the swarm for half a minute, and which side happened
   // to hatch an odd Snapper decided the mirror match.
   else if (warrenUp && garden.length && !U.gfat && army >= 4 && (!BROOD_MID.on || g.own('quillback', T).length >= BROOD_MID.fatAfter) && pays(costOf('gfat'))) g.buyUpgrade('gfat', T);
@@ -123,6 +126,8 @@ export function overgrowth(D: Director, dt: number, V: Side = D.vs) {
     }
   }
 }
+/** When the Quill Garden comes ahead of everything else but the Warren and Spore Sacs: at this many fighters (0 keeps the old order). */
+export const BROOD_EARLY = { garden: 0, hold: 0 };
 const count = (caps: Building[], k: Kind) => caps.reduce((a, b) => a + b.queue.filter(q => q.kind === k).length, 0);
 /** The next seam worth a Mother Cap (nearest home, nobody there yet, away from the Ironhold), and a new Cap still without a Stinger Stalk. */
 function expansion(D: Director, T: number): { site: number[] | null; bare: number[] | null } {
@@ -152,5 +157,6 @@ defineFaction(2, {
 });
 /** Round 4 trial (stream L, 2026-11-14): tech once the swarm holds the first push. on: 1 switches it on (tools/review.ts spec key). army and
  *  k: the Garden waits for this many fighters worth k times the foe army seen; fatAfter: Fat Buds waits for this many Quillbacks; crew:
- *  more Grazers once the Garden stands. */
-export const BROOD_MID = { on: 0, army: 10, k: 1.5, fatAfter: 2, crew: 4 };
+ *  more Grazers once the Garden stands; save: 0 takes the Garden without saving the Buds for it; towers: at most this many Stinger
+ *  Stalks (-1: as before; every building eats a Grazer). */
+export const BROOD_MID = { on: 0, army: 10, k: 1.5, fatAfter: 2, crew: 4, save: 1, towers: -1 };

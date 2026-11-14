@@ -79,7 +79,7 @@ The Gloam now lead both their pairings by about the same margin, so round 3 trim
 
 ## Finding 2: Veyl v Gloam is a hit breakpoint
 
-A bot Cantor's cut is 20, times the Veyl bot multiplier 1.3, so 26 a cut. A Snapper has 55 health and no shield, so it dies to the third cut. At 52 it dies to the second. That one step is why every Veyl v Gloam lever was a cliff: Snapper health 55 to 52 alone moved Veyl v Gloam from 30-42 to 66-6 (144 matches), and Veyl bot multipliers 1.45/1.3 to 1.55/1.4 moved it from 17-19 to 35-1. Percent upgrades move the same line in matches: Ground Edge 1 (+25%) makes the cut 32.5, two cuts kill a Snapper again, and Hide 1 (+25% health) puts it back to three. So who buys their first level first decides the fight. The fix is finer steps (a smaller, faster cut, so a step is 4 cuts to 3 rather than 3 to 2), which round 3 tries. A list of every cuts-to-kill pair within 10% of a step, upgrades counted, will be added here with round 3.
+A bot Cantor's cut is 20, times the Veyl bot multiplier 1.3, so 26 a cut. A Snapper has 55 health and no shield, so it dies to the third cut. At 52 it dies to the second. That one step is why every Veyl v Gloam lever was a cliff: Snapper health 55 to 52 alone moved Veyl v Gloam from 30-42 to 66-6 (144 matches), and Veyl bot multipliers 1.45/1.3 to 1.55/1.4 moved it from 17-19 to 35-1. Percent upgrades move the same line in matches: Ground Edge 1 (+25%) makes the cut 32.5, two cuts kill a Snapper again, and Hide 1 (+25% health) puts it back to three. So who buys their first level first decides the fight. The fix is finer steps (a smaller, faster cut, so a step is 4 cuts to 3 rather than 3 to 2), which round 3 tries. The list of every hits-to-kill pair within 10% of a step, with and without research, is in [breakpoints.md](breakpoints.md) (round 3).
 
 ## Undecided matches: options for an end rule (Mat's call)
 
@@ -88,3 +88,65 @@ Stream D traced the Gloam mirror draws: both sides still have armies of 20 to 60
 1. **Points win at the time limit, by value destroyed.** Decides all 18. In 8 of the 18 the two sides destroyed within 10% of each other's value, so the result is close to a coin flip in those.
 2. **Overtime on buildings** (built in: `OVERTIME`, off). After the start minute, buildings take more damage each minute. Numbers: see the table that follows (mirrors, 108 matches each).
 3. **Sudden-death Flux** (not built): after a set minute, vents stop paying and each side's Flux drains, so tier-2 and tier-3 armies cannot be rebuilt. Needs rules code (stream A); not measured.
+
+## Round 3: the end rule, a softer Snapper bite
+
+| Number | Was | Now | Why |
+|---|---|---|---|
+| `OVERTIME` (data.ts) | off | start 1200, perMin .2, limit 2400 | Mat's choice on 2026-11-14, "Overtime, then points": from minute 20 buildings take 20% more damage for each minute that passes, and at minute 40 the side (in team games, the alliance) that destroyed more value wins. A tie on value breaks on worth still standing; there are no draws. Fair skirmishes only, not story jobs or the classic raid match. It holds online (the server decides and tells each player it was on points) and in replays. Test: test/endrule.ts. |
+| Snapper bite (`G_TUNE.bite.snapper`) | 7 | 6.9 | With the rule on, Veyl v Gloam was 30 to 42. 6.8 overshot to 42 to 30 (on lead 219c804); 6.9 gives 37 to 35. |
+
+Tried and not kept:
+
+- A finer Cantor cut, 15 every 0.71 s (the same damage a second): Veyl v Gloam 57 to 15 (144 matches, Gloam pairings). Three cuts of 19.5 still kill a Snapper, only sooner. A finer cut has to change the cuts-to-kill count, not the speed; see the breakpoint list.
+- Snapper bite 6.5: Ironhold v Gloam 40 to 30, Veyl v Gloam 48 to 23 (too far).
+- Gloam army mix with fewer Snappers (brood-mix weights Snapper 3 to 1.8, Quillback 2.4 to 3, Blister 1.2 to 1.6): the Snapper share only fell from 65% to 62%; win rates unchanged. Trial option `brood` in tools/review.ts.
+
+### Before (lead e8f7071 with the end rule on, Snapper bite 7, 324 matches, Medium and Large)
+
+- Ironhold v Veyl: 36 to 36
+- Ironhold v Gloam: 36 to 36
+- Veyl v Gloam: 30 to 42 (Gloam 58%)
+- Mirrors: Ironhold yard 13, far 23. Veyl yard 22, far 14. Gloam yard 20, far 16.
+- Nothing undecided; 4 matches won on points; middle match 18.9 minutes.
+
+Without the end rule (lead 219c804, round 2 numbers) the same table had 18 undecided. The rule alone took Ironhold v Gloam from 29-42 to 36-36: Gloam wins that used to stall at the time limit now end.
+
+### After (same lead, bite 6.9, 324 matches)
+
+- Ironhold v Veyl: 36 to 36 (50%)
+- Ironhold v Gloam: 32 to 40 (Gloam 56%)
+- Veyl v Gloam: 37 to 35 (Veyl 51%)
+- Mirrors: Ironhold yard 13, far 23. Veyl yard 22, far 14. Gloam yard 19, far 17.
+- Nothing undecided; 5 won on points; middle match 19.3 minutes. Rows: /mnt/project-files/full-depth/L/r3/full-c89bite69.jsonl.
+
+72 matches a pairing is about 6 points either way of noise, so every pairing is inside it; the gate's 270 a pairing is not yet reached. The Ironhold and Veyl mirrors each lean one way by 64% and 61% over 36 matches; round 2 had them even, so it is probably noise, to be re-measured with more seeds.
+
+## Finding 3: the Gloam win with Snappers, before their tech
+
+Snappers are 56% to 72% of Gloam army spend (gate: none over 35%). In the round 3 table 56 of 144 Gloam sides in a cross pairing never grew a Quill Garden: those won 48 of 56, in 9.6 minutes on average. The 88 that did grow one won 27, in 18 minutes. So the Gloam's wins are Snapper rushes, and a Gloam side that techs loses.
+
+Making the bot grow its Garden every time shows it plainly (Gloam pairings, 180 matches each):
+
+| Trial | Ironhold v Gloam | Veyl v Gloam | Snapper share |
+|---|---|---|---|
+| as is | 32 to 40 | 37 to 35 | 65%, 72% |
+| Garden first at 4 fighters, its price held | 72 to 0 | 72 to 0 | 30%, 22% |
+| Garden price held in its old place | 71 to 1 | 72 to 0 | 32%, 29% |
+| Garden first at 8 fighters | 72 to 0 | 71 to 1 | 28%, 25% |
+
+(Trial options `garden` and `ghold`, BROOD_EARLY in gloam/brain.ts; off by default.) Every way of getting the mix the gate asks for loses every match. That is not a number to nudge. It points to the Gloam's second tier (Quillback, Blister, Shellback, and the Bite and Hide levels) losing to the Ironhold and Veyl armies it meets, with only the early Snapper swarm keeping the Gloam level. Not yet split apart: how much is the tier itself and how much is the ore spent on the Garden while the foe is still building up. The fix is a stronger Gloam mid-game together with a slower Snapper rush, in one step, so the win rate holds while the mix changes. That is round 4, with stream D.
+
+## Breakpoint list (round 3)
+
+The full lists are in [breakpoints.md](breakpoints.md): 192 of 291 pairs that kill in six hits or fewer sit within 10% of a step with no research, 131 of 213 with every level bought. The ones between the kinds bots build most (round 3 spend):
+
+- **Cantor, Bell and Lancer on a Snapper: 3 hits, 2 with a hit 10% harder**, with research and without (26 into 55; 44.9 into 95 with every level). This is Finding 2, and it is why Snapper bite, not Snapper health or Cantor numbers, is the lever for Veyl v Gloam. Keep Cantor damage and Snapper health apart by more than 10% from this line in any later round.
+- Blister on a Snapper: 2 hits, 3 if 10% softer (Gloam mirror).
+- Piledriver (set) on a Quillback: 3 hits, 2 if 10% harder, both ways. Breacher on a Quillback: 3, 4 if softer (5 and 6 with research).
+- Bell on a Piledriver: 4 hits, 3 if harder (5 and 4 with research).
+- Piledriver on a Snapper: 4 hits, 5 if softer, both ways.
+- Quillback on a Snapper: 5 hits (6 or 4 either way), and on a Linesman 5 or 6: the Quillback's quill sits on a step against nearly everything small.
+- Knell on a set Piledriver: 2 hits, 3 if softer, both ways.
+
+Not counted: healing and shield regrowth between hits (a slow attacker can need one more), damage over time, splash and the first-person aim bonus.

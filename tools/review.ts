@@ -10,7 +10,8 @@ import { G_TUNE } from '../src/factions/gloam/numbers';
 import { TERRAIN } from '../src/terrain';
 import { costOf } from '../src/core/econ';
 const spec0 = JSON.parse(process.argv[2] || '{}'); if (spec0.flat) TERRAIN.on = false;   // flat: the maps without their high ground, vents and beacons
- if (spec0.reach !== undefined) CHOIR_REACH.m = spec0.reach; if (spec0.cleave !== undefined) CLEAVE.n = spec0.cleave; if (spec0.bite) G_TUNE.bite.snapper = spec0.bite; if (spec0.cap) BLD.mothercap.cost = spec0.cap; if (spec0.bud) G_TUNE.budEvery = spec0.bud; if (spec0.gnaw) G_TUNE.bite.gnaw = spec0.gnaw;
+ if (spec0.reach !== undefined) CHOIR_REACH.m = spec0.reach; if (spec0.cleave !== undefined) CLEAVE.n = spec0.cleave; if (spec0.cleaveK !== undefined) CLEAVE.k = spec0.cleaveK; if (spec0.bite) G_TUNE.bite.snapper = spec0.bite; if (spec0.cap) BLD.mothercap.cost = spec0.cap; if (spec0.bud) G_TUNE.budEvery = spec0.bud; if (spec0.gnaw) G_TUNE.bite.gnaw = spec0.gnaw;
+for (const k in spec0.set || {}) Object.assign((UNIT as any)[k], spec0.set[k]);   // trial numbers: {"set":{"snapper":{"hp":58}}}   // stream L: the bot push rule, e.g. {"edge":0} for the old head count
 if (spec0.ot !== undefined) { OVERTIME.start = spec0.ot * 60; if (spec0.otk) OVERTIME.perMin = spec0.otk; }
 initHeadless();
 const spec = JSON.parse(process.argv[2] || '{}');
@@ -31,6 +32,8 @@ let firstBlood = -1, firstB = -1; const deathT: number[] = []; const bT: number[
 const line: number[] = [];   // (worthH - worthO) / (worthH + worthO) every 30 s
 const armyLine: number[][] = [];
 let peak = [0, 0];
+// Who marched first, when, and whether that side went on to win (stream L: the first push into an even army at its own base used to lose).
+let firstPush = '', firstPushT = -1;
 // Spend by kind (stream L, gate 3): every unit, building and research level each side paid for, in ore plus flux. A unit that changes kind
 // (a Gloam form, an Ironhold refit) counts the new kind's price on top. Starting units and buildings are not counted.
 const spend = { [H]: {} as Record<string, number>, [O]: {} as Record<string, number> } as any, made = { [H]: {} as Record<string, number>, [O]: {} as Record<string, number> } as any;
@@ -49,6 +52,7 @@ while (g.phase !== 'over' && g.time < mins * 60) {
       if (isU) { const w = !isFighter(x); if (w) lost[t].w++; else lost[t].u++; lost[t].ore += UNIT[k].cost || 0; if (firstBlood < 0 && !w) firstBlood = g.time; deathT.push(g.time); }
       else { if (x.built === false && x.hp > 0) continue; lost[t].b++; lost[t].ore += BLD[k].cost || 0; if (firstB < 0) firstB = g.time; bT.push(g.time); } }
   }
+  if (!firstPush && (g.dir.pushes || g.dir.vs.pushes)) { firstPush = g.dir.pushes ? 'home' : 'out'; firstPushT = Math.round(g.time); }
   if (tick % 900 === 0) { const a = worth(H), b = worth(O); line.push(+((a - b) / Math.max(1, a + b)).toFixed(3)); armyLine.push([armyW(H), armyW(O)]); peak = [Math.max(peak[0], g.army(H).length), Math.max(peak[1], g.army(O).length)]; }
 }
 const tag = (t: number) => ['IRON', 'VEYL', 'GLOAM'][t % 3] + (t >= 3 ? '2' : '');
@@ -63,4 +67,4 @@ const slices = Math.max(1, Math.floor((g.time - Math.max(0, firstBlood)) / 30));
 // How long the match ran after the winner was at least 25% ahead for good.
 let settled = line.length; for (let i = line.length - 1; i >= 0; i--) { if (line[i] * w > .25) settled = i; else break; }
 const S = (s: any) => ({ pushes: s.pushes, fails: s.fails });
-console.log(JSON.stringify({ home: spec.home ?? 0, out: spec.out ?? 1, map, seed: spec.seed ?? 1, res, win: res === 'draw' ? 'DRAW' : tag(res === 'home' ? H : O), t: Math.round(g.time), firstBlood: Math.round(firstBlood), firstB: Math.round(firstB), changes, lastChange, behind: +behind.toFixed(2), quiet: +(quiet / slices).toFixed(2), drag: w ? Math.round(g.time - settled * 30) : 0, lostH: lost[H], lostO: lost[O], mined: [Math.floor(g.stats.mined), Math.floor(g.stats.minedV)], peak, pushH: S(g.dir), pushO: S(g.dir.vs), line: spec.line ? line : undefined, spendH: spend[H], spendO: spend[O], madeH: made[H], madeO: made[O] }));
+console.log(JSON.stringify({ home: spec.home ?? 0, out: spec.out ?? 1, map, seed: spec.seed ?? 1, res, win: res === 'draw' ? 'DRAW' : tag(res === 'home' ? H : O), t: Math.round(g.time), firstBlood: Math.round(firstBlood), firstB: Math.round(firstB), changes, lastChange, behind: +behind.toFixed(2), quiet: +(quiet / slices).toFixed(2), drag: w ? Math.round(g.time - settled * 30) : 0, lostH: lost[H], lostO: lost[O], mined: [Math.floor(g.stats.mined), Math.floor(g.stats.minedV)], peak, pushH: S(g.dir), pushO: S(g.dir.vs), line: spec.line ? line : undefined, firstPush, firstPushT, spendH: spend[H], spendO: spend[O], madeH: made[H], madeO: made[O] }));

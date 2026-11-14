@@ -28,11 +28,14 @@ if (process.argv[2] === 'sum') {
 }
 
 initHeadless();
-const o = JSON.parse(process.argv[2] || '{}'), runs = o.runs ?? 20, budget = o.budget ?? 1200;
+const o = JSON.parse(process.argv[2] || '{}');
+// set: trial numbers, e.g. {"snapper":{"hp":60}}; vhp / vdmg: the Veyl bot multipliers (Game.vBoost).
+for (const k in o.set || {}) Object.assign((UNIT as any)[k], o.set[k]);
+const runs = o.runs ?? 20, budget = o.budget ?? 1200;
 const kinds = (Object.keys(UNIT) as Kind[]).filter(k => { const u = UNIT[k] as any; return u.cost + (u.flux || 0) > 0 && u.time > 0 && !isWorker(k) && !u.ward && !/\(/.test(u.name) && !SUPPORT.has(k); });
 const only = o.only ? String(o.only).split(',') : null;
 const pairs: [Kind, Kind][] = [];
-if (only) { for (const a of only as Kind[]) for (const b of kinds) pairs.push([a, b]); } else for (const a of kinds) for (const b of kinds) if (a <= b) pairs.push([a, b]);
+if (only) { const vs = o.vs ? String(o.vs).split(',') : null; for (const a of only as Kind[]) for (const b of kinds) if (!vs || vs.includes(b)) if (!(vs && only.includes(b) && only.indexOf(b) < only.indexOf(a))) pairs.push([a, b]); } else for (const a of kinds) for (const b of kinds) if (a <= b) pairs.push([a, b]);
 const mine = pairs.filter((_, i) => i % (o.of ?? 1) === (o.shard ?? 0));
 
 for (const [ak, bk] of mine) {
@@ -44,7 +47,7 @@ for (const [ak, bk] of mine) {
     let seed = s * 77 + 13; Math.random = () => { seed = (seed * 16807) % 2147483647; return (seed - 1) / 2147483646; };
     const fA = UNIT[ak].team, fB = UNIT[bk].team;
     setMap(0); const [A, B] = setSides(fA, fB); const g = new Game(noPipe(), noHud, DIFFS[1], 0, null, null, true);
-    g.noRender = true; g.evq = []; g.me = null; g.phase = 'play'; g.human = g.human.map(() => true); (g as any).purse = (g as any).purse?.map(() => 0);
+    g.noRender = true; g.evq = []; g.me = null; g.phase = 'play'; g.human = g.human.map(() => false); g.eco = true; if (o.vhp) g.vBoost.hp = o.vhp; if (o.vdmg) g.vBoost.dmg = o.vdmg;   // as in a two-economy match: bot bodies, Veyl vBoost on (g as any).purse = (g as any).purse?.map(() => 0);
     for (const S of [g.dir as any, (g.dir as any).vs]) if (S) { S.auto = false; S.qmT = 1e9; }
     for (const u of g.units) { u.alive = false; g.scene.remove(u.obj); } g.units = [];
     if (o.ups) for (const t of [A, B]) { const up = g.upOf(t) as any; for (const d of UPGRADES as any[]) if (d.team === undefined ? fac(t) === 0 : d.team === fac(t)) up[d.key] = true; }

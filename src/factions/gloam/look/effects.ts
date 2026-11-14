@@ -4,8 +4,9 @@
 import * as THREE from 'three';
 import { FxKit, Fx, tell, beam, orb, cloud, ring, borrow } from '../../../fx/kit';
 
-/** The Gloam colours: lime sap, bile, rot, acid, spore dust and the brown of turned earth. */
-export const GC = { sap: '#b8ff3a', bile: '#9fd01c', rot: '#9b5cff', acid: '#e2ff2e', spore: '#8f9b52', soil: '#8a6a44', mend: '#7dffb0', cloud: '#6f8a6a' } as const;
+/** The Gloam colours: lime sap, bile, rot, acid, spore dust and the brown of turned earth. Spore dust and the Spore Cloud are pale,
+ *  so they read over the green Bloom the Gloam fight on (an olive cloud vanished into it in the match check). */
+export const GC = { sap: '#b8ff3a', bile: '#9fd01c', rot: '#9b5cff', acid: '#e2ff2e', spore: '#d9cf86', soil: '#8a6a44', mend: '#7dffb0', cloud: '#cdd6b4' } as const;
 
 type V3 = THREE.Vector3;
 type At = V3 | (() => V3);
@@ -41,7 +42,7 @@ export const GLOAM_FX: Record<string, (kit: FxKit, o: GfxAt) => void> = {
     arc(kit, a, b, { time: o.time ?? Math.max(.8, d / 14), peak: Math.max(3, d * .35), r: .6, color: GC.bile, land: p => { kit.add(ring({ x: p.x, z: p.z, r: o.r ?? 2.5, time: .4, color: GC.bile, band: .7 })); kit.add(cloud({ x: p.x, z: p.z, r: (o.r ?? 2.5) * .8, color: GC.bile, time: 1.6, puffs: 5 })); } });
   },
   /** Smother: Choke Spores, a dark cloud that rolls out over the circle and holds what is in it. */
-  choke(kit, o) { kit.add(ring({ x: o.x!, z: o.z!, r: o.r ?? 3.5, time: .5, color: GC.spore })); kit.add(cloud({ x: o.x!, z: o.z!, r: o.r ?? 3.5, color: GC.spore, time: o.time ?? 3, seed: 7 })); },
+  choke(kit, o) { const r = o.r ?? 3.5, t = o.time ?? 3; kit.add(ring({ x: o.x!, z: o.z!, r, time: .5, color: GC.spore })); kit.add(cloud({ x: o.x!, z: o.z!, r, color: GC.spore, time: t, seed: 7 })); kit.add(cloud({ x: o.x!, z: o.z!, y: .8, r: r * .8, color: GC.rot, time: t, seed: 3, puffs: 6 })); },
   /** Smother: Rot Mind, a violet thread to the victim and the victim stained violet while it is borrowed (returns nothing; the stain
    *  comes off after `time`). */
   rot(kit, o) {
@@ -62,7 +63,7 @@ export const GLOAM_FX: Record<string, (kit: FxKit, o: GfxAt) => void> = {
   /** Hooksail: Reel, the tail line thrown out to the body and hauled in. */
   reel(kit, o) { kit.add(beam({ a: o.from!, b: o.to!, width: .07, color: GC.bile, time: o.time ?? .9 })); },
   /** Hooksail: Spore Cloud, a wide drifting cloud that shots will not get through. */
-  cloud(kit, o) { kit.add(cloud({ x: o.x!, z: o.z!, r: o.r ?? 5, color: GC.cloud, time: o.time ?? 8, seed: 11 })); },
+  cloud(kit, o) { const r = o.r ?? 5, t = o.time ?? 8; kit.add(cloud({ x: o.x!, z: o.z!, r, color: GC.cloud, time: t, seed: 11 })); kit.add(cloud({ x: o.x!, z: o.z!, y: 1.4, r: r * .85, color: GC.cloud, time: t, seed: 5 })); kit.add(ring({ x: o.x!, z: o.z!, r, time: .6, color: GC.cloud })); },
   /** Hooksail: Drink, sap drawn up out of its own growth into it. */
   drink(kit, o) { kit.add(beam({ a: o.from!, b: o.to!, width: .2, color: GC.sap, time: o.time ?? 1.2 })); const t = pos(o.from!); kit.add(ring({ x: t.x, z: t.z, r: 3, time: .8, color: GC.sap })); },
   /** Any body digging in or coming up: a ring of thrown earth and a little dust. */

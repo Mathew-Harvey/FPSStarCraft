@@ -5,7 +5,7 @@
 import { createRequire } from 'node:module';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { dirname, join } from 'node:path';
-import { testPage } from './page.mjs';
+import { testPage, oneDrawPerTurn } from './page.mjs';
 const require = createRequire(import.meta.url); const { chromium } = require('playwright');
 const page = await testPage(), SHOTS = process.env.SHOTS || '';
 const fail = []; const check = (ok, what) => { console.log((ok ? 'PASS ' : 'FAIL ') + what); if (!ok) fail.push(what); };
@@ -17,12 +17,7 @@ try {
   const p = await b.newPage({ viewport: { width: 1280, height: 720 } }); p.setDefaultTimeout(300000);
   p.on('pageerror', e => { console.log('[pageerror]', e.message.slice(0, 400)); fail.push('page error'); });
   await p.goto(page); await p.waitForFunction('window.__ore && __ore.game');
-  // At most one picture per turn of the page. A test call that steps and draws many frames in one go never lets the browser show one,
-  // and the browser keeps every one of them until it does: the page climbed from 1 GB to 4 to 8 GB inside a section and was killed
-  // ("Target crashed"). The game itself draws once per animation frame, so this is the test's own load, not a leak in the game.
-  // A frame skipped this way is drawn as soon as the call ends, with the latest view, before any screenshot is taken.
-  await p.evaluate(() => { const P = __ore.pipe, real = P.draw.bind(P); let busy = false, late = null;
-    P.draw = (...a) => { if (busy) { late = a; return; } busy = true; real(...a); setTimeout(() => { busy = false; if (late) { const l = late; late = null; P.draw(...l); } }, 0); }; });
+  await oneDrawPerTurn(p);   // see test/page.mjs: many frames drawn in one call filled the page's memory
   await p.evaluate(() => {
     __ore.setFree(true); __ore.pickMap(0); document.querySelectorAll('#diff button')[0].click(); __ore.setRaid(true); __ore.start(); __ore.hold(true);
     const g = __ore.game; g.introT = 0; g.hourFix = 13; g.wxFix = 'clear'; g.truce = true; g.dir.raidIn = 9999; g.dir.auto = false; g.ore = 2000;

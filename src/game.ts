@@ -517,7 +517,8 @@ export class Game {
     if (left.some(t => !isFriend(t, best) && !better(best, t))) return;
     this.winners = MATCH.teams.filter(o => isFriend(o, best)); this.byPoints = true;
     const who = !multi() && fac(SIDE.home) === fac(SIDE.out) ? `${this.sideName(best)} at ${best === SIDE.home ? 'the yard' : 'the far end'}` : this.sideName(best);
-    this.feed('Signal', `Time. ${who} win on points: they lost ${Math.round(lost(best))} worth, the rest more.`, 'al');
+    const even = left.some(t => !isFriend(t, best) && lost(t) === lost(best));
+    this.feed('Signal', even ? `Time. Both sides lost ${Math.round(lost(best))} worth; ${who} win on what they still have standing.` : `Time. ${who} win on points: they lost ${Math.round(lost(best))} worth, the rest more.`, 'al');
     this.endT = 2.4; this.endWon = isFriend(best, this.myTeam); this.pipe.flash = 1;
   }
   byPoints = false;

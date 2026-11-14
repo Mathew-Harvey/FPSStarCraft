@@ -152,7 +152,9 @@ try {
   // 8. A flier the player drives reaches the ground: a short gun's reach is measured along the ground, as its bot's is, not from the eye.
   const fl = await p.evaluate(() => { __ore.pickMap(0); __ore.setRaid(true); __ore.start(); const g = __ore.game; g.introT = 0; g.truce = true; g.dir.raidIn = 9999; const out = {};
     for (const [k, far] of [['gadfly', 6], ['claimbarge', 8], ['gadfly', 12]]) { const me = g.spawn(k, 0, 40, 40), f = g.spawn('cantor', 1, 40, 40 + far); f.maxShield = f.shield = 0; f.hp = f.maxHp = 5000; g.jumpCd = 0; g.possess(me);
-      ff(4, () => { if (g.me !== me) return; f.pos.x = 40; f.pos.z = 40 + far; me.pos.x = 40; me.pos.z = 40; g.yaw = 0; g.pitch = Math.atan2(1 - (me.alt || 0) - 1.6, far); g.lmb = true; });
+      // Fire is held until a hit lands, for up to 6 s (a body it boards or a slow climb used to leave only a few frames of fire inside 4 s).
+      const aim = () => { if (g.me !== me) return; f.pos.x = 40; f.pos.z = 40 + far; me.pos.x = 40; me.pos.z = 40; g.yaw = 0; g.pitch = Math.atan2(1 - (me.alt || 0) - 1.6, far); g.lmb = true; };
+      for (let t = 0; t < 6 && f.hp >= 5000; t += .5) ff(.5, aim);
       g.lmb = false; out[k + far] = [5000 - f.hp, me.alt || 0]; g.killUnit(f, null); g.jumpCd = 0; g.possess(g.own('rigger')[0]); g.killUnit(me, null); }
     __ore.quit(); return out; });
   check(fl.gadfly6[0] > 0 && fl.gadfly6[1] > 5, `a driven Gadfly at cruise height hits a body 6 m off along the ground (${Math.round(fl.gadfly6[0])} damage from ${fl.gadfly6[1].toFixed(1)} m up)`);

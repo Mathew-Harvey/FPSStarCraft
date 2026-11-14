@@ -9,10 +9,12 @@ import { testPage } from './page.mjs';
 const require = createRequire(import.meta.url); const { chromium } = require('playwright');
 const page = await testPage(), SHOTS = process.env.SHOTS || '';
 const fail = []; const check = (ok, what) => { console.log((ok ? 'PASS ' : 'FAIL ') + what); if (!ok) fail.push(what); };
-const b = await chromium.launch({ args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist', '--enable-webgl', '--disable-dev-shm-usage'] });
+const b = await chromium.launch({ args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist', '--enable-webgl', '--disable-dev-shm-usage', '--js-flags=--expose-gc'] });
 try {
   const shotIn = async (p, n) => { if (SHOTS) { await p.evaluate(() => { for (const d of document.querySelectorAll('#feed div')) d.style.animation = 'none'; }); await p.screenshot({ path: `${SHOTS}/${n}.jpg`, type: 'jpeg', quality: 88 }); } };
-  // Software drawing in a headless browser grows its memory with every frame drawn, so the test runs in two fresh pages.
+  // Software drawing in a headless browser grows its memory with every frame drawn, so the test runs in fresh pages, and every fourth step
+  // collects the garbage by hand: the native memory behind dropped objects is only freed by a collection, and the JavaScript heap is too quiet
+  // to start one, so a page climbed past 10 GB and was killed ("Target crashed") inside the full run.
   const open = async () => {
   const p = await b.newPage({ viewport: { width: 1280, height: 720 } }); p.setDefaultTimeout(300000);
   p.on('pageerror', e => { console.log('[pageerror]', e.message.slice(0, 400)); fail.push('page error'); });
@@ -24,7 +26,7 @@ try {
     for (let i = 0; i < 6; i++) g.spawn('linesman', 0, -6 + i * 2.2, 14 + (i % 2) * 2);
     // Only the test moves time: the page's own frame loop still calls update while held, which made runs depend on how slow the machine was.
     const real = g.update.bind(g); let stepping = false; g.update = dt => { if (stepping) real(dt); };
-    window.step = n => { const g = __ore.game; stepping = true; for (let i = 0; i < n; i++) { if (g.phase === 'card') g.phase = 'play'; g.noRender = i < n - 1; g.update(1 / 30); } g.noRender = false; stepping = false; };
+    window.drawn = 0; window.step = n => { const g = __ore.game; stepping = true; for (let i = 0; i < n; i++) { if (g.phase === 'card') g.phase = 'play'; g.noRender = i < n - 1; g.update(1 / 30); } g.noRender = false; stepping = false; if (window.gc && ++window.drawn % 4 === 0) gc(); };
     window.aim = (x, z, y = 1) => { const C = __ore.game.cmd, s = [0, 0]; C.screen(x, y, z, s); C.cx = s[0]; C.cy = s[1]; };
     window.click = (btn = 0) => { const g = __ore.game; g.pressed.add('Mouse' + btn); if (!btn) g.lmb = true; step(1); if (!btn) { g.lmb = false; step(1); } };
     window.key = (k, mods = []) => { const g = __ore.game; for (const m of mods) g.keys.add(m); g.pressed.add(k); step(1); for (const m of mods) g.keys.delete(m); };
@@ -244,7 +246,7 @@ try {
   check(r.on === '2v2' && r.teams.length === 4, `picking 2v2 starts a match with four sides (${r.teams.join(', ')})`);
   r = await p.evaluate(() => { const g = __ore.game; g.introT = 0; g.truce = true; g.dir.raidIn = 9999;
     const real = g.update.bind(g); let stepping = false; g.update = dt => { if (stepping) real(dt); };
-    window.step = n => { stepping = true; for (let i = 0; i < n; i++) { if (g.phase === 'card') g.phase = 'play'; g.noRender = i < n - 1; g.update(1 / 30); } g.noRender = false; stepping = false; };
+    window.drawn = 0; window.step = n => { stepping = true; for (let i = 0; i < n; i++) { if (g.phase === 'card') g.phase = 'play'; g.noRender = i < n - 1; g.update(1 / 30); } g.noRender = false; stepping = false; if (window.gc && ++window.drawn % 4 === 0) gc(); };
     step(5); const F = __ore.reg.isFriend, friends = [...new Set(g.units.filter(u => u.team !== g.myTeam && F(u.team, g.myTeam)).map(u => u.team))];
     return { friends }; });
   check(r.friends.length === 1, `in 2v2 the player has one allied side (${r.friends.join(', ')})`);

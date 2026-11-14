@@ -615,7 +615,8 @@ export class Game {
       else if (this.me?.alive && !this.tab && !this.cmd.on) this.updatePlayer(dt, P);
       // Who is leading from the ground this tick: this screen's own body offline, every driven body on a server.
       { const L = this.leads; L.length = 0; const me = this.me; if (LEAD.dmg !== 1 || LEAD.guard !== 1) { if (me && me.alive && !this.net && !this.cmd.on && this.staticT <= 0 && this.human[me.team]) L.push(me); for (const u of this.units) if (u.alive && u.pilot && !u.aloft && u !== me) L.push(u); } }
-      if (SIDE.out === 2) gloamFx(this, dt);
+      // Each faction's own per-frame systems (the Gloam's Bloom and Buds), for every faction in the match at either end.
+      for (const f of new Set([fac(SIDE.home), fac(SIDE.out), ...MATCH.teams.map(fac)])) factionRule(f).fx?.(this, dt);
       if (this.net) { netTick(this, dt); this.intel.update(dt); this.poseUnits(dt); this.updateProjs(dt); this.updateChunks(dt); this.updateWrecks(dt); this.updateFx(dt); } else {
       if (this.mission && this.endT <= 0) { this.mission.tick?.(this, this.ms, dt); if (this.ms.lose) { this.endT = 2.4; this.endWon = false; this.pipe.flash = 1; } else if (this.mission.objectives.every(o => o.done(this))) { this.endT = 2.4; this.endWon = true; this.pipe.flash = 1; } }
       this.updateUnits(dt); this.updateBuildings(dt); this.updateProjs(dt); this.updateChunks(dt); this.updateWrecks(dt); this.dir.update(dt); this.intel.update(dt);
@@ -734,7 +735,7 @@ export class Game {
     if (bud && !(b.buds! > 0)) { if (manual) { sfx.deny(); this.feed(v, 'No Bud is ripe on this Cap. Give it a moment, or grow another Mother Cap.', 'al', t); } return false; }
     const price = costOf(k); if (!canPay(this, t, price, n)) { if (manual) { sfx.deny(); this.feed(v, this.cash(t) < price[0] * n ? (fac(t) === 2 ? 'The Overgrowth is hungry. Send the Grazers to chew.' : fac(t) ? 'The Chorus is out of ore. Send the Tenders to the seams.' : 'Can\'t. We\'re broke. Go hit a rock.') : `Short of ${shortOf(this, t, price, n)}. Tap a vent.`, 'al', t); } return false; }
     if (this.supplyUsed(t) + st.supply * n > this.supplyCap(t)) { if (manual) { sfx.deny(); this.feed(v, fac(t) === 2 ? 'No room to grow. Root a Spore Sac first.' : fac(t) ? 'No room in the song. Grow a Hush Well first.' : 'No beds. Build a Depot first.', 'al', t); } return false; }
-    if (!bud && b.queue.length >= 5) { if (manual) sfx.deny(); return false; }
+    if (!bud && b.queue.filter(q => !bldRule(b.kind).buds || unitRule(q.kind).noBud).length >= 5) { if (manual) sfx.deny(); return false; }
     if (bud) b.buds!--; pay(this, t, price, n); for (let i = 0; i < n; i++) b.queue.push({ kind: k, t: st.time }); if (manual) sfx.blip(); return true;
   }
   buyUpgrade(key: UpKey, team = this.myTeam, manual = false) {
@@ -1054,7 +1055,7 @@ export class Game {
     for (const o of this.units) {
       if (!o.alive || !isEnemy(o.team, u.team) || o.inside) continue; const dx = o.pos.x - u.pos.x, dz = o.pos.z - u.pos.z; if (dx > range || dx < -range || dz > range || dz < -range) continue; const d = Math.hypot(dx, dz); if (d >= range) continue;
       if (!T.sees(u.team, u.pos.y, o.pos.x, o.pos.z, o.pos.y)) continue;   // terrain (J): nobody shoots at what is up a cliff out of sight
-      if ((o.air || o.status || UNIT[o.kind].cloak) && (!canHit(u, o) || !seenBy(this, u.team, o))) continue;
+      if ((o.air || o.status || UNIT[o.kind].cloak || UNIT[u.kind].hits === 'air') && (!canHit(u, o) || !seenBy(this, u.team, o))) continue;
       const w = (unitRule(o.kind).threat ?? 1) * (o.hp < o.maxHp * .4 ? .75 : 1) * (o === u.target ? .85 : 1);
       const sc = (d + 4) * w; if (sc < bs) { bs = sc; bd = d; best = o; }
     }

@@ -12,7 +12,7 @@ export type Kind = IKind | VKind | GKind;
 export type BKind = IBKind | VBKind | GBKind;
 
 export interface UnitDef { name: string; team: number; hp: number; shield: number; speed: number; eye: number; headY: number; bodyY: number; rad: number; cost: number; time: number; supply: number; quip: string; ack: string[]; /** Flux on top of the ore cost. */ flux?: number;
-  /** Flies (src/core/air.ts): over cliffs and buildings, hit only by weapons that reach the air. */ air?: boolean; /** Energy for abilities, up to this. */ energy?: number;
+  /** Flies (src/core/air.ts): over cliffs and buildings, hit only by weapons that reach the air. */ air?: boolean; /** A flier's own cruise height in metres (default AIR.cruise, 7). */ cruise?: number; /** Energy for abilities, up to this. */ energy?: number;
   /** Unseen until detected (always, not just when an ability says so), and how far it sees unseen bodies. */ cloak?: boolean; detect?: number;
   /** Cargo slots it carries, and the slots it takes up inside one. */ cargo?: number; slots?: number;
   /** Mines and builds like a Rigger (the Haul Drone). */ worker?: boolean; /** Left behind (a mine, a turret): not a fighter, never enlisted or ordered. */ ward?: boolean; /** Walks up cliffs (the Reedwalker; read by the terrain). */ climb?: boolean;

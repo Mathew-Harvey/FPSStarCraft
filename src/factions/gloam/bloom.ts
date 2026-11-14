@@ -1,7 +1,7 @@
 // Bloom, the Gloam's living carpet: their buildings spread it, and their units run faster and heal on it.
 import * as THREE from 'three';
 import { bloomPatch } from './look/art';
-import { G_TUNE, type GBKind } from './numbers';
+import { G_TUNE, bloomOf, type GBKind } from './numbers';
 
 /** One spreading patch of Bloom under a building. */
 export interface Patch { x: number; z: number; r: number; max: number; base: number; obj: THREE.Group; grow: THREE.Object3D; dying: boolean; owner: any }
@@ -11,7 +11,7 @@ export class Bloom {
   isDeep(team: number) { return this.deep.has(team); }
   constructor(public scene: THREE.Scene | null) {}
   add(owner: any, kind: GBKind, x: number, z: number, full = false) {
-    const max = G_TUNE.bloomR[kind] * (this.deep.has(owner?.team) ? 1.4 : 1), sd = this.seed++, obj = bloomPatch(sd, max), grow = obj.getObjectByName('grow')!;
+    const max = bloomOf(kind) * (this.deep.has(owner?.team) ? 1.4 : 1), sd = this.seed++, obj = bloomPatch(sd, max), grow = obj.getObjectByName('grow')!;
     obj.position.set(x, .02 + (sd % 9) * .004, z); const p: Patch = { x, z, r: full ? max : 1.5, max, base: max, obj, grow, dying: false, owner }; grow.scale.set(p.r / max, 1, p.r / max);
     if (this.scene) this.scene.add(obj); this.patches.push(p); return p;
   }

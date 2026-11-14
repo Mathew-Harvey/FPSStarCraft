@@ -6,7 +6,15 @@ import { mergeVertices } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 
 type P3 = [number, number, number];
 const cache = new Map<string, THREE.BufferGeometry>();
-const memo = (key: string, make: () => THREE.BufferGeometry) => { let g = cache.get(key); if (!g) cache.set(key, g = make()); return g; };
+/** A shape is made the first time it is asked for, which can be in the middle of a match (a Bloom patch). Making it rolls its own dice,
+ *  never the match's (K): three.js draws an id from Math.random for every geometry, so a shape made in one run and found ready in the
+ *  next sent a replay, or a second match in the same process, a different way. */
+const memo = (key: string, make: () => THREE.BufferGeometry) => {
+  let g = cache.get(key); if (g) return g;
+  const r = Math.random; let s = 1; for (let i = 0; i < key.length; i++) s = (s * 31 + key.charCodeAt(i)) % 2147483646 + 1;
+  Math.random = () => (s = (s * 16807) % 2147483647) / 2147483647;
+  try { g = make(); } finally { Math.random = r; } cache.set(key, g); return g;
+};
 
 /** Averages the normals of vertices that sit in the same place, so seams and poles shade as one surface. */
 export function weld(g: THREE.BufferGeometry) {

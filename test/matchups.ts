@@ -129,7 +129,7 @@ for (const f of [0, 1, 2]) {
   const g = match(f, 0, f), H = SIDE.home, O = SIDE.out, n = FACTION[f].short;
   const a = g.own(FACTION[f].worker, H)[0], b = g.own(FACTION[f].worker, O)[0], mat = (u: any) => { let m: any = null; u.obj.traverse((o: any) => { if (!m && o.isMesh && o.material?.uniforms?.uColor) m = o.material; }); return m; };
   check(!!mat(a) && !!mat(b) && mat(a) !== mat(b), `${n} mirror: the outpost side's bodies wear different colours`);
-  const key = f === 2 ? 'gfat' : f ? 'vedge' : 'dmg', at = (UPGRADE_AT as any)[key] as BKind; g.purse[O] = 5000; g.fluxPurse[O] = 5000; g.addBuilding(at, O, VHOME.x - 14, VHOME.z + 8, true); g.buyUpgrade(key as any, O);
+  const key = f === 2 ? 'gfat' : f ? 'vedge' : 'dmg', at = (UPGRADE_AT as any)[key] as BKind; g.purse[O] = 5000; g.fluxPurse[O] = 5000; g.addBuilding(at, O, VHOME.x - 14, VHOME.z + 8, true); if (f === 1) g.addBuilding('hushwell', O, VHOME.x - 8, VHOME.z + 8, true); g.buyUpgrade(key as any, O);   // a Veyl Pylon sings only inside a song field
   check(g.upOf(O)[key as 'dmg'] && !g.upOf(H)[key as 'dmg'], `${n} mirror: research bought at the outpost does not reach the yard`);
   check(g.cash(H) === 100, `${n} mirror: and neither does the bill`);
   if (f === 2) { const cap = g.ownB('mothercap', true, O)[0], q = cap.queue.length; cap.buds = 2; g.train(cap, 'snapper'); check(cap.queue.length - q === 2, `${n} mirror: the outpost's Mother Cap hatches Snappers in pairs too (${cap.queue.length - q})`); }

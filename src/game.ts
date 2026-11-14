@@ -429,8 +429,9 @@ export class Game {
     let warded = false;
     if (!u && !bldRule((t as Building).kind).ward) { const w = this.ward(t.pos, t.team); if (w) { amt *= .7; warded = true; if (this.time > this.wardFx) { this.wardFx = this.time + .35; this.tracer(V3(w.pos.x, 4.6, w.pos.z), V3(t.pos.x, (t as Building).h * .6, t.pos.z), beamMat, .22); this.puff(TMP.set(t.pos.x, (t as Building).h * .6, t.pos.z), 3, .7, M.cyan, .5); } } }
     const dealt = amt, shielded = (!!u && u.shield > 0) || warded;
-    // A paid-for Veyl body the AI drives shrugs off part of each hit (see vBoost). A body a player drives takes hits at face value, the same as an Ironhold one.
-    if (u && fac(u.team) === 1 && this.eco && !u.pilot && !isWorker(u.kind)) amt /= this.vBoost.hp;
+    // A paid-for Veyl body shrugs off part of each hit (see vBoost), whether the AI or a player drives it: a driven body used to take hits at face
+    // value and was weaker than the same kind under a bot. Its hits go through vMul the same way (stream C).
+    if (u && fac(u.team) === 1 && this.eco && !isWorker(u.kind)) amt /= this.vBoost.hp;
     if (u && u.status) amt = soak(u, amt);
     if (u) { u.pop = 1; this.fx.hit(u, dealt, from, crit, shielded); if (u.shield > 0) { const a = Math.min(u.shield, amt); u.shield -= a; amt -= a; this.bubble(u); } }
     // A hit from a body somebody is driving lands with weight: the target is shoved back and loses a beat.

@@ -71,14 +71,14 @@ function drip(g: Game, u: Unit, dt: number) {
 
 // ---------------------------------------------------------------- digging in
 /** Bodies dug in with Dug Crawl (Shellbacks and Lobbers): unseen, but free to move. */
-const CRAWL = new Set<number>();
-export const isDug = (u: Unit) => dug(u) || CRAWL.has(u.id);
+const CRAWL = new WeakSet<Unit>();   // by body, not id (K): a server runs many matches, and an id means a different body in each
+export const isDug = (u: Unit) => dug(u) || CRAWL.has(u);
 export const canDig = (g: Game, u: Unit) => u.kind === 'needler' || (G_DIGS.includes(u.kind as GKind) && !!g.upOf(u.team).gdig);
 /** Puts a body under the ground or brings it up. Shellbacks and Lobbers with Dug Crawl stay mobile; everything else is held still. */
 export function setDug(g: Game, u: Unit, on: boolean) {
   if (!u.alive || isDug(u) === on) return false;
-  if (on) { if ((u.kind === 'shellback' || u.kind === 'lobber') && g.upOf(u.team).gcrawl) { CRAWL.add(u.id); addStatus(u, 'unseen', Infinity); } else addStatus(u, 'dug', Infinity); u.target = null; }
-  else { CRAWL.delete(u.id); clearStatus(u, 'dug'); if (!UNIT[u.kind].cloak) clearStatus(u, 'unseen'); }
+  if (on) { if ((u.kind === 'shellback' || u.kind === 'lobber') && g.upOf(u.team).gcrawl) { CRAWL.add(u); addStatus(u, 'unseen', Infinity); } else addStatus(u, 'dug', Infinity); u.target = null; }
+  else { CRAWL.delete(u); clearStatus(u, 'dug'); if (!UNIT[u.kind].cloak) clearStatus(u, 'unseen'); }
   g.puff(TMP.set(u.pos.x, .3, u.pos.z), 4, .7, M.dust, .5, 1.2); if (g.vol(u.pos) > .2) sfx.step(false);
   return true;
 }
@@ -127,7 +127,7 @@ function aiKeeper(g: Game, u: Unit, dt: number) {
 /** Shellback: spits from 13 m. Hurt and out of the fight, it digs in to knit (once Dig In is bought) and comes up healed or when a foe steps close. */
 function aiShellback(g: Game, u: Unit, dt: number) {
   const S = u.kind === 'lobber' ? G2.lobber : G2.shellback;
-  if (isDug(u)) { const near = nearestFoeAt(g, u.team, u.pos.x, u.pos.z, 2.2); if (u.hp > u.maxHp * .9 || near || (raiding(u) && u.hp > u.maxHp * .7)) setDug(g, u, false); else if (CRAWL.has(u.id)) g.vIdle(u, dt, 4, G2.shellback.crawl); return; }
+  if (isDug(u)) { const near = nearestFoeAt(g, u.team, u.pos.x, u.pos.z, 2.2); if (u.hp > u.maxHp * .9 || near || (raiding(u) && u.hp > u.maxHp * .7)) setDug(g, u, false); else if (CRAWL.has(u)) g.vIdle(u, dt, 4, G2.shellback.crawl); return; }
   if (canDig(g, u) && u.hp < u.maxHp * .4 && u.cd > -2 && !nearestFoeAt(g, u.team, u.pos.x, u.pos.z, 7)) { setDug(g, u, true); return; }
   aiRanged(g, u, dt, { range: S.range, cd: S.cd, dmg: (g, u) => S.spit * gMul(g, u.team, u.kind), mat: u.kind === 'lobber' ? bileMat : spitMat, y: u.kind === 'lobber' ? 1.6 : 1 });
 }
@@ -219,7 +219,7 @@ function aiSower(g: Game, u: Unit, dt: number) {
 }
 /** A Pup drops on (or beside) a target: the landing bites, and the Pup chews for 8 s. */
 export function dropPup(g: Game, u: Unit, t: Unit | Building | { pos: THREE.Vector3 }) {
-  const S = G2.sower, x = t.pos.x + R(-1, 1), z = t.pos.z + R(-1, 1), p = g.spawn('pup', u.team, x, z); giveLife(p, S.life);
+  const S = G2.sower, x = t.pos.x + R(-1, 1), z = t.pos.z + R(-1, 1), p = g.spawn('pup', u.team, x, z); giveLife(g, p, S.life);
   p.order = { type: 'amove', x, z }; if ('alive' in t) p.target = t as Unit | Building;
   g.tracer(V3(u.pos.x, (u.alt || 0) + 1, u.pos.z), V3(x, .4, z), bileMat, .1); g.look('gdrop', u.pos.x, (u.alt || 0) + 1, u.pos.z, x, 0, z); g.puff(TMP.set(x, .3, z), 3, .6, M.gS, .4);
   if ('alive' in t && (t as Unit).alive) g.damage(t as Unit | Building, S.land * gMul(g, u.team, 'sower'), u);
@@ -278,7 +278,7 @@ export function commonKeys(g: Game, me: Unit, P: Set<string>, dir: THREE.Vector3
 /** First person for the new kinds that spit: click spits at what the crosshair is on, abilities on their keys. */
 function driveSpit(dmgK: string, base: number, cd: number, range: number, mat: THREE.Material) {
   return (g: Game, _dt: number, P: Set<string>, eye: THREE.Vector3, dir: THREE.Vector3, look: Hit | null) => {
-    const me = g.me!; if (commonKeys(g, me, P, dir, look)) return; if (isDug(me) && me.kind !== 'needler' && !CRAWL.has(me.id)) return;
+    const me = g.me!; if (commonKeys(g, me, P, dir, look)) return; if (isDug(me) && me.kind !== 'needler' && !CRAWL.has(me)) return;
     if (me.kind === 'needler') { if (g.lmb && g.fireCd <= 0) { if (!isDug(me)) { if (P.has('Mouse0')) { sfx.deny(); g.feed('Needler', 'I fire only from under the ground. Press Ctrl to dig in.', 'al'); } return; } g.fireCd = G2.needler.cd; g.recoil = 1; g.shake = Math.max(g.shake, .2); const n = spineLine(g, me, g.yaw, g.upOf(me.team).gspines ? G2.needler.deep : G2.needler.len, me); if (n) { g.hud.hitmark(n > 1); sfx.hit(); } } return; }
     if (g.lmb && g.fireCd <= 0) {
       g.fireCd = cd; g.recoil = 1; g.kick += .015; me.swing = 1; sfx.throw();

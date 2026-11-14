@@ -5,7 +5,7 @@ import { V3, R, M } from '../../gfx';
 import { sfx } from '../../audio';
 import { isEnemy } from '../../core/sides';
 import type { Game } from '../../game';
-import { UNIT, BLD, Unit, Building, Kind, isUnit, fac } from '../../data';
+import { UNIT, BLD, Unit, Building, Kind, BKind, isUnit, fac } from '../../data';
 import { defineAbilities, bodyOf, type AbilityDef, type Target } from '../../core/ability';
 import { addStatus } from '../../core/status';
 import { morph } from '../../core/morph';
@@ -63,15 +63,46 @@ const sporePod: AbilityDef = {
   key: 'pod', name: 'Spore Pod', hotkey: 'KeyE', energy: G2.keeper.pod.energy, cd: 1, cast: .8, range: G2.keeper.pod.range, target: 'point',
   blurb: 'Plants a Spore Pod on your Bloom: it spreads Bloom 10 m round it and can plant one more pod further on.',
   can: (g, u, t) => g.carpet.on(t.x, t.z, 0, u.team) && podRoom(g, t.x, t.z),
-  effect: (g, u, t) => { const b = g.addBuilding('sporepod', u.team, Math.round(t.x), Math.round(t.z), false); (b as any).hops = 1; u.swing = 1; if (g.vol(b.pos) > .2) sfx.place(); },
+  effect: (g, u, t) => {
+    /* a pod the Keeper chose by itself is checked again as it lands: Keepers casting together all saw the same room 0.8 s ago */
+    const ai = (u as any).podAi; (u as any).podAi = false; if (ai && !keepsRoom(g, u.team, t.x, t.z, true)) return;
+    const b = g.addBuilding('sporepod', u.team, Math.round(t.x), Math.round(t.z), false); (b as any).hops = 1; u.swing = 1; if (g.vol(b.pos) > .2) sfx.place(); },
   ai: (g, u) => {
     if (busyFight(g, u, 14) || (u.energy ?? 0) < G2.keeper.seed.energy + G2.keeper.pod.energy) return null;
     const home = caps(g, u.team).sort((a, b) => dist(a, u) - dist(b, u))[0]; if (!home) return null;
     const pods = g.buildings.filter(b => b.alive && b.team === u.team && b.kind === 'sporepod' && Math.hypot(b.pos.x - home.pos.x, b.pos.z - home.pos.z) < 45).length; if (pods >= 3) return null;
-    for (let i = 0; i < 10; i++) { const a = R(0, 6.283), r = R(4, G2.keeper.pod.range - .5), x = u.pos.x + Math.cos(a) * r, z = u.pos.z + Math.sin(a) * r; if (Math.hypot(x - home.pos.x, z - home.pos.z) > 14 && g.carpet.on(x, z, 0, u.team) && podRoom(g, x, z)) return { x, z }; }
+    for (let i = 0; i < 10; i++) { const a = R(0, 6.283), r = R(4, G2.keeper.pod.range - .5), x = u.pos.x + Math.cos(a) * r, z = u.pos.z + Math.sin(a) * r; if (Math.hypot(x - home.pos.x, z - home.pos.z) > 14 && g.carpet.on(x, z, 0, u.team) && podRoom(g, x, z)) if (!keepsRoom(g, u.team, x, z)) return null; (u as any).podAi = true; return { x, z }; }
     return null;
   },
 };
+/** Whether a pod at x, z still leaves every Cap near it room for one more big building (a Tusk Hollow, either way round) on its own
+ *  ground. The Keepers and pod hops ask this before they plant by themselves, so the Overgrowth never fills a Cap's Bloom with pods
+ *  and leaves a player nowhere to put a Tusk Hollow. A player's own Spore Pod click is not held to it. The answer for a Cap is kept for
+ *  5 s, since a full scan is a few hundred placement checks. */
+const ROOM = new WeakMap<Building, { t: number; ok: boolean; x: number; z: number }>();
+export function keepsRoom(g: Game, team: number, x: number, z: number, fresh = false) {
+  const R = G_TUNE.bloomR.mothercap;
+  for (const c of caps(g, team)) {
+    if (Math.hypot(x - c.pos.x, z - c.pos.z) > R + BLD.tuskhollow.hx + 2) continue;
+    const was = ROOM.get(c); if (was && !fresh && g.time - was.t < 5 && Math.hypot(was.x - x, was.z - z) < 1) { if (!was.ok) return false; continue; }
+    const ok = bigRoom(g, team, c, x, z); ROOM.set(c, { t: g.time, ok, x, z }); if (!ok) return false;
+  }
+  return true;
+}
+/** Whether a Tusk Hollow fits anywhere on a Cap's own ground (its 20 m of Bloom), with a pod standing at px, pz. */
+export function bigRoom(g: Game, team: number, cap: Building, px?: number, pz?: number) {
+  const pod = px === undefined || pz === undefined ? null : { alive: true, team, kind: 'sporepod', pos: { x: px, y: 0, z: pz }, hx: BLD.sporepod.hx, hz: BLD.sporepod.hz } as unknown as Building;
+  if (pod) g.buildings.push(pod);
+  try {
+    const R = G_TUNE.bloomR.mothercap;
+    for (let dx = -R; dx <= R; dx += 2) for (let dz = -R; dz <= R; dz += 2) {
+      if (Math.hypot(dx, dz) > R) continue;
+      const x = Math.round(cap.pos.x + dx), z = Math.round(cap.pos.z + dz);
+      if (g.canPlace('tuskhollow' as BKind, x, z, false, team) || g.canPlace('tuskhollow' as BKind, x, z, true, team)) return true;
+    }
+    return false;
+  } finally { if (pod) g.buildings.splice(g.buildings.indexOf(pod), 1); }
+}
 export function podRoom(g: Game, x: number, z: number) {
   for (const b of g.buildings) if (b.alive && Math.abs(x - b.pos.x) < b.hx + 1.6 && Math.abs(z - b.pos.z) < b.hz + 1.6) return false;
   for (const o of g.ores) if (o.amount > 0 && Math.hypot(x - o.pos.x, z - o.pos.z) < 3.2) return false;
@@ -116,13 +147,20 @@ const rotMind: AbilityDef = {
   ai: (g, u) => { const o = foeBody(g, u, G2.smother.mind.range, o => !o.pilot && o !== g.me && !UNIT[o.kind].tags?.includes('huge') && !(o as any).rot && UNIT[o.kind].cost >= 100); return o ? { x: o.pos.x, z: o.pos.z, id: o.id } : null; },
 };
 /** Borrowed bodies: who they belong to and the seconds left. The body changes sides for that long, then goes home. */
-export const BORROWED = new Map<number, { team: number; t: number }>();
+/** Borrowed bodies by id, kept per game (K): a server runs many matches, and one shared list handed a body in the next match (same id,
+ *  another body) back to a side it was never on. */
+const BORROWS = new WeakMap<Game, Map<number, { team: number; t: number }>>();
+export const borrowedOf = (g: Game) => { let m = BORROWS.get(g); if (!m) BORROWS.set(g, m = new Map()); return m; };
 export function borrow(g: Game, o: Unit, team: number, secs: number) {
-  BORROWED.set(o.id, { team: o.team, t: secs }); (o as any).rot = true; o.team = team; o.target = null; o.order = { type: 'amove', x: o.pos.x, z: o.pos.z }; addStatus(o, 'borrowed', secs);
+  borrowedOf(g).set(o.id, { team: o.team, t: secs }); (o as any).rot = true; o.team = team; o.target = null; o.order = { type: 'amove', x: o.pos.x, z: o.pos.z }; addStatus(o, 'borrowed', secs);
   g.puff(TMP.set(o.pos.x, UNIT[o.kind].headY, o.pos.z), 4, .6, M.gS, .4); if (g.vol(o.pos) > .1) sfx.callout();
 }
 export function tickBorrowed(g: Game, dt: number) {
-  for (const [id, b] of BORROWED) { const o = byId(g, id); if (!o || !o.alive) { BORROWED.delete(id); continue; } b.t -= dt; if (b.t > 0) continue; BORROWED.delete(id); o.team = b.team; (o as any).rot = false; o.target = null; o.order = { type: 'guard', x: o.pos.x, z: o.pos.z }; }
+  const BORROWED = BORROWS.get(g); if (!BORROWED) return;
+  for (const [id, b] of BORROWED) { const o = byId(g, id); if (!o || !o.alive) { BORROWED.delete(id); continue; } b.t -= dt; if (b.t > 0) continue; BORROWED.delete(id); o.team = b.team; (o as any).rot = false; o.target = null; o.order = { type: 'guard', x: o.pos.x, z: o.pos.z };
+    // it is a friend again to those who were fighting it: they let it go (in a team game a Cantor kept cutting the Snapper it had been chasing)
+    for (const x of g.units) if (x.target === o && !isEnemy(x.team, o.team)) x.target = null;
+    for (const x of g.buildings) if ((x as any).target === o && !isEnemy(x.team, o.team)) (x as any).target = null; }
 }
 /** Fling Husks: a Seeder throws two Husks at a spot; they walk at the foe and wither after 18 s. Works dug in. */
 const fling: AbilityDef = {
@@ -130,7 +168,7 @@ const fling: AbilityDef = {
   blurb: 'Throws two Husks that walk at the foe and bite for 18 seconds. Works while dug in.',
   effect: (g, u, t) => {
     const S = G2.seeder; for (let i = 0; i < S.n; i++) {
-      const h = g.spawn('husk', u.team, u.pos.x + R(-1.2, 1.2), u.pos.z + R(-1.2, 1.2)); giveLife(h, S.life); h.order = { type: 'amove', x: t.x + R(-2, 2), z: t.z + R(-2, 2) };
+      const h = g.spawn('husk', u.team, u.pos.x + R(-1.2, 1.2), u.pos.z + R(-1.2, 1.2)); giveLife(g, h, S.life); h.order = { type: 'amove', x: t.x + R(-2, 2), z: t.z + R(-2, 2) };
       if (g.upOf(u.team).gwings) { h.air = true; h.alt = 4; (h as any).flyT = S.fly; }
     }
     u.swing = 1; g.puff(TMP.set(u.pos.x, .8, u.pos.z), 4, .8, M.gS, .8); if (g.vol(u.pos) > .1) sfx.throw();

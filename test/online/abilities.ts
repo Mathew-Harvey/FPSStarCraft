@@ -11,6 +11,7 @@ import { abilitiesOf, type AbilityDef } from '../../src/core/ability';
 import { dropped } from '../../src/net-arms';
 import { Wire, serverCmd, abAsks } from '../../src/netgame';
 import { mem } from '../../src/factions/ironhold/kit';
+import { SCENES, clearScenes } from './scenes';
 
 initHeadless();
 const fail: string[] = []; const check = (ok: boolean, what: string) => { console.log((ok ? 'PASS ' : 'FAIL ') + what); if (!ok) fail.push(what); };
@@ -29,6 +30,8 @@ let seenDrop: Record<string, number> = {};
 const lastWhy = () => { const d = Object.entries(dropped).filter(([k, v]) => k.startsWith('ab ') && v !== (seenDrop[k] || 0)).map(([k]) => k.slice(3)); seenDrop = { ...dropped }; return d.join('/'); };
 const refusals = () => Object.entries(dropped).filter(([k]) => k.startsWith('ab ')).reduce((n, [, v]) => n + v, 0);
 
+const staged: string[] = [];
+
 let total = 0, went = 0, special: string[] = [], bad: string[] = [], fx: string[] = [];
 const refused: Record<string, number> = { far: 0, energy: 0, wait: 0, theirs: 0, unseen: 0, unknown: 0 }, tried: Record<string, number> = { far: 0, energy: 0, wait: 0, theirs: 0, unseen: 0, unknown: 0 };
 for (const k of kinds) {
@@ -46,6 +49,7 @@ for (const k of kinds) {
     const reach = Math.min(a.range >= 9000 ? 30 : a.range, 30), near = Math.max(1, Math.min(reach * .6, 12)), who = a.who ?? 'foe';
     const tgt = a.target === 'body' ? g.spawn(FACTION[who === 'ally' ? side : foe].worker, who === 'ally' ? side : foe, X + near, Z) : null;
     const tx = a.target === 'self' ? X : tgt ? tgt.pos.x : X + reach * .7, tz = tgt ? tgt.pos.z : Z;
+    if (tgt && who === 'ally') tgt.hp = tgt.maxHp * .6;   // a hurt friend, for a heal
     look(); lastWhy();
     // honest: it goes, and the game runs on with it (a few seconds, so a wind-up goes off)
     // An ability with a spot rule of its own (a mine only so many at once, a jam only on a machine) is asked for where its bot hook would use it.
@@ -58,6 +62,14 @@ for (const k of kinds) {
       look(); for (const o of extra) { if (ok) break; ready(u, a); ok = ask(g, ME, null, u, a, o.pos.x, o.pos.z, a.target === 'body' ? o.id : 0); }
       for (const o of extra) o.alive = false;
     }
+    // ...or one of this side's own buildings, standing next to it (a Cap to seed, a building to drink from)
+    if (!ok && a.can && a.target === 'body' && who !== 'foe') {
+      const x0 = u.pos.x, z0 = u.pos.z;
+      for (const b of g.buildings) { if (ok) break; if (!b.alive || b.team !== side || !b.built) continue; u.pos.x = b.pos.x + b.hx + 1.5; u.pos.z = b.pos.z; ready(u, a); look(); ok = ask(g, ME, null, u, a, b.pos.x, b.pos.z, b.id); }
+      if (!ok) { u.pos.x = x0; u.pos.z = z0; }
+    }
+    // ...or in the scene its own rule asks for (a Signal Mast with a charge, a second Choirmaster, bodies aboard, Bloom underfoot, ...)
+    if (!ok && a.can && SCENES[`${k}.${a.key}`]) { const t = SCENES[`${k}.${a.key}`](g, u, side, foe); look(); if (t) { if (a.key !== 'drink') ready(u, a); else u.energy = 0; ok = ask(g, ME, null, u, a, t.x, t.z, t.id || 0); if (ok) staged.push(`${k}.${a.key}`); } }
     if (ok) { went++; try { for (let i = 0; i < 90; i++) { g.update(1 / 30); g.evq!.length = 0; } } catch (e) { fx.push(`${k}.${a.key}: ${(e as Error).message}`); } }
     else if (a.can) special.push(`${k}.${a.key} (${lastWhy()})`); else bad.push(`${k}.${a.key}`);
     // too far: just past its reach (abilities aimed at the caster itself have none)
@@ -73,12 +85,14 @@ for (const k of kinds) {
     if (a.target === 'body') { ready(u, a); const t2 = g.spawn(tgt!.kind, tgt!.team, u.pos.x + near * .8, u.pos.z + 1); tried.unseen++; if (!ask(g, ME, null, u, a, t2.pos.x, t2.pos.z, t2.id)) refused.unseen++; else bad.push(`${k}.${a.key} at a body not yet seen`); t2.alive = false; }
     // an ability this kind does not have
     ready(u, a); tried.unknown++; if (!ask(g, ME, null, u, { ...a, key: 'nosuch' }, aimX, aimZ)) refused.unknown++;
-    u.alive = false; if (tgt) tgt.alive = false;
+    u.alive = false; if (tgt) tgt.alive = false; clearScenes();
   }
 }
 check(total >= 20, `${total} abilities on ${kinds.length} kinds, all read from their definitions`);
 check(!bad.length, `every honest ask goes through and every bad one is refused${bad.length ? ': ' + bad.join('; ') : ''}`);
-check(went + special.length === total, `${went} went at once; ${special.length} have a spot rule of their own and refused the plain test spot (${special.join(', ') || 'none'})`);
+check(staged.length >= 12, `${staged.length} went in a scene built for their own rule (${staged.join(', ')})`);
+check(went + special.length === total, `${went - staged.length} went at once and ${staged.length} in their own scene; ${special.length} have a spot rule of their own and refused the plain test spot (${special.join(', ') || 'none'})`);
+check(!special.some(x => /unseen/.test(x)), `no honest ask is refused for not seeing what this side can see${special.filter(x => /unseen/.test(x)).length ? ': ' + special.filter(x => /unseen/.test(x)).join(', ') : ''}`);
 check(!fx.length, `the server runs every ability's effect with nobody's screen attached${fx.length ? ': ' + fx.join('; ') : ''}`);
 for (const r of Object.keys(tried)) check(refused[r] === tried[r], `refused ${r}: ${refused[r]} of ${tried[r]}`);
 check(refusals() > 0 && Object.keys(dropped).some(k => k === 'ab range') && Object.keys(dropped).some(k => k === 'ab unseen'), `refusals are counted by reason (${Object.entries(dropped).filter(([k]) => k.startsWith('ab ')).map(([k, v]) => `${k.slice(3)} ${v}`).join(', ')})`);

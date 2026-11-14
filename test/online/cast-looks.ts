@@ -5,11 +5,13 @@
 import { noHud, noPipe } from '../../server/shim';
 import { Game } from '../../src/game';
 import { initHeadless } from '../../src/gfx';
-import { DIFFS, SIDE, UNIT, BLD, FACTION, setMap, setSides, Kind, BKind, Unit, Building } from '../../src/data';
+import { DIFFS, SIDE, UNIT, BLD, FACTION, setMap, setSides, fac, Kind, BKind, Unit, Building } from '../../src/data';
 import { abilitiesOf, useAbility, whyNot, type AbilityDef } from '../../src/core/ability';
+import { SCENES, clearScenes } from './scenes';
 import { Wire, applySnap, netTick } from '../../src/netgame';
 import { mem } from '../../src/factions/ironhold/kit';
 import { defineUnitLook } from '../../src/net-look';
+import { switchKind } from '../../src/core/morph';
 
 initHeadless();
 const fail: string[] = []; const check = (ok: boolean, what: string) => { console.log((ok ? 'PASS ' : 'FAIL ') + what); if (!ok) fail.push(what); };
@@ -43,6 +45,24 @@ const quiet = { x: (hq.pos.x + oq.pos.x) / 2, z: (hq.pos.z + oq.pos.z) / 2 };
 const ready = (u: Unit, a: AbilityDef) => { u.energy = Math.max(u.maxEnergy || 0, a.energy); u.abCd = {}; u.cast = null; u.status = []; };
 for (const t of [H, O]) for (const key in g.ups[t]) (g.ups[t] as any)[key] = true;
 run();
+
+/** A body and a building change form on the host; each screen that is sent them shows the new kind with its own model. */
+function reforms(F: string, w: Game, step: (n?: number) => void, screens: Game[], side: number, unit: [Kind, Kind], bld: [BKind, BKind] | null, at: { x: number; z: number }) {
+  const u = w.spawn(unit[0], side, at.x, at.z - 6); u.pilot = 0; step();
+  const before = screens.map(c => c.units.find(x => x.id === u.id)?.obj);
+  switchKind(w, u, unit[1]); step();
+  const now = screens.map(c => c.units.find(x => x.id === u.id));
+  check(now.every((x, i) => x && x.kind === unit[1] && x.obj !== before[i] && x.obj.parent === c0(screens[i])), `${F}: ${an(UNIT[unit[0]].name)} turned ${UNIT[unit[1]].name} on the host is a ${UNIT[unit[1]].name}, with its new model, on ${screens.length} screens`);
+  u.alive = false; step();
+  if (!bld) return;
+  const b = w.addBuilding(bld[0], side, at.x + 12, at.z - 12, true); step();
+  const bb = screens.map(c => c.buildings.find(x => x.id === b.id)?.obj);
+  w.rebuild(b, bld[1]); step();
+  const bn = screens.map(c => c.buildings.find(x => x.id === b.id));
+  check(bn.every((x, i) => x && x.kind === bld[1] && x.obj !== bb[i] && x.obj.parent === c0(screens[i]) && !bb[i]?.parent), `${F}: ${an(BLD[bld[0]].name)} grown or refitted into ${an(BLD[bld[1]].name)} is one on the screens too, the old model gone`);
+  b.alive = false; step();
+}
+const c0 = (c: Game) => c.scene, an = (n: string) => (/^[AEIOU]/.test(n) ? 'an ' : 'a ') + n;
 
 // ---------------------------------------------------------------- a cast that goes off at once
 // Every ability of the home side's kinds that goes off at once with a plain aim: the home player and the watcher see it, and the
@@ -126,4 +146,46 @@ check(hidOk === tried, `and never on the other side's, which cannot see the cast
   check(!c0.alive && mem(c0).ztest === 3, 'its death carries the look as the rules left it, read before the screen plays the death');
 }
 
+// ---------------------------------------------------------------- changes of form
+reforms('Ironhold', g, run, [cH, cW], H, ['piledriver', 'piledriverset'], ['headframe', 'surveyrig'], quiet);
+
+// ---------------------------------------------------------------- every faction's casts
+// Each faction in a match of its own at the far end (Ironhold in a mirror): every ability that can be cast at a plain spot (or where its bot
+// hook would cast it) plays on its own side's screen and the watcher's once it goes off, wind-ups too, and never on the home side's.
+let staged = 0;
+for (const f of [0, 1, 2]) {
+  setMap(0); setSides(0, f);
+  const H = SIDE.home, O = SIDE.out;   // this match's own two teams (an Ironhold mirror's far end is team 3)
+  const w = new Game(noPipe(), noHud, DIFFS[1], 0, null, null, true);
+  w.noRender = true; w.evq = []; w.me = null; w.phase = 'play'; for (const u of w.units) u.pilot = 0; w.human = w.human.map(() => false);
+  w.dir.qmT = 1e9; (w.dir.vs as any).qmT = 1e9; for (const t of [H, O]) for (const key in w.ups[t]) (w.ups[t] as any)[key] = true;
+  const ww = new Wire(w), sH = screen(H, fakeNet(1)), sO = screen(O, fakeNet(2)), sW = screen(O, fakeNet(3, true)); w.teams = { 1: H, 2: O }; for (const c of [sH, sO, sW]) c.teams = w.teams;
+  const step = (n = 1) => { for (let i = 0; i < n; i++) w.update(1 / 30); ww.begin([H, O]); const a = JSON.parse(JSON.stringify(ww.snap(H))), b = JSON.parse(JSON.stringify(ww.snap(O))), c = JSON.parse(JSON.stringify(ww.snap(null))); applySnap(sH, a); applySnap(sO, b); applySnap(sW, c); };
+  step();
+  const spot = quiet;
+  if (f === 0) { /* Ironhold forms are checked above */ } else if (f === 1) reforms('Veyl', w, step, [sO, sW], O, ['choirmaster', 'chord'], null, spot);   // the Veyl have no building tiers
+  else reforms('Gloam', w, step, [sO, sW], O, ['shellback', 'lobber'], ['eldercap', 'ancientcap'], spot);   // the same map: halfway between the two ends
+  let n = 0, both = 0, hid = 0, nh = 0, looked = 0; const miss: string[] = [], skip: string[] = [], leak: string[] = [];
+  for (const k of (Object.keys(UNIT) as Kind[]).filter(x => (UNIT[x].team || 0) === f)) for (const a of abilitiesOf(k)) {
+    const u = w.spawn(k, O, spot.x, spot.z); u.pilot = 0; ready(u, a); const who = a.who ?? 'foe', S = who === 'ally' ? O : H;
+    const tgt = a.target === 'body' ? w.spawn(FACTION[fac(S)].worker, S, spot.x + 3, spot.z) : null; if (tgt && who === 'ally') tgt.hp = tgt.maxHp * .6;
+    if (tgt && who !== 'ally') { tgt.maxHp = tgt.hp = 5000; tgt.speed = 0; }   // an enemy target lives through a wind-up, so the cast goes off
+    step(); let t: { x: number; z: number; id?: number } | null = { x: tgt ? tgt.pos.x : spot.x + 3, z: tgt ? tgt.pos.z : spot.z, id: tgt?.id };
+    if (whyNot(w, u, a.key, t) && a.ai) t = a.ai(w, u);
+    if ((!t || whyNot(w, u, a.key, t)) && SCENES[`${k}.${a.key}`]) { t = SCENES[`${k}.${a.key}`](w, u, O, H); step(); ready(u, a); if (a.key === 'drink') u.energy = 0; }   // ready again: its own bot hook may have started it in that tick   // its own rule's scene (scenes.ts)
+    if (t && SCENES[`${k}.${a.key}`] && !whyNot(w, u, a.key, t)) staged++;
+    if (!t || whyNot(w, u, a.key, t) || !useAbility(w, u, a.key, t)) { skip.push(`${k}.${a.key}`); u.alive = false; if (tgt) tgt.alive = false; clearScenes(); step(); continue; }
+    n++; if (looks.has(a)) looked++;
+    for (let i = 0; i < Math.ceil(a.cast * 3) + 4 && u.cast; i++) step(10); step();   // a long wind-up (a Deep Charge holds 14 s) runs out first
+    if (on(sO, a.key, u.id) && on(sW, a.key, u.id)) both++; else miss.push(`${k}.${a.key}`);
+    if (!tgt || who === 'ally') { nh++; if (!on(sH, a.key, u.id)) hid++; else leak.push(`${k}.${a.key}`); }   // an enemy target stands by the caster, so that side sees it
+    u.alive = false; if (tgt) tgt.alive = false; clearScenes(); step();
+  }
+  const F = ['Ironhold', 'Veyl', 'Gloam'][f];
+  check(n >= 10 && !skip.length, `${F}: every ability cast, ${n} of them, ${looked} with a look of their own${skip.length ? ' (left out, needing a scene in scenes.ts: ' + skip.join(', ') + ')' : ''}`);
+  check(both === n, `${F}: each one plays on its side's screen and the watcher's${miss.length ? ': missed ' + miss.join(', ') : ''}`);
+  check(hid === nh && nh > 3, `${F}: and never on the other side's when none of its bodies is near (${hid} of ${nh})${leak.length ? ': seen ' + leak.join(', ') : ''}`);
+}
+
+check(staged >= 12, `${staged} casts went in the scene their own rule asks for (scenes.ts)`);
 console.log(fail.length ? `\n${fail.length} FAILED` : '\nall cast and look checks passed'); process.exit(fail.length ? 1 : 0);

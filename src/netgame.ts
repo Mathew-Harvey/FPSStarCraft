@@ -6,7 +6,8 @@ import { Game, beamMat } from './game';
 import { UNIT, BLD, BUILDABLE, UPGRADES, TRAINS, UNIT_NEEDS, FACTION, VOICE_SIDE, SIDE, fac, atHome, Kind, BKind, Unit, Building, UpKey, isSoldier, isWorker, type StatusKey } from './data';
 import { useAbility, abilityOf, whyNot, bodyOf, showCast, setAutocast, type Target } from './core/ability';
 import { board, unload } from './core/cargo';
-import { packLook, applyLook, packUnitLook, applyUnitLook, DEATHS, playFxLook } from './net-look';
+import { switchKind } from './core/morph';
+import { packLook, applyLook, packUnitLook, applyUnitLook, DEATHS, CASTERS, playFxLook } from './net-look';
 import { abilityWords } from './card';
 import { seenBy } from './core/sight';
 import { multi, MATCH } from './core/sides';
@@ -101,7 +102,7 @@ export class Wire {
       case 'kb': return V.sentB.has(e[1]) || g.buildings.some(b => b.id === e[1] && V.friend(b.team));
       case 'ht': { const u = this.byId.get(e[1]); return !!u && V.friend(u.team); }
       // a cast going off: only to a side that was sent the caster (its own, or one looking at it)
-      case 'ab': { const u = this.byId.get(e[1]); return !!u && (V.friend(u.team) || V.sentU.has(e[1])); }
+      case 'ab': { const u = this.byId.get(e[1]) || CASTERS.get(e); return !!u && (V.friend(u.team) || V.sentU.has(e[1])); }
       default: return true;
     }
   }
@@ -201,7 +202,10 @@ function abilityAsk(g: Game, pid: number, unit: Unit | null, side: number, c: an
   if (!u || !u.alive) return no('gone');
   if (!(u === unit || (u.team === side && !u.pilot))) return no('not yours');
   const a = abilityOf(u.kind, key); if (!a) return no('no such ability');
-  if (a.target === 'body' && t.id && !WIRE.trustHits) { const V = WIRES.get(g)?.views.get(u.team); if (V && !(V.sentU.has(t.id) || V.sentB.has(t.id))) return no('unseen', `${a.name}: you cannot see that.`); }
+  if (a.target === 'body' && t.id && !WIRE.trustHits) {
+    // A side always knows its own and its friends' buildings (only an enemy's go in sentB), so aiming at one of those is never 'unseen'.
+    const V = WIRES.get(g)?.views.get(u.team), own = g.buildings.find(x => x.id === t.id && x.alive && V?.friend(x.team));
+    if (V && !own && !(V.sentU.has(t.id) || V.sentB.has(t.id))) return no('unseen', `${a.name}: you cannot see that.`); }
   const why = whyNot(g, u, key, t); if (why) return no(why, `${a.name}: ${abilityWords(why, a, u)}.`);
   if (useAbility(g, u, key, t)) abAsks.ok++;
 }
@@ -237,6 +241,12 @@ function event(g: Game, e: any[]) {
   else if (k === 'ab') CASTS.push(e);   // played once the snapshot is in, so the caster's state after the cast (cloaked, say) is there
   else if (k === 'ht') { const me = g.me; if (me && e[1] === me.id) { g.shake = Math.min(1, g.shake + .45); const a = Math.atan2(e[2] - me.pos.x, e[3] - me.pos.z) - g.yaw; g.hud.hurt(Math.atan2(Math.sin(a), Math.cos(a))); sfx.hurt(); me.lastHit = g.time; if (g.brace) { g.payback = Math.min(1, g.payback + .2); sfx.clang(); } } }
 }
+/** A body the host turned into another kind: the same change here. The body this screen looks through gets its new seat and view, without
+ *  asking the server for it again (a watcher's ask would be refused, and a player already drives it). */
+function reform(g: Game, u: Unit, kind: Kind) {
+  const me = g.me === u; if (me) g.me = null; switchKind(g, u, kind); if (!me) return;
+  const pilot = u.pilot, n = g.net!.out.length; u.pilot = 0; g.possess(u, true); u.pilot = pilot; g.net!.out.length = n;
+}
 /** Casts that went off, from this snapshot's events: played at its end. */
 const CASTS: any[][] = [];
 function playCasts(g: Game) {
@@ -259,6 +269,8 @@ export function applySnap(g: Game, s: any) {
   for (const r of s.u) {
     let u = g.uById.get(r[0]); if (u && !u.alive) continue;
     if (!u) { u = g.spawn(KINDS[r[1]], r[2], r[3], r[4], r[0]); g.uById.set(u.id, u); }
+    // it changed form on the host (a Shellback into a Lobber, a Pile Driver anchored): the new kind's model and numbers, the health as sent
+    else if (KINDS[r[1]] && KINDS[r[1]] !== u.kind) { reform(g, u, KINDS[r[1]]); u.hp = r[6]; u.shield = r[8]; }
     seen.add(u.id); u.nx = r[3]; u.nz = r[4]; u.maxHp = r[7]; if (g.eco && UNIT[u.kind].shield) u.maxShield = UNIT[u.kind].shield * g.armorMul(u.team);   // Veyl glass upgrades thicken shields too
     if (r[8] < u.shield - 1) g.bubble(u); if (r[6] < u.hp - .5 || r[8] < u.shield - 1) g.fx.remote(u, Math.max(1, u.hp - r[6], u.shield - r[8]), r[8] < u.shield - 1); u.hp = r[6]; u.shield = u.maxShield ? Math.min(r[8], u.maxShield) : r[8]; (u as any).nf = r[9]; u.wind = r[12] / 10;
     if (u !== g.me || net.watch) { u.yaw = r[5] / 100; u.pitch = r[11] / 100; u.pilot = r[10]; } else if (r[10] === net.id || s.time > g.possT + 1.5) u.pilot = r[10];
@@ -275,6 +287,10 @@ export function applySnap(g: Game, s: any) {
   const seenB = new Set<number>();
   for (const r of s.b) {
     let b = g.bById.get(r[0]); if (b && !b.alive) continue;
+    if (b && BKINDS[r[1]] && BKINDS[r[1]] !== b.kind) {   // a new tier or form (an Elder Cap grown Ancient, a refit): the same building, its new model
+      const k = BKINDS[r[1]], bloom = g.carpet.patches.some(p => p.owner === b && !p.dying); g.rebuild(b, k); b.hp = r[6];
+      if (bloom) { g.carpet.drop(b); g.carpet.add(b, k as any, b.pos.x, b.pos.z, true); }
+    }
     if (!b) { b = g.addBuilding(BKINDS[r[1]], r[2], r[3], r[4], !!r[7], !!r[5], r[0]); g.bById.set(b.id, b); if (!r[7] && r[2] === 0) g.puff(V3(r[3], .3, r[4]), 5, 1.2, M.dust, .5, 2); }
     seenB.add(b.id); (b as any).ghost = r[GHOST] === 1; (b as any).nx = r[3]; (b as any).nz = r[4];   // where it is now: one that crawls or flies moves   // an enemy building this side is not looking at now: as it was when last seen
     if (!b.built && r[7]) { b.built = true; b.obj.scale.y = 1; if (b.holo) { g.scene.remove(b.holo); b.holo = null; } sfx.built(); g.puff(V3(b.pos.x, 1.5, b.pos.z), 8, 1.8, M.dust, .8, 2.5); }

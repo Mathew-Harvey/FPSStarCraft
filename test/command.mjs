@@ -90,6 +90,38 @@ try {
   check(r.a, 'N goes back to the body the player left');
   check(r.b && r.c, 'M again closes the map and returns to first person');
 
+  // ---- a Vast map: the other base is hidden, and the map and the command view show only what the scouting records hold
+  // A fresh page, for the same reason as the split screen match below.
+  await p.close(); p = await b.newPage({ viewport: { width: 960, height: 540 } }); p.setDefaultTimeout(300000);
+  p.on('pageerror', e => { console.log('[pageerror]', e.message.slice(0, 400)); fail.push('page error'); });
+  await p.goto(page); await p.waitForFunction('window.__ore && __ore.game'); await oneDrawPerTurn(p);
+  await p.evaluate(() => {
+    __ore.setFree(true); __ore.turn = 7; __ore.pickMap(30); document.querySelectorAll('#diff button')[0].click(); __ore.start(); __ore.hold(true);
+    window.step = n => { const g = __ore.game; for (let i = 0; i < n; i++) { if (g.phase === 'card') g.phase = 'play'; g.noRender = i < n - 1; g.update(1 / 30); } g.noRender = false; };
+    window.key = k => { __ore.game.pressed.add(k); step(1); };
+    const g = __ore.game; g.introT = 0; g.hourFix = 13; g.wxFix = 'clear'; g.truce = true; g.dir.raidIn = 9999; g.dir.auto = false; for (let i = 0; i < 3; i++) g.spawn('linesman', 0, -4 + i * 2.2, 14); step(20);
+  });
+  const mid = () => { const g = __ore.game, C = g.cmd, hud = g.hud; if (C.map) { key('KeyM'); step(6); } key('KeyM'); step(12); const m = document.getElementById('bigmap'), pt = C.mapPt(hud.W / 2, parseFloat(m.style.top) + parseFloat(m.style.height) / 2); return pt; };
+  await p.evaluate(`window.mid = ${mid}`);
+  r = await p.evaluate(() => { const g = __ore.game, C = g.cmd, hq = g.buildings.filter(b => b.alive && b.team !== g.myTeam).sort((a, b) => b.maxHp - a.maxHp)[0]; window.foeHq = hq; key('KeyN'); step(30); const pt = mid();
+    return { hid: !!__ore.MAP().hid, size: Math.floor(__ore.MAP().code / 10) % 10, knows: g.intel.knows(g.myTeam), known: C.known(hq), vis: hq.obj.visible, d: pt ? Math.hypot(pt[0], pt[1]) : 999, far: Math.hypot(hq.pos.x, hq.pos.z) }; });
+  check(r.hid && r.size === 3 && !r.knows, `a Vast map starts with the other base hidden (${Math.round(r.far)} m away)`);
+  check(!r.known && !r.vis, 'from above, the hidden base is not drawn and cannot be picked');
+  check(r.d < 3, `the full map is framed round your own base while theirs is not found (${r.d.toFixed(1)} m off)`);
+  await shot('map-vast-blind');
+  r = await p.evaluate(() => { const g = __ore.game; key('KeyH'); step(4); const s = g.units.find(u => u.alive && u.team === g.myTeam && u.order.type === 'scout'); if (!s) return { sent: false }; g.dir.command(g.myTeam, [s.id], 'm', 20, 20, 0); return { sent: true, type: s.order.type, mine: !!s.order.mine }; });
+  check(r.sent, 'H sends a scout from the command view and the map');
+  check(r.type === 'amove' && r.mine, 'a scout given an order from above stops scouting and does as told');
+  r = await p.evaluate(() => { const g = __ore.game, C = g.cmd, hq = foeHq; g.spawn('linesman', 0, hq.pos.x + 12, hq.pos.z + 12); step(24); const pt = mid(); key('KeyM'); step(14);
+    return { knows: g.intel.knows(g.myTeam), known: C.known(hq), vis: hq.obj.visible, up: C.on && !C.map, d: pt ? Math.hypot(pt[0] - hq.pos.x / 2, pt[1] - hq.pos.z / 2) : 999 }; });
+  check(r.knows && r.known && r.up && r.vis, 'once one of yours has seen their base, the command view draws it from the scouting records');
+  check(r.d < 30, `and the full map slides over to hold both bases (${r.d.toFixed(1)} m from the point half way)`);
+  await shot('command-vast-found');
+  // A body inside a transport is not drawn, in first person or from above, and is drawn again when it gets out.
+  r = await p.evaluate(() => { const g = __ore.game, h = g.spawn('hopper', 0, 10, 20), u = g.spawn('linesman', 0, 11, 21); step(2); const sent = g.board([u], h); let n = 0; while (!u.inside && n++ < 30) step(5); step(3);
+    const a = { in: !!u.inside, vis: u.obj.visible }; key('KeyN'); step(20); const fp = { on: g.cmd.on, vis: u.obj.visible }; g.unload(h); step(3); return { sent, a, fp, out: !u.inside && u.obj.visible }; });
+  check(r.sent === 1 && r.a.in && !r.a.vis && !r.fp.on && !r.fp.vis && r.out, 'a body inside a transport is not drawn from above or in first person, and is drawn again when it gets out');
+
   // ---- the same orders through a split screen match, which runs the server's code. A fresh page: headless drawing keeps memory from
   // every frame, and one page for the whole file runs out of it now the art is in the page.
   await p.close(); p = await b.newPage({ viewport: { width: 960, height: 540 } }); p.setDefaultTimeout(300000);

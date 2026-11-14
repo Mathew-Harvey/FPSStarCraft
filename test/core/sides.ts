@@ -7,6 +7,9 @@ import { Game } from '../../src/game';
 import { initHeadless } from '../../src/gfx';
 import { DIFFS, FACTION, SIDE, setMap, setSides, setTeamGame, homeXZ, foeOf } from '../../src/data';
 import { clearMatch, isEnemy, MATCH, planTeams, multi, type TeamPlan } from '../../src/core/sides';
+import { bldRule } from '../../src/core/registry';
+import { FUSES, tickFuses } from '../../src/factions/gloam/abilities';
+import { spineLine, addCloud, CLOUDS } from '../../src/factions/gloam/roster';
 initHeadless();
 const mins = +(process.argv[2] || 30);
 const fail: string[] = []; const check = (ok: boolean, what: string) => { console.log((ok ? 'PASS ' : 'FAIL ') + what); if (!ok) fail.push(what); };
@@ -52,6 +55,34 @@ function play(name: string, plan: TeamPlan, seed: number, cramped = false) {
   const p = planTeams({ n: 8, groups: [[0, 1, 2, 3], [4, 5, 6, 7]], facs: [0, 0, 1, 2, 0, 1, 1, 2] })!;
   check(p.home === 0 && p.out === 3 && p.teams.join() === '0,3,6,1,2,4,7,5' && p.groups[0].join() === '0,6,1,2', `four against four numbers every copy of a faction (${p.teams.join()})`);
   setSides(0, 1); check(!multi(), 'setting the two ends again ends a team game'); }
+
+// The Gloam's own hit paths in a mixed two against two: a Bile Lob, a Needler's spine line, a Puffball and a Choke cloud spare the
+// Gloam's friend (a second faction on its side) and still hit the enemy. Each once skipped only its own team; the Puffball and the cloud
+// went wrong (the Puffball spent its shot on a friend, the cloud muffled a friend), the other two were saved by g.damage dropping friend hits.
+{
+  let sd = 5; Math.random = () => { sd = (sd * 16807) % 2147483647; return (sd - 1) / 2147483646; };
+  setMap(0); const plan = setTeamGame({ n: 4, groups: [[0, 1], [2, 3]], facs: [0, 1, 2, 0] })!;   // the Gloam's friend is the second Ironhold crew
+  const g = new Game(noPipe(), noHud, DIFFS[1], 0, null, null, true); g.noRender = true; g.evq = []; g.me = null; g.phase = 'play';
+  const gl = plan.teams.find(t => FACTION[t].hq === 'mothercap')!, pal = plan.teams.find(t => t !== gl && !isEnemy(t, gl))!, foe = plan.teams.find(t => isEnemy(t, gl))!;
+  check(gl !== undefined && pal !== undefined && foe !== undefined, `mixed 2v2: a Gloam side with a friend (${gl}, ${pal}, ${foe})`);
+  const X = 0, Z = -40, fk = FACTION[pal].lead, ek = FACTION[foe].lead;
+  // Bile Lob
+  const lob = g.spawn('lobber' as any, gl, X - 6, Z), a = g.spawn(fk as any, pal, X, Z), e = g.spawn(ek as any, foe, X + 1, Z + 1);
+  const ab = g.addBuilding(FACTION[pal].supply, pal, X, Z + 6, true), eb = g.addBuilding(FACTION[foe].supply, foe, X + 9, Z + 6, true);
+  let ah = a.hp + a.shield, eh = e.hp + e.shield, abh = ab.hp, ebh = eb.hp;
+  FUSES.push({ x: X, z: Z + 2, t: 0, team: gl, by: lob, kind: 'bile' }); tickFuses(g, .1);
+  check(a.hp + a.shield === ah && ab.hp === abh && e.hp + e.shield < eh, `mixed 2v2: a Bile Lob spares the friend and hits the enemy (friend ${ah}->${a.hp + a.shield}, its ${ab.kind} ${abh}->${ab.hp}, enemy ${eh}->${e.hp + e.shield})`);
+  // Needler spine line along +x through the friend's building and then the enemy's
+  const nd = g.spawn('needler' as any, gl, X - 8, Z + 6); abh = ab.hp; ebh = eb.hp; spineLine(g, nd, Math.PI / 2, 22);
+  check(ab.hp === abh && eb.hp < ebh, `mixed 2v2: a Needler's spines spare the friend's building and hit the enemy's (${abh}->${ab.hp}, ${ebh}->${eb.hp})`);
+  // Puffball with only a friend's flier in reach does not fire
+  const pb = g.addBuilding('puffball' as any, gl, X + 40, Z, true); g.spawn('hopper' as any, pal, X + 44, Z); pb.cd = 0; bldRule('puffball').tick!(g, pb, .1);
+  check(Math.abs(pb.cd - .3) < 1e-6, `mixed 2v2: a Puffball does not fire on a friend's flier (cd ${pb.cd.toFixed(2)})`);
+  // Choke cloud: the friend inside a Gloam cloud still shoots out of it
+  addCloud(g, X - 40, Z, gl); const s2 = g.spawn(fk as any, pal, X - 40, Z), tg = g.spawn(ek as any, foe, X - 30, Z); const th = tg.hp + tg.shield; g.damage(tg, 10, s2);
+  check(tg.hp + tg.shield < th, `mixed 2v2: a friend inside a Gloam cloud can still shoot out (${th}->${tg.hp + tg.shield})`);
+  CLOUDS.length = 0; FUSES.length = 0; clearMatch();
+}
 
 // Two against two: Ironhold (start 0) and the Veyl (start 1) against the Gloam (start 2, the far base) and a second Ironhold crew (start 3).
 play('2v2', { n: 4, groups: [[0, 1], [2, 3]], facs: [0, 1, 2, 0] }, 7);

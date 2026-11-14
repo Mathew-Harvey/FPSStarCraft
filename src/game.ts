@@ -42,6 +42,8 @@ const UP = V3(0, 1, 0), QT = new THREE.Quaternion();
 /** The far side of a mirror match wears different colours, so two Ironhold crews (or two Choruses, or two swarms) can tell each other apart.
  *  Every material on the body is swapped for a copy with its colour shifted; the copies share every other uniform (shadows, fog, time). */
 const MIRROR_TINT = [new THREE.Color(.62, .82, 1.35), new THREE.Color(1.35, .78, .7), new THREE.Color(1.15, .68, 1.3)], tinted = new Map<THREE.Material, THREE.Material>();
+/** How far other buildings keep off an untapped vent: the widest tap's half-width plus the usual 1.6 m gap, so a tap always fits on it later. */
+let VENT_ROOM = 0; const ventRoom = () => VENT_ROOM || (VENT_ROOM = Math.max(2.6, ...Object.keys(BLD).filter(k => bldRule(k as BKind).tap).map(k => Math.max(BLD[k as BKind].hx, BLD[k as BKind].hz))) + 1.6);
 /** Team games can hold a faction three or more times: the third copy on wears these, one each, so every copy looks different. */
 const COPY_TINT = [new THREE.Color(1.3, 1.25, .62), new THREE.Color(.7, 1.3, .8), new THREE.Color(1.35, 1, 1.35), new THREE.Color(.75, .75, .75), new THREE.Color(1.25, .95, .6), new THREE.Color(.6, 1.15, 1.25)], copyTinted = new Map<number, Map<THREE.Material, THREE.Material>>();
 const copyCache = (copy: number) => { let m = copyTinted.get(copy); if (!m) copyTinted.set(copy, m = new Map()); return m; };
@@ -767,7 +769,7 @@ export class Game {
     if (!T.flat(x, z, hx + .6, hz + .6, true)) return false;   // terrain (J): on one level, off the ramps (the vents are checked below)
     // A tap goes square on a vent nobody has tapped; nothing else may cover a vent.
     if (bldRule(k).tap) { const v = ventAt(this, x, z, 1.01); if (!v || (v.tap && v.tap.alive)) return false; }
-    else for (const v of this.vents) if (Math.abs(x - v.pos.x) < hx + 1.6 && Math.abs(z - v.pos.z) < hz + 1.6) return false;
+    else for (const v of this.vents) if (!(v.tap && v.tap.alive) && Math.abs(x - v.pos.x) < hx + ventRoom() && Math.abs(z - v.pos.z) < hz + ventRoom()) return false;   // room for a tap's footprint round an open vent (stream L: a far-end Depot and Assay Office left no room for the Pump Jack)
     if (fac(team) === 2 && !onBloom(this, k as GBKind, x, z, team)) return false;
     const why = factionRule(team).placeOK?.(this, k, x, z, team); if (why) { this.placeWhy = why; return false; }
     return true;

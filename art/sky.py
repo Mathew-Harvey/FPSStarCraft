@@ -83,9 +83,9 @@ def build_ferry():
     fig.add('fork', 'head', 'vG', S.union(*[horn(H0 + V(sx * .06, .16, -.04), H0 + V(sx * .14, .38, -.08), H0 + V(sx * .1, .58, -.22), .035, .008) for sx in (-1, 1)]), 300, voxel=.004, uv=('side',))
     # the halo it rides on: a broad flat ring under the pod, a magenta ring inside it
     c = V(0, Y - .95, 0)
-    fig.add('halo', 'halo', 'teal', S.torus(c, 1.35, .05, squash=1.0), 700, voxel=.008, uv=('top',))
-    fig.add('haloinner', 'halo', 'mag', S.torus(c + V(0, -.04, 0), .95, .03), 500, voxel=.008, uv=('top',))
-    fig.add('halostays', 'halo', 'teal', S.union(*[Vk.crystal(c + V(np.sin(a) * .95, 0, np.cos(a) * .95), c + V(np.sin(a) * 1.62, .02, np.cos(a) * 1.62), .05, 4, .4) for a in np.linspace(0, 2 * PI, 7)[:-1]]), 200, voxel=.006, sharp=25)
+    fig.add('halo', 'halo', 'teal', S.torus(c, 1.35, .05, squash=1.0), 700, voxel=.008, uv=('top',), glow=.3)   # dimmed: up close at full strength it bloomed to a white ring
+    fig.add('haloinner', 'halo', 'mag', S.torus(c + V(0, -.04, 0), .95, .03), 500, voxel=.008, uv=('top',), glow=.35)
+    fig.add('halostays', 'halo', 'teal', S.union(*[Vk.crystal(c + V(np.sin(a) * .95, 0, np.cos(a) * .95), c + V(np.sin(a) * 1.62, .02, np.cos(a) * 1.62), .05, 4, .4) for a in np.linspace(0, 2 * PI, 7)[:-1]]), 200, voxel=.006, sharp=25, glow=.3)
     # the six folded leaves: each lies down the pod's flank from its hinge, the tip low, gold veined
     for i, (sx, z, h) in enumerate(hinges):
         tip = h + V(sx * .78, -.95, -.12)

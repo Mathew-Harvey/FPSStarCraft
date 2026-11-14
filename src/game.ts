@@ -305,7 +305,7 @@ export class Game {
   foeK(team: number) { return this.human[team] ? 1 : this.diff.enemy; }
   gunMul(team: number, cat?: string) { const m = levelMul(this, team, 'atk', cat); return fac(team) ? m : m * (this.eco ? this.foeK(team) : 1); }
   /** With a full economy the Veyl pay for every body, so each one the AI drives is worth more than a free raider: it takes less from each hit and hits harder. */
-  vBoost = { hp: 1.65, dmg: 1.45 };
+  vBoost = { hp: 1.45, dmg: 1.3 };   // balance (L) round 1: was 1.65 / 1.45; Cantors beat every same-cost army but Dustbikes
   armorMul(team: number, cat?: string) { return levelMul(this, team, 'arm', cat); }
   /** What a Veyl body's hit is worth: the shift on a bot side, and the songs the Chorus has learned. */
   vMul(team: number) { return this.foeK(team) * (this.eco ? this.gunMul(team) * this.vBoost.dmg : 1); }
@@ -364,6 +364,9 @@ export class Game {
   moveTo(u: Unit, x: number, z: number, dt: number, stop = .4, mul = 1) {
     const w = T.via(u, x, z); if (w) { x = w[0]; z = w[1]; stop = 0; }   // terrain (J): to another level by way of a ramp; never 'arrived' on the way
     const dx = x - u.pos.x, dz = z - u.pos.z, d = Math.hypot(dx, dz); if (d < stop) return true;
+    // Standing exactly on a ramp waypoint (stop is 0 then) used to divide by zero: the body's position went NaN, and every body that steered by it
+    // (a Listener follows its army's middle) followed it into NaN. A winning army lost most of its bodies that way and matches ran to the time limit.
+    if (d < 1e-6) return !w;
     const st = Math.min(d, u.speed * mul * this.pace(u) * dt); u.pos.x += dx / d * st; u.pos.z += dz / d * st; u.yaw = Math.atan2(dx, dz); u.moving = true; this.collide(u, x, z); return false;
   }
   /** Follows the unit's order, walking any waypoints first. Returns true on arrival. */

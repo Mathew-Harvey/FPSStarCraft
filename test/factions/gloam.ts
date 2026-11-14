@@ -14,6 +14,8 @@ import { G_UNIT, G_BLD, G_RIPEN, G_DIGS, G2, G_TUNE, type GKind, type GBKind } f
 import { FUSES, podRoom, bigRoom } from '../../src/factions/gloam/abilities';
 import { isDug } from '../../src/factions/gloam/roster';
 import { otherEnd } from '../../src/factions/gloam/actions';
+import { broodWants, broodPick } from '../../src/factions/gloam/brood-mix';
+import { seenFoe, spent, capped } from '../../src/core/brainkit';
 
 initHeadless();
 const fail: string[] = []; const check = (ok: boolean, what: string) => { console.log((ok ? 'PASS ' : 'FAIL ') + what); if (!ok) fail.push(what); };
@@ -122,6 +124,24 @@ const dmgOf = (b: Unit | Building) => b.maxHp - b.hp;
   run(g, 240, () => { for (const k of ks) { k.energy = 200; } for (const p of g.ownB('sporepod' as BKind, true, H)) g.buildingAction(p, 'hop'); pods = g.ownB('sporepod' as BKind, false, H).length; });
   check(pods >= 2, `Keepers: still plant Spore Pods by themselves (${pods})`);
   check(bigRoom(g, H, cap), `Keepers: after 4 minutes of planting (${pods} pods) the Cap still has room for a Tusk Hollow`);
+}
+// ---------------------------------------------------------------- 2c. the Brood bot's army mix answers what it has seen and keeps every kind
+{
+  const { g, H, O, cap } = world(), V = g.dir.side(H);
+  const kinds: BKind[] = ['warren', 'quillgarden', 'blisterbed', 'shellpit', 'tuskhollow', 'wingspire', 'rotden'] as BKind[];
+  kinds.forEach((k, i) => { const [x, z] = ring(cap, i, 26); g.addBuilding(k, H, Math.round(x), Math.round(z), true); });
+  const w0 = broodWants(g.dir, V);
+  for (const k of ['snapper', 'quillback', 'blister', 'shellback', 'mulcher', 'smother', 'seeder', 'gnatwing', 'bloater'] as Kind[])
+    check((w0[k] || 0) > 0, `mix: ${UNIT[k].name} has a share once its building stands (${Math.round((w0[k] || 0) * 100)}%)`);
+  check(Object.values(w0).every(v => (v || 0) <= .35), `mix: with nothing seen, no kind is wanted above 35% (${JSON.stringify(Object.fromEntries(Object.entries(w0).map(([k, v]) => [k, Math.round(v! * 100)])))})`);
+  // Foe fliers in sight of the Cap: the Bloater (and the Quillback) are wanted more.
+  for (let i = 0; i < 6; i++) spawnAt(g, 'flakkite', O, cap.pos.x + 6 + i, cap.pos.z + 4);
+  run(g, 1); const w1 = broodWants(g.dir, V);
+  check((w1.bloater || 0) > (w0.bloater || 0) * 2 && (w1.quillback || 0) > (w0.quillback || 0), `mix: seeing fliers, the Bloater and the Quillback are wanted more (Bloater ${Math.round((w0.bloater || 0) * 100)}% -> ${Math.round((w1.bloater || 0) * 100)}%)`);
+  check(seenFoe(g, V).tags.air > 0, 'mix: the fliers count as seen air');
+  // A kind over the spend cap is not picked while another kind can be.
+  for (let i = 0; i < 120; i++) spent(g, V, 'snapper');
+  check(capped(V, 'snapper') && broodPick(g.dir, V) !== 'snapper', `mix: Snappers over the cap, the next pick is something else (${broodPick(g.dir, V)})`);
 }
 // ---------------------------------------------------------------- 2. Keeper: no Bud, Seed Cap, Spore Pod, Mend
 {
@@ -289,7 +309,7 @@ console.log(fail.length ? `\n${fail.length} FAILED\n` + fail.join('\n') : '\nALL
 if (fail.length) process.exitCode = 1;
 export { check, fail, world, run };
 
-function oneMatch(sp: { home: number; out: number; map: number; seed: number; mins: number; passive?: boolean }) {
+function oneMatch(sp: { home: number; out: number; map: number; seed: number; mins: number; passive?: boolean; mortal?: boolean }) {
   seed = sp.seed; setMap(sp.map); setSides(sp.home, sp.out);
   const g = new Game(noPipe(), noHud, DIFFS[1], sp.map, null, null, true); g.noRender = true; g.evq = []; g.me = null; g.phase = 'play'; g.human = g.human.map(() => false);
   for (const u of g.units) u.pilot = 0;
@@ -303,11 +323,11 @@ function oneMatch(sp: { home: number; out: number; map: number; seed: number; mi
     g.update(1 / 30); g.evq!.length = 0;
     if (sp.passive) {   /* a foe that never fights back: its fighters drop as soon as they are made, its towers never fire and its buildings cannot fall, so the match runs the full time */
       for (const u of g.units) if (u.alive && !mine(u.team) && isFighter(u)) g.killUnit(u, null);
-      for (const b of g.buildings) if (b.alive && !mine(b.team)) { b.maxHp = Math.max(b.maxHp, 1e6); b.hp = b.maxHp; b.cd = 9; }
+      for (const b of g.buildings) if (b.alive && !mine(b.team)) { if (!sp.mortal) { b.maxHp = Math.max(b.maxHp, 1e6); b.hp = b.maxHp; } b.cd = 9; }
       /* and the losses a real fight would bring, which fall on the front line: from minute 6, a quarter of the Gloam's Snappers fall each
          minute, so the bot keeps spending and its army keeps changing as its tech grows (losing everything evenly kept the army too small to
          keep three Shellbacks, so no Lobber ever ripened) */
-      if (i % (30 * 60) === 0 && g.time > 360) { const front = g.units.filter(u => u.alive && mine(u.team) && u.kind === 'snapper' && !u.inside); for (let k = 0; k < front.length; k += 4) g.killUnit(front[k], null); }
+      if (!sp.mortal && i % (30 * 60) === 0 && g.time > 360) { const front = g.units.filter(u => u.alive && mine(u.team) && u.kind === 'snapper' && !u.inside); for (let k = 0; k < front.length; k += 4) g.killUnit(front[k], null); }
     }
     if (i % 30 === 0) {
       for (const u of g.units) if (u.alive && mine(u.team) && fac(u.team) === 2) { const was = seen.get(u); if (was === undefined) { note(u); lastNew = g.time; } else if (was !== u.kind) { note(u, was); lastNew = g.time; } seen.set(u, u.kind); }

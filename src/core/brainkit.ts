@@ -31,12 +31,12 @@ const MELEE = 2.6;
 
 interface Mem {
   bodies: Map<Unit, number>; dets: Map<object, number>; checkT: number; seen: Seen; spend: Partial<Record<string, number>>; spendAll: number;
-  hunting: boolean; huntT: number; /** the foe's last known army worth */ peakWorth: number; spots: [number, number][] | null; spotI: number;
+  hunting: boolean; huntT: number; /** what the foe army was seen worth, sampled every 3 s */ hist: [number, number][]; /** no new hunt before this time */ calmT: number; spots: [number, number][] | null; spotI: number;
 }
 const MEM = new WeakMap<Side, Mem>();
 function memOf(S: Side): Mem {
   let m = MEM.get(S);
-  if (!m) MEM.set(S, m = { bodies: new Map(), checkT: 0, seen: { tags: blank(), kinds: {}, swarm: false, worth: 0, lastT: -1, detectors: 0 }, dets: new Map(), spend: {}, spendAll: 0, hunting: false, huntT: 0, peakWorth: 0, spots: null, spotI: 0 });
+  if (!m) MEM.set(S, m = { bodies: new Map(), checkT: 0, seen: { tags: blank(), kinds: {}, swarm: false, worth: 0, lastT: -1, detectors: 0 }, dets: new Map(), spend: {}, spendAll: 0, hunting: false, huntT: 0, hist: [], calmT: 0, spots: null, spotI: 0 });
   return m;
 }
 const blank = (): Record<SeenTag, number> => ({ soft: 0, plated: 0, huge: 0, living: 0, machine: 0, sung: 0, air: 0, unseen: 0, melee: 0 });
@@ -65,8 +65,9 @@ export function seenFoe(g: Game, S: Side): Seen {
   for (const [o, t] of m.bodies) {
     if (!o.alive || g.time - t > SEEN_FOR) { m.bodies.delete(o); continue; }
     if (g.time - t < 1) s.lastT = g.time;
-    const k = o.kind as Kind, sup = Math.max(.5, UNIT[k]?.supply || 1);
-    s.kinds[k] = (s.kinds[k] || 0) + sup; s.worth += worthOf(k); if (sup <= 1) small++;
+    // by supply, so a free scout or a carrier (a Lookout Sac, a Drifter: supply 0) does not read as an air army
+    const k = o.kind as Kind, sup = UNIT[k]?.supply ?? 1;
+    s.kinds[k] = (s.kinds[k] || 0) + sup; s.worth += worthOf(k); if (sup > 0 && sup <= 1) small++;
     for (const tag of tagsOf(o)) if (tag in s.tags) s.tags[tag as SeenTag] += sup;
     if (isAir(o)) s.tags.air += sup;
     if (UNIT[k]?.cloak || (o.status || []).some(x => x.k === 'unseen') || isHidden(o)) s.tags.unseen += sup;
@@ -83,6 +84,10 @@ export function shareOf(S: Side, kind: Kind): number { const m = memOf(S); retur
 /** A kind over the cap is not trained until it falls back. Not before 1500 has been spent, or the first few units cap themselves. */
 export function capped(S: Side, kind: Kind): boolean { const m = memOf(S); return m.spendAll >= 1500 && shareOf(S, kind) > CAP; }
 
+/** How long the foe army's seen worth is remembered for the hunt, and the earliest a hunt starts. */
+export const HUNT_MEMORY = 300, HUNT_FROM = 600;
+/** Buildings that shoot: a hunt has to be worth more than the towers it walks into. */
+const TOWERS = new Set(['watchpost', 'flaktower', 'bastion', 'dugout', 'thornspire', 'stinger', 'puffball', 'stingerwalk', 'puffwalk']);
 /** Worth of side T's own fighters, fliers included. */
 const armyWorth = (g: Game, T: number) => g.army(T).reduce((a, u) => a + worthOf(u.kind as Kind), 0);
 /** Is side S hunting down the last buildings right now (for tests and the brains' lines). */
@@ -97,10 +102,13 @@ export const isHunting = (S: Side) => !!MEM.get(S)?.hunting;
 export function hunt(D: Director, S: Side, dt: number) {
   const g = D.g, T = S.team, m = memOf(S), seen = seenFoe(g, S); m.huntT -= dt; if (m.huntT > 0) return; m.huntT = 3;
   const mine = armyWorth(g, T);
-  // the foe's last known army: what was seen of it (over the last 90 s) the last time any of it was in sight
-  if (seen.lastT >= 0 && g.time - seen.lastT < 4) m.peakWorth = seen.worth;
-  if (m.hunting) { if (seen.worth > mine / 2) { m.hunting = false; return; } }
-  else if (seen.lastT >= 0 && g.time - seen.lastT >= 30 && g.army(T).length >= 6 && mine >= 2 * m.peakWorth) { m.hunting = true; }
+  // The foe's last known strength: the most its army was seen worth over the last five minutes (one glimpse of two bodies is not the
+  // army), plus half again the price of every tower of theirs we know of. Not before minute 10: early on nobody has seen anything.
+  m.hist.push([g.time, seen.worth]); while (m.hist.length && g.time - m.hist[0][0] > HUNT_MEMORY) m.hist.shift();
+  const peak = Math.max(0, ...m.hist.map(h => h[1]));
+  const towers = g.intel.known(T).filter(b => b.alive && b.built && TOWERS.has(b.kind)).reduce((a, b) => { const c = costOf(b.kind); return a + 1.5 * (c[0] + 2 * c[1]); }, 0);
+  if (m.hunting) { if (seen.worth > mine / 2) { m.hunting = false; m.calmT = g.time + 120; for (const u of g.army(T)) if (u.order.type === 'amove' && !u.order.mine && !u.pilot && u !== g.me) u.target = null; return; } }
+  else if (g.time >= HUNT_FROM && g.time >= m.calmT && seen.lastT >= 0 && g.time - seen.lastT >= 30 && g.army(T).length >= 8 && mine >= 2 * (peak + towers)) { m.hunting = true; }
   if (!m.hunting) return;
   const [hx, hz] = homeXZ(T), foe = foeOf(T);
   // never a body someone drives or ordered by hand from the command view, nor one following a player or out scouting

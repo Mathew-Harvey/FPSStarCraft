@@ -14,6 +14,7 @@ import { isDug, setDug } from './roster';
 import { foeAnswers } from './kit';
 import { otherEnd } from './actions';
 import { ripenWhy } from './abilities';
+import { spent } from '../../core/brainkit';
 
 /** Where the second-half buildings go, as offsets from the home Cap (the same frame as brain.ts SLOT). */
 const SLOT2: Partial<Record<GBKind, number[][]>> = {
@@ -113,7 +114,7 @@ export function overgrowth2(D: Director, dt: number, V: Side): number {
   if (!builtOne && ancient && n >= 6 && !has(g, T, 'tallspire', false)) { const sp = g.ownB('wingspire', true, T).find(b => b.kind === 'wingspire' && !(b as any).grow); if (sp && tier(costOf('tallspire' as BKind)) && g.buildingAction(sp, 'grow')) say('tall', 'The Wing Spire is ripening into a Tall Spire. Sowers, soon.'); }
   // 4b. A Mulcher from the Tusk Hollow once the Ancient Cap stands (the old brain makes them too, but only while ore is spare).
   const hollow = g.ownB('tuskhollow', true, T).find(b => !b.queue.length);
-  if (hollow && ancient && g.own('mulcher', T).length < 2 && afford(costOf('mulcher'))) g.train(hollow, 'mulcher');
+  if (hollow && ancient && g.own('mulcher', T).length < 2 && afford(costOf('mulcher')) && g.train(hollow, 'mulcher')) spent(g, V, 'mulcher');
   // 5. Research, by what is standing.
   // Only research for bodies the side has: nothing for Drifters it never floats, nothing for fliers it has not grown.
   const c = (...ks: string[]) => ks.reduce((a, k) => a + g.own(k as Kind, T).length, 0), fl = c('gnatwing', 'bloater', 'sower', 'hooksail');

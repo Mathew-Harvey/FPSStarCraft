@@ -10,7 +10,7 @@ import { Game } from '../src/game';
 import { initHeadless } from '../src/gfx';
 import { DIFFS, UNIT, MAP, UPGRADES, CLEAVE, setMap, setSides, isWorker, fac, type Kind } from '../src/data';
 import { costOf } from '../src/core/econ';
-import { readFileSync } from 'node:fs';
+import { readFileSync, appendFileSync } from 'node:fs';
 
 const val = (k: Kind) => { const c = costOf(k); return c[0] + 2 * c[1]; };
 // Units with no gun of their own (healers, carriers, spotters). They are judged by what they add to others, not here.
@@ -29,6 +29,13 @@ if (process.argv[2] === 'sum') {
 
 initHeadless();
 const o = JSON.parse(process.argv[2] || '{}');
+// hits: record every unit-on-unit hit (what it took off health and shield) to this file, for the breakpoint list (tools/breakpoints.mjs).
+if (o.hits) { const was = Game.prototype.damage; const buf: string[] = [];
+  (Game.prototype as any).damage = function (this: Game, t: any, amt: number, from: any, ...r: any[]) {
+    const unit = t && t.kind && (UNIT as any)[t.kind] && t.hp !== undefined && 'pilot' in t, before = unit ? t.hp + (t.shield || 0) : 0; const res = (was as any).call(this, t, amt, from, ...r);
+    if (unit && from && from.kind && 'pilot' in from && from.team !== t.team) { const took = before - (t.hp + (t.shield || 0)); if (took > 0) buf.push(JSON.stringify([from.kind, t.kind, Math.round(took * 100) / 100, t.alive ? 0 : 1, t.maxHp + (t.maxShield || 0)])); if (buf.length > 2000) appendFileSync(o.hits, buf.splice(0).join('\n') + '\n'); }
+    return res; };
+  process.on('exit', () => { if (buf.length) appendFileSync(o.hits, buf.join('\n') + '\n'); }); }
 // set: trial numbers, e.g. {"snapper":{"hp":60}}; vhp / vdmg: the Veyl bot multipliers (Game.vBoost).
 for (const k in o.set || {}) Object.assign((UNIT as any)[k], o.set[k]);
 if (o.cleaveK !== undefined) CLEAVE.k = o.cleaveK; if (o.cleave !== undefined) CLEAVE.n = o.cleave;

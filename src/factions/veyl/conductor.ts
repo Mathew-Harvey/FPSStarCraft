@@ -103,7 +103,9 @@ export function conductor(D: Director, dt: number, V0: Side = D.vs) {
   const step = (): void => {
     // a rush puts its second Pit ahead of everything, the first Hush Well too
     if (DOC.key === 'rush' && pits.length === 1 && now > DOC.prodT) { opening = true; put('broodpit', 'A second Brood Pit already. We go at them early.'); return; }
-    if (wantWell && put('hushwell', wells.length ? 'The song is crowded. Growing a Hush Well.' : 'A Hush Well first: its song field is where the other buildings can stand.')) return;
+    // a fort opening puts its two Spires ahead of a second Hush Well unless the beds are full
+    const fortOpen = DOC.key === 'fort' && now > 90 && now < 420 && (!any('wardpylon') || own('thornspire').length < 2) && wells.length > 0 && free > 1;
+    if (wantWell && !fortOpen && put('hushwell', wells.length ? 'The song is crowded. Growing a Hush Well.' : 'A Hush Well first: its song field is where the other buildings can stand.')) return;
     if (!wells.some(w => w.built) && !pits.length && stones.every(s => s.built)) { if (!pits.length && wells.length) return; }
     if (!pits.length) { put('broodpit', 'A Brood Pit, inside the Hush Well\'s field. The voices need somewhere to wake.'); return; }
     // the doctrine's opening (a hidden map leans each side one way): a second Pit early, Spires early, or a second Stone early

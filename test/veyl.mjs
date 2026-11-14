@@ -63,7 +63,7 @@ try {
     const site = h.addBuilding('hushwell', 1, 30, 60, false); site.progress = .5; h.updateBuildings(1 / 30); const full = site.hp; for (let i = 0; i < 40; i++) { h.damage(site, site.maxHp * .05, null); h.updateBuildings(1 / 30); } out.site = [Math.round(full), site.alive];
     return out; });
   check(sw.oreK[0] === 1 && sw.oreK[1] === 1, `Night gives neither side extra ore (${sw.oreK.map(x => x.toFixed(2)).join(', ')})`);
-  check(sw.ai < sw.piloted * .7, `an AI-driven Veyl body takes less from a hit than a player-driven one (${sw.ai.toFixed(1)} vs ${sw.piloted.toFixed(1)})`);
+  check(sw.ai < 20 * .7 && Math.abs(sw.ai - sw.piloted) < .01, `a paid-for Veyl body shrugs off part of a hit, the same whether the AI or a player drives it (${sw.ai.toFixed(1)} and ${sw.piloted.toFixed(1)} of 20)`);
   check(sw.guard, 'a raider hitting an Ironhold Rigger draws the guards over');
   check(sw.site[1] === false, `a half-built site can be shot down (it had ${sw.site[0]} health)`);
   // after Thicker Glass, the Veyl player's screen (a Pylon works inside a song field, so a Hush Well goes beside it, and its levels cost Flux) shows shields within their maximum

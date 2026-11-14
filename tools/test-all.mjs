@@ -10,7 +10,7 @@ export const TESTS = [
   'test/server.mjs', 'test/teamserver.mjs', 'tools/run-ts.mjs test/online/claims.ts', 'test/online/fog.mjs', 'test/online/fog-page.mjs',
   'tools/run-ts.mjs test/online/same-dice.ts', 'tools/run-ts.mjs test/online/abilities.ts', 'test/online/replay.mjs', 'test/online/watch-page.mjs', 'test/online/watch-above.mjs', 'test/online/cast-page.mjs', 'tools/run-ts.mjs test/online/cast-looks.ts', 'tools/run-ts.mjs test/online/ranked.ts', 'test/online/ranked.mjs', 'test/online/ranked-page.mjs', 'test/lobbyteams.mjs',
   'test/coop.mjs', 'test/versus.mjs', 'test/split.mjs', 'test/touch.mjs', 'test/veyl.mjs', 'test/gloam.mjs', 'test/artfiles.mjs', 'test/fx.mjs',
-  'test/command.mjs', 'test/controls.mjs', 'test/story.mjs', 'test/sweep.mjs',
+  'test/command.mjs', 'test/controls.mjs', 'test/skirmish.mjs', 'test/story.mjs', 'test/sweep.mjs',
   'tools/run-ts.mjs test/factions/ironhold.ts', 'tools/run-ts.mjs test/factions/veyl.ts', 'tools/run-ts.mjs test/factions/gloam.ts',
   'tools/run-ts.mjs test/scouting.ts', 'tools/run-ts.mjs test/terrain.ts', 'tools/run-ts.mjs test/teammaps-play.ts', 'tools/run-ts.mjs test/story.ts 1', 'tools/run-ts.mjs test/playthrough.ts', 'tools/run-ts.mjs test/matchups.ts',
 ];

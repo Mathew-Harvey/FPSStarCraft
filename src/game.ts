@@ -305,7 +305,7 @@ export class Game {
   foeK(team: number) { return this.human[team] ? 1 : this.diff.enemy; }
   gunMul(team: number, cat?: string) { const m = levelMul(this, team, 'atk', cat); return fac(team) ? m : m * (this.eco ? this.foeK(team) : 1); }
   /** With a full economy the Veyl pay for every body, so each one the AI drives is worth more than a free raider: it takes less from each hit and hits harder. */
-  vBoost = { hp: 1.65, dmg: 1.45 };
+  vBoost = { hp: 1.45, dmg: 1.3 };   // balance (L) round 1: was 1.65 / 1.45; Cantors beat every same-cost army but Dustbikes
   armorMul(team: number, cat?: string) { return levelMul(this, team, 'arm', cat); }
   /** What a Veyl body's hit is worth: the shift on a bot side, and the songs the Chorus has learned. */
   vMul(team: number) { return this.foeK(team) * (this.eco ? this.gunMul(team) * this.vBoost.dmg : 1); }

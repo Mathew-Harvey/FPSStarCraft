@@ -21,7 +21,7 @@ const L: Tag[] = ['living'], LP: Tag[] = ['living', 'plated'], LH: Tag[] = ['liv
  *  armour, hits, air, energy, detect, cargo). A ripened kind's cost is the whole price; ripening charges the difference. */
 export const G_UNIT: Record<GKind, UnitDef> = {
   grazer: { name: 'Grazer', team: 2, hp: 40, shield: 0, speed: 5.0, eye: .85, headY: .62, bodyY: .5, rad: .6, cost: 45, time: 7, supply: 1, tags: L, quip: '"Chew. Swallow. Carry. Chew."', ack: ['Mouth is full. Of ore.', 'Back to the seam.', 'The ground tastes good here.'] },
-  snapper: { name: 'Snapper', team: 2, hp: 50, shield: 0, speed: 6.6, eye: .78, headY: .64, bodyY: .5, rad: .5, cost: 25, time: 6, supply: .5, tags: L, quip: '"Two of us. Always two."', ack: ['Teeth out.', 'Point. We bite.', 'Run, run, bite.'] },
+  snapper: { name: 'Snapper', team: 2, hp: 55, shield: 0, speed: 6.6, eye: .78, headY: .64, bodyY: .5, rad: .5, cost: 25, time: 6, supply: .5, tags: L, quip: '"Two of us. Always two."', ack: ['Teeth out.', 'Point. We bite.', 'Run, run, bite.'] },
   // Was 85 ore and 1 bed; the plan makes it 100 / 50 and 2 beds. It keeps its quills and now reaches fliers (the plan: ground and air).
   quillback: { name: 'Quillback', team: 2, hp: 90, shield: 0, speed: 4.6, eye: 2.05, headY: 2.0, bodyY: 1.2, rad: .7, cost: 85, time: 10, supply: 1, tags: L, hits: 'both', quip: '"Every quill finds a home."', ack: ['Bristles up.', 'Spit and stick.', 'I see a soft spot.'] },
   blister: { name: 'Blister', team: 2, hp: 30, shield: 0, speed: 6.0, eye: .9, headY: .7, bodyY: .6, rad: .55, cost: 40, time: 6, supply: .5, tags: L, quip: '"Squeeze me. Go on."', ack: ['Sloshing.', 'Hold me near the walls.', 'So full. So ready.'] },

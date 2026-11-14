@@ -1,12 +1,13 @@
 // Runs every test file one after another, keeps going past a failure, and lists every failure at the end.
-// Run: npm test, or node tools/test-all.mjs [name filter ...]   (e.g. node tools/test-all.mjs split server)
+// Run: npm run build && npm test, or node tools/test-all.mjs [name filter ...]   (e.g. node tools/test-all.mjs split server)
+// tools/artsize.mjs (each figure's art within its size limits) reads dist/, so build first.
 // Each file runs on its own, so one that hangs or fails does not hide the rest. Browser tests take one browser at a time.
 import { spawn } from 'node:child_process';
 import { writeFileSync, mkdirSync, existsSync, readdirSync, readFileSync } from 'node:fs';
 
 /** Every test, in the order they run. The slow bot-match tests come after the quick ones. */
 export const TESTS = [
-  'tools/run-ts.mjs test/core/registry.ts', 'tools/run-ts.mjs test/core/systems.ts', 'tools/run-ts.mjs test/core/sides.ts',
+  'tools/artsize.mjs', 'tools/run-ts.mjs test/core/registry.ts', 'tools/run-ts.mjs test/core/systems.ts', 'tools/run-ts.mjs test/core/sides.ts',
   'test/server.mjs', 'test/teamserver.mjs', 'tools/run-ts.mjs test/online/claims.ts', 'test/online/fog.mjs', 'test/online/fog-page.mjs',
   'tools/run-ts.mjs test/online/same-dice.ts', 'tools/run-ts.mjs test/online/abilities.ts', 'test/online/replay.mjs', 'test/online/watch-page.mjs', 'test/online/watch-above.mjs', 'test/online/cast-page.mjs', 'tools/run-ts.mjs test/online/cast-looks.ts', 'tools/run-ts.mjs test/online/ranked.ts', 'test/online/ranked.mjs', 'test/online/ranked-page.mjs', 'test/lobbyteams.mjs',
   'test/coop.mjs', 'test/versus.mjs', 'test/split.mjs', 'test/touch.mjs', 'test/veyl.mjs', 'test/gloam.mjs', 'test/artfiles.mjs', 'test/fx.mjs',
@@ -50,8 +51,8 @@ async function runOne(t, args) {
 }
 const results = [];
 for (const t of list) {
-  const file = t.split(' ').find(a => a.startsWith('test/')); if (!existsSync(file)) { console.log(`${t} ... not here yet, skipped`); continue; }
-  const t0 = Date.now(), args = t.split(' '), log = 'dist/test-logs/' + args.find(a => a.startsWith('test/')).replace(/[/.]/g, '_') + '.log';
+  const file = t.split(' ').find(a => a.startsWith('test/')) || t.split(' ')[0]; if (!existsSync(file)) { console.log(`${t} ... not here yet, skipped`); continue; }
+  const t0 = Date.now(), args = t.split(' '), log = 'dist/test-logs/' + file.replace(/[/.]/g, '_') + '.log';
   process.stdout.write(`${t} ... `);
   let { code, out } = await runOne(t, args), fails = out.split('\n').filter(l => /^\s*FAIL\b/.test(l)), retried = false;
   if (crashed(t, code, out, fails)) {
@@ -59,11 +60,11 @@ for (const t of list) {
     ({ code, out } = await runOne(t, args)); fails = out.split('\n').filter(l => /^\s*FAIL\b/.test(l));
   }
   writeFileSync(log, out); const secs = Math.round((Date.now() - t0) / 1000);
-  results.push({ t, ok: code === 0, secs, log, fails, retried });
+  results.push({ t, ok: code === 0, secs, log, fails, retried, tail: out.trim().split('\n').slice(-4) });
   console.log(code === 0 ? `ok (${secs} s)${retried ? ', passed on retry after a browser crash' : ''}` : `FAILED (${secs} s, exit ${code}${retried ? ', after a retry' : ''}) - log in ${log}`);
 }
 const bad = results.filter(r => !r.ok);
 const again = results.filter(r => r.ok && r.retried);
 console.log(`\n${results.length - bad.length} of ${results.length} test files passed${again.length ? ` (${again.length} on retry after a browser crash: ${again.map(r => r.t).join(', ')}; first try in the .crash.log)` : ''}.`);
-for (const r of bad) { console.log(`\nFAILED ${r.t}  (${r.log})`); for (const f of r.fails.slice(0, 12)) console.log('  ' + f.trim()); if (!r.fails.length) console.log('  (no FAIL lines; see the log for the error)'); }
+for (const r of bad) { console.log(`\nFAILED ${r.t}  (${r.log})`); for (const f of r.fails.slice(0, 12)) console.log('  ' + f.trim()); if (!r.fails.length) { console.log('  (no FAIL lines; the end of its log:)'); for (const l of r.tail) console.log('    ' + l.slice(0, 200)); } }
 process.exit(bad.length ? 1 : 0);

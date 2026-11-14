@@ -346,15 +346,18 @@ for (const k in ABS) defineAbilities(k, ABS[k]);
 
 // ---------------------------------------------------------------- first person
 const KEY = (h: string) => h.startsWith('Mouse') ? h : 'Key' + h;
+/** How much faster a driven body fires than its bot: driving one is the stronger way to play (each kind does at least 1.4 times its bot's
+ *  damage a second, test/factions/veyl.ts). Hits go through g.vMul like the bots' do. */
+export const FP = 1 / .7;
 /** The first-person weapon of each new kind: damage, seconds between shots, reach, and what a hit does. */
-const GUNS: Partial<Record<Kind, { dmg: number; cd: number; range: number; w: number; hit?(g: Game, me: Unit, t: Unit | Building | null, end: THREE.Vector3): void }>> = {
+export const GUNS: Partial<Record<Kind, { dmg: number; cd: number; range: number; w: number; hit?(g: Game, me: Unit, t: Unit | Building | null, end: THREE.Vector3): void }>> = {
   tuner: { dmg: T.tuner.dmg * 1.4, cd: T.tuner.cd * .8, range: T.tuner.range, w: .05 },
-  chord: { dmg: T.chord.dmg, cd: T.chord.cd, range: T.chord.range + 2, w: .25, hit: (g, me, t, end) => { for (const o of near(g, end.x, end.z, T.chord.splash, o => foe(me, o) && o !== t && canHit(me, o))) g.damage(o, T.chord.dmg * .6, me); g.puff(end, 4, T.chord.splash * .6, M.cyan, .8, 1.5); } },
-  bell: { dmg: T.bell.dmg, cd: T.bell.cd, range: T.bell.range + 2, w: .18 },
-  reedwalker: { dmg: 0, cd: T.reedwalker.cd, range: T.reedwalker.range + 4, w: 0, hit: (g, me, _t, end) => sweep(g, me, end.x, end.z) },
-  swift: { dmg: T.swift.dmg * 2, cd: T.swift.cd, range: T.swift.range + 4, w: .06 },
-  prism: { dmg: T.prism.dmg, cd: T.prism.cd, range: T.prism.range + 2, w: .12 },
-  omen: { dmg: T.omen.dmg, cd: T.omen.cd, range: T.omen.range + 2, w: .12 },
+  chord: { dmg: T.chord.dmg, cd: T.chord.cd / FP, range: T.chord.range + 2, w: .25, hit: (g, me, t, end) => { for (const o of near(g, end.x, end.z, T.chord.splash, o => foe(me, o) && o !== t && canHit(me, o))) g.damage(o, T.chord.dmg * .6 * g.vMul(me.team), me); g.puff(end, 4, T.chord.splash * .6, M.cyan, .8, 1.5); } },
+  bell: { dmg: T.bell.dmg, cd: T.bell.cd / FP, range: T.bell.range + 2, w: .18 },
+  reedwalker: { dmg: 0, cd: T.reedwalker.cd / FP, range: T.reedwalker.range + 4, w: 0, hit: (g, me, _t, end) => sweep(g, me, end.x, end.z) },
+  swift: { dmg: T.swift.dmg * 2, cd: T.swift.cd / FP, range: T.swift.range + 4, w: .06 },
+  prism: { dmg: T.prism.dmg, cd: T.prism.cd / FP, range: T.prism.range + 2, w: .12 },
+  omen: { dmg: T.omen.dmg, cd: T.omen.cd / FP, range: T.omen.range + 2, w: .12 },
   cantus: { dmg: T.cantus.dmg * 2, cd: T.cantus.cd * .6, range: T.cantus.range + 2, w: .12 },
   shard: { dmg: T.shard.dmg * 2, cd: T.shard.cd, range: T.shard.range + 4, w: .04 },
 };
@@ -384,16 +387,16 @@ export function driveNew(g: Game, dt: number, P: Set<string>, eye: THREE.Vector3
   const muzzle = V3().copy(eye).addScaledVector(dir, 1.2).setY(eye.y - .4);
   if (gun.w) g.tracer(muzzle, end, beamMat, gun.w);
   const tgt = hit && (hit.unit && foe(me, hit.unit) ? hit.unit : hit.b && foe(me, hit.b) ? hit.b : null);
-  if (tgt && canHit(me, tgt) && gun.dmg) { const extra = k === 'prism' && burning(g, me) && hasTag(tgt, 'plated') ? T.prism.burn : k === 'omen' && hasTag(tgt, 'soft') ? T.omen.soft : 0; g.damage(tgt, (gun.dmg + extra) * (UNIT[k].air ? airK(g, me.team) : 1), me, !!hit!.head); g.hud.hitmark(!!hit!.head); sfx.hit(); }
+  if (tgt && canHit(me, tgt) && gun.dmg) { const extra = k === 'prism' && burning(g, me) && hasTag(tgt, 'plated') ? T.prism.burn : k === 'omen' && hasTag(tgt, 'soft') ? T.omen.soft : 0; g.damage(tgt, (gun.dmg + extra) * (UNIT[k].air ? airK(g, me.team) : 1) * g.vMul(me.team), me, !!hit!.head); g.hud.hitmark(!!hit!.head); sfx.hit(); }
   else if (tgt && !canHit(me, tgt) && gun.dmg) { sfx.deny(); g.hud.damage(end, UNIT[k].air ? 'AIR ONLY' : 'CANNOT REACH', 'kobad'); }
   gun.hit?.(g, me, tgt, end);
   return true;
 }
 /** The Mute's blades in first person: the Cantor's cut, harder and slower. */
 export function driveMute(g: Game, dir: THREE.Vector3) {
-  const me = g.me!; if (!g.lmb || g.fireCd > 0) return; g.fireCd = T.mute.cd; g.recoil = 1; me.swing = 1; sfx.slash(1); let any = false;
-  for (const u of g.units) { if (!u.alive || !foe(me, u) || u.air) continue; const dx = u.pos.x - me.pos.x, dz = u.pos.z - me.pos.z, d = Math.hypot(dx, dz); if (d > 3 + UNIT[u.kind].rad || (dx * dir.x + dz * dir.z) / (d || 1) < .45) continue; g.damage(u, T.mute.cut, me); any = true; }
-  for (const b of g.buildings) { if (!b.alive || !foe(me, b) || g.distToBox(b, me.pos.x, me.pos.z) > 2.8) continue; g.damage(b, T.mute.cut * .75, me); any = true; }
+  const me = g.me!; if (!g.lmb || g.fireCd > 0) return; g.fireCd = T.mute.cd / FP; g.recoil = 1; me.swing = 1; sfx.slash(1); let any = false;
+  for (const u of g.units) { if (!u.alive || !foe(me, u) || u.air) continue; const dx = u.pos.x - me.pos.x, dz = u.pos.z - me.pos.z, d = Math.hypot(dx, dz); if (d > 3 + UNIT[u.kind].rad || (dx * dir.x + dz * dir.z) / (d || 1) < .45) continue; g.damage(u, T.mute.cut * g.vMul(me.team), me); any = true; }
+  for (const b of g.buildings) { if (!b.alive || !foe(me, b) || g.distToBox(b, me.pos.x, me.pos.z) > 2.8) continue; g.damage(b, T.mute.cut * .75 * g.vMul(me.team), me); any = true; }
   if (any) { g.hud.hitmark(false); sfx.hit(); g.shake = Math.max(g.shake, .25); }
 }
 /** The Lyre in first person: click sends its Shards at whatever the crosshair is on. */

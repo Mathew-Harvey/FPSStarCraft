@@ -79,7 +79,7 @@ export function conductor(D: Director, dt: number, V0: Side = D.vs) {
 
   // ---- the build order: one step a second
   const pits = own('broodpit'), wells = own('hushwell'), bells = own('siphonbell');
-  const wantWell = now > 15 && (wells.length === 0 || free <= 4 + 2 * (pits.length + own('kiln').length + own('skyloft').length) && !growing('hushwell') && wells.length < 14 && g.supplyCap(T) < 200);
+  const wantWell = now > 15 && ((wells.length === 0 && pits.length > 0) || free <= 4 + 2 * (pits.length + own('kiln').length + own('skyloft').length) && !growing('hushwell') && wells.length < 14 && g.supplyCap(T) < 200);
   const exp = D.vExpansion(stones, T), homeLeft = g.ores.filter(n => Math.hypot(n.pos.x - HX, n.pos.z - HZ) < 40).reduce((a, n) => [a[0] + n.amount, a[1] + n.max], [0, 0]);
   const wantStones = Math.min((MAP.sites || []).length + 1, 1 + (now > DOC.expT || homeLeft[0] < homeLeft[1] * .5 ? 1 : 0) + (now > 960 ? 1 : 0) + (now > 1440 ? 1 : 0));
   const freeVent = () => g.vents.filter(v => !v.tap && v.amount > 0 && stones.some(s => s.built && Math.hypot(s.pos.x - v.pos.x, s.pos.z - v.pos.z) < 34) && g.canPlace('siphonbell', Math.round(v.pos.x), Math.round(v.pos.z), false, T)).sort((a, b) => Math.hypot(a.pos.x - HX, a.pos.z - HZ) - Math.hypot(b.pos.x - HX, b.pos.z - HZ))[0];
@@ -101,12 +101,13 @@ export function conductor(D: Director, dt: number, V0: Side = D.vs) {
     return false;
   };
   const step = (): void => {
+    // a rush puts its second Pit ahead of everything, the first Hush Well too
+    if (DOC.key === 'rush' && pits.length === 1 && now > DOC.prodT) { opening = true; put('broodpit', 'A second Brood Pit already. We go at them early.'); return; }
     if (wantWell && put('hushwell', wells.length ? 'The song is crowded. Growing a Hush Well.' : 'A Hush Well first: its song field is where the other buildings can stand.')) return;
     if (!wells.some(w => w.built) && !pits.length && stones.every(s => s.built)) { if (!pits.length && wells.length) return; }
     if (!pits.length) { put('broodpit', 'A Brood Pit, inside the Hush Well\'s field. The voices need somewhere to wake.'); return; }
     // the doctrine's opening (a hidden map leans each side one way): a second Pit early, Spires early, or a second Stone early
     // (each holds its price back from the Tender line and the Pits until it is paid: `opening`)
-    if (DOC.key === 'rush' && pits.length === 1 && now > DOC.prodT) { opening = true; put('broodpit', 'A second Brood Pit already. We go at them early.'); return; }
     if (DOC.key === 'fort' && now > 90 && now < 420 && (!any('wardpylon') || own('thornspire').length < 2)) {
       opening = true;
       if (!any('wardpylon')) { put('wardpylon', 'A Ward Pylon early. We dig in behind Thorn Spires.'); return; }
@@ -138,9 +139,12 @@ export function conductor(D: Director, dt: number, V0: Side = D.vs) {
     if (exp.bare) { const [bx, bz] = exp.bare; if (canPay(g, T, costOf('thornspire'))) for (const [ox, oz] of [[5, 5], [-5, 5], [5, -5], [-5, -5]]) if (g.canPlace('thornspire', bx + ox, bz + oz, false, T)) { g.place('thornspire', bx + ox, bz + oz, false, T); say('A Thorn Spire to keep the new Stone company.'); break; } }
   };
   // An early rush at the door: no new buildings or songs until it is beaten, every coin into Cantors, and the Pits quickened.
+  // A swarm on its way (more beds of enemy ground fighters than ours, early on): Cantors before anything else, and the Pits quickened.
+  // Cantors beat Snappers well at equal cost. (Holding the Tender line back for them lost more matches than it saved: the ore comes from Tenders.)
+  const foeBeds = foes.filter(o => !o.air).reduce((n, o) => n + UNIT[o.kind].supply, 0), swarm = now < 420 && foeBeds >= Math.max(3, N * 1.2);
   const rushed = now < 720 && foes.filter(o => !o.air && Math.hypot(o.pos.x - HX, o.pos.z - HZ) < 45).length >= Math.max(3, army.length);
   if (!rushed || !pits.length) step();
-  if (rushed) for (const p of up('broodpit')) { quicken(g, p, T); if (p.queue.length < 2 && g.rate(p) > 0 && canPay(g, T, costOf('cantor')) && free >= 2) g.train(p, 'cantor'); }
+  if (rushed || swarm) for (const p of up('broodpit')) { quicken(g, p, T); if (p.queue.length < 2 && g.rate(p) > 0 && canPay(g, T, costOf('cantor')) && free >= 2) g.train(p, 'cantor'); }
 
   // ---- songs: the levels first, then what the army is using
   const L = (keys: UpKey[], keep = 0) => { for (const k of keys) if (learn(k, keep)) return true; return false; };

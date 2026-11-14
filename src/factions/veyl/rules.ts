@@ -22,7 +22,7 @@ import './stand-in';
 
 /** First person as a Veyl fighter. */
 export function updateVeyl(g: Game, dt: number, P: Set<string>, eye: THREE.Vector3, dir: THREE.Vector3, look: Hit | null = null) {
-  const me = g.me!, vm = g.vm.veyl, flash = vm.userData.flash; flash.visible = false;
+  const me = g.me!, vm = g.vm.veyl, flash = vm.userData.flash, K = g.vMul(me.team); flash.visible = false;   // K: hits go through vMul, like the bots'
   g.vCd = Math.max(0, g.vCd - dt); g.comboT -= dt; if (g.comboT <= 0) g.combo = 0;
   // The new kinds (src/factions/veyl/units.ts): their beams and abilities. The Cantor, Lancer and Warden keep the code below, plus their new keys.
   if (me.kind !== 'cantor' && me.kind !== 'lancer' && me.kind !== 'warden') { const done = driveNew(g, dt, P, eye, dir, look); if (me.kind === 'mute') driveMute(g, dir); else if (me.kind === 'lyre') driveLyre(g, look); if (done || me.kind === 'mute') return; }
@@ -32,8 +32,8 @@ export function updateVeyl(g: Game, dt: number, P: Set<string>, eye: THREE.Vecto
     if (P.has('Mouse2')) { if (g.vCd <= 0) { g.vCd = 20; g.net?.cmd('vs'); sfx.charge(1); sfx.boom(.3); g.shake = Math.max(g.shake, .5); g.warn(me.pos.x, me.pos.z, 16, .5); g.hud.damage(V3(me.pos.x, 4.6, me.pos.z), 'LOW NOTE', 'shield'); } else sfx.deny(); }
     if (g.vWind > 0) {
       g.vWind -= dt; if (g.vWind > 0) return;
-      g.fireCd = 2; g.recoil = 1; g.shake = Math.min(1, g.shake + .6); const c = V3(g.vX, 0, g.vZ);
-      g.explode(c, me.team, 38, 4.6, me, true); g.net?.cmd('xx', r1(c.x), r1(c.z), 4.6); return;
+      g.fireCd = 1.5; g.recoil = 1; g.shake = Math.min(1, g.shake + .6); const c = V3(g.vX, 0, g.vZ);
+      g.explode(c, me.team, 38 * K, 4.6, me, true); g.net?.cmd('xx', r1(c.x), r1(c.z), 4.6); return;
     }
     if (g.lmb && g.fireCd <= 0) { g.vWind = .7; g.vX = me.pos.x + Math.sin(g.yaw) * 3.4; g.vZ = me.pos.z + Math.cos(g.yaw) * 3.4; g.warn(g.vX, g.vZ, 4.6, .7); sfx.charge(1); }
     return;
@@ -41,7 +41,7 @@ export function updateVeyl(g: Game, dt: number, P: Set<string>, eye: THREE.Vecto
   if (me.kind === 'cantor' && P.has('Mouse2')) {
     // Right click: the Whirl. Everything in arm's reach, all the way round.
     if (g.vCd > 0) sfx.deny(); else { g.vCd = 6; g.fireCd = .5; g.recoil = 1; me.swing = 1; sfx.slash(1); sfx.dash(.6); g.shake = Math.max(g.shake, .35); let n = 0;
-      for (const u of g.units) { if (!u.alive || !isFoe(u.team, me.team)) continue; if (Math.hypot(u.pos.x - me.pos.x, u.pos.z - me.pos.z) > 3.8 + UNIT[u.kind].rad) continue; g.damage(u, V_TUNE.cantor.cut * 1.5, me); n++; }
+      for (const u of g.units) { if (!u.alive || !isFoe(u.team, me.team)) continue; if (Math.hypot(u.pos.x - me.pos.x, u.pos.z - me.pos.z) > 3.8 + UNIT[u.kind].rad) continue; g.damage(u, V_TUNE.cantor.cut * 1.5 * K, me); n++; }
       if (n) { g.hud.hitmark(false); sfx.hit(); g.hud.damage(V3(me.pos.x, 2.6, me.pos.z), n > 1 ? 'WHIRL x' + n : 'WHIRL!', 'ko'); } return; }
   }
   if (me.kind === 'lancer') {
@@ -50,7 +50,7 @@ export function updateVeyl(g: Game, dt: number, P: Set<string>, eye: THREE.Vecto
       g.vWind -= dt; if (g.vWind > 0) return;
       g.fireCd = 1.3; g.recoil = 1; g.kick += .04; g.shake = Math.max(g.shake, .5); flash.visible = true; sfx.zap(1); sfx.boom(.25); me.swing = 1;
       const muzzle = V3(); flash.getWorldPosition(muzzle); muzzle.addScaledVector(dir, 1.6); let at = 0, skip: Unit | null = me, n = 0, fall = 1, wall = false;
-      for (let i = 0; i < 4; i++) { const h = g.ray(V3().copy(eye).addScaledVector(dir, at), dir, 80 - at, -1, skip); if (!h) { at = 80; break; } at += h.dist; if (h.unit && isFoe(h.unit.team, me.team)) { g.damage(h.unit, 55 * fall, me, !!h.head); skip = h.unit; fall *= .8; n++; at += .4; continue; } if (h.b && isFoe(h.b.team, me.team)) { g.damage(h.b, 40, me); n++; } wall = true; break; }
+      for (let i = 0; i < 4; i++) { const h = g.ray(V3().copy(eye).addScaledVector(dir, at), dir, 80 - at, -1, skip); if (!h) { at = 80; break; } at += h.dist; if (h.unit && isFoe(h.unit.team, me.team)) { g.damage(h.unit, 55 * fall * K, me, !!h.head); skip = h.unit; fall *= .8; n++; at += .4; continue; } if (h.b && isFoe(h.b.team, me.team)) { g.damage(h.b, 40 * K, me); n++; } wall = true; break; }
       const end = V3().copy(eye).addScaledVector(dir, Math.min(80, at)); g.tracer(muzzle, end, beamMat, .16); if (wall) g.puff(end, 3, .6, M.teal, .8);
       if (n) { g.hud.hitmark(n > 1); sfx.hit(); if (n > 1) g.hud.streak('ONE NOTE, ' + n + ' VOICES'); } return;
     }
@@ -58,9 +58,9 @@ export function updateVeyl(g: Game, dt: number, P: Set<string>, eye: THREE.Vecto
   }
   if (!g.lmb || g.fireCd > 0) return;
   if (me.kind === 'cantor') {
-    g.fireCd = .6; g.recoil = 1; me.swing = 1; sfx.slash(1); let any = false; const cut = V_TUNE.cantor.cut * 1.2 + g.combo * 5;
+    g.fireCd = .6; g.recoil = 1; me.swing = 1; sfx.slash(1); let any = false; const cut = (V_TUNE.cantor.cut * 1.2 + g.combo * 5) * K;
     for (const u of g.units) { if (!u.alive || !isFoe(u.team, me.team)) continue; const dx = u.pos.x - me.pos.x, dz = u.pos.z - me.pos.z, d = Math.hypot(dx, dz); if (d > 3 + UNIT[u.kind].rad || (dx * dir.x + dz * dir.z) / (d || 1) < .45) continue; g.damage(u, cut, me); any = true; }
-    for (const b of g.buildings) { if (!b.alive || !isFoe(b.team, me.team) || g.distToBox(b, me.pos.x, me.pos.z) > 2.8) continue; const dx = b.pos.x - me.pos.x, dz = b.pos.z - me.pos.z; if (dx * dir.x + dz * dir.z < 0) continue; g.damage(b, 14, me); any = true; }
+    for (const b of g.buildings) { if (!b.alive || !isFoe(b.team, me.team) || g.distToBox(b, me.pos.x, me.pos.z) > 2.8) continue; const dx = b.pos.x - me.pos.x, dz = b.pos.z - me.pos.z; if (dx * dir.x + dz * dir.z < 0) continue; g.damage(b, 14 * K, me); any = true; }
     if (any) { g.hud.hitmark(g.combo >= 3); sfx.hit(); g.shake = Math.max(g.shake, .2 + g.combo * .06); g.combo = Math.min(3, g.combo + 1); g.comboT = 2; }
     return;
   }
@@ -69,7 +69,7 @@ export function updateVeyl(g: Game, dt: number, P: Set<string>, eye: THREE.Vecto
   const hit = g.ray(eye, dir, 70, -1, me), dist = hit ? hit.dist : 70, end = V3().copy(eye).addScaledVector(dir, dist), muzzle = V3(); flash.getWorldPosition(muzzle); muzzle.addScaledVector(dir, 1.6);
   g.tracer(muzzle, end, beamMat, .06);
   const tgt = hit && (hit.unit && isFoe(hit.unit.team, me.team) ? hit.unit : hit.b && isFoe(hit.b.team, me.team) ? hit.b : null);
-  if (tgt) { g.damage(tgt, (hit!.head ? 1.8 : 1) * V_TUNE.lancer.dmg * (g.upOf(me.team).vbreath ? 1.15 : 1), me, !!hit!.head); g.hud.hitmark(!!hit!.head); sfx.hit(); g.puff(end, 2, .5, M.teal, .6); } else g.impact(eye, dir, hit, end, 20);
+  if (tgt) { g.damage(tgt, (hit!.head ? 1.8 : 1) * V_TUNE.lancer.dmg * (g.upOf(me.team).vbreath ? 1.15 : 1) * K, me, !!hit!.head); g.hud.hitmark(!!hit!.head); sfx.hit(); g.puff(end, 2, .5, M.teal, .6); } else g.impact(eye, dir, hit, end, 20);
 }
 export function aiCantor(g: Game, u: Unit, dt: number) {
   if (g.leash(u, dt)) return;

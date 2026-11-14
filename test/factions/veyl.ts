@@ -14,7 +14,7 @@ import { canHit } from '../../src/core/combat';
 import { costOf } from '../../src/core/econ';
 import { V_UNIT, V_BLD, V_TUNE, V_NEEDS, type VKind } from '../../src/factions/veyl/numbers';
 import { silent, inField, energyOf, setEnergy, quickLeft, unfolded, restOf, quicken } from '../../src/factions/veyl/fields';
-import { echo } from '../../src/factions/veyl/units';
+import { echo, GUNS, FP, driveMute } from '../../src/factions/veyl/units';
 
 initHeadless();
 const fail: string[] = []; const check = (ok: boolean, what: string) => { console.log((ok ? 'PASS ' : 'FAIL ') + what); if (!ok) fail.push(what); };
@@ -198,6 +198,34 @@ const spawnI = (g: Game, k: Kind, x: number, z: number) => { const u = g.spawn(k
   // Lyre and Shards
   const ly = spawnV(g, 'lyre', -60, 0); const mark = foeAt('linesman', -66, 0); ly.target = mark; g.purse[T] = 1e5; run(g, 6); check(g.units.some(u => u.alive && u.kind === 'shard' && (u as any).lyre === ly), 'a Lyre sends out Shards at its target');
   for (const k in UNIT) if (UNIT[k as Kind].team === 1) for (const a of abilitiesOf(k)) check(!!a.blurb && a.blurb.length > 10, `${UNIT[k as Kind].name} ${a.name} has a plain description for the command card`);
+}
+
+// ---------------------------------------------------------------- 3b. driving a body is the stronger way to play
+// Damage a second, the driven gun against the same body's bot brain. Both go through g.vMul (the song's boost), so it cancels out here.
+{
+  const T = V_TUNE, G = GUNS as Record<string, { dmg: number; cd: number }>, dps = (d: number, cd: number) => d / cd;
+  const rows: [string, number, number][] = [
+    ['cantor', dps(T.cantor.cut * 1.2, .6), dps(T.cantor.cut, T.cantor.cd)],
+    ['lancer', dps(T.lancer.dmg, 1.15), dps(T.lancer.dmg, T.lancer.cd)],
+    ['warden', dps(38, 1.5 + .7), dps(34, 2.2 + .9)],
+    ['tuner', dps(G.tuner.dmg, G.tuner.cd), dps(T.tuner.dmg, T.tuner.cd)],
+    ['mute', dps(T.mute.cut, T.mute.cd / FP), dps(T.mute.cut, T.mute.cd)],
+    ['chord', dps(G.chord.dmg, G.chord.cd), dps(T.chord.dmg, T.chord.cd)],
+    ['bell', dps(G.bell.dmg, G.bell.cd), dps(T.bell.dmg, T.bell.cd)],
+    ['reedwalker', dps(1, G.reedwalker.cd), dps(1, T.reedwalker.cd)],   // the same sweep, more often
+    ['swift', dps(G.swift.dmg, G.swift.cd), dps(T.swift.dmg * 2, T.swift.cd)],
+    ['prism', dps(G.prism.dmg, G.prism.cd), dps(T.prism.dmg, T.prism.cd)],
+    ['omen', dps(G.omen.dmg, G.omen.cd), dps(T.omen.dmg, T.omen.cd)],
+    ['cantus', dps(G.cantus.dmg, G.cantus.cd), dps(T.cantus.dmg, T.cantus.cd)],
+    ['shard', dps(G.shard.dmg, G.shard.cd), dps(T.shard.dmg, T.shard.cd)],
+  ];
+  const low = rows.filter(([, p, b]) => p < b * 1.4);
+  check(!low.length, `a driven Veyl body does at least 1.4 times its bot's damage a second (${rows.map(([k, p, b]) => k + ' ' + (p / b).toFixed(2)).join(', ')})`);
+  // and its hits go through the song's boost, as the bots' do: one Mute cut in an eco match
+  const g = world(); g.eco = true; const m = g.spawn('mute', 1, 0, 0), o = g.spawn('linesman', 0, 2, 0); m.yaw = Math.PI / 2;
+  g.me = m; m.pilot = 1; (g as any).lmb = true; g.fireCd = 0; const h0 = o.hp + o.shield; (driveMute as any)(g, { x: 1, y: 0, z: 0 }); const dealt = h0 - o.hp - o.shield;
+  check(Math.abs(dealt - T.mute.cut * g.vMul(1)) < 2 || dealt >= T.mute.cut * g.vMul(1) * .8, `a driven Mute's cut goes through the song's boost (${dealt.toFixed(1)} of ${(T.mute.cut * g.vMul(1)).toFixed(1)})`);
+  g.me = null;
 }
 
 // ---------------------------------------------------------------- 4. bot matches: every kind gets made

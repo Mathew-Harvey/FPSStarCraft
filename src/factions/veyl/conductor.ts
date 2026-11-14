@@ -97,10 +97,10 @@ export function conductor(D: Director, dt: number, V0: Side = D.vs) {
     // Quiet House; tech goes Kiln, Tuning Fork; air goes Kiln, Skyloft, High Beacon. The rest follow later, by army size or the clock.
     const K = (k: VBKind, n: number, t: number, ok = true): [VBKind, boolean] => [k, ok && (N >= n || now > t)];
     const path: [VBKind, boolean][] = ground
-      ? [K('duskhall', 8, 420), K('songarchive', 12, 540, has('duskhall')), K('quiethouse', 16, 660, has('duskhall')), K('kiln', 18, 600), K('mendingpool', 14, 720), K('tuningfork', 24, 840, has('kiln')), K('skyloft', 26, 900, has('kiln')), K('highbeacon', 34, 1080, has('skyloft'))]
+      ? [K('duskhall', 8, 420), K('songarchive', 10, 480, has('duskhall')), K('quiethouse', 12, 600, has('duskhall')), K('kiln', 16, 600), K('mendingpool', 14, 720), K('tuningfork', 20, 780, has('kiln')), K('skyloft', 22, 840, has('kiln')), K('highbeacon', 26, 960, has('skyloft'))]
       : tech
-      ? [K('kiln', 6, 360), K('tuningfork', 10, 480, has('kiln')), K('mendingpool', 12, 600), K('duskhall', 14, 600), K('songarchive', 18, 720, has('duskhall')), K('skyloft', 22, 840, has('kiln')), K('quiethouse', 24, 900, has('duskhall')), K('highbeacon', 30, 1020, has('skyloft'))]
-      : [K('kiln', 6, 360), K('skyloft', 8, 450, has('kiln')), K('highbeacon', 16, 660, has('skyloft')), K('duskhall', 14, 600), K('mendingpool', 16, 720), K('tuningfork', 22, 840, has('kiln')), K('songarchive', 22, 840, has('duskhall')), K('quiethouse', 28, 960, has('duskhall'))];
+      ? [K('kiln', 6, 360), K('tuningfork', 10, 480, has('kiln')), K('duskhall', 12, 540), K('songarchive', 14, 600, has('duskhall')), K('mendingpool', 12, 660), K('skyloft', 18, 780, has('kiln')), K('quiethouse', 18, 780, has('duskhall')), K('highbeacon', 24, 900, has('skyloft'))]
+      : [K('kiln', 6, 360), K('skyloft', 8, 450, has('kiln')), K('highbeacon', 14, 600, has('skyloft')), K('duskhall', 12, 600), K('songarchive', 16, 720, has('duskhall')), K('mendingpool', 16, 720), K('tuningfork', 20, 780, has('kiln')), K('quiethouse', 20, 840, has('duskhall'))];
     const LINE: Partial<Record<VBKind, string>> = { kiln: 'A Kiln. Bells, Listeners and Ferries come out of it.', duskhall: 'A Dusk Hall: Rush, Skip, Long Breath and Quick Bloom.', skyloft: 'A Skyloft. The fliers grow there.', mendingpool: 'A Mending Pool: it puts shields back on anything near it.', songarchive: 'A Song Archive: Choirmasters and Wardens.', tuningfork: 'A Tuning Fork: Reedwalkers and Knells.', quiethouse: 'A Quiet House. Mutes, the ones nobody sees.', highbeacon: 'A High Beacon: the Lyre and the Cantus.' };
     const order: [VBKind, boolean, string][] = path.map(([k, w]) => [k, w, LINE[k]!]);
     for (const [k, when, line] of order) if (when && !any(k) && g.unlocked(k, T)) { put(k, line); return true; }
@@ -213,7 +213,8 @@ export function conductor(D: Director, dt: number, V0: Side = D.vs) {
   for (const b of g.ownB(undefined, true, T).sort((a, c) => (RANK[a.kind] ?? 5) - (RANK[c.kind] ?? 5))) {
     if (b.queue.length >= 2 || !V_TRAINS[b.kind as VBKind] || g.rate(b) <= 0) continue; const list = V_TRAINS[b.kind as VBKind]!.filter(k => k !== 'tender');
     const k = pickKind(list, W, shareMix, isCapped); if (k && tryTrain(b, k)) continue;
-    // short of Flux for what it wanted: a Brood Pit puts a Cantor out instead, while Cantors are under the cap
+    // short of Flux for what it wanted: a Brood Pit puts a Cantor out instead, while Cantors are under the cap. (Holding the price of the
+    // wanted body back from the Pits instead kept Cantors near a fifth of the army, and the Veyl won 34 of 72 matches against 47.)
     if (b.kind === 'broodpit' && k !== 'cantor' && !isCapped('cantor')) tryTrain(b, 'cantor');
   }
 

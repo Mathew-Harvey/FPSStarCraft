@@ -24,12 +24,12 @@ export function tickFuses(g: Game, dt: number) {
     const f = FUSES[i]; f.t -= dt; if (f.t > 0) continue; FUSES.splice(i, 1);
     if (f.kind === 'bile') {
       const L = G2.lobber.lob, dmg = L.dmg * gMul(g, f.team, 'lobber');
-      for (const o of g.units) if (o.alive && o.team !== f.team && !o.inside && !o.air && Math.hypot(o.pos.x - f.x, o.pos.z - f.z) < L.r + UNIT[o.kind].rad * .5) g.damage(o, dmg, f.by.alive ? f.by : null);
-      for (const b of g.buildings) if (b.alive && b.team !== f.team && g.distToBox(b, f.x, f.z) < L.r * .6) g.damage(b, dmg, f.by.alive ? f.by : null);
+      for (const o of g.units) if (o.alive && isEnemy(o.team, f.team) && !o.inside && !o.air && Math.hypot(o.pos.x - f.x, o.pos.z - f.z) < L.r + UNIT[o.kind].rad * .5) g.damage(o, dmg, f.by.alive ? f.by : null);
+      for (const b of g.buildings) if (b.alive && isEnemy(b.team, f.team) && g.distToBox(b, f.x, f.z) < L.r * .6) g.damage(b, dmg, f.by.alive ? f.by : null);
       g.puff(TMP.set(f.x, .4, f.z), 6, 1.2, M.gS, .8, 1.6); g.fx.blastAt?.(TMP.set(f.x, .3, f.z), L.r); if (g.vol(TMP) > .1) sfx.boom(g.vol(TMP) * .6);
     } else {
       const C = G2.smother.choke;
-      for (const o of g.units) if (o.alive && o.team !== f.team && !o.inside && !o.air && Math.hypot(o.pos.x - f.x, o.pos.z - f.z) < C.r + UNIT[o.kind].rad * .5) { addStatus(o, 'root', C.root); addStatus(o, 'burning', C.t, C.dmg / C.t * gMul(g, f.team, 'smother'), f.by.id); }
+      for (const o of g.units) if (o.alive && isEnemy(o.team, f.team) && !o.inside && !o.air && Math.hypot(o.pos.x - f.x, o.pos.z - f.z) < C.r + UNIT[o.kind].rad * .5) { addStatus(o, 'root', C.root); addStatus(o, 'burning', C.t, C.dmg / C.t * gMul(g, f.team, 'smother'), f.by.id); }
       g.puff(TMP.set(f.x, .5, f.z), 8, 1.4, M.gS, .3, 2.2, 1.6); if (g.vol(TMP) > .1) sfx.scatter();
     }
   }

@@ -203,7 +203,7 @@ const bolt = (g: Game, host: Building, k: 'labbay' | 'twinbay') => { const ok = 
 // ---------------------------------------------------------------- 4b. The Quartermaster reads the foe army and finishes a won match
 {
   const BK = require('../../src/core/brainkit'), g = world(), T = H(), S = g.dir as any, D = g.dir as any, [hx, hz] = [0, 0];
-  const crew: Unit[] = []; for (let i = 0; i < 24; i++) { const u = g.spawn('linesman', T, hx + 20 + (i % 6) * 2, hz + 10 + Math.floor(i / 6) * 2); u.order = { type: 'guard', x: u.pos.x, z: u.pos.z }; crew.push(u); }
+  const crew: Unit[] = []; for (let i = 0; i < 36; i++) { const u = g.spawn('linesman', T, hx + 20 + (i % 6) * 2, hz + 10 + Math.floor(i / 6) * 2); u.order = { type: 'guard', x: u.pos.x, z: u.pos.z }; crew.push(u); }
   // what it has seen: a flier and a plated body near our crew count under their tags, a body far off in the dark does not
   const bird = g.spawn('flakkite', O(), hx + 26, hz + 14), plate = g.spawn('lancer' as Kind, O(), hx + 24, hz + 16), far = g.spawn('cantor' as Kind, O(), hx + 400, hz + 400);
   for (const u of [bird, plate, far]) u.order = { type: 'guard', x: u.pos.x, z: u.pos.z };
@@ -216,7 +216,7 @@ const bolt = (g: Game, host: Building, k: 'labbay' | 'twinbay') => { const ok = 
   // the foe army dies; 30 s later the side hunts, keeping four at home and sending the rest at foe buildings
   for (const u of [bird, plate, far]) { u.alive = false; u.obj.visible = false; }
   for (const u of g.units) if (u.alive && u.team === O() && require('../../src/data').isFighter(u)) { u.alive = false; u.obj.visible = false; }
-  BK.seenFoe(g, S); g.time += 31; BK.seenFoe(g, S); BK.hunt(D, S, 3);
+  BK.seenFoe(g, S); g.time = Math.max(g.time, BK.HUNT_FROM) + BK.HUNT_MEMORY + 31; BK.seenFoe(g, S); BK.hunt(D, S, 3);
   const out = crew.filter(u => u.order.type === 'amove'), foeB = g.buildings.filter(b => b.alive && b.team === O());
   check(BK.isHunting(S) && out.length === crew.length - 4, `with the foe army gone the side hunts, four stay home (${out.length} of ${crew.length} out)`);
   check(out.every(u => foeB.some(b => Math.hypot(b.pos.x - u.order.x, b.pos.z - u.order.z) < 9)) || !g.intel.known(T).length, 'the hunters walk at foe buildings it knows of');

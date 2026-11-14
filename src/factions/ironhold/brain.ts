@@ -171,7 +171,7 @@ export function quartermaster(D: Director, dt: number, S: Side = D) {
   // a detector within 30 s of seeing something hidden (plan rule): a Surveyor goes to the top of the list while none is out
   const needEye = seen.tags.unseen > 0 && !g.own('surveyor', T).length && !g.ownB('hangar', true, T).some(h => h.queue.some(q => q.kind === 'surveyor'));
   const want = (k: Kind) => {
-    let w = (mix[k] || 0) / wsum + answer(k); if (k === 'flakkite' && foeAir) w *= 2; if (k === 'surveyor' && (mem(S).hidT || needEye)) w = Math.max(w, needEye ? .6 : .06);
+    let w = (mix[k] || 0) / wsum + answer(k); if (k === 'surveyor' && (mem(S).hidT || needEye)) w = Math.max(w, needEye ? .6 : .06);
     if (k === 'hopper' && army < 10) w = 0; if (k === 'claimbarge' && army < 14) w = 0; if (w > 0 && !have[k] && army >= 8) w = Math.max(w, k === 'claimbarge' ? .25 : .15);
     if (w > 0) w = Math.max(w, .03); if (capped(S, k)) w = 0; return w;
   };

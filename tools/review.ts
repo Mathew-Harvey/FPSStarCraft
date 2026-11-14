@@ -6,10 +6,12 @@ import { noHud, noPipe } from '../server/shim';
 import { Game } from '../src/game';
 import { initHeadless } from '../src/gfx';
 import { DIFFS, FACTION, UNIT, BLD, setMap, setSides, isFighter, OVERTIME, CHOIR_REACH, CLEAVE } from '../src/data';
+import { V_TUNE } from '../src/factions/veyl/numbers';
 import { G_TUNE } from '../src/factions/gloam/numbers';
 import { TERRAIN } from '../src/terrain';
 import { costOf } from '../src/core/econ';
-const spec0 = JSON.parse(process.argv[2] || '{}'); if (spec0.flat) TERRAIN.on = false;   // flat: the maps without their high ground, vents and beacons
+const spec0 = JSON.parse(process.argv[2] || '{}'); if (spec0.flat) TERRAIN.on = false;
+for (const [tab, T] of [['v', V_TUNE], ['g', G_TUNE]] as const) for (const k in spec0.tune?.[tab] || {}) Object.assign((T as any)[k], spec0.tune[tab][k]);   // tune: {"v":{"cantor":{"cut":15}}} sets faction dials   // flat: the maps without their high ground, vents and beacons
  if (spec0.reach !== undefined) CHOIR_REACH.m = spec0.reach; if (spec0.cleave !== undefined) CLEAVE.n = spec0.cleave; if (spec0.cleaveK !== undefined) CLEAVE.k = spec0.cleaveK; if (spec0.bite) G_TUNE.bite.snapper = spec0.bite; if (spec0.cap) BLD.mothercap.cost = spec0.cap; if (spec0.bud) G_TUNE.budEvery = spec0.bud; if (spec0.gnaw) G_TUNE.bite.gnaw = spec0.gnaw;
 for (const k in spec0.set || {}) Object.assign((UNIT as any)[k] ?? (BLD as any)[k], spec0.set[k]);   // trial numbers: {"set":{"snapper":{"hp":58}}}   // stream L: the bot push rule, e.g. {"edge":0} for the old head count
 if (spec0.ot !== undefined) { OVERTIME.start = spec0.ot * 60; if (spec0.otk) OVERTIME.perMin = spec0.otk; }

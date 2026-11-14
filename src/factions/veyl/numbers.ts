@@ -17,7 +17,7 @@ const V = (o: Omit<UnitDef, 'team'>): UnitDef => ({ team: 1, ...o });
 export const V_UNIT: Record<VKind, UnitDef> = {
   tender: V({ name: 'Tender', hp: 40, shield: 20, speed: 4.8, eye: 1.75, headY: 1.86, bodyY: 1.05, rad: .62, cost: 50, time: 8, supply: 1, tags: ['soft', 'sung'], quip: '"The rock hums. I hum back. We agree on a price."', ack: ['Humming.', 'The seam is listening.', 'A small voice, but useful.'] }),
   // The plan makes a Cantor 100 ore and 2 beds (it was 60 and 1): health, shields and its cut grow by the same 1.6 so a Cantor is worth its ore.
-  cantor: V({ name: 'Cantor', hp: 140, shield: 80, speed: 5.4, eye: 2.2, headY: 2.42, bodyY: 1.3, rad: .66, cost: 100, time: 15, supply: 2, tags: ['soft', 'sung'], armour: 1, quip: '"We sing first. It is only polite."', ack: ['The verse is yours.', 'One voice, borrowed.', 'Blades in tune.'] }),
+  cantor: V({ name: 'Cantor', hp: 140, shield: 100, speed: 5.4, eye: 2.2, headY: 2.42, bodyY: 1.3, rad: .66, cost: 100, time: 15, supply: 2, tags: ['soft', 'sung'], armour: 1, quip: '"We sing first. It is only polite."', ack: ['The verse is yours.', 'One voice, borrowed.', 'Blades in tune.'] }),
   // 125 ore and 50 Flux, 2 beds (was 65 and 1): tougher, and its bolt does 12 more to plated bodies (the plan: "beats plated"). It now hits fliers too.
   lancer: V({ name: 'Lancer', hp: 80, shield: 60, speed: 4.4, eye: 2.0, headY: 2.12, bodyY: 1.25, rad: .6, cost: 125, flux: 50, time: 17, supply: 2, tags: ['plated', 'sung'], armour: 1, bonus: { plated: 12 }, hits: 'both', quip: '"A long note, held until something breaks."', ack: ['The lance hums for you.', 'Hold the note.', 'Far voice, listening.'] }),
   // A support caster: as light as a Lancer, a weak bolt, and energy for its three songs.

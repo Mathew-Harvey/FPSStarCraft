@@ -215,7 +215,9 @@ export function conductor(D: Director, dt: number, V0: Side = D.vs) {
     const k = pickKind(list, W, shareMix, isCapped); if (k && tryTrain(b, k)) continue;
     // short of Flux for what it wanted: a Brood Pit puts a Cantor out instead, while Cantors are under the cap. (Holding the price of the
     // wanted body back from the Pits instead kept Cantors near a fifth of the army, and the Veyl won 34 of 72 matches against 47.)
-    if (b.kind === 'broodpit' && k !== 'cantor' && !isCapped('cantor')) tryTrain(b, 'cantor');
+    // Ore piling up with no Flux to spend it on: Cantors up to a third of the spend past 900 ore, and past the cap altogether past 1500
+    // (a Veyl mirror sat on 3000 to 4000 ore at 35 min with ten bodies a side and never ended: a cap is worth less than an army)
+    if (b.kind === 'broodpit' && k !== 'cantor' && (!isCapped('cantor') || (ore() > 900 && shareMix('cantor') < .34) || ore() > 1500)) tryTrain(b, 'cantor');
   }
 
   // ---- Ferry drops: four blades flown to the enemy's ore line now and then

@@ -16,7 +16,7 @@ import { V_UNIT, V_BLD, V_TUNE, V_NEEDS, type VKind } from '../../src/factions/v
 import { silent, inField, energyOf, setEnergy, quickLeft, unfolded, restOf, quicken } from '../../src/factions/veyl/fields';
 import { echo, GUNS, FP, driveMute } from '../../src/factions/veyl/units';
 import { weights, pickKind, MIX_KINDS, type SeenMix } from '../../src/factions/veyl/mix';
-import { isHunting } from '../../src/core/brainkit';
+import { isHunting, HUNT_FROM } from '../../src/core/brainkit';
 
 initHeadless();
 const fail: string[] = []; const check = (ok: boolean, what: string) => { console.log((ok ? 'PASS ' : 'FAIL ') + what); if (!ok) fail.push(what); };
@@ -293,7 +293,8 @@ const spawnI = (g: Game, k: Kind, x: number, z: number) => { const u = g.spawn(k
   {
     const g = world(); beds(g); g.truce = false; g.human = [true, false]; g.dir.vs.auto = true;
     for (const u of g.units) if (u.alive && u.team === 0 && UNIT[u.kind] && !['rigger'].includes(u.kind)) { u.alive = false; u.hp = 0; g.scene.remove(u.obj); }
-    const [hx, hz] = homeXZ(T); for (let i = 0; i < 10; i++) spawnV(g, i % 2 ? 'cantor' : 'lancer', -6 + i, -12);
+    g.time = HUNT_FROM;   // the hunt waits for minute 10
+    const [hx, hz] = homeXZ(T); for (let i = 0; i < 14; i++) spawnV(g, i % 2 ? 'cantor' : 'lancer', -7 + i, -12);
     // what the enemy had, seen once near the Veyl base, then gone
     const ghost = g.spawn('linesman', 0, hx, hz - 20); run(g, 2); ghost.alive = false; ghost.hp = 0; g.scene.remove(ghost.obj);
     const foeB = g.buildings.filter(b => b.alive && b.team === 0), hp0 = foeB.reduce((a, b) => a + b.hp, 0);

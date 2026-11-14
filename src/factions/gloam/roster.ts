@@ -6,7 +6,7 @@ import { V3, R, M } from '../../gfx';
 import { sfx } from '../../audio';
 import { isEnemy } from '../../core/sides';
 import type { Game } from '../../game';
-import { UNIT, BLD, Unit, Building, Kind, isUnit, fac } from '../../data';
+import { UNIT, BLD, Unit, Building, Kind, isUnit, isFighter, fac } from '../../data';
 import { defineUnits, defineBuildings, defineFaction, addHitFilter, type Hit } from '../../core/registry';
 import { useAbility, abilitiesOf, whyNot, type Target } from '../../core/ability';
 import { levelMul } from '../../core/combat';
@@ -152,7 +152,7 @@ export function spineLine(g: Game, u: Unit, yaw: number, len: number, by: Unit |
   for (const o of g.units) { if (!o.alive || !isEnemy(o.team, u.team) || o.air || o.inside) continue; const dx = o.pos.x - u.pos.x, dz = o.pos.z - u.pos.z, along = dx * fx + dz * fz, side = Math.abs(dx * fz - dz * fx); if (along < 0 || along > len + UNIT[o.kind].rad || side > N.width + UNIT[o.kind].rad * .6) continue; g.damage(o, dmg + (UNIT[o.kind].tags?.includes('plated') ? N.plated : 0), by); n++; }
   for (const b of g.buildings) { if (!b.alive || !isEnemy(b.team, u.team)) continue; for (let s = 1; s <= len; s += 1.5) if (g.distToBox(b, u.pos.x + fx * s, u.pos.z + fz * s) < .6) { g.damage(b, dmg, by); n++; break; } }
   if (!g.noRender) for (let s = 1.2; s <= len; s += 1.4) g.puff(TMP.set(u.pos.x + fx * s, .3, u.pos.z + fz * s), 1, .5, M.dust, 1.4, .4, .35);
-  g.tracer(V3(u.pos.x + fx, .2, u.pos.z + fz), V3(u.pos.x + fx * len, .5, u.pos.z + fz * len), spineMat, .16); if (g.vol(u.pos) > .1) sfx.slash(g.vol(u.pos)); u.swing = 1;
+  g.tracer(V3(u.pos.x + fx, .2, u.pos.z + fz), V3(u.pos.x + fx * len, .5, u.pos.z + fz * len), spineMat, .16); g.look('gfire', u.pos.x + fx, .2, u.pos.z + fz, u.pos.x + fx * len, .5, u.pos.z + fz * len); if (g.vol(u.pos) > .1) sfx.slash(g.vol(u.pos)); u.swing = 1;
   return n;
 }
 /** Smother: keeps behind the swarm and casts (abilities.ts); runs from anything that reaches it. */
@@ -195,14 +195,14 @@ export function gnatBite(g: Game, u: Unit, t: Unit | Building, by: Unit | null =
   spitAt(g, u, t, base, acidMat, 0);
   for (const k of N.jump) {
     let next: Unit | null = null, bd = N.jumpR; for (const o of g.units) { if (!o.alive || !isEnemy(o.team, u.team) || hit.has(o) || o.inside) continue; const d = Math.hypot(o.pos.x - cur.pos.x, o.pos.z - cur.pos.z); if (d < bd) { bd = d; next = o; } }
-    if (!next) break; hit.add(next); g.tracer(V3(cur.pos.x, 1, cur.pos.z), V3(next.pos.x, UNIT[next.kind].bodyY + (next.alt || 0), next.pos.z), acidMat, .08); g.damage(next, base * k, by); cur = next;
+    if (!next) break; hit.add(next); g.tracer(V3(cur.pos.x, 1, cur.pos.z), V3(next.pos.x, UNIT[next.kind].bodyY + (next.alt || 0), next.pos.z), acidMat, .08); g.look('gbite', cur.pos.x, 1, cur.pos.z, next.pos.x, UNIT[next.kind].bodyY + (next.alt || 0), next.pos.z); g.damage(next, base * k, by); cur = next;
   }
   if (g.vol(u.pos) > .1) sfx.hit();
 }
 /** Bloater: hunts fliers only. Its spit leaves Acid that makes every hit on the body land 2 harder for 10 s. */
 function aiBloater(g: Game, u: Unit, dt: number) {
   const B = G2.bloater;
-  aiRanged(g, u, dt, { range: B.range, cd: B.cd, dmg: (g, u) => B.spit * gMul(g, u.team, 'bloater'), mat: acidMat, y: 0, onHit: (_g, _u, t) => { if (isUnit(t)) ACID.set(t.id, B.acid.t); } });
+  aiRanged(g, u, dt, { range: B.range, cd: B.cd, dmg: (g, u) => B.spit * gMul(g, u.team, 'bloater'), mat: acidMat, y: 0, onHit: (_g, u, t) => { if (isUnit(t)) ACID.set(t.id, B.acid.t); g.look('gacid', u.pos.x, (u.alt || 0) + .4, u.pos.z, t.pos.x, isUnit(t) ? UNIT[t.kind].bodyY + (t.alt || 0) : 2, t.pos.z); } });
 }
 /** Sower: hangs over a foe out of reach of short guns and drops a Pup on it every 1.8 s. */
 function aiSower(g: Game, u: Unit, dt: number) {
@@ -212,14 +212,16 @@ function aiSower(g: Game, u: Unit, dt: number) {
   const t = u.target;
   if (t && t.alive) { const d = reach(g, u, t); u.yaw = Math.atan2(t.pos.x - u.pos.x, t.pos.z - u.pos.z); if (d > S.range) g.moveTo(u, t.pos.x, t.pos.z, dt); else if (u.cd <= 0) { u.cd = S.cd; dropPup(g, u, t); } return; }
   // Nothing in reach: fly over to the nearest fight of its own side, so the Pups land where they are wanted.
-  if (!g.human[u.team] || !u.pilot) { let f: Unit | null = null, bd = 90; for (const o of g.units) if (o.alive && o.team === u.team && o !== u && o.target && o.target.alive && !o.air) { const d = Math.hypot(o.pos.x - u.pos.x, o.pos.z - u.pos.z); if (d < bd) { bd = d; f = o; } } if (f) { g.moveTo(u, f.target!.pos.x, f.target!.pos.z, dt); return; } }
+  // A bot's Sower goes to any fight on the map, or failing that rides over its army on the march.
+  if (!g.human[u.team] || !u.pilot) { const bot = !g.human[u.team]; let f: Unit | null = null, bd = bot ? 1e9 : 90; for (const o of g.units) if (o.alive && o.team === u.team && o !== u && o.target && o.target.alive && !o.air) { const d = Math.hypot(o.pos.x - u.pos.x, o.pos.z - u.pos.z); if (d < bd) { bd = d; f = o; } } if (f) { g.moveTo(u, f.target!.pos.x, f.target!.pos.z, dt); return; }
+    if (bot) { let m: Unit | null = null, md = 1e9; for (const o of g.units) if (o.alive && o.team === u.team && !o.air && isFighter(o) && o.order.type === 'amove') { const d = Math.hypot(o.pos.x - u.pos.x, o.pos.z - u.pos.z); if (d < md) { md = d; m = o; } } if (m && md > 4) { g.moveTo(u, m.pos.x, m.pos.z, dt); return; } } }
   g.vIdle(u, dt, raiding(u) ? 6 : 2, u.order.type !== 'guard' ? 1 : .6);
 }
 /** A Pup drops on (or beside) a target: the landing bites, and the Pup chews for 8 s. */
 export function dropPup(g: Game, u: Unit, t: Unit | Building | { pos: THREE.Vector3 }) {
   const S = G2.sower, x = t.pos.x + R(-1, 1), z = t.pos.z + R(-1, 1), p = g.spawn('pup', u.team, x, z); giveLife(p, S.life);
   p.order = { type: 'amove', x, z }; if ('alive' in t) p.target = t as Unit | Building;
-  g.tracer(V3(u.pos.x, (u.alt || 0) + 1, u.pos.z), V3(x, .4, z), bileMat, .1); g.puff(TMP.set(x, .3, z), 3, .6, M.gS, .4);
+  g.tracer(V3(u.pos.x, (u.alt || 0) + 1, u.pos.z), V3(x, .4, z), bileMat, .1); g.look('gdrop', u.pos.x, (u.alt || 0) + 1, u.pos.z, x, 0, z); g.puff(TMP.set(x, .3, z), 3, .6, M.gS, .4);
   if ('alive' in t && (t as Unit).alive) g.damage(t as Unit | Building, S.land * gMul(g, u.team, 'sower'), u);
   u.swing = 1; if (g.vol(u.pos) > .1) sfx.throw();
 }
@@ -245,8 +247,12 @@ function aiWalker(g: Game, u: Unit, dt: number) {
     const stg = u.kind === 'stingerwalk', R0 = stg ? G_TUNE.stinger.range : G2.puffball.range, t = nearestFoeAt(g, u.team, u.pos.x, u.pos.z, R0, o => stg ? !o.air : !!o.air);
     if (t) { u.cd = (stg ? G_TUNE.stinger.cd : G2.puffball.cd) * 2; act(u, stg ? 'whip' : 'puff'); u.yaw = Math.atan2(t.pos.x - u.pos.x, t.pos.z - u.pos.z); g.tracer(V3(u.pos.x, stg ? 4 : 3, u.pos.z), V3(t.pos.x, UNIT[t.kind].bodyY + (t.alt || 0), t.pos.z), stg ? spitMat : acidMat, .14); g.damage(t, (stg ? G_TUNE.stinger.dmg * gMul(g, u.team) : G2.puffball.dmg * gMul(g, u.team, 'quillback')), u); } else u.cd = .3;
   }
-  const o = u.order; if (Math.hypot(o.x - u.pos.x, o.z - u.pos.z) > 1.5) { g.moveTo(u, o.x, o.z, dt, 1, 1); return; }
-  if (g.carpet.on(u.pos.x, u.pos.z, 0, u.team)) useAbility(g, u, 'root');
+  const o = u.order, a = u as any;
+  // A new order while the roots go down calls the rooting off: the walker goes where it was sent.
+  if (a.rootT > 0) { if (a.rootAt && Math.hypot(o.x - a.rootAt.x, o.z - a.rootAt.z) > 1) { a.rootT = 0; a.rootAt = null; clearStatus(u, 'root'); } else return; }
+  if (Math.hypot(o.x - u.pos.x, o.z - u.pos.z) > 1.5) { g.moveTo(u, o.x, o.z, dt, 1, 1); return; }
+  // A bot's walker roots again once it gets where it was sent (not where it was pulled up). A player's waits to be told (Root).
+  if (!g.human[u.team] && a.from && Math.hypot(o.x - a.from.x, o.z - a.from.z) > 2 && g.carpet.on(u.pos.x, u.pos.z, 0, u.team)) useAbility(g, u, 'root');
 }
 
 // ---------------------------------------------------------------- first person

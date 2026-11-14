@@ -6,7 +6,7 @@ import { Game, beamMat } from './game';
 import { UNIT, BLD, BUILDABLE, UPGRADES, TRAINS, UNIT_NEEDS, FACTION, VOICE_SIDE, SIDE, fac, atHome, Kind, BKind, Unit, Building, UpKey, isSoldier, isWorker, type StatusKey } from './data';
 import { useAbility, abilityOf, whyNot, bodyOf, showCast, setAutocast, type Target } from './core/ability';
 import { board, unload } from './core/cargo';
-import { packLook, applyLook, packUnitLook, applyUnitLook, DEATHS } from './net-look';
+import { packLook, applyLook, packUnitLook, applyUnitLook, DEATHS, playFxLook } from './net-look';
 import { abilityWords } from './card';
 import { seenBy } from './core/sight';
 import { multi, MATCH } from './core/sides';
@@ -96,6 +96,7 @@ export class Wire {
       case 'pj': return V.friend(e[7]) || mine(e[10]) || at(e[1], e[3]) || at(e[1] + e[4] * .8, e[3] + e[6] * .8);
       case 'ex': return mine(e[6]) || at(e[1], e[3]);
       case 'wn': return at(e[1], e[2]);
+      case 'lk': return at(e[2], e[4]) || (e.length > 7 && at(e[5], e[7]));
       case 'ku': return V.sentU.has(e[1]);
       case 'kb': return V.sentB.has(e[1]) || g.buildings.some(b => b.id === e[1] && V.friend(b.team));
       case 'ht': { const u = this.byId.get(e[1]); return !!u && V.friend(u.team); }
@@ -232,6 +233,7 @@ function event(g: Game, e: any[]) {
   else if (k === 'kb') { const b = g.bById.get(e[1]); if (b && b.alive) { g.fallA = e[2]; g.killBuilding(b); } }
   else if (k === 'pr') { const p = g.props[e[1]]; if (p && p.alive && p.hp > e[2]) g.damageProp(p, p.hp - e[2], null); }
   else if (k === 'wn') g.warn(e[1], e[2], e[3], e[4]);
+  else if (k === 'lk') playFxLook(g, e[1], e.slice(2));
   else if (k === 'ab') CASTS.push(e);   // played once the snapshot is in, so the caster's state after the cast (cloaked, say) is there
   else if (k === 'ht') { const me = g.me; if (me && e[1] === me.id) { g.shake = Math.min(1, g.shake + .45); const a = Math.atan2(e[2] - me.pos.x, e[3] - me.pos.z) - g.yaw; g.hud.hurt(Math.atan2(Math.sin(a), Math.cos(a))); sfx.hurt(); me.lastHit = g.time; if (g.brace) { g.payback = Math.min(1, g.payback + .2); sfx.clang(); } } }
 }

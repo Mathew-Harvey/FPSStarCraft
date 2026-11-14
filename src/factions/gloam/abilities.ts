@@ -188,7 +188,7 @@ const rootAb: AbilityDef = {
   key: 'root', name: 'Root', hotkey: 'Mouse2', energy: 0, cd: 2, cast: 0, range: 0, target: 'self',
   blurb: 'Puts the roots down where it stands, on your own Bloom. Takes 4 seconds.',
   can: (g, u) => g.carpet.on(u.pos.x, u.pos.z, 0, u.team) && !(u as any).rootT && podRoom(g, u.pos.x, u.pos.z),
-  effect: (g, u) => { (u as any).rootT = G2.uproot.root; addStatus(u, 'root', G2.uproot.root); },
+  effect: (g, u) => { (u as any).rootT = G2.uproot.root; (u as any).rootAt = { x: u.order.x, z: u.order.z }; addStatus(u, 'root', G2.uproot.root); },
 };
 /** Board and drop: a Drifter with Belly Sacs takes in the small Gloam bodies round it (up to 8 beds), and lets them out again. */
 const boardAb: AbilityDef = {

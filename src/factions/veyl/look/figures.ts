@@ -641,7 +641,7 @@ export const VM: Record<string, Record<string, ArmVM[]>> = {
   },
   // from the figurehead: the two broad fins standing off either side of the view
   lyre: { fins: [{ g: 'wingL', at: L_(-0.35, -0.5, 0), dir: L_(-0.6, -0.2, -1), s: 0.3 }, { g: 'wingR', at: L_(0.35, -0.5, 0), dir: L_(0.6, -0.2, -1), s: 0.3 }] },
-  shard: { fins: [{ g: 'wingL', at: L_(-0.22, -0.36, 0), dir: L_(-0.45, -0.2, -1), s: 1.4 }, { g: 'wingR', at: L_(0.22, -0.36, 0), dir: L_(0.45, -0.2, -1), s: 1.4 }] },
+  shard: { fins: [{ g: 'wingL', at: L_(-.2, -.4, -.05), dir: L_(-.35, -.25, -1), s: 2.2 }, { g: 'wingR', at: L_(.2, -.4, -.05), dir: L_(.35, -.25, -1), s: 2.2 }, { g: 'head', at: L_(0, -.58, -.2), dir: L_(0, .15, -1), s: 1.5 }] },
   // the great raised hands, far apart; 'holdtime' brings the right one up flat ahead
   cantus: {
     hands: [{ g: 'armL', at: L_(-.6, -.62, .05), dir: L_(.1, .7, -1), roll: .3, s: .3 }, { g: 'armR', at: L_(.6, -.62, .05), dir: L_(-.1, .7, -1), roll: -.3, s: .3 }],

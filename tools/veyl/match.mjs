@@ -66,9 +66,11 @@ const want = k => !only.length || only.includes(k);
 const close = (name, o = {}) => p.evaluate(o => {
   // framed on the body's own bounds as drawn (a flier is framed up where it flies), three quarters on, about 5 m for a person-sized body
   const g = __ore.game, t = window.__t, V = g.cam.position.constructor, a = (o.turn ?? .6) + (window.__yaw || 0);
-  g.phase = 'cut'; g.cutSat = 1; g.shake = 0; g.me = window.__home; g.cmd.z = g.cmd.zt = 0;
+  g.phase = 'cut'; g.cutSat = 1; g.shake = 0; g.me = window.__home; g.cmd.z = g.cmd.zt = 0; g.myTeam = 1; if (!(t.status || []).some(s => s.k === 'revealed')) (t.status ||= []).push({ k: 'revealed', t: 1e9 });   /* seen by its own side, and an always-unseen body (Listener, Mute) shown plain so its pose can be judged: in play its own side sees a shimmer */
+  /* one drawn frame with the camera already near it, so the level swap puts its near meshes up (seen from afar it is drawn in the far crowd, with none of its own meshes showing) */
+  { const c0 = t.obj.getWorldPosition(new V()); g.shot = { pos: new V(c0.x + Math.sin(a) * 8, c0.y + 3, c0.z + Math.cos(a) * 8), look: c0, fov: 38 }; step(1); }
   step(1, false); t.obj.updateMatrixWorld(true);
-  let lo = null, hi = null; t.obj.traverse(q => { if (!q.isMesh || !q.visible || q.userData.lv) return; q.geometry.computeBoundingBox(); const bb = q.geometry.boundingBox.clone().applyMatrix4(q.matrixWorld); if (!isFinite(bb.min.x)) return; if (!lo) { lo = bb.min.clone(); hi = bb.max.clone(); } else { lo.min(bb.min); hi.max(bb.max); } });
+  let lo = null, hi = null; t.obj.traverse(q => { if (!q.isMesh) return; for (let o = q; o && o !== t.obj.parent; o = o.parent) if (!o.visible) return; /* only what is drawn now: whichever level (near, middle, far) is up, never a hidden part */ q.geometry.computeBoundingBox(); const bb = q.geometry.boundingBox.clone().applyMatrix4(q.matrixWorld); if (!isFinite(bb.min.x)) return; if (!lo) { lo = bb.min.clone(); hi = bb.max.clone(); } else { lo.min(bb.min); hi.max(bb.max); } });
   if (!lo) { lo = new V(t.pos.x - 1, 0, t.pos.z - 1); hi = new V(t.pos.x + 1, 2, t.pos.z + 1); }
   const c = lo.clone().add(hi).multiplyScalar(.5), size = Math.max(hi.y - lo.y, (hi.x - lo.x) * .8, (hi.z - lo.z) * .8, 1.2), d = (size * 1.7 + 1.6) * (o.wide || 1);
   g.shot = { pos: new V(c.x + Math.sin(a) * d, c.y + size * .25 + .4, c.z + Math.cos(a) * d), look: new V(c.x, c.y, c.z), fov: 38 };
@@ -110,7 +112,7 @@ for (const k of list.u) {
     const g = __ore.game, [X, Z] = window.__spot;
     for (const u of window.__made || []) { u.alive = false; u.obj.visible = false; } window.__made = [];
     for (const o of g.units) if (o.alive && o !== window.__pilot && o !== window.__home && Math.hypot(o.pos.x - X, o.pos.z - Z) < 40) { o.alive = false; o.obj.visible = false; }   // copies, Shards and the like left by the last kind
-    const u = g.spawn(k, 1, X, Z); u.order = { type: 'guard', x: X, z: Z }; u.yaw = 0; u.energy = 999; window.__t = u; window.__made.push(u);
+    const u = g.spawn(k, 1, X, Z); u.order = { type: 'guard', x: X, z: Z }; if (k === 'shard') { const L = g.spawn('lyre', 1, X - 14, Z - 14); L.order = { type: 'guard', x: X - 14, z: Z - 14 }; u.lyre = L; window.__made.push(L); } /* a Shard without its Lyre falls */ u.yaw = 0; u.energy = 999; window.__t = u; window.__made.push(u);
     // something to face: an Ironhold Linesman 10 m ahead (the truce keeps both still)
     const f = g.spawn('linesman', 0, X, Z + 10); f.order = { type: 'guard', x: X, z: Z + 10 }; window.__foe = f; window.__made.push(f);
     step(3, false);

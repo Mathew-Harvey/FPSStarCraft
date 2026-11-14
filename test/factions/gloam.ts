@@ -11,7 +11,7 @@ import { hasStatus } from '../../src/core/status';
 import { seenBy } from '../../src/core/sight';
 import { bldRule, unitRule } from '../../src/core/registry';
 import { G_UNIT, G_BLD, G_RIPEN, G_DIGS, G2, G_TUNE, type GKind, type GBKind } from '../../src/factions/gloam/numbers';
-import { FUSES } from '../../src/factions/gloam/abilities';
+import { FUSES, podRoom } from '../../src/factions/gloam/abilities';
 import { isDug } from '../../src/factions/gloam/roster';
 import { otherEnd } from '../../src/factions/gloam/actions';
 
@@ -39,6 +39,32 @@ const ring = (cap: Building, i: number, r = 13) => [cap.pos.x + Math.cos(i * 1.1
 const spawnAt = (g: Game, k: Kind, team: number, x: number, z: number) => { const u = g.spawn(k, team, x, z); u.order = { type: 'guard', x, z }; return u; };
 const dmgOf = (b: Unit | Building) => b.maxHp - b.hp;
 
+// ---------------------------------------------------------------- 0. a player's side (g.human set): orders and casts the way a person gives them
+{
+  const { g, H, O, cap } = world(); g.human[H] = true; g.myTeam = H;
+  // A Stinger Stalk pulled up and sent somewhere walks there; it does not vanish.
+  const st = grow(g, 'stinger', H, cap.pos.x + 12, cap.pos.z); run(g, 1); check(g.buildingAction(st, 'uproot'), 'player: a Stinger Stalk pulls up its roots');
+  const sw = g.own('stingerwalk' as Kind, H)[0]; run(g, G2.uproot.t + .5);
+  g.dir.command(H, [sw.id], 'm', sw.pos.x + 8, sw.pos.z + 3, 0); run(g, 2);
+  check(!!sw && sw.alive && g.units.includes(sw), `player: a walking Stinger Stalk given a move order is still there (${sw?.alive} ${sw?.order.type})`);
+  run(g, 8); check(!!sw && sw.alive && Math.hypot(sw.pos.x - (st.pos.x + 8), sw.pos.z - (st.pos.z + 3)) < 3, `player: and it walks there (${sw && Math.hypot(sw.pos.x - (st.pos.x + 8), sw.pos.z - (st.pos.z + 3)).toFixed(1)} m off)`);
+  // A Puffball pulled up and walked a little roots again on its own Bloom.
+  const pb = grow(g, 'puffball', H, cap.pos.x - 12, cap.pos.z); run(g, 1); g.buildingAction(pb, 'uproot'); const pw = g.own('puffwalk' as Kind, H)[0]; run(g, G2.uproot.t + .5);
+  g.dir.command(H, [pw.id], 'm', pw.pos.x - 4, pw.pos.z + 3, 0); run(g, 6);
+  const why = whyNot(g, pw, 'root', { x: pw.pos.x, z: pw.pos.z }); check(why === '' && useAbility(g, pw, 'root'), `player: a walked Puffball roots again on its own Bloom (${why || 'ok'})`);
+  run(g, G2.uproot.root + 1); check(g.ownB('puffball', true, H).length === 1, 'player: and it stands as a Puffball again');
+  // A Keeper the player owns: Seed on the Cap, a Pod on the Bloom, Mend on a hurt friend; a Hooksail's Drink on a Spore Sac.
+  const k = spawnAt(g, 'keeper', H, cap.pos.x + cap.hx + 4, cap.pos.z + 2); k.energy = 200; const sn = spawnAt(g, 'snapper', H, k.pos.x + 3, k.pos.z); sn.hp = sn.maxHp * .6;
+  const seedT = { x: cap.pos.x, z: cap.pos.z, id: cap.id }; check(whyNot(g, k, 'seed', seedT) === '' && useAbility(g, k, 'seed', seedT), `player: Seed Cap on the Mother Cap (${whyNot(g, k, 'seed', seedT) || 'ok'})`);
+  run(g, 1.2); k.abCd = {}; k.energy = 200;
+  const pt = { x: k.pos.x + 4, z: k.pos.z - 3 }; check(whyNot(g, k, 'pod', pt) === '' && useAbility(g, k, 'pod', pt), `player: Spore Pod on the Bloom (${whyNot(g, k, 'pod', pt) || 'ok'})`);
+  run(g, 1.2); k.abCd = {}; k.energy = 200;
+  sn.pos.set(k.pos.x + 3, 0, k.pos.z); const mt = { x: sn.pos.x, z: sn.pos.z, id: sn.id }; check(whyNot(g, k, 'mend', mt) === '' && useAbility(g, k, 'mend', mt), `player: Mend on a hurt Snapper (${whyNot(g, k, 'mend', mt) || 'ok'}, ${Math.hypot(sn.pos.x - k.pos.x, sn.pos.z - k.pos.z).toFixed(1)} m, snapper ${sn.order.type})`);
+  const hk = spawnAt(g, 'hooksail', H, cap.pos.x - 6, cap.pos.z + 10); hk.energy = 30; const sac = grow(g, 'sporesac', H, hk.pos.x + 2, hk.pos.z + 2); run(g, .5);
+  const dt0 = { x: sac.pos.x, z: sac.pos.z, id: sac.id }; check(whyNot(g, hk, 'drink', dt0) === '' && useAbility(g, hk, 'drink', dt0), `player: Drink on its own Spore Sac (${whyNot(g, hk, 'drink', dt0) || 'ok'})`);
+  void O;
+}
+
 // ---------------------------------------------------------------- 1. every unit and building can be made through its tech path
 {
   const { g, H, cap } = world();
@@ -51,15 +77,23 @@ const dmgOf = (b: Unit | Building) => b.maxHp - b.hp;
   tryAll();
   const why0 = bldRule('mothercap').actions!(g, cap).find(a => a.key === 'grow')!.ok!(g, cap);
   check(built.has('warren') ? why0 === '' : /Warren/.test(why0), `tech: an Elder Cap needs a Warren (${why0 || 'Warren standing, allowed'})`);
+  // A Cap that ripens keeps its Bloom: its patch never shrinks, and buildings that need Bloom still go down 14 m out.
+  const capBloom = () => Math.max(0, ...g.carpet.patches.filter(p => p.owner === cap && !p.dying).map(p => p.max));
+  const bloomHolds = (was: number, what: string) => { run(g, 3); const r = capBloom(), far = [[14, 0], [-14, 0], [0, 14], [0, -14]].filter(([dx, dz]) => g.carpet.on(cap.pos.x + dx, cap.pos.z + dz, 0, H)).length;
+    let spot = false; for (let a = 0; a < 16 && !spot; a++) { const x = Math.round(cap.pos.x + Math.cos(a * .4) * 14), z = Math.round(cap.pos.z + Math.sin(a * .4) * 14); spot = g.canPlace('rotden', x, z, false, H); }
+    check(r >= was && far >= 3 && spot, `Bloom: ${what} keeps its Bloom (${was} m to ${r} m, Bloom 14 m out on ${far} of 4 sides, a Rot Den fits: ${spot})`); return r; };
+  const bloom0 = capBloom();
   check(g.buildingAction(cap, 'grow'), 'tech: the Mother Cap starts ripening into an Elder Cap');
   run(g, BLD.eldercap.time + 1);
   check(cap.kind === 'eldercap' && g.isHQ(cap) && g.ownB('mothercap', true, H).includes(cap), 'tech: it becomes an Elder Cap, still a home building and still counts as a Mother Cap');
+  const bloom1 = bloomHolds(bloom0, 'a Mother Cap that ripens into an Elder Cap');
   tryAll(); tryAll();
   check(built.has('rotden') && built.has('wingspire') && built.has('deeproot') && built.has('quillgarden'), 'tech: the Elder Cap opens the Rot Den, Wing Spire, Deep Root and Quill Garden');
   check(!built.has('needleden') && !g.unlocked('tallspire', H), 'tech: the Needle Den and Tall Spire still wait for an Ancient Cap');
   check(g.buildingAction(cap, 'grow'), 'tech: the Elder Cap starts ripening into an Ancient Cap (a Rot Den is standing)');
   run(g, BLD.ancientcap.time + 1); tryAll(); tryAll();
   check(cap.kind === 'ancientcap' && built.has('needleden'), 'tech: the Ancient Cap opens the Needle Den');
+  bloomHolds(bloom1, 'an Elder Cap that ripens into an Ancient Cap');
   const spire = g.ownB('wingspire', true, H)[0]; check(!!spire && g.buildingAction(spire, 'grow'), 'tech: a Wing Spire ripens into a Tall Spire once an Ancient Cap stands');
   run(g, BLD.tallspire.time + 1); check(spire.kind === 'tallspire' && g.ownB('wingspire', true, H).includes(spire), 'tech: the Tall Spire still counts as a Wing Spire');
   // Every Cap unit trains from the Cap; every ripened unit ripens. Spore Sacs first, for beds.
@@ -92,7 +126,7 @@ const dmgOf = (b: Unit | Building) => b.maxHp - b.hp;
   // Spore Pod: on own Bloom only.
   k.energy = 200; k.abCd = {}; const far = { x: cap.pos.x + 60, z: cap.pos.z + 60 };
   check(whyNot(g, k, 'pod', far) !== '', `Spore Pod: refused off Bloom or out of reach (${whyNot(g, k, 'pod', far)})`);
-  const spot = { x: k.pos.x + 5, z: k.pos.z + 2 }; check(useAbility(g, k, 'pod', spot), `Spore Pod: planted on its own Bloom (${whyNot(g, k, 'pod', spot) || 'ok'})`);
+  const spot = [[5, 2], [-5, 2], [2, -5], [-2, 5], [5, -4], [-5, -4]].map(([dx, dz]) => ({ x: k.pos.x + dx, z: k.pos.z + dz })).find(p => g.carpet.on(p.x, p.z, 0, H) && podRoom(g, p.x, p.z)) || { x: k.pos.x + 5, z: k.pos.z + 2 };   /* a free spot: with a Cap's full Bloom an earlier pod may stand at the first */ check(useAbility(g, k, 'pod', spot), `Spore Pod: planted on its own Bloom (${whyNot(g, k, 'pod', spot) || 'ok'})`);
   run(g, 2); const pod = g.ownB('sporepod', false, H)[0]; check(!!pod, 'Spore Pod: a pod stands there');
   run(g, BLD.sporepod.time + 1); check(pod.built && g.carpet.on(pod.pos.x + 4, pod.pos.z, 0, H) || g.carpet.on(pod.pos.x, pod.pos.z, 0, H), 'Spore Pod: grows its own Bloom');
   check(g.buildingAction(pod, 'hop'), 'Spore Pod: plants one more pod further on'); check(!g.buildingAction(pod, 'hop'), 'Spore Pod: only once');
@@ -122,6 +156,7 @@ const dmgOf = (b: Unit | Building) => b.maxHp - b.hp;
   const [nx, nz] = ring(cap, 2, 28), nd = spawnAt(g, 'needler', H, nx, nz), dummy = spawnAt(g, 'linesman' as Kind, O, nx + 7, nz); dummy.maxHp = dummy.hp = 5000; dummy.speed = 0;
   run(g, 3); check(dmgOf(dummy) === 0 || isDug(nd), 'Needler: does not fire standing up');
   if (!isDug(nd)) useAbility(g, nd, 'dig'); run(g, 4); check(isDug(nd) && dmgOf(dummy) > 0, `Needler: fires dug in (${dmgOf(dummy).toFixed(0)} damage in 4 s)`);
+  { const seen = new Set<string>(); for (let i = 0; i < 60; i++) { g.update(1 / 30); for (const e of g.evq!) if (e[0] === 'lk') seen.add(e[1]); g.evq!.length = 0; } check(seen.has('gfire'), 'Needler: its spines go to every screen as a look (lk gfire)'); }
   dummy.alive = false;
   // Blister dug in as a mine.
   nd.alive = false; sh.alive = false; const [bx, bz] = ring(cap, 4, 70), bl = spawnAt(g, 'blister', H, bx, bz); useAbility(g, bl, 'dig'); check(isDug(bl), 'Blister: digs in');
@@ -229,7 +264,11 @@ if (!quick) {
   await Promise.all([0, 1, 2, 3].map(async () => { while (next < specs.length) await one(specs[next++]); }));
   const made = new Map<string, number>(), spend = new Map<string, number>(); let total = 0;
   for (const r of rows) { check(r.code === 0 && !r.bad, `bots: match ${JSON.stringify(r.sp)} ran to the end (${r.res ?? 'crashed'} at ${Math.round((r.t ?? 0) / 60)} min)`); check(!r.stall, `bots: no stall in ${JSON.stringify(r.sp)} (${r.stall || 'the Gloam kept making things'})`); for (const k in r.made || {}) made.set(k, (made.get(k) || 0) + r.made[k]); for (const k in r.spend || {}) { spend.set(k, (spend.get(k) || 0) + r.spend[k]); total += r.spend[k]; } }
-  for (const k of Object.keys(G_UNIT)) check((made.get(k) || 0) > 0, `bots: made at least one ${UNIT[k as Kind].name} across ten matches (${made.get(k) || 0})`);
+  // A Pup only comes from a Sower over a foe: when the Sowers were all made in a match's last minute, no Pup is owed (the Sower check
+  // above still holds the bot to making them; when Sowers fly for a minute or more, they must drop Pups).
+  const sowerT = rows.reduce((a, r) => a + (r.sowerT || 0), 0);
+  for (const k of Object.keys(G_UNIT)) if (k !== 'pup' || sowerT >= 60) check((made.get(k) || 0) > 0, `bots: made at least one ${UNIT[k as Kind].name} across ten matches (${made.get(k) || 0})`);
+  if (sowerT < 60) console.log(`NOTE bots: no Pup check: the Sowers were out for only ${sowerT} s across ten matches (made late in long matches)`);
   console.log('\nShare of the Gloam\'s unit spend (ore plus Flux), ten matches:');
   for (const [k, v] of [...spend].sort((a, b) => b[1] - a[1])) console.log(`  ${UNIT[k as Kind].name.padEnd(13)} ${(v / total * 100).toFixed(1).padStart(5)}%  made ${made.get(k)}`);
   console.log('Results: ' + rows.map(r => `${r.sp?.home}${r.sp?.out}:${r.res} ${Math.round((r.t ?? 0) / 60)}m`).join(' '));
@@ -247,16 +286,17 @@ function oneMatch(sp: { home: number; out: number; map: number; seed: number; mi
   for (const u of g.units) if (mine(u.team)) seen.set(u, u.kind);
   // Every body counts from the moment it is made, even one that dies before the once-a-second count (a Pup under fire).
   const spawn0 = g.spawn.bind(g); (g as any).spawn = (...a: Parameters<Game['spawn']>) => { const u = spawn0(...a); if (u && mine(u.team) && fac(u.team) === 2 && !seen.has(u)) { note(u); seen.set(u, u.kind); lastNew = g.time; } return u; };
-  let res = 'draw', lastNew = 0, stall = '';
+  let res = 'draw', lastNew = 0, stall = '', sowerT = 0;
   for (let i = 0; i < sp.mins * 60 * 30; i++) {
     g.update(1 / 30); g.evq!.length = 0;
     if (i % 30 === 0) {
       for (const u of g.units) if (u.alive && mine(u.team) && fac(u.team) === 2) { const was = seen.get(u); if (was === undefined) { note(u); lastNew = g.time; } else if (was !== u.kind) { note(u, was); lastNew = g.time; } seen.set(u, u.kind); }
       if ((sp as any).log && i % (30 * 60) === 0) { const bk: Record<string, number> = {}; for (const b of g.buildings) if (b.alive && b.team === T) bk[b.kind] = (bk[b.kind] || 0) + 1; console.error(Math.round(g.time / 60) + 'm', 'ore', Math.round(g.cash(T)), 'flux', Math.round(g.flux(T)), 'army', g.army(T).length, 'foe', g.army(T === SIDE.home ? SIDE.out : SIDE.home).length, JSON.stringify(bk), Object.keys(g.upOf(T)).filter(k => g.upOf(T)[k as never]).join(',')); }
+      for (const u of g.units) if (u.alive && u.kind === 'sower' && mine(u.team) && !u.inside) sowerT++;   /* seconds a Sower was out: it can only drop Pups while it is */
       if (g.time - lastNew > 300 && g.ownB(undefined, true, T).length && !stall) stall = `nothing new for 5 minutes at ${Math.round(g.time / 60)} min`;
     }
     if (g.endT > 0 || !g.hqs(SIDE.home).length || !g.hqs(SIDE.out).length) { res = !g.hqs(SIDE.home).length ? 'out' : !g.hqs(SIDE.out).length ? 'home' : g.endWon ? 'home' : 'out'; break; }
   }
-  console.log(JSON.stringify({ sp, res, t: Math.round(g.time), made, spend, stall }));
+  console.log(JSON.stringify({ sp, res, t: Math.round(g.time), made, spend, stall, sowerT }));
 }
 void [G_BLD, G_DIGS, UPGRADES, costOf, abilitiesOf, unitRule];

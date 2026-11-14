@@ -1,12 +1,14 @@
 // How Gloam bodies and buildings are drawn: every Gloam building is grown by models.gloamB, and the lamps the bodies carry.
 // The figures themselves are in art.ts.
 import * as MD from '../../../models';
-import { defineUnits, defineBuildings, defineFaction } from '../../../core/registry';
+import { defineUnits, defineBuildings, defineFaction, factionRule } from '../../../core/registry';
 import { SICK } from '../../../core/lamps';
-import { G_TUNE, type GBKind } from '../numbers';
+import { G_TUNE, G_RIPEN, type GBKind } from '../numbers';
 import { lookPose, LOOK_KINDS, GLOAM_BUILDINGS2, ripens } from './cast2';
 import type * as THREE from 'three';
 import { GLOAM_FX } from './effects';
+import './wire';
+import { hurtLook } from './hurt';
 
 defineBuildings(Object.fromEntries(Object.keys(G_TUNE.bloomR).map(k => [k, { model: (a: ((t: number) => void)[]) => ripens(MD.gloamB(k as GBKind, a), a) as THREE.Group }])));
 defineUnits({ blister: { lamp: [.9, 0, 5, SICK, .7] }, mulcher: { lamp: [3.4, 0, 7, SICK, .5] } });
@@ -19,7 +21,10 @@ defineFaction(2, { view(g, pose) { const me = g.me!, vm = g.vm; if (!vm['g_' + m
 defineUnits({ mulcher: { stance: { breath: 1.3, bulk: true } }, blister: { stance: { burst: true } } });
 
 // The second brood (stream G, look/cast2.ts): dig in and out, ability poses and flight, laid over the shared walk.
-defineUnits(Object.fromEntries(LOOK_KINDS.map(k => [k, { pose(g: any, u: any, dt: number, _s: number, ease: number) { lookPose(g, u, dt, ease); } }])));
+// Kinds of the first brood that ripen into a second-brood body (a Quillback into a Needler) get the hook too, for the vines.
+defineUnits(Object.fromEntries([...new Set([...LOOK_KINDS, ...Object.keys(G_RIPEN)])].map(k => [k, { pose(g: any, u: any, dt: number, _s: number, ease: number) { lookPose(g, u, dt, ease); } }])));
 defineBuildings(Object.fromEntries(Object.keys(GLOAM_BUILDINGS2).map(k => [k, { model: (a: ((t: number) => void)[]) => MD.gloamB(k as GBKind, a) }])));
 // The ability effects (look/effects.ts), on the page for the capture bench and the rules.
 if (typeof window !== 'undefined') (window as any).__gloamFx = GLOAM_FX;
+// A hurt growth darkens and bleeds sap (look/hurt.ts). Laid after the rules' own fx hook, which it keeps.
+{ const was = factionRule(2).fx; defineFaction(2, { fx(g, dt) { was?.(g, dt); hurtLook(g, dt); } }); }

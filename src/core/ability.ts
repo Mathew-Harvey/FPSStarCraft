@@ -5,6 +5,7 @@ import type { Unit, Building } from '../data';
 import { UNIT, isUnit } from '../data';
 import { isEnemy } from './sides';
 import { canAct } from './status';
+import { CASTERS } from '../net-look';
 import { unitRule } from './registry';
 const dugOK = (u: Unit, a: AbilityDef | null) => !!a?.dug || !!unitRule(u.kind).dugFight;
 
@@ -76,7 +77,7 @@ function fire(g: Game, u: Unit, a: AbilityDef, t: Target) {
   const tgt = a.target === 'body' ? bodyOf(g, t.id) : null; if (a.target === 'body' && (!tgt || !tgt.alive)) return;
   if (a.target !== 'self') u.yaw = Math.atan2(t.x - u.pos.x, t.z - u.pos.z);
   a.effect(g, u, t, tgt);
-  if (g.evq) g.evq.push(['ab', u.id, a.key, Math.round(t.x * 10) / 10, Math.round(t.z * 10) / 10, t.id || 0]); else showCast(g, u, a, t, tgt);
+  if (g.evq) { const e = ['ab', u.id, a.key, Math.round(t.x * 10) / 10, Math.round(t.z * 10) / 10, t.id || 0]; g.evq.push(e); CASTERS.set(e, u); } else showCast(g, u, a, t, tgt);
 }
 /** Plays an ability's look (its `show`). A broken look never stops the game. */
 export function showCast(g: Game, u: Unit, a: AbilityDef, t: Target, tgt: Unit | Building | null) {

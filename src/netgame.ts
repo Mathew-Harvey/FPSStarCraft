@@ -4,7 +4,8 @@
 import * as THREE from 'three';
 import { Game, beamMat } from './game';
 import { UNIT, BLD, BUILDABLE, UPGRADES, TRAINS, UNIT_NEEDS, FACTION, VOICE_SIDE, SIDE, fac, atHome, Kind, BKind, Unit, Building, UpKey, isSoldier, isWorker, type StatusKey } from './data';
-import { useAbility, abilityOf, whyNot, bodyOf, showCast, type Target } from './core/ability';
+import { useAbility, abilityOf, whyNot, bodyOf, showCast, setAutocast, type Target } from './core/ability';
+import { board, unload } from './core/cargo';
 import { packLook, applyLook, packUnitLook, applyUnitLook, DEATHS } from './net-look';
 import { abilityWords } from './card';
 import { seenBy } from './core/sight';
@@ -151,6 +152,11 @@ export function serverCmd(g: Game, pid: number, unit: Unit | null, c: any[]) {
   // and a body-aimed ability needs a target this side can see. A refusal is counted (dropped['ab ...']) and the player is told why.
   // The old one-off calls ('vs', 'gb', 'pt') are the same abilities under their old names.
   else if (k === 'ab') abilityAsk(g, pid, unit, side, c, num);
+  // Autocast on or off for one body; boarding a carrier ('ld' then body ids, then the carrier's id last); letting out of a carrier.
+  else if (k === 'aa') { const u = g.units.find(x => x.id === num(1)); if (u && u.alive && u.team === side) setAutocast(g, u, String(c[2]), !!num(3)); }
+  else if (k === 'ld') { const ids = c.slice(1).map(Number).filter(Number.isFinite).slice(0, 40), cid = ids.pop(), car = g.units.find(x => x.id === cid) || g.buildings.find(x => x.id === cid);
+    if (car && car.alive && car.team === side) for (const id of ids) { const u = g.units.find(x => x.id === id); if (u && u.alive && u.team === side && (u === unit || !u.pilot)) board(g, u, car); } }
+  else if (k === 'ul') { const car = g.units.find(x => x.id === num(1)) || g.buildings.find(x => x.id === num(1)); if (car && car.alive && car.team === side) { const w = num(2) ? (car.cargo || []).find(u => u.id === num(2)) : undefined; if (!num(2) || w) unload(g, car, w); } }
   else if (k === 'vs') { if (unit && unit.kind === 'warden') useAbility(g, unit, 'lownote'); }
   // A building's action: the building's own rules check it (BldAction.ok and cost). An aim, if sent, is kept on the map.
   else if (k === 'ba') { const b = g.buildings.find(x => x.id === num(1)); if (b && b.alive && b.team === side && b.built) { const aim = typeof c[3] === 'number' && typeof c[4] === 'number' ? { x: Math.max(-900, Math.min(900, num(3))), z: Math.max(-900, Math.min(900, num(4))) } : undefined; g.feedTo = pid; g.buildingAction(b, String(c[2]).slice(0, 24), true, aim); g.feedTo = 0; } }

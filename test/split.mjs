@@ -23,6 +23,9 @@ try {
   check(s.huds === 2, 'each half has its own HUD');
   check(s.rect[1] >= s.rect[0] * 2 - 2, `the picture is split in two (${s.rect[0]} of ${s.rect[1]} pixels wide each)`);
   if (SHOTS) { await p.waitForTimeout(4000); await p.screenshot({ path: SHOTS + '/split-start.png' }); }
+  // From here on the checks are about the rules, not the picture: hold drawing still so a busy machine still steps the match at full speed.
+  // (With both halves drawing in a software renderer, a loaded machine ran the match at a sixtieth of real time and the waits ran out.)
+  if (!SHOTS) await p.evaluate(() => __ore.hold(true));
   // player two walks forward on the fallback keys while player one stands still
   await p.keyboard.down('ArrowUp');
   const moved = await until(([x, z]) => { const m = __ore.game2().me; return Math.hypot(m.pos.x - x, m.pos.z - z) > 1.5; }, s.pc);
@@ -37,11 +40,13 @@ try {
   const jumped = await p.evaluate(() => { const g = __ore.game2(), u = g.units.find(x => x.alive && x.team === 0 && !x.pilot && x !== g.me); if (!u) return 0; g.possess(u); return u.id; });
   check(jumped && await until(id => __ore.split().host.units.some(u => u.id === id && u.pilot === 2), jumped), 'player two can jump into another body');
   // a controller takes over player two's half
+  await p.evaluate(() => __ore.hold(false));   // the prompt line below is drawn with the picture
   await p.evaluate(() => { const pad = { connected: true, axes: [0, -1, 0, 0], buttons: Array.from({ length: 17 }, () => ({ pressed: false, value: 0 })) }; navigator.getGamepads = () => [pad]; window.__pad = pad; });
   const before = await p.evaluate(() => { const m = __ore.game2().me; return [m.pos.x, m.pos.z]; });
   check(await until(([x, z]) => { const m = __ore.game2().me; return Math.hypot(m.pos.x - x, m.pos.z - z) > 1.5; }, before), 'player two moves with a controller stick');
   check(await until(() => /LB/.test(document.querySelector('.hud.p2 #hint').textContent)), "player two's prompts name controller buttons");
   await p.evaluate(() => { __pad.axes[1] = 0; });
+  if (!SHOTS) await p.evaluate(() => __ore.hold(true));
   // pause stops the match for both
   await p.evaluate(() => { document.dispatchEvent(new KeyboardEvent('keydown', { code: 'Escape', bubbles: true })); });
   const t0 = await p.evaluate(() => [__ore.game.phase, __ore.game2().phase, __ore.split().host.time]); await p.waitForTimeout(1500);
@@ -63,13 +68,13 @@ try {
   check(await p.evaluate(([o, n]) => { const h = __ore.split().host; return h.buildings.length === n && Math.abs(h.ore - o) < 40; }, ore0), 'versus: the Veyl player cannot build for Ironhold');
   if (SHOTS) { await p.waitForTimeout(3000); await p.screenshot({ path: SHOTS + '/split-versus.png' }); }
   await p.evaluate(() => { const h = __ore.split().host, b = h.ownB('headframe')[0]; h.damage(b, 99999, null); });
-  check(await until(() => __ore.game.phase === 'over' && __ore.game2().phase === 'over'), 'versus: the match ends for both halves when the Headframe falls');
+  check(await until(() => __ore.game.phase === 'over' && __ore.game2().phase === 'over', undefined, 180000), 'versus: the match ends for both halves when the Headframe falls');
   check(await p.evaluate(() => __ore.game.won === false && __ore.game2().won === true && /Veyl/.test(document.getElementById('endTitle').textContent)), 'versus: player two wins, player one loses, and the end screen says who');
   // co-op on the Veyl side: both halves sing for the Chorus and Ironhold is left to the bots
   await p.evaluate(() => __ore.startSplit('veyl'));
   check(await until(() => { const a = __ore.game, c = __ore.game2(); return a.me && c && c.me && a.myTeam === 1 && c.myTeam === 1 && a.me.team === 1 && c.me.team === 1 && a.me !== c.me; }), 'co-op as the Veyl: both players drive their own Veyl body');
   check(await p.evaluate(() => { const h = __ore.split().host; return h.eco && h.human.slice(0, 2).join() === 'false,true' && h.units.some(u => u.alive && u.team === 0 && u.kind === 'rigger'); }), 'co-op as the Veyl: the Ironhold crew is run by bots');
-  await p.evaluate(() => document.getElementById('toMenu').click());
+  await p.evaluate(() => document.getElementById('toMenu').click()); await p.evaluate(() => __ore.hold(false));
 } catch (e) { console.log('ERROR', e); fail.push('exception'); }
 await b.close();
 console.log(fail.length ? `\n${fail.length} FAILED` : '\nall split screen checks passed'); process.exit(fail.length ? 1 : 0);

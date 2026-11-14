@@ -12,7 +12,7 @@ import { costOf, refund } from '../../core/econ';
 import { addStatus } from '../../core/status';
 import { G2, G_UPGRADES, type GBKind, type GKind } from './numbers';
 import { isCap, dist } from './kit';
-import { podRoom } from './abilities';
+import { podRoom, keepsRoom } from './abilities';
 
 const TMP = V3();
 type Grow = { to: GBKind; t: number; all: number };
@@ -65,7 +65,7 @@ export function podHop(g: Game, b: Building, x?: number, z?: number) {
   if (!((b as any).hops > 0)) return null;
   let tx = x, tz = z;
   if (tx === undefined || tz === undefined) { const foe = g.buildings.filter(o => o.alive && isEnemy(b.team, o.team)).sort((a, c) => dist(a, b) - dist(c, b))[0]; const a = foe ? Math.atan2(foe.pos.z - b.pos.z, foe.pos.x - b.pos.x) : R(0, 6.283); tx = b.pos.x + Math.cos(a) * G2.keeper.pod.hop; tz = b.pos.z + Math.sin(a) * G2.keeper.pod.hop; }
-  for (let i = 0; i < 8; i++) { const ox = tx + (i ? R(-3, 3) : 0), oz = tz + (i ? R(-3, 3) : 0); if (Math.hypot(ox - MAP.mid![0], oz - MAP.mid![1]) < MAP.rad! * .95 - 2 && podRoom(g, ox, oz)) { (b as any).hops = 0; const n = g.addBuilding('sporepod', b.team, Math.round(ox), Math.round(oz), false); (n as any).hops = 0; return n; } }
+  for (let i = 0; i < 8; i++) { const ox = tx + (i ? R(-3, 3) : 0), oz = tz + (i ? R(-3, 3) : 0); if (Math.hypot(ox - MAP.mid![0], oz - MAP.mid![1]) < MAP.rad! * .95 - 2 && podRoom(g, ox, oz) && keepsRoom(g, b.team, ox, oz, true)) { (b as any).hops = 0; const n = g.addBuilding('sporepod', b.team, Math.round(ox), Math.round(oz), false); (n as any).hops = 0; return n; } }
   return null;
 }
 const podAct: BldAction = { key: 'hop', name: 'Plant one more pod', hotkey: 'N', blurb: '14 m on toward the enemy. Once per pod.',

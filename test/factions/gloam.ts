@@ -11,7 +11,7 @@ import { hasStatus } from '../../src/core/status';
 import { seenBy } from '../../src/core/sight';
 import { bldRule, unitRule } from '../../src/core/registry';
 import { G_UNIT, G_BLD, G_RIPEN, G_DIGS, G2, G_TUNE, type GKind, type GBKind } from '../../src/factions/gloam/numbers';
-import { FUSES, podRoom } from '../../src/factions/gloam/abilities';
+import { FUSES, podRoom, bigRoom } from '../../src/factions/gloam/abilities';
 import { isDug } from '../../src/factions/gloam/roster';
 import { otherEnd } from '../../src/factions/gloam/actions';
 
@@ -113,6 +113,16 @@ const dmgOf = (b: Unit | Building) => b.maxHp - b.hp;
   check(other.sort().join(',') === ['drifter', 'husk', 'pup', 'puffwalk', 'stingerwalk'].sort().join(','), `tech: every other kind comes from an ability or a building command (${other.join(', ')})`);
 }
 
+// ---------------------------------------------------------------- 2b. Keepers left to plant by themselves keep room on a Cap's ground for a big building
+{
+  const { g, H, cap } = world();   /* a bot side: its Keepers cast on their own */
+  const ks = [0, 1, 2, 3, 4, 5].map(i => spawnAt(g, 'keeper', H, cap.pos.x + Math.cos(i) * 8, cap.pos.z + Math.sin(i) * 8));
+  check(bigRoom(g, H, cap), 'Keepers: a fresh Cap has room for a Tusk Hollow');
+  let pods = 0;
+  run(g, 240, () => { for (const k of ks) { k.energy = 200; } for (const p of g.ownB('sporepod' as BKind, true, H)) g.buildingAction(p, 'hop'); pods = g.ownB('sporepod' as BKind, false, H).length; });
+  check(pods >= 2, `Keepers: still plant Spore Pods by themselves (${pods})`);
+  check(bigRoom(g, H, cap), `Keepers: after 4 minutes of planting (${pods} pods) the Cap still has room for a Tusk Hollow`);
+}
 // ---------------------------------------------------------------- 2. Keeper: no Bud, Seed Cap, Spore Pod, Mend
 {
   const { g, H, O, cap } = world(); g.human[H] = true;   // no bot casting of its own during this part

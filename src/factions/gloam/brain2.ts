@@ -15,6 +15,7 @@ import { foeAnswers } from './kit';
 import { otherEnd } from './actions';
 import { ripenWhy } from './abilities';
 import { spent } from '../../core/brainkit';
+import { BROOD_MID } from './brain';
 
 /** Where the second-half buildings go, as offsets from the home Cap (the same frame as brain.ts SLOT). */
 const SLOT2: Partial<Record<GBKind, number[][]>> = {
@@ -104,7 +105,7 @@ export function overgrowth2(D: Director, dt: number, V: Side): number {
   wantB(has(g, T, 'warren') && n >= 8, 'blisterbed' as GBKind, 'A Blister Bed. Let them come close.');
   wantB(has(g, T, 'quillgarden') && n >= 8, 'oldgrowth', 'Old Growth. Sharper mouths and thicker hide grow here.');
   wantB(has(g, T, 'warren') && n >= 8 && g.flux(T) >= 25, 'shellpit', 'A Shell Pit. Shellbacks to hold the Bloom.');
-  if (!builtOne && has(g, T, 'warren') && (foeAir > 0 || foeHidden || g.time > 600)) { const pb = g.ownB('puffball', false, T).length; if (pb < Math.min(caps.length * (foeAir > 3 ? 2 : 1), 6)) builtOne = put('puffball', 'A Puffball by the Cap. It shoots fliers and sees what hides.'); }
+  if (!builtOne && has(g, T, 'warren') && (foeAir > 0 || foeHidden || g.time > 600)) { const pb = g.ownB('puffball', false, T).length; if (pb < Math.min(caps.length * (foeAir > 3 ? 2 : 1), BROOD_MID.on && BROOD_MID.towers >= 0 ? Math.max(1, BROOD_MID.towers) : 6)) builtOne = put('puffball', 'A Puffball by the Cap. It shoots fliers and sees what hides.'); }
   wantB(elder && n >= 5, 'wingspire', 'A Wing Spire. The Gloam take to the air.');
   wantB(elder && n >= 5, 'rotden', 'A Rot Den. Smothers and Seeders.');
   wantB(elder && !has(g, T, 'oldgrowth', false) && n >= 5, 'oldgrowth', 'Old Growth. The oldest spores, and the deepest tricks.');

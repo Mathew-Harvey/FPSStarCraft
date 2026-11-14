@@ -35,13 +35,13 @@ try {
   check(v.kind === 'tender' && v.story === 'Wrong Body' && v.hm === 'Wrong Body' && v.team === 1, `the player is a Veyl Tender on job 13 (${JSON.stringify(v)})`);
   check(await until(() => __ore.game.netObjs && __ore.game.netObjs.length === 5), 'the host sends the five objectives to the screen');
   check(await until(() => /Choir Stone/.test(document.getElementById('objs').textContent)), 'the objectives panel shows them');
-  // job 18 (Open Hands) locks the trigger
-  await p.evaluate(() => __ore.startStory(17));
-  check(await until(() => __ore.split() && __ore.game.me && __ore.game.me.kind === 'lancer'), 'job 18 hands over a single Lancer');
-  check(await p.evaluate(() => __ore.game.story.noFire && __ore.split().host.truce), 'job 18 locks weapons and holds everyone\'s fire');
-  // job 28 (Fourteen Twenty) puts an Ironhold player at the outpost end, against Charter Security at the yard
-  await p.evaluate(() => __ore.startStory(27));
-  check(await until(() => __ore.split() && __ore.game.me), 'job 28 starts');
+  // job 21 (Open Hands) locks the trigger
+  await p.evaluate(() => __ore.startStory(20));
+  check(await until(() => __ore.split() && __ore.game.me && __ore.game.me.kind === 'lancer'), 'job 21 hands over a single Lancer');
+  check(await p.evaluate(() => __ore.game.story.noFire && __ore.split().host.truce), 'job 21 locks weapons and holds everyone\'s fire');
+  // job 38 (Fourteen Twenty) puts an Ironhold player at the outpost end, against Charter Security at the yard
+  await p.evaluate(() => __ore.startStory(37));
+  check(await until(() => __ore.split() && __ore.game.me), 'job 38 starts');
   const f = await p.evaluate(() => { const g = __ore.game, h = __ore.split().host; return { team: g.myTeam, kind: g.me.kind, yard: h.buildings.filter(b => b.alive && b.team === 0 && b.kind === 'headframe').length, clock: g.ms.clock }; });
   check(f.team === 3 && f.kind === 'rigger' && f.yard === 1, `the player is an Ironhold Rigger at the outpost end, and the Charter holds the yard (${JSON.stringify(f)})`);
   check(await until(() => __ore.game.ms.clock > 2300 && __ore.game.ms.clock <= 2400), 'the forty-minute clock reaches the screen');

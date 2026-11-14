@@ -11,6 +11,8 @@ const capW = (t: string) => t.charAt(0).toUpperCase() + t.slice(1);
 const V = new THREE.Vector3();
 interface Floater { el: HTMLElement; pos: THREE.Vector3; t: number; life: number }
 
+/** A clear one-pixel picture, for a body with no portrait drawn yet: better than the last body's face. */
+const BLANK = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
 export class Hud {
   W = 1600; H = 900; scale = 1;
   portraits: Record<string, string> = {};
@@ -52,7 +54,7 @@ export class Hud {
   private set(id: string, v: string, html = false) { if (this.cache.get(id) === v) return; this.cache.set(id, v); const e = this.$(id); if (this.words && (id === 'objs' || id === 'goal')) v = this.words(v); if (html) e.innerHTML = this.keyLabel ? v.replace(/<(b|span class="k"[^>]*)>(TAB|Tab|Space|RMB|MMB|[A-Z])<\//g, (_m, tag, k) => `<${tag}>${this.keyLabel!(k === 'TAB' ? 'Tab' : k)}</`) : v; else e.textContent = v; }
   private cls(id: string, v: string) { const k = 'c:' + id; if (this.cache.get(k) === v) return; this.cache.set(k, v); this.$(id).className = v; }
   private vis(id: string, on: boolean) { const k = 'h:' + id; const v = on ? '1' : '0'; if (this.cache.get(k) === v) return; this.cache.set(k, v); this.$(id).hidden = !on; }
-  private img(id: string, kind: string) { const k = 'i:' + id; if (this.cache.get(k) === kind) return; this.cache.set(k, kind); const src = this.portraits[kind]; if (src) (this.$(id) as HTMLImageElement).src = src; }
+  private img(id: string, kind: string) { const k = 'i:' + id; if (this.cache.get(k) === kind) return; this.cache.set(k, kind); const src = this.portraits[kind]; (this.$(id) as HTMLImageElement).src = src || BLANK; if (!src) this.cache.delete(k); }
 
   feed(who: string, msg: string, cls = '') {
     const box = this.$('feed'), d = document.createElement('div'); if (cls) d.className = cls; const b = document.createElement('b'); b.textContent = who; d.appendChild(b); d.appendChild(document.createTextNode(this.words ? this.words(msg) : msg)); box.appendChild(d);
@@ -114,7 +116,7 @@ export class Hud {
     // The driven body's abilities: key, name, and what stops it now (energy or the wait).
     { const list = !cv && !tab ? abilitiesOf(me.kind) : []; this.vis('abil', list.length > 0);
       if (list.length) this.set('abil', list.map(a => { const w = whyNot(g, me, a.key, { x: me.pos.x, z: me.pos.z }), why = w === 'energy' || w === 'cooldown' || w === 'busy' || w === 'cannot act' ? abilityWords(w, a, me) : '', cd = me.abCd?.[a.key] ?? 0;
-        return `<div class="${why ? 'off' : ''}"><span class="k">${keyName(a.hotkey === 'Mouse0' ? 'LMB' : a.hotkey === 'Mouse2' ? 'RMB' : a.hotkey.length === 1 ? a.hotkey : a.hotkey)}</span><b>${a.name}</b><small>${why || [a.energy ? a.energy + ' energy' : '', a.cd ? a.cd + ' s' : ''].filter(Boolean).join(' · ') || 'Ready'}</small>${cd > 0 && a.cd ? `<i style="width:${(100 - cd / a.cd * 100).toFixed(0)}%"></i>` : ''}</div>`; }).join(''), true); }
+        return `<div class="${why ? 'off' : ''}"><span class="k">${keyName(a.hotkey)}</span><b>${a.name}</b><small>${why || [a.energy ? a.energy + ' energy' : '', a.cd ? a.cd + ' s' : ''].filter(Boolean).join(' · ') || 'Ready'}</small>${cd > 0 && a.cd ? `<i style="width:${(100 - cd / a.cd * 100).toFixed(0)}%"></i>` : ''}</div>`; }).join(''), true); }
     const m = Math.floor(g.time / 60), s = Math.floor(g.time % 60); { const ot = g.overtime(); this.set('clock', `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}` + (ot > 0 ? `<small>Overtime · buildings take +${Math.round(ot * 100)}%</small>` : ''), true); this.cls('clock', 'clock d out' + (ot > 0 ? ' ot' : '')); }
     const D = g.dir, S = D.side(side), pb = S.playbook, ph = pb.idx;
     // The squad's playbook means nothing until there is a squad: in the first minutes (and all of Job 1) it was a strip of jargon over the tutorial.
@@ -158,7 +160,9 @@ export class Hud {
     // world-anchored bars
     let bi = 0, li = 0, si = 0;
     const bar = (p: THREE.Vector3, y: number, frac: number, cls: string) => { if (bi >= this.bars.length) return; V.set(p.x, y, p.z); const q = V.clone(); if (!this.project(q, cam)) return; const b = this.bars[bi]; if (b.className !== cls) b.className = cls; b.hidden = false; b.style.transform = `translate(${V.x.toFixed(1)}px,${V.y.toFixed(1)}px)`; this.barFill[bi].style.width = Math.max(0, Math.min(1, frac)) * 100 + '%'; bi++; };
-    const lab = (p: THREE.Vector3, y: number, html: string) => { if (li >= this.labs.length) return; const q = new THREE.Vector3(p.x, y, p.z); if (!this.project(q, cam)) return; const l = this.labs[li]; l.hidden = false; l.style.transform = `translate(${Math.max(150, Math.min(this.W - 150, V.x)).toFixed(1)}px,${Math.max(130, V.y).toFixed(1)}px)`; const k = 'l' + li; if (this.cache.get(k) !== html) { this.cache.set(k, html); l.firstElementChild!.innerHTML = html; } li++; };
+    // A label over a body or building is kept out of the corners the HUD uses: the purse, clock and goal list top right (down to 400) and
+    // the minimap top left (down to 240), so a building near the top of the screen does not write over them.
+    const lab = (p: THREE.Vector3, y: number, html: string) => { if (li >= this.labs.length) return; const q = new THREE.Vector3(p.x, y, p.z); if (!this.project(q, cam)) return; const l = this.labs[li]; l.hidden = false; const lx = Math.max(150, Math.min(this.W - 150, V.x)); l.style.transform = `translate(${lx.toFixed(1)}px,${Math.max(lx > this.W - 400 ? 400 : lx < 330 ? 240 : 130, V.y).toFixed(1)}px)`; const k = 'l' + li; if (this.cache.get(k) !== html) { this.cache.set(k, html); l.firstElementChild!.innerHTML = html; } li++; };
     for (const p of g.pings) lab(V.set(p.x, 0, p.z).clone(), 2.2, `<div class="mark ping out">${g.names[p.pid] || 'Ping'} · ${Math.round(Math.hypot(p.x - me.pos.x, p.z - me.pos.z))}m</div>`);
     for (const u of g.units as Unit[]) {
       if (!u.alive || u === me && !tab && !cv || !u.obj.visible) continue; const d = u.pos.distanceTo(ref), sel = cv && C.sel.has(u);
@@ -248,7 +252,12 @@ export class Hud {
   /** How a base's seams are worked: two workers a seam is full, three is all a seam can use. */
   saturation(g: Game, hq: Building) {
     const seams = g.ores.filter(o => o.amount > 0 && Math.hypot(o.pos.x - hq.pos.x, o.pos.z - hq.pos.z) < 26), want = seams.length * 2, most = seams.length * 3;
-    const n = g.units.filter(u => u.alive && u.team === hq.team && isWorker(u.kind) && ((u.node && seams.includes(u.node)) || (u.pref && seams.includes(u.pref)) || (u.state === 'toHQ' && Math.hypot(u.pos.x - hq.pos.x, u.pos.z - hq.pos.z) < 30))).length;
+    // The match itself knows which seam each worker is on. A copy of the match (online, or the split screen and Veyl and Gloam skirmishes,
+    // which run as a local host) is only sent where each body stands, so there a worker counts when it is at work by one of these seams or
+    // within 30 m of this home building and not inside anything.
+    const near = (u: Unit) => !u.inside && (Math.hypot(u.pos.x - hq.pos.x, u.pos.z - hq.pos.z) < 30 || seams.some(o => Math.hypot(o.pos.x - u.pos.x, o.pos.z - u.pos.z) < 6));
+    const n = g.units.filter(u => u.alive && u.team === hq.team && isWorker(u.kind) && (g.net ? near(u)
+      : (u.node && seams.includes(u.node)) || (u.pref && seams.includes(u.pref)) || (u.state === 'toHQ' && Math.hypot(u.pos.x - hq.pos.x, u.pos.z - hq.pos.z) < 30))).length;
     const cls = !seams.length ? 'dry' : n > most ? 'over' : n >= want ? 'full' : 'short', word = !seams.length ? 'no ore left' : n > most ? `${n - most} too many` : n >= want ? 'full' : `${want - n} short`;
     return { n, want, most, cls, word };
   }

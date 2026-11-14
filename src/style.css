@@ -87,13 +87,13 @@ body{background:var(--bg);color:var(--paper);font-family:var(--cond);font-size:1
 .who .sub{position:absolute;left:136px;top:46px;font-size:15px;color:var(--yel)}
 .who .bar{left:138px;top:74px;width:330px}
 .who .hp{position:absolute;left:482px;top:68px;font-family:var(--display);font-size:28px}
-.hint{left:596px;bottom:28px;display:flex;gap:18px;align-items:center;font-weight:700;font-size:17px;letter-spacing:.1em;text-transform:uppercase;white-space:nowrap}
+.hint{left:596px;bottom:28px;max-width:610px;display:flex;flex-wrap:wrap-reverse;gap:8px 18px;align-items:center;font-weight:700;font-size:17px;letter-spacing:.1em;text-transform:uppercase;white-space:nowrap}
 .hint .cd{color:var(--muted)}
 .slots{right:28px;bottom:26px;display:flex;gap:10px}
 .slots div{width:104px;height:92px;background:rgba(14,13,20,.86);border:4px solid var(--ink);transform:skewX(-7deg);box-shadow:4px 4px 0 var(--ink);padding:4px 8px;display:flex;flex-direction:column;justify-content:space-between}
 .slots div.on{background:var(--yel);color:var(--ink)}
 .slots b{font-family:var(--display);font-weight:400;font-size:24px;line-height:1}.slots span{font-weight:700;font-size:17px;letter-spacing:.1em;text-transform:uppercase}
-.ammo{right:34px;bottom:24px;text-align:right}
+.ammo{right:34px;bottom:24px;text-align:right;max-width:340px}
 .ammo .n{font-size:84px;color:var(--paper)}
 .ammo .n small{font-size:34px;color:var(--muted)}
 .ammo .n.low{color:var(--red)}
@@ -268,6 +268,8 @@ body{background:var(--bg);color:var(--paper);font-family:var(--cond);font-size:1
 .chat{left:28px;bottom:150px;width:440px;font:600 20px inherit;font-family:inherit;color:var(--cream);background:rgba(14,13,20,.92);border:3px solid var(--yel);padding:8px 12px;outline:none;pointer-events:auto}
 .feed .ch{border-color:var(--teal)}.feed .ch b{color:var(--teal)}
 .crew div.v{border-color:var(--teal)}.crew div.v b{color:var(--teal)}
+/* In the command view the command card fills the bottom right, so the crew list moves to the left, above the picked body's panel. */
+.cmdv .crew{right:auto;left:34px;bottom:232px;align-items:flex-start}
 #mPlayers button.v{border-color:var(--teal)}#mPlayers button.v b{color:var(--teal)}
 
 body.cb{--grn:#4da3ff;--mag:#ff9d1a}
@@ -466,9 +468,10 @@ body.touch .only-keys,body.touch #freeNote{display:none!important}
 .st{left:0;top:0;margin:-30px 0 0 0;transform-origin:50% 50%;font-family:var(--cond);font-weight:700;font-size:14px;letter-spacing:.06em;text-transform:uppercase;white-space:nowrap;padding:0 6px;background:var(--ink);color:var(--paper);translate:-50% 0}
 .st.bad{color:#ff8a7a}.st.good{color:var(--teal)}
 .abil{left:28px;bottom:156px;display:flex;gap:6px}
-.abil div{position:relative;background:rgba(30,22,26,.92);border:3px solid var(--ink);box-shadow:3px 3px 0 var(--ink);padding:3px 9px 4px 30px;font-family:var(--cond);color:var(--paper);min-width:96px}
+.abil div{position:relative;display:grid;grid-template-columns:auto 1fr;column-gap:7px;align-items:start;background:rgba(30,22,26,.92);border:3px solid var(--ink);box-shadow:3px 3px 0 var(--ink);padding:3px 9px 4px 4px;font-family:var(--cond);color:var(--paper);min-width:96px}
+.abil div b,.abil div small{grid-column:2}
 .abil b{display:block;font-size:17px;line-height:1.1}.abil small{display:block;font-size:11px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:var(--muted)}
-.abil .k{position:absolute;left:4px;top:4px;font-size:13px;min-width:20px;padding:1px 4px;background:var(--yel);color:var(--ink);text-align:center;font-weight:700}
+.abil .k{grid-row:1/3;margin-top:1px;font-size:13px;white-space:nowrap;min-width:20px;padding:1px 4px;background:var(--yel);color:var(--ink);text-align:center;font-weight:700}
 .abil div.off{opacity:.65}.abil div.off small{color:#ff8a7a}.abil div.off .k{background:var(--muted)}
 .abil i{position:absolute;left:0;bottom:0;height:3px;background:var(--yel)}
 .bigmap{border:5px solid var(--ink);box-shadow:8px 8px 0 var(--ink);background:#3a2623}

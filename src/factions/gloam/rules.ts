@@ -4,18 +4,22 @@ import * as THREE from 'three';
 import { V3, R, M } from '../../gfx';
 import { sfx } from '../../audio';
 import type { Game } from '../../game';
-import { UNIT, BLD, Unit, Building, isUnit, isWorker } from '../../data';
+import { UNIT, BLD, Unit, Building, isUnit, isWorker, isOwn } from '../../data';
+import { G_TUNE, GBKind, BLOOM2, G2 } from './numbers';
+import { DEFAULTS, factionRule } from '../../core/registry';
 import { isEnemy } from '../../core/sides';
-import { G_TUNE, GBKind } from './numbers';
 import { defineUnits, defineBuildings, defineFaction } from '../../core/registry';
 import { defineAbilities } from '../../core/ability';
+import { gloamShowTick } from './show';
+import './arms';
 
 const TMP = V3();
 export const quillMat = new THREE.MeshBasicMaterial({ color: 0xe9dab2 });
 export const spitMat = new THREE.MeshBasicMaterial({ color: 0xc8ff3c, depthWrite: false });
 
-/** What a Gloam bite is worth: the shift on a bot side, and the mandible research. */
-export const gMul = (g: Game, team: number) => g.foeK(team) * g.gunMul(team);
+import { gMul, isCap, spitAt, nearestFoeAt } from './kit';
+import { tickGrow } from './actions';
+export { gMul };
 const reachOf = (t: Unit | Building, u: Unit) => isUnit(t) ? Math.hypot(t.pos.x - u.pos.x, t.pos.z - u.pos.z) : 0;
 
 // ---------------------------------------------------------------- every frame, for both the host and a replica
@@ -23,7 +27,7 @@ const reachOf = (t: Unit | Building, u: Unit) => isUnit(t) ? Math.hypot(t.pos.x 
 export function gloamFx(g: Game, dt: number) {
   g.carpet.update(dt);
   for (const b of g.buildings) {
-    if (!b.alive || b.kind !== 'mothercap') continue;
+    if (!b.alive || !isCap(b)) continue;
     let parts: THREE.Object3D[] = b.obj.userData.buds; if (!parts) { parts = []; for (let i = 0; i < 4; i++) { const o = b.obj.getObjectByName('bud' + i); if (o) parts.push(o); } b.obj.userData.buds = parts; }
     const ripe = b.built ? b.buds || 0 : 0, growing = b.queue.length;
     parts.forEach((o, i) => { const want = i < ripe ? 1 : i < ripe + growing ? .55 + .15 * Math.sin(g.time * 5 + i) : i < (g.upOf(b.team).gfat ? 4 : 3) && b.built ? .25 + .25 * Math.min(1, (b.budT || 0) / G_TUNE.budEvery) : 0; const s = o.scale.x + (want - o.scale.x) * Math.min(1, dt * 6); o.scale.setScalar(Math.max(.001, s)); o.visible = s > .02; });
@@ -35,7 +39,10 @@ export function gloamBuilding(g: Game, b: Building, dt: number) {
   if (!b.built) { b.progress += dt / BLD[b.kind].time; return; }   // a rooted Grazer grows the building by itself
   // Buildings on their own Bloom knit back together once nobody is hitting them.
   if (b.hp < b.maxHp && g.time - b.lastHit > 6) b.hp = Math.min(b.maxHp, b.hp + b.maxHp * .008 * dt);
-  if (b.kind === 'mothercap') {
+  tickGrow(g, b, dt);
+  if (isCap(b)) {
+    // A Keeper's Seed Cap: 3 more Buds when the seeds come up, over the usual count.
+    if ((b as any).seedT > 0) { (b as any).seedT -= dt; if ((b as any).seedT <= 0) { b.buds = (b.buds || 0) + G2.keeper.seed.buds; g.puff(TMP.set(b.pos.x, b.h * .6, b.pos.z), 6, 1, M.gS, .5, 2); } }
     const max = g.upOf(b.team).gfat ? G_TUNE.fatBuds : G_TUNE.buds; if (b.buds === undefined) b.buds = max;
     if (b.buds + b.queue.length < max) { b.budT = (b.budT || 0) + dt * (g.upOf(b.team).gfat ? G_TUNE.fatK : 1); if (b.budT >= G_TUNE.budEvery) { b.budT = 0; b.buds++; } } else b.budT = 0;
     // Its gill fronds lash anything that comes close, like the other HQs' night watch.
@@ -44,13 +51,16 @@ export function gloamBuilding(g: Game, b: Building, dt: number) {
     b.cd -= dt; if (b.cd <= 0) { b.cd = G_TUNE.stinger.cd; const t = nearestFoe(g, b, G_TUNE.stinger.range + 16); if (t) { lash(g, b, t, G_TUNE.stinger.dmg * gMul(g, b.team), 7.4); const tip = b.obj.getObjectByName('tip'); if (tip) tip.rotation.x = -1; } else b.cd = .3; }
   }
 }
-function nearestFoe(g: Game, b: Building, r: number) { let best: Unit | null = null, bd = r; for (const o of g.units) { if (!o.alive || !isEnemy(o.team, b.team)) continue; const d = o.pos.distanceTo(b.pos); if (d < bd) { bd = d; best = o; } } return best; }
+/** The nearest enemy on the ground this building can see (a lash cannot reach a flier or a body dug in unseen). */
+function nearestFoe(g: Game, b: Building, r: number) { return nearestFoeAt(g, b.team, b.pos.x, b.pos.z, r, o => !o.air); }
 function lash(g: Game, b: Building, t: Unit, dmg: number, y: number) {
   const a = V3(b.pos.x, y, b.pos.z), e = V3(t.pos.x, UNIT[t.kind].bodyY, t.pos.z); g.tracer(a, e, spitMat, .14); g.puff(e, 2, .5, M.gS, .6); sfx.slash(g.vol(b.pos) * .7); g.damage(t, dmg, b);
 }
 
 // ---------------------------------------------------------------- the bots
 export function aiGloam(g: Game, u: Unit, dt: number) {
+  // A foe body a Smother has borrowed (Rot Mind) fights for the Gloam with its own kind's brain.
+  if (UNIT[u.kind].team % 3 !== 2) { (factionRule(UNIT[u.kind].team).ai || DEFAULTS.ai)?.(g, u, dt); return; }
   // A swarm scatters from a grenade in the air: small legs, quick reflexes. Without it a Linesman's grenade every 15 s took a whole pack of
   // Snappers with it, and the bot Gloam lost 29 matches in 30 once Linesmen started throwing at them.
   if (u.kind !== 'mulcher' && dodge(g, u, dt)) return;
@@ -60,7 +70,7 @@ export function aiGloam(g: Game, u: Unit, dt: number) {
   return aiSnapper(g, u, dt);
 }
 function dodge(g: Game, u: Unit, dt: number) {
-  for (const p of g.projs) { if (!p.nade || p.team === u.team) continue; const dx = u.pos.x - p.pos.x, dz = u.pos.z - p.pos.z, d = Math.hypot(dx, dz); if (d > 7.5) continue;
+  for (const p of g.projs) { if (!p.nade || !isEnemy(p.team, u.team)) continue; const dx = u.pos.x - p.pos.x, dz = u.pos.z - p.pos.z, d = Math.hypot(dx, dz); if (d > 7.5) continue;
     const l = d || 1; g.moveTo(u, u.pos.x + dx / l * 6, u.pos.z + dz / l * 6, dt, .2, 2.2); return true; }
   return false;
 }
@@ -97,7 +107,8 @@ function aiQuill(g: Game, u: Unit, dt: number) {
     if (d <= reach && u.cd <= 0) {
       u.cd = 1.05 + R(0, .2); u.swing = 1; u.flashT = .08;
       const from = V3(u.pos.x + Math.sin(u.yaw) * 1.2, 1.7, u.pos.z + Math.cos(u.yaw) * 1.2), ty = isUnit(t) ? UNIT[t.kind].bodyY : Math.min(t.h * .5, 3), v = V3(t.pos.x - from.x, ty - from.y, t.pos.z - from.z).normalize().multiplyScalar(36);
-      g.shoot(from, v, u.team, G_TUNE.quill.dmg * gMul(g, u.team) * (g.upOf(u.team).gquill ? 1.15 : 1), false, u); sfx.throw();
+      const dmg = G_TUNE.quill.dmg * gMul(g, u.team, 'quillback') * (g.upOf(u.team).gquill ? 1.15 : 1);
+      if (t.alt) spitAt(g, u, t, dmg, quillMat, 1.7); else g.shoot(from, v, u.team, dmg, false, u); sfx.throw();
     }
     return;
   }
@@ -142,8 +153,8 @@ function aiMulcher(g: Game, u: Unit, dt: number) {
 /** The tusk sweep: everything in a wide arc in front. */
 export function sweep(g: Game, u: Unit, dmg: number, by: Unit | null = u) {
   const fx = Math.sin(u.yaw), fz = Math.cos(u.yaw); let n = 0;
-  for (const o of g.units) { if (!o.alive || o.team === u.team) continue; const dx = o.pos.x - u.pos.x, dz = o.pos.z - u.pos.z, d = Math.hypot(dx, dz); if (d > 4.2 + UNIT[o.kind].rad || (dx * fx + dz * fz) / (d || 1) < -.1) continue; g.damage(o, dmg, by); if (!g.net && d > .1) { o.kx += dx / d * 8; o.kz += dz / d * 8; } n++; }
-  for (const b of g.buildings) { if (!b.alive || b.team === u.team || g.distToBox(b, u.pos.x + fx * 2, u.pos.z + fz * 2) > 2.6) continue; g.damage(b, dmg * .8, by); n++; }
+  for (const o of g.units) { if (!o.alive || !isEnemy(o.team, u.team)) continue; const dx = o.pos.x - u.pos.x, dz = o.pos.z - u.pos.z, d = Math.hypot(dx, dz); if (d > 4.2 + UNIT[o.kind].rad || (dx * fx + dz * fz) / (d || 1) < -.1) continue; g.damage(o, dmg, by); if (!g.net && d > .1) { o.kx += dx / d * 8; o.kz += dz / d * 8; } n++; }
+  for (const b of g.buildings) { if (!b.alive || !isEnemy(b.team, u.team) || g.distToBox(b, u.pos.x + fx * 2, u.pos.z + fz * 2) > 2.6) continue; g.damage(b, dmg * .8, by); n++; }
   g.puff(TMP.set(u.pos.x + fx * 2.6, .5, u.pos.z + fz * 2.6), 4, 1.2, M.dust, .6, 1.4); sfx.clang(); if (g.vol(u.pos) > .3) g.shake = Math.max(g.shake, g.vol(u.pos) * .3);
   return n;
 }
@@ -151,8 +162,8 @@ export function sweep(g: Game, u: Unit, dmg: number, by: Unit | null = u) {
 export function charge(g: Game, u: Unit, dt: number, by: Unit | null = u) {
   u.dashT -= dt; const v = G_TUNE.charge.v * dt; u.pos.x += u.windX * v; u.pos.z += u.windZ * v; u.moving = true; g.collide(u, u.pos.x, u.pos.z);
   const hit: Set<number> = (u as any).hitSet || ((u as any).hitSet = new Set<number>());
-  for (const o of g.units) { if (!o.alive || o.team === u.team || hit.has(o.id)) continue; const dx = o.pos.x - u.pos.x, dz = o.pos.z - u.pos.z, d = Math.hypot(dx, dz); if (d > 2.4 + UNIT[o.kind].rad) continue; hit.add(o.id); g.damage(o, G_TUNE.charge.dmg * gMul(g, u.team), by); if (!g.net) { const s = d > .1 ? 1 / d : 0; o.kx += (dx * s + u.windX) * 9; o.kz += (dz * s + u.windZ) * 9; } sfx.clang(); }
-  for (const b of g.buildings) { if (!b.alive || b.team === u.team || hit.has(b.id) || g.distToBox(b, u.pos.x, u.pos.z) > 1.8) continue; hit.add(b.id); g.damage(b, G_TUNE.charge.dmg * gMul(g, u.team), by); u.dashT = 0; g.shake = Math.max(g.shake, g.vol(u.pos) * .6); sfx.boom(g.vol(u.pos) * .6); }
+  for (const o of g.units) { if (!o.alive || !isEnemy(o.team, u.team) || hit.has(o.id)) continue; const dx = o.pos.x - u.pos.x, dz = o.pos.z - u.pos.z, d = Math.hypot(dx, dz); if (d > 2.4 + UNIT[o.kind].rad) continue; hit.add(o.id); g.damage(o, G_TUNE.charge.dmg * gMul(g, u.team), by); if (!g.net) { const s = d > .1 ? 1 / d : 0; o.kx += (dx * s + u.windX) * 9; o.kz += (dz * s + u.windZ) * 9; } sfx.clang(); }
+  for (const b of g.buildings) { if (!b.alive || !isEnemy(b.team, u.team) || hit.has(b.id) || g.distToBox(b, u.pos.x, u.pos.z) > 1.8) continue; hit.add(b.id); g.damage(b, G_TUNE.charge.dmg * gMul(g, u.team), by); u.dashT = 0; g.shake = Math.max(g.shake, g.vol(u.pos) * .6); sfx.boom(g.vol(u.pos) * .6); }
   if (u.dashT <= 0) { u.dashT = 0; (u as any).hitSet = null; }
   if (Math.random() < .5) g.puff(TMP.set(u.pos.x, .2, u.pos.z), 1, .8, M.dust, .4, 1);
 }
@@ -163,8 +174,8 @@ export function playerGloam(g: Game, dt: number, P: Set<string>, eye: THREE.Vect
   g.vCd = Math.max(0, g.vCd - dt); g.jaw = Math.max(0, g.jaw - dt * 5);
   const bite = (reach: number, dmg: number, bdmg: number, cone = .4) => {
     let any = false;
-    for (const u of g.units) { if (!u.alive || u.team === me.team) continue; const dx = u.pos.x - me.pos.x, dz = u.pos.z - me.pos.z, d = Math.hypot(dx, dz); if (d > reach + UNIT[u.kind].rad || (dx * dir.x + dz * dir.z) / (d || 1) < cone) continue; g.damage(u, dmg, me); any = true; }
-    for (const b of g.buildings) { if (!b.alive || b.team === me.team || g.distToBox(b, me.pos.x, me.pos.z) > reach - .3) continue; const dx = b.pos.x - me.pos.x, dz = b.pos.z - me.pos.z; if (dx * dir.x + dz * dir.z < 0) continue; g.damage(b, bdmg, me); any = true; }
+    for (const u of g.units) { if (!u.alive || !isEnemy(u.team, me.team)) continue; const dx = u.pos.x - me.pos.x, dz = u.pos.z - me.pos.z, d = Math.hypot(dx, dz); if (d > reach + UNIT[u.kind].rad || (dx * dir.x + dz * dir.z) / (d || 1) < cone) continue; g.damage(u, dmg, me); any = true; }
+    for (const b of g.buildings) { if (!b.alive || !isEnemy(b.team, me.team) || g.distToBox(b, me.pos.x, me.pos.z) > reach - .3) continue; const dx = b.pos.x - me.pos.x, dz = b.pos.z - me.pos.z; if (dx * dir.x + dz * dir.z < 0) continue; g.damage(b, bdmg, me); any = true; }
     if (any) { g.hud.hitmark(false); sfx.hit(); }
     return any;
   };
@@ -179,12 +190,12 @@ export function playerGloam(g: Game, dt: number, P: Set<string>, eye: THREE.Vect
     const spit = (spread: number, dmg: number) => {
       const d = V3(dir.x + R(-spread, spread), dir.y + R(-spread, spread) * .5, dir.z + R(-spread, spread)).normalize(), hit = g.ray(eye, d, 70, -1, me), dist = hit ? hit.dist : 70, end = V3().copy(eye).addScaledVector(d, dist), mz = V3();
       if (flash) { flash.visible = true; flash.getWorldPosition(mz); } else mz.copy(eye); g.tracer(mz, end, quillMat, .05);
-      const tgt = hit && (hit.unit && hit.unit.team !== me.team ? hit.unit : hit.b && hit.b.team !== me.team ? hit.b : null);
+      const tgt = hit && (hit.unit && !isOwn(hit.unit.team, me.team) ? hit.unit : hit.b && !isOwn(hit.b.team, me.team) ? hit.b : null);
       if (tgt) { g.damage(tgt, hit!.head ? dmg * 1.8 : dmg, me, !!hit!.head); g.hud.hitmark(!!hit!.head); sfx.hit(); g.puff(end, 2, .4, M.gS, .5); } else g.impact(eye, d, hit, end, 8);
     };
     // Right click: a fan of quills. Five at once, wide.
-    if (P.has('Mouse2')) { if (g.vCd > 0) sfx.deny(); else { g.vCd = G_TUNE.quill.fanCd; g.recoil = 1; g.kick += .03; for (let i = 0; i < G_TUNE.quill.fan; i++) spit(.09, 10 * gMul(g, me.team)); sfx.throw(); sfx.scatter(); } return; }
-    if (g.lmb && g.fireCd <= 0) { g.fireCd = G_TUNE.quill.cd; g.recoil = 1; g.kick += .012; me.swing = 1; spit(.006, 14 * gMul(g, me.team) * (g.upOf(me.team).gquill ? 1.15 : 1)); sfx.throw(); }
+    if (P.has('Mouse2')) { if (g.vCd > 0) sfx.deny(); else { g.vCd = G_TUNE.quill.fanCd; g.recoil = 1; g.kick += .03; for (let i = 0; i < G_TUNE.quill.fan; i++) spit(.09, 10 * gMul(g, me.team, 'quillback')); sfx.throw(); sfx.scatter(); } return; }
+    if (g.lmb && g.fireCd <= 0) { g.fireCd = G_TUNE.quill.cd; g.recoil = 1; g.kick += .012; me.swing = 1; spit(.006, 14 * gMul(g, me.team, 'quillback') * (g.upOf(me.team).gquill ? 1.15 : 1)); sfx.throw(); }
     return;
   }
   if (me.kind === 'blister') {
@@ -217,18 +228,17 @@ export function consume(g: Game, u: Unit) {
 /** A spare Grazer to root with, for the build menu: anyone but the body the player drives counts. */
 export function spareGrazers(g: Game, team = g.myTeam) { return g.units.filter(u => u.alive && u.team === team && u.kind === 'grazer' && !u.pilot && u !== g.me).length; }
 /** Where a Gloam building can grow: on its own Bloom, with the whole footprint covered. Mother Caps can seed bare ground. */
-export function onBloom(g: Game, k: GBKind, x: number, z: number, team: number) { return k === 'mothercap' || g.carpet.on(x, z, Math.max(BLD[k].hx, BLD[k].hz) * .6, team); }
+export function onBloom(g: Game, k: GBKind, x: number, z: number, team: number) { return k === 'mothercap' || k === 'tunnelroot' || k === 'ventbladder' || g.carpet.on(x, z, Math.max(BLD[k].hx, BLD[k].hz) * .6, team); }
 export { isWorker };
 
 defineFaction(2, { ai: aiGloam, drive: (g, dt, P, eye, dir) => playerGloam(g, dt, P, eye, dir), each: gloamBuilding, grows: true });
-defineBuildings({
+const capHatch = {
   // A Mother Cap ripens every Bud at once; everything else trains one at a time.
-  mothercap: { hatch(g, b, dt) { for (let i = b.queue.length - 1; i >= 0; i--) { const q = b.queue[i]; q.t -= dt; if (q.t > 0) continue; b.queue.splice(i, 1); const a = R(0, 6.283), u = g.spawn(q.kind, b.team, b.pos.x + Math.cos(a) * (b.hx + 1.2), b.pos.z + Math.sin(a) * (b.hz + 1.2)); g.puff(TMP.copy(u.pos).setY(1), 4, .8, M.gS); if (g.vol(b.pos) > .2) sfx.blip(); g.dir.trained(u); } }, done(_g, b) { b.buds = 1; } },
-});
+  hatch(g: Game, b: Building, dt: number) { for (let i = b.queue.length - 1; i >= 0; i--) { const q = b.queue[i]; q.t -= dt; if (q.t > 0) continue; b.queue.splice(i, 1); const a = R(0, 6.283), u = g.spawn(q.kind, b.team, b.pos.x + Math.cos(a) * (b.hx + 1.2), b.pos.z + Math.sin(a) * (b.hz + 1.2)); g.puff(TMP.copy(u.pos).setY(1), 4, .8, M.gS); if (g.vol(b.pos) > .2) sfx.blip(); g.dir.trained(u); } }, done(_g: Game, b: Building) { b.buds = 1; } };
+defineBuildings({ mothercap: capHatch, eldercap: { ...capHatch, hq: true, counts: ['mothercap'] }, ancientcap: { ...capHatch, hq: true, counts: ['mothercap', 'eldercap'] }, tallspire: { counts: ['wingspire'] } });
 defineUnits({ snapper: { pair: true }, mulcher: { skipRespawn: true, stride: 6 }, grazer: { task: () => 'Chewing ore' } });
-defineBuildings({
-  mothercap: { buds: true, added(_g, b, built) { b.buds = built ? G_TUNE.buds : 0; b.budT = 0; }, note: b => `${b.buds || 0} Bud${b.buds === 1 ? '' : 's'} ripe${b.queue.length ? ` · ${b.queue.length} ripening` : ''}` },
-});
+const capBuds = { buds: true, added(_g: Game, b: Building, built: boolean) { if (b.buds === undefined) { b.buds = built ? G_TUNE.buds : 0; b.budT = 0; } }, note: (b: Building) => `${b.buds || 0} Bud${b.buds === 1 ? '' : 's'} ripe${b.queue.length ? ` · ${b.queue.length} ripening` : ''}` };
+defineBuildings({ mothercap: capBuds, eldercap: capBuds, ancientcap: capBuds });
 defineFaction(2, {
   tab: ['snapper', 'quillback', 'blister', 'mulcher', 'grazer'], stride: 15,
   added(g, b, built) { g.carpet.add(b, b.kind as GBKind, b.pos.x, b.pos.z, built); },
@@ -238,3 +248,60 @@ defineFaction(2, {
 
 // The Blister bursts, and itself with it. Online the server casts it when the player's browser asks.
 defineAbilities('blister', [{ key: 'burst', name: 'Burst', hotkey: 'Mouse0', energy: 0, cd: 9, cast: 0, range: 0, target: 'self', blurb: 'Bursts, hurting everything close by. The Blister dies.', effect: (g, u) => burst(g, u) }]);
+
+// ---------------------------------------------------------------- the full-depth roster (roster.ts, abilities.ts, actions.ts)
+import './roster';
+import './stand-in';
+import { rosterFx } from './roster';
+import { tickFuses, tickBorrowed } from './abilities';
+import { reroot, tunnelOK } from './actions';
+import { G_UPGRADES } from './numbers';
+const AFTER = new Map(G_UPGRADES.filter(u => u.after).map(u => [u.key as string, u.after!]));
+const WALKERS = new Set(['stingerwalk', 'puffwalk']);
+defineBuildings({ ventbladder: { tap: true }, tunnelroot: { far: true, free: true } });
+defineUnits({ keeper: { noBud: true } });
+defineFaction(2, {
+  // Bloom and the Caps' Buds for every client; the roster's clouds, fuses, borrowed bodies and walkers for the host.
+  fx(g, dt) {
+    gloamFx(g, dt); gloamShowTick(g, dt); rosterFx(g, dt); if (g.net) return; tickFuses(g, dt); tickBorrowed(g, dt);
+    for (const u of g.units) {
+      if (!u.alive) continue;
+      if (WALKERS.has(u.kind) && (u as any).rootT > 0) { (u as any).rootT -= dt; if ((u as any).rootT <= 0) reroot(g, u); }
+      // Rolling Run: every Blister has 10 more health, the ones already out too.
+      else if (u.kind === 'blister' && !(u as any).roll && g.upOf(u.team).groll) { (u as any).roll = true; u.maxHp += 10; u.hp += 10; }
+    }
+  },
+  // A research that needs a bigger Cap (Bite 2 needs an Elder Cap).
+  gate(g, team, what) { const at = AFTER.get(what); return at && !g.ownB(at, true, team).length ? BLD[at].name : ''; },
+  // A Spore Sac that floated off as a Drifter keeps its 8 beds (a Lookout Sac too).
+  beds(g, team) { let n = 0; for (const u of g.units) if (u.alive && u.team === team && (u.kind === 'drifter' || u.kind === 'lookoutsac')) n += 8; return n; },
+  placeOK(g, k, x, z, team) { return k === 'tunnelroot' ? tunnelOK(g, x, z, team) : ''; },
+  pace(g, u) {
+    const up = g.upOf(u.team), bloom = !u.air && u.kind !== 'grazer' && g.carpet.on(u.pos.x, u.pos.z, 0, u.team);
+    let k = bloom ? G_TUNE.bloomSpeed : 1;
+    if (up.glegs && (u.kind === 'snapper' || u.kind === 'blister')) k *= 1.15;
+    if (up.gneck && u.kind === 'quillback' && !bloom) k *= 1.25;
+    if (up.groll && u.kind === 'blister') k *= 1.25;
+    if (up.gdrift && (u.kind === 'drifter' || u.kind === 'lookoutsac')) k *= G2.drifter.quick;
+    return k;
+  },
+});
+
+// Dug in. Every kind that digs keeps thinking under the ground (dugFight): a Blister waits as a mine and bursts when an enemy steps on it,
+// a Grazer stays down until the raid has gone, and a fighter comes up when an enemy walks within 6 m (an ambush). Shellbacks, Lobbers,
+// Needlers and Seeders have their own dug-in brains in roster.ts.
+import { isDug, setDug } from './roster';
+import { unitRule } from '../../core/registry';
+import { G_DIGS } from './numbers';
+const OWN_DUG = new Set(['shellback', 'lobber', 'needler', 'seeder']);
+function dugBrain(g: Game, u: Unit): boolean {
+  if (!isDug(u) || OWN_DUG.has(u.kind)) return false;
+  if (u.kind === 'blister') { if (nearestFoeAt(g, u.team, u.pos.x, u.pos.z, G_TUNE.blister.r * .6, o => !o.air)) burst(g, u); return true; }
+  if (u.kind === 'grazer') { if (!nearestFoeAt(g, u.team, u.pos.x, u.pos.z, 16)) setDug(g, u, false); return true; }
+  if (nearestFoeAt(g, u.team, u.pos.x, u.pos.z, 6, o => !o.air)) { setDug(g, u, false); return false; }
+  return true;
+}
+for (const k of G_DIGS) {
+  if (k === 'grazer') { const w = unitRule(k).work; defineUnits({ grazer: { dugFight: true, work: (g, u, dt) => dugBrain(g, u) || !!w?.(g, u, dt) } }); continue; }
+  const inner = unitRule(k).ai || aiGloam; defineUnits({ [k]: { dugFight: true, ai: (g, u, dt) => { if (!dugBrain(g, u)) inner(g, u, dt); } } });
+}

@@ -2,9 +2,11 @@
 // useAbility, which checks energy, cooldown, range and target the same way every time. Online, a client only asks ('ab') and the server casts.
 import type { Game } from '../game';
 import type { Unit, Building } from '../data';
-import { UNIT } from '../data';
+import { UNIT, isUnit } from '../data';
 import { isEnemy } from './sides';
 import { canAct } from './status';
+import { unitRule } from './registry';
+const dugOK = (u: Unit, a: AbilityDef | null) => !!a?.dug || !!unitRule(u.kind).dugFight;
 
 /** Where an ability is aimed: a spot on the ground, a body or building (id), or the caster itself. */
 export interface Target { x: number; z: number; id?: number }
@@ -20,6 +22,7 @@ export interface AbilityDef {
   /** On by default: a body cast it by itself whenever its `ai` finds a target (a medic's heal, say). */ autocast?: boolean;
   /** Which bodies a body-aimed ability may take: its own side, the enemy, or anyone. Default the enemy. */ who?: 'ally' | 'foe' | 'any';
   /** Plain words for the HUD card. */ blurb?: string;
+  /** Usable while dug in (coming up again, say). A kind with `dugFight` may use all of its abilities dug in. */ dug?: boolean;
   /** Extra check before the cast (a tap only on a vent, a morph only with room). Return false to refuse. */
   can?(g: Game, u: Unit, t: Target): boolean;
   /** What happens when it goes off (host only). `tgt` is the body or building when aimed at one. */
@@ -47,10 +50,13 @@ export function initEnergy(u: Unit) { const m = UNIT[u.kind].energy; if (m) { u.
 /** Why a cast would be refused, or '' when it can go. */
 export function whyNot(g: Game, u: Unit, key: string, t: Target): string {
   const a = abilityOf(u.kind, key); if (!a) return 'no such ability';
-  if (!u.alive) return 'dead'; if (u.inside) return 'inside'; if (!canAct(u)) return 'cannot act';
+  if (!u.alive) return 'dead'; if (u.inside) return 'inside'; if (!canAct(u, dugOK(u, a))) return 'cannot act';
   if ((u.energy ?? 0) < a.energy) return 'energy'; if ((u.abCd?.[key] ?? 0) > 0) return 'cooldown'; if (u.cast) return 'busy';
-  if (a.target !== 'self') { if (!isFinite(t.x) || !isFinite(t.z)) return 'aim'; if (Math.hypot(t.x - u.pos.x, t.z - u.pos.z) > a.range + 1) return 'range'; }
-  if (a.target === 'body') { const o = bodyOf(g, t.id); if (!o || !o.alive) return 'target'; const ally = !isEnemy(o.team, u.team); if ((a.who ?? 'foe') === 'ally' ? !ally : (a.who ?? 'foe') === 'foe' ? ally : false) return 'target'; if (Math.hypot(o.pos.x - u.pos.x, o.pos.z - u.pos.z) > a.range + 1) return 'range'; }
+  // A building is measured to its nearest edge, not its centre: the aim point on a building is its centre, and a short-reach ability
+  // (the Sapper's Satchel, range 3) could never reach a wide one.
+  const ob = a.target === 'body' ? bodyOf(g, t.id) : null, wide = !!ob && !isUnit(ob);
+  if (a.target !== 'self') { if (!isFinite(t.x) || !isFinite(t.z)) return 'aim'; if (!wide && Math.hypot(t.x - u.pos.x, t.z - u.pos.z) > a.range + 1) return 'range'; }
+  if (a.target === 'body') { const o = bodyOf(g, t.id); if (!o || !o.alive) return 'target'; const ally = !isEnemy(o.team, u.team); if ((a.who ?? 'foe') === 'ally' ? !ally : (a.who ?? 'foe') === 'foe' ? ally : false) return 'target'; if ((isUnit(o) ? Math.hypot(o.pos.x - u.pos.x, o.pos.z - u.pos.z) : g.distToBox(o, u.pos.x, u.pos.z)) > a.range + 1) return 'range'; }
   if (a.can && !a.can(g, u, t)) return 'refused';
   return '';
 }
@@ -78,6 +84,10 @@ export function showCast(g: Game, u: Unit, a: AbilityDef, t: Target, tgt: Unit |
 }
 
 /** Every frame: energy grows back, cooldowns count down, wind-ups go off, and bot bodies use what their hooks pick. */
+/** Switches a body's casting-by-itself of one ability off or back on (online it goes as 'aa'). */
+export function setAutocast(g: Game, u: Unit, key: string, on: boolean) {
+  if (g.net) { g.net.cmd('aa', u.id, key, on ? 1 : 0); return; } const m = u.autoOff || (u.autoOff = {}); if (on) delete m[key]; else m[key] = true;
+}
 /** Each game's own think timer: a server runs many matches, and a replay must start the clock where the match did (K). */
 const AIT = new WeakMap<Game, number>();
 export function tickAbilities(g: Game, dt: number) {
@@ -87,10 +97,10 @@ export function tickAbilities(g: Game, dt: number) {
     if (u.maxEnergy) u.energy = Math.min(u.maxEnergy, (u.energy ?? 0) + ENERGY.regen * dt);
     if (u.abCd) for (const k in u.abCd) if (u.abCd[k] > 0) u.abCd[k] = Math.max(0, u.abCd[k] - dt);
     if (g.net) continue;
-    if (u.cast) { if (!canAct(u)) { u.cast = null; continue; } u.cast.t -= dt; if (u.cast.t <= 0) { const c = u.cast, a = abilityOf(u.kind, c.key); u.cast = null; if (a) fire(g, u, a, { x: c.x, z: c.z, id: c.id }); } continue; }
+    if (u.cast) { if (!canAct(u, dugOK(u, abilityOf(u.kind, u.cast.key)))) { u.cast = null; continue; } u.cast.t -= dt; if (u.cast.t <= 0) { const c = u.cast, a = abilityOf(u.kind, c.key); u.cast = null; if (a) fire(g, u, a, { x: c.x, z: c.z, id: c.id }); } continue; }
     if (!think || u === g.me || u.pilot) continue;
     const list = ABS[u.kind]; if (!list) continue;
     const bot = !g.human[u.team] || !!g.dir?.side(u.team)?.auto;   // a player's own side casts only what is set to cast by itself
-    for (const a of list) { if (!a.ai || (!bot && !a.autocast) || (u.energy ?? 0) < a.energy || (u.abCd?.[a.key] ?? 0) > 0) continue; const t = a.ai(g, u); if (t && useAbility(g, u, a.key, t)) break; }
+    for (const a of list) { if (!a.ai || u.autoOff?.[a.key] || (!bot && !a.autocast) || (u.energy ?? 0) < a.energy || (u.abCd?.[a.key] ?? 0) > 0) continue; const t = a.ai(g, u); if (t && useAbility(g, u, a.key, t)) break; }
   }
 }

@@ -30,19 +30,21 @@ try {
   // the bot Tenders hum ore home, and the player's screen sees the Veyl purse grow
   const c0 = s.cash;
   check(await until(c => __ore.game.purse[1] > c + 20, c0, 90000), 'the Tenders hum ore into the Veyl purse');
-  // build from the player's seat: a Brood Pit, then a Hushwell
+  // build from the player's seat: a Brood Pit, then a Hushwell. A Brood Pit has to stand in a song field (beside a finished Choir Stone or
+  // Hush Well), so it goes next to the Stone; a Hush Well can go anywhere near home.
   // the Conductor runs the economy until told otherwise: hand it to the player so the purse is theirs alone
   await p.evaluate(() => { const h = __ore.split().host; h.dir.vs.auto = false; h.purse[1] = 2000; });
   await until(() => __ore.game.purse[1] >= 1500);
   const placed = await p.evaluate(() => { const g = __ore.game, h = __ore.split().host, st = h.buildings.find(b => b.alive && b.team === 1 && b.kind === 'choir'); const out = [];
-    for (const k of ['broodpit', 'hushwell']) { let done = false; for (let r = k === 'hushwell' ? 26 : 14; r < 48 && !done; r += 3) for (let a = k === 'hushwell' ? 3.14 : 0; a < 9.42 && !done; a += .4) { const x = st.pos.x + Math.cos(a) * r, z = st.pos.z + Math.sin(a) * r; if (h.canPlace(k, x, z, false, 1)) { g.place(k, x, z, false, 1); out.push(k); done = true; } } } return out.join(); });
+    for (const k of ['broodpit', 'hushwell']) { let done = false; for (let r = k === 'hushwell' ? 26 : 4; r < 48 && !done; r += k === 'hushwell' ? 3 : 1) for (let a = k === 'hushwell' ? 3.14 : 0; a < 9.42 && !done; a += .4) { const x = st.pos.x + Math.cos(a) * r, z = st.pos.z + Math.sin(a) * r; if (h.canPlace(k, x, z, false, 1)) { g.place(k, x, z, false, 1); out.push(k); done = true; } } } if (!out.includes('broodpit')) { h.canPlace('broodpit', st.pos.x + 30, st.pos.z, false, 1); out.push('refused: ' + h.placeWhy); } return out.join(); });
   check(placed === 'broodpit,hushwell', 'the player can lay out a Brood Pit and a Hushwell');
   check(await until(() => __ore.split().host.buildings.filter(b => b.team === 1 && (b.kind === 'broodpit' || b.kind === 'hushwell')).length >= 2), 'the host takes both sites');
   // finish them so training can be tested quickly
   await p.evaluate(() => { for (const b of __ore.split().host.buildings) if (b.team === 1 && !b.built) b.progress = 1; });
   check(await until(() => __ore.game.buildings.some(b => b.team === 1 && b.kind === 'broodpit' && b.built), null, 60000), 'the Brood Pit sings up and the player sees it');
-  const pit = await p.evaluate(() => { const g = __ore.game, b = g.buildings.find(x => x.team === 1 && x.kind === 'broodpit' && x.built); return g.train(b, 'lancer') ? b.id : 0; });
-  check(!!pit && await until(() => __ore.split().host.buildings.some(b => b.kind === 'broodpit' && b.queue && b.queue.length), null, 20000), 'training a Lancer from the player reaches the pit');
+  // a Cantor: a Lancer needs a Reed Gate first now
+  const pit = await p.evaluate(() => { const g = __ore.game, b = g.buildings.find(x => x.team === 1 && x.kind === 'broodpit' && x.built); return b && g.train(b, 'cantor') ? b.id : 0; });
+  check(!!pit && await until(() => __ore.split().host.buildings.some(b => b.kind === 'broodpit' && b.queue && b.queue.length), null, 20000), 'training a Cantor from the player reaches the pit');
   // research at the Choir Stone
   const up = await p.evaluate(() => __ore.game.buyUpgrade('vhum'));
   check(up && await until(() => __ore.split().host.upOf(1).vhum, null, 20000), 'the player can research Choir Stone hum');
@@ -61,11 +63,11 @@ try {
     const site = h.addBuilding('hushwell', 1, 30, 60, false); site.progress = .5; h.updateBuildings(1 / 30); const full = site.hp; for (let i = 0; i < 40; i++) { h.damage(site, site.maxHp * .05, null); h.updateBuildings(1 / 30); } out.site = [Math.round(full), site.alive];
     return out; });
   check(sw.oreK[0] === 1 && sw.oreK[1] === 1, `Night gives neither side extra ore (${sw.oreK.map(x => x.toFixed(2)).join(', ')})`);
-  check(sw.ai < sw.piloted * .7, `an AI-driven Veyl body takes less from a hit than a player-driven one (${sw.ai.toFixed(1)} vs ${sw.piloted.toFixed(1)})`);
+  check(sw.ai < 20 * .7 && Math.abs(sw.ai - sw.piloted) < .01, `a paid-for Veyl body shrugs off part of a hit, the same whether the AI or a player drives it (${sw.ai.toFixed(1)} and ${sw.piloted.toFixed(1)} of 20)`);
   check(sw.guard, 'a raider hitting an Ironhold Rigger draws the guards over');
   check(sw.site[1] === false, `a half-built site can be shot down (it had ${sw.site[0]} health)`);
-  // after Thicker Glass, the Veyl player's screen shows shields within their maximum
-  await p.evaluate(() => { const h = __ore.split().host; h.purse[1] += 400; if (!h.ownB('wardpylon', true, 1).length) h.addBuilding('wardpylon', 1, h.stones()[0].pos.x - 14, h.stones()[0].pos.z + 20, true); h.buyUpgrade('vglass', 1); h.spawn('cantor', 1, 0, 44); });
+  // after Thicker Glass, the Veyl player's screen (a Pylon works inside a song field, so a Hush Well goes beside it, and its levels cost Flux) shows shields within their maximum
+  await p.evaluate(() => { const h = __ore.split().host; h.purse[1] += 400; h.fluxPurse[1] = (h.fluxPurse[1] || 0) + 400; if (!h.ownB('wardpylon', true, 1).length) { const x = h.stones()[0].pos.x - 14, z = h.stones()[0].pos.z + 20; h.addBuilding('hushwell', 1, x + 4, z, true); h.addBuilding('wardpylon', 1, x, z, true); } h.buyUpgrade('vglass', 1); h.spawn('cantor', 1, 0, 44); });
   check(await until(() => { const g = __ore.game; return g.upOf(1).vglass && g.units.some(u => u.alive && u.team === 1 && u.kind === 'cantor' && u.shield > 50); }, null, 20000) && await p.evaluate(() => __ore.game.units.every(u => !u.alive || u.shield <= u.maxShield + .01)), "after Thicker Glass the player's screen keeps Veyl shields within their maximum");
   // an unfinished Choir Stone does not keep the Chorus alive once the last finished one falls
   const lose = await p.evaluate(() => { const h = __ore.split().host, st = h.stones()[0]; const site = h.addBuilding('choir', 1, st.pos.x - 30, st.pos.z - 30, false); for (const b of h.buildings) if (b.kind === 'choir' && b.built && b.alive) h.damage(b, 1e7, null); return { site: site.alive, endT: h.endT, won: h.endWon }; });
@@ -78,8 +80,10 @@ try {
   check(end[0] === false && /falls silent/.test(end[1]), 'the Veyl player is told they lost');
   // and a fresh run won by breaking every Headframe says so
   await p.evaluate(() => __ore.startVeyl()); await until(() => __ore.game.me && __ore.split() && __ore.split().host.time > 1);
-  await p.evaluate(() => { const h = __ore.split().host; for (const b of h.buildings) if (b.team === 0 && b.kind === 'headframe' && b.alive) h.damage(b, 1e6, null); });
-  check(await until(() => __ore.game.phase === 'over', null, 30000), 'breaking every Headframe ends the match');
+  // Every home building, whatever form it takes (a Survey Rig counts as a Headframe). Drawing is held still while the match plays out, so a
+  // busy machine still runs the two seconds of ending in time.
+  await p.evaluate(() => { __ore.hold(true); const h = __ore.split().host; for (const b of h.buildings) if (b.team === 0 && h.isHQ(b) && b.alive) h.damage(b, 1e6, null); });
+  check(await until(() => __ore.game.phase === 'over', null, 180000), 'breaking every Headframe ends the match'); await p.evaluate(() => __ore.hold(false));
   await p.waitForTimeout(600);
   const win = await p.evaluate(() => [__ore.game.won, document.getElementById('endTitle').textContent]);
   check(win[0] === true && /Veyl take/.test(win[1]), 'the Veyl player is told they won');

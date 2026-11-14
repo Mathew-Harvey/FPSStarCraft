@@ -22,7 +22,7 @@ try {
   await A.waitForFunction(() => document.querySelectorAll('#mPlayers button').length === 2); check(true, 'second player joined and both see two names');
   check(await A.evaluate(() => document.getElementById('mStart').disabled), 'host cannot start until the crew is ready');
   await A.click('#mMaps button:nth-child(1)'); await B.click('#mReady'); await A.waitForFunction(() => !document.getElementById('mStart').disabled); await A.click('#mStart');
-  for (const p of [A, B]) { await p.waitForFunction(() => __ore.game.net && __ore.game.me && __ore.game.units.length > 6); await p.evaluate(() => { __ore.game.noRender = true; __ore.hold(false); }); }
+  for (const p of [A, B]) { await p.waitForFunction(() => __ore.game.net && __ore.game.me && __ore.game.units.length > 6); await p.evaluate(() => { __ore.hold(false); __ore.game.noRender = true; }); }
   const state = p => p.evaluate(() => { const g = __ore.game; return { me: g.me && g.me.id, kind: g.me && g.me.kind, units: g.units.filter(u => u.alive).length, bld: g.buildings.filter(b => b.alive).length, ore: g.ore, time: g.time, pilots: g.units.filter(u => u.pilot).map(u => u.id).sort(), props: g.props.length, propsAlive: g.props.filter(q => q.alive).length, stones: g.stones().length }; });
   let a = await state(A), c = await state(B);
   check(a.me && c.me && a.me !== c.me, `each player drives a different body (${a.me}, ${c.me})`);
@@ -37,7 +37,16 @@ try {
     // so a trip can come back empty: she keeps going until the scoreboard has her 60 ore, nine trips at most.
     const mined = () => (g.score[g.net.id] || [0, 0])[1];
     for (let trip = 0; trip < 9 && (trip < 5 || mined() < 60); trip++) { g.me.pos.x = n.pos.x + 3; g.me.pos.z = n.pos.z; await sleep(2500); for (let i = 0; i < 5; i++) { g.net.cmd('mn', 0, 3); await sleep(250); } g.me.pos.x = 0; g.me.pos.z = 7; await sleep(2500); }
-    g.net.cmd('pl', 'bunkhouse', -14, 10, 0); return g.me.pos.x; });
+    // The spot must be free when the server gets the order: a bot Rigger walking past, or a vent, would refuse it. So she picks the first
+    // free spot near (-14, 10) as her own screen sees it, waits for the ore, and asks again if a body stepped onto it in the meantime.
+    const cost = __ore.reg.BLD.bunkhouse.cost, has = () => g.buildings.some(b => b.alive && b.kind === 'bunkhouse' && b.team === g.me.team);
+    for (let t = 0; t < 40 && g.cash(g.me.team) < cost; t++) await sleep(250);
+    for (let go = 0; go < 6 && !has(); go++) {
+      let at = null; for (let r = 0; r < 12 && !at; r += 2) for (let k = 0; k < 8 && !at; k++) { const x = Math.round(-14 + Math.cos(k * .785) * r), z = Math.round(10 + Math.sin(k * .785) * r); if (g.canPlace('bunkhouse', x, z, false, g.me.team)) at = [x, z]; }
+      if (!at) { console.log('no free spot for the Bunkhouse near (-14, 10)'); break; }
+      g.net.cmd('pl', 'bunkhouse', at[0], at[1], 0); for (let t = 0; t < 12 && !has(); t++) await sleep(250);
+    }
+    return g.me.pos.x; });
   const bo = await B.evaluate(() => { const g = __ore.game; const u = g.units.find(u => u.team === 0 && !u.pilot && u.kind === 'rigger'); g.possess(u, true); return u.id; });
   const built = () => __ore.game.buildings.filter(b => b.alive).length === 11;
   check(await until(A, built) && await until(B, built), "Ada's Bunkhouse reached both players"); a = await state(A); c = await state(B);
@@ -64,7 +73,7 @@ try {
   check(await until(A, () => __ore.game.units.filter(u => u.pilot).length === 1), 'when Bo leaves, his body goes back to the crew and the match carries on');
   // Bo comes back mid-match with the same code and gets a body and the same world
   const B2 = await open('Bo'); await B2.evaluate(() => { __ore.hold(true); }); await B2.fill('#mCode', code); await B2.click('#mJoinBtn');
-  await B2.waitForFunction(() => __ore.game.net && __ore.game.me && __ore.game.units.length > 6); await B2.evaluate(() => { __ore.game.noRender = true; __ore.hold(false); }); c = await state(B2);
+  await B2.waitForFunction(() => __ore.game.net && __ore.game.me && __ore.game.units.length > 6); await B2.evaluate(() => { __ore.hold(false); __ore.game.noRender = true; }); c = await state(B2);
   // Bo's body can be shot out from under him by a raid while this runs, so ask for whichever body he is in now.
   let back = false; for (let i = 0; i < 40 && !back; i++) { const id = await B2.evaluate(() => { const g = __ore.game; return g.me && g.me.alive ? g.me.id : 0; }); back = !!id && await A.evaluate(id => __ore.game.units.filter(u => u.pilot).length === 2 && !!__ore.game.uById.get(id)?.pilot, id); if (!back) await sleep(400); }
   check(back, 'Bo rejoins the running match with the code and gets a body'); await sleep(1500);

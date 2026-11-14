@@ -21,7 +21,7 @@ try {
 
   // 1. A building on the Quartermaster's planned spot no longer stops the whole build order.
   const qm = await p.evaluate(() => {
-    __ore.pickMap(0); document.querySelectorAll('#diff button')[0].click(); __ore.start(); const g = __ore.game; g.noRender = true; g.introT = 0; g.ore = 400;
+    __ore.pickMap(0); document.querySelectorAll('#diff button')[0].click(); __ore.setRaid(true); __ore.start(); const g = __ore.game; g.noRender = true; g.introT = 0; g.ore = 400;
     g.place('depot', 15, 8, false); ff(200);
     return { bunk: g.ownB('bunkhouse').length, depotAt: g.ownB('depot').some(b => b.pos.x === 15 && b.pos.z === 8) };
   });
@@ -29,7 +29,7 @@ try {
 
   // 1b. Hand drilling fills the Rigger's pack, which only counts once it is walked to the Headframe.
   const pack = await p.evaluate(() => {
-    __ore.pickMap(0); __ore.start(); const g = __ore.game; g.noRender = true; g.introT = 0; g.dir.auto = false; const me = g.me, n = g.ores[0]; for (const u of g.own('rigger')) if (u !== me) u.alive = false; g.update(1 / 30); const ore0 = g.ore;
+    __ore.pickMap(0); __ore.setRaid(true); __ore.start(); const g = __ore.game; g.noRender = true; g.introT = 0; g.dir.auto = false; const me = g.me, n = g.ores[0]; for (const u of g.own('rigger')) if (u !== me) u.alive = false; g.update(1 / 30); const ore0 = g.ore;
     me.pos.set(n.pos.x - 3, 0, n.pos.z); const drill = secs => { for (let i = 0; i < secs * 30; i++) { if (g.phase === 'card') g.phase = 'play'; g.tool = 1; g.yaw = Math.atan2(n.pos.x - me.pos.x, n.pos.z - me.pos.z); g.pitch = Math.atan2(-.5, Math.hypot(n.pos.x - me.pos.x, n.pos.z - me.pos.z)); g.lmb = true; g.update(1 / 30); } };
     drill(12); const held = me.carrying, bank0 = g.ore - ore0;
     me.pos.set(0, 0, 7); g.lmb = false; for (let i = 0; i < 10; i++) g.update(1 / 30);
@@ -54,8 +54,8 @@ try {
 
   // 10. Maps: sizes, ore fields for new bases, a second Headframe, and the undiscovered map.
   const maps = await p.evaluate(() => {
-    const out = {}; for (const [size, name] of [[1, 'small'], [0, 'medium'], [2, 'large']]) { __ore.pickMap(0); __ore.pickSize(size); __ore.start(); const g = __ore.game; out[name] = { fields: g.ores.length, out: Math.round(Math.hypot(g.stones()[0].pos.x, g.stones()[0].pos.z)) }; }
-    __ore.pickMap(0); __ore.pickSize(0); __ore.start(); const g = __ore.game; g.noRender = true; g.introT = 0; g.dir.auto = false; g.fog.update(g, 1, true);
+    const out = {}; for (const [size, name] of [[1, 'small'], [0, 'medium'], [2, 'large']]) { __ore.pickMap(0); __ore.pickSize(size); __ore.setRaid(true); __ore.start(); const g = __ore.game; out[name] = { fields: g.ores.length, out: Math.round(Math.hypot(g.stones()[0].pos.x, g.stones()[0].pos.z)) }; }
+    __ore.pickMap(0); __ore.pickSize(0); __ore.setRaid(true); __ore.start(); const g = __ore.game; g.noRender = true; g.introT = 0; g.dir.auto = false; g.fog.update(g, 1, true);
     const st = g.stones()[0], far = g.ores.filter(n => g.stones().every(t => Math.hypot(n.pos.x - t.pos.x, n.pos.z - t.pos.z) > 60)).pop();   // the Veyl home seams sit behind the outpost
     const fog = { yard: g.fog.sees(0, 0), outpost: g.fog.seen(st.pos.x, st.pos.z), field: g.fog.seen(far.pos.x, far.pos.z) };
     // a second Headframe out on a field: Riggers bank there, and losing the first one is not the end
@@ -144,13 +144,23 @@ try {
   const quit = await p.evaluate(() => { const q = document.getElementById('quit'); if (!q) return 'no button'; document.dispatchEvent(new KeyboardEvent('keydown', { code: 'Escape', bubbles: true })); q.click(); return { split: !!__ore.split(), menu: !document.getElementById('menu').hidden }; });
   check(quit.menu && !quit.split, 'Quit on the pause screen ends the split screen match and opens the menu');
   // 8. Pausing during a title card does not leave the card stuck on screen.
-  const tc = await p.evaluate(() => { __ore.pickMap(0); __ore.start(); const g = __ore.game; g.introT = 0; const u = g.spawn('linesman', 0, 4, 4); g.jumpCd = 0; g.possess(u); const was = g.phase;
+  const tc = await p.evaluate(() => { __ore.pickMap(0); __ore.setRaid(true); __ore.start(); const g = __ore.game; g.introT = 0; const u = g.spawn('linesman', 0, 4, 4); g.jumpCd = 0; g.possess(u); const was = g.phase;
     document.dispatchEvent(new KeyboardEvent('keydown', { code: 'Escape', bubbles: true })); document.getElementById('resume').click(); g.update(1 / 30);
     const shown = !document.getElementById('tcard').hidden; __ore.quit(); return { was, shown }; });
   check(tc.was === 'card' && !tc.shown, 'pausing during a title card clears the card');
 
+  // 8. A flier the player drives reaches the ground: a short gun's reach is measured along the ground, as its bot's is, not from the eye.
+  const fl = await p.evaluate(() => { __ore.pickMap(0); __ore.setRaid(true); __ore.start(); const g = __ore.game; g.introT = 0; g.truce = true; g.dir.raidIn = 9999; const out = {};
+    for (const [k, far] of [['gadfly', 6], ['claimbarge', 8], ['gadfly', 12]]) { const me = g.spawn(k, 0, 40, 40), f = g.spawn('cantor', 1, 40, 40 + far); f.maxShield = f.shield = 0; f.hp = f.maxHp = 5000; g.jumpCd = 0; g.possess(me);
+      ff(4, () => { if (g.me !== me) return; f.pos.x = 40; f.pos.z = 40 + far; me.pos.x = 40; me.pos.z = 40; g.yaw = 0; g.pitch = Math.atan2(1 - (me.alt || 0) - 1.6, far); g.lmb = true; });
+      g.lmb = false; out[k + far] = [5000 - f.hp, me.alt || 0]; g.killUnit(f, null); g.jumpCd = 0; g.possess(g.own('rigger')[0]); g.killUnit(me, null); }
+    __ore.quit(); return out; });
+  check(fl.gadfly6[0] > 0 && fl.gadfly6[1] > 5, `a driven Gadfly at cruise height hits a body 6 m off along the ground (${Math.round(fl.gadfly6[0])} damage from ${fl.gadfly6[1].toFixed(1)} m up)`);
+  check(fl.claimbarge8[0] > 0, `a driven Claim Barge hits a body 8 m off along the ground (${Math.round(fl.claimbarge8[0])} damage)`);
+  check(fl.gadfly12[0] === 0, 'a driven Gadfly still cannot hit a body past its reach');
+
   // 7. Starting shift after shift does not pile up old worlds on the graphics card.
-  const geo = await p.evaluate(async () => { const n = []; for (let i = 0; i < 4; i++) { __ore.pickMap(i % 3); __ore.start(); __ore.game.update(1 / 30); n.push(__ore.pipe.renderer.info.memory.geometries); __ore.quit(); } return n; });
+  const geo = await p.evaluate(async () => { const n = []; for (let i = 0; i < 4; i++) { __ore.pickMap(i % 3); __ore.setRaid(true); __ore.start(); __ore.game.update(1 / 30); n.push(__ore.pipe.renderer.info.memory.geometries); __ore.quit(); } return n; });
   check(geo[3] < geo[0] + 40, `restarting shifts frees the old world (${geo.join(', ')} meshes on the card)`);
 
 } catch (e) { console.log('ERROR', e); fail.push('exception'); }

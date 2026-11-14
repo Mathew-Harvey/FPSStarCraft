@@ -9,14 +9,16 @@ import { DIFFS, UNIT, BLD, FACTION, UPGRADES, setMap, setSides, Kind, BKind, Uni
 import { defineBuildings, defineFaction, defineUnits, addHitFilter, HIT_FILTERS, bldRule } from '../../src/core/registry';
 import { ECON, costOf, canPay, sendToVent, seamRate, ventSpots } from '../../src/core/econ';
 import { LEVELS, level, levelMul, canHit } from '../../src/core/combat';
+import { purseOf, staffVents } from '../../src/core/purse';
 import { addStatus, hasStatus, statusPace, canAct } from '../../src/core/status';
-import { defineAbilities, abilitiesOf, whyNot, useAbility, ENERGY } from '../../src/core/ability';
+import { defineAbilities, abilitiesOf, whyNot, useAbility, setAutocast, ENERGY } from '../../src/core/ability';
 import { AIR, liftOff, flyBuilding, land } from '../../src/core/air';
 import { seenBy, isHidden } from '../../src/core/sight';
 import { load, unload, CARGO } from '../../src/core/cargo';
 import { switchKind, morph } from '../../src/core/morph';
 import { isEnemy, setAlliances, MAX_SIDES, TEAM_SLOTS } from '../../src/core/sides';
 import { serverCmd, buildSnap, buildSnaps } from '../../src/netgame';
+import { TERRAIN } from '../../src/terrain';
 
 initHeadless();
 const fail: string[] = []; const check = (ok: boolean, what: string) => { console.log((ok ? 'PASS ' : 'FAIL ') + what); if (!ok) fail.push(what); };
@@ -49,7 +51,14 @@ const run = (g: Game, secs: number, each?: () => boolean | void) => { for (let i
   { const taps = Object.keys(BLD).filter(k => bldRule(k as BKind).tap); defineBuildings(Object.fromEntries(taps.map(k => [k, { tap: undefined }])));
     const g0 = world(); setSides(0, 1); check(world(0, 1).vents.length === 0 && g0.vents.length === 0, 'vents: with no tap in either roster none are laid, so a match without Flux plays as before');
     defineBuildings(Object.fromEntries(taps.map(k => [k, { tap: true }]))); }
-  ECON.vents = 'on'; const g = world(0, 0); const H = SIDE.home, O = SIDE.out;
+  ECON.vents = 'on';
+  { // A map's own vents (stream J's ground lays two by each base and two by each field) come first: each sits clear of the ore, and a tap fits.
+    const gj = world(0, 0), dj = gj.vents.map(v => Math.min(...gj.ores.map(o => Math.hypot(v.pos.x - o.pos.x, v.pos.z - o.pos.z))));
+    check(gj.vents.length >= 4 && dj.every(x => x >= 5), `vents: the map's own (${gj.vents.length}) all stand clear of the ore (nearest ${Math.min(...dj).toFixed(1)} m)`);
+  }
+  // The rest of this file tests the engine's own vent spots and flat ground, the fallback for a map with no ground of its own.
+  TERRAIN.on = false;
+  const g = world(0, 0); const H = SIDE.home, O = SIDE.out;
   check(g.vents.length >= 4, `vents: laid when switched on (${g.vents.length})`);
   const d = (v: { pos: { x: number; z: number } }, x: number, z: number) => Math.hypot(v.pos.x - x, v.pos.z - z);
   const yard = g.vents.map(v => d(v, 0, 0)).sort((a, b) => a - b).slice(0, 2), far = g.vents.map(v => d(v, VHOME.x, VHOME.z)).sort((a, b) => a - b).slice(0, 2);
@@ -69,6 +78,15 @@ const run = (g: Game, secs: number, each?: () => boolean | void) => { for (let i
   g.purse[H] = 100; g.fluxPurse[H] = 10; check(!g.train(barracks, 'xflux' as Kind), 'training is refused when there is ore but not enough Flux');
   g.fluxPurse[H] = 30; check(g.train(barracks, 'xflux' as Kind) && g.cash(H) === 50 && g.flux(H) === 5, 'training takes ore and Flux');
   check(g.cancelTrain(barracks, 0) && g.cash(H) === 100 && g.flux(H) === 30 && barracks.queue.length === 0, 'cancelling an order gives both back');
+  // The brains' purse: ore and Flux together, with something kept back.
+  { g.purse[H] = 100; g.fluxPurse[H] = 30; const P = purseOf(g, H);
+    check(P.can('xflux' as Kind) && !P.can('xflux' as Kind, 2) && P.short('xflux' as Kind, 2).includes('Flux'), 'a purse knows a body costs ore and Flux');
+    P.hold([60, 0]); check(!P.can('xflux' as Kind) && P.can('xflux' as Kind, 1, false) && P.free().can('xflux' as Kind), 'a purse keeps back what it is saving for');
+    g.fluxPurse[H] = 0; check(P.wantsFlux('xflux' as Kind) && !P.wantsFlux(FACTION[H].supply), 'a purse says when Flux is what is missing');
+    for (const u of g.units) if (u.team === H) sendToVent(g, u, null);
+    const n = staffVents(g, H, 3), on = g.units.filter(u => u.alive && u.team === H && u.vent === v).length;
+    check(n === 3 && on === 3, `staffing a tapped vent puts three workers on it (${n}, ${on})`);
+    g.fluxPurse[H] = 5000; check(staffVents(g, H, 3) === 2, 'with plenty of Flux one goes back to ore each step'); for (const u of g.units) if (u.team === H) sendToVent(g, u, null); }
   FACTION[H].builds.pop(); ECON.vents = 'auto';
   // Supply never goes past 200.
   for (let i = 0; i < 40; i++) g.addBuilding(FACTION[H].supply, H, -60 + (i % 8) * 8, -60 + Math.floor(i / 8) * 8, true);
@@ -126,6 +144,10 @@ const run = (g: Game, secs: number, each?: () => boolean | void) => { for (let i
   const c = g.spawn('xcaster' as Kind, H, 40, 90), foe = g.spawn('xtank' as Kind, O, 46, 90), far = g.spawn('xplain' as Kind, O, 70, 90), pal = g.spawn('xplain' as Kind, H, 42, 92);
   check(c.maxEnergy === 200 && c.energy === ENERGY.start && abilitiesOf('xcaster').length === 1, `a body with energy starts with ${ENERGY.start} of 200 and its ability listed`);
   check(whyNot(g, c, 'zap', { x: far.pos.x, z: far.pos.z, id: far.id }) === 'range' && whyNot(g, c, 'zap', { x: pal.pos.x, z: pal.pos.z, id: pal.id }) === 'target' && whyNot(g, c, 'nope', { x: 0, z: 0 }) === 'no such ability', 'refused: out of range, a friend for a foe-only ability, or an ability it does not have');
+  { // A building is measured to its nearest edge: a wide one whose centre is past the range but whose wall is inside it can be the target.
+    const hq = g.addBuilding(FACTION[O].hq, O, 40, 90, true), r = 10 + 1 + .5; hq.pos.x = c.pos.x + r + hq.hx - 1; hq.pos.z = c.pos.z;
+    const ok = whyNot(g, c, 'zap', { x: hq.pos.x, z: hq.pos.z, id: hq.id }); hq.pos.x += 3; const no = whyNot(g, c, 'zap', { x: hq.pos.x, z: hq.pos.z, id: hq.id });
+    check(hq.hx > 2 && ok === '' && no === 'range', `a building is in range by its nearest wall, not its centre (${ok || 'ok'}, then ${no})`); hq.alive = false; g.buildings.splice(g.buildings.indexOf(hq), 1); }
   c.energy = 20; check(whyNot(g, c, 'zap', { x: foe.pos.x, z: foe.pos.z, id: foe.id }) === 'energy', 'refused: not enough energy');
   c.energy = 60; check(useAbility(g, c, 'zap', { x: foe.pos.x, z: foe.pos.z, id: foe.id }) && near(c.energy, 10) && zapped === 0 && !!c.cast, 'cast: the energy is paid and the wind-up starts');
   check(whyNot(g, c, 'zap', { x: foe.pos.x, z: foe.pos.z, id: foe.id }) !== '', 'no second cast while winding up or cooling down');
@@ -136,6 +158,9 @@ const run = (g: Game, secs: number, each?: () => boolean | void) => { for (let i
   const n0 = zapped; c.abCd!.zap = 0; c.energy = 200; serverCmd(g, 7, null, ['ab', c.id, 'zap', foe.pos.x, foe.pos.z, foe.id]); run(g, .7);
   const other = g.spawn('xcaster' as Kind, O, 80, 80); other.pilot = 9; serverCmd(g, 7, null, ['ab', other.id, 'zap', foe.pos.x, foe.pos.z, foe.id]);
   check(zapped === n0 + 1 && !other.cast, 'online: the server casts for a body on the asking player\'s side and refuses one that is not theirs');
+  // Autocast switch: a body set not to cast by itself does not, and the server sets it for the player's own side only.
+  { const n1 = zapped; c.abCd!.zap = 0; c.energy = 200; setAutocast(g, c, 'zap', false); run(g, 1.2); check(zapped === n1 && !c.cast, 'a body with its autocast switched off leaves the ability alone');
+    serverCmd(g, 7, null, ['aa', c.id, 'zap', 1]); check(!c.autoOff?.zap, 'online: the server switches it back on'); serverCmd(g, 7, null, ['aa', other.id, 'zap', 0]); check(!other.autoOff?.zap, 'and refuses for a body on the other side'); }
 }
 
 // ---------------------------------------------------------------- 5. The air
@@ -180,6 +205,10 @@ const run = (g: Game, secs: number, each?: () => boolean | void) => { for (let i
   check(unload(g, truck) === 2 && !a.inside && a.obj.visible && Math.hypot(a.pos.x - 30, a.pos.z - 110) < 4, 'unloading sets them down beside it');
   load(g, truck, a); load(g, truck, b); g.damage(truck, 1e4, foe);
   check(!truck.alive && a.alive && near(a.hp, 100 * (1 - CARGO.spill)) && !a.inside, `a transport that dies on the ground spills its riders, each hurt by ${CARGO.spill * 100}%`);
+  { const t2 = g.spawn('xtruck' as Kind, H, 40, 104), r1 = g.spawn('xplain' as Kind, H, 50, 104), r2 = g.spawn('xplain' as Kind, H, 51, 106); t2.order = { type: 'guard', x: 40, z: 104 }; r1.order = { type: 'guard', x: 50, z: 104 }; r2.order = { type: 'guard', x: 51, z: 106 };
+    check(g.board([r1], t2) === 1, 'g.board sends a body to a carrier'); serverCmd(g, 7, null, ['ld', r2.id, t2.id]); run(g, 6, () => !!r1.inside && !!r2.inside);
+    check(r1.inside === t2 && r2.inside === t2 && !r1.boarding, `boarding bodies walk to the transport and climb in (${!!r1.inside}, ${!!r2.inside}; the second through the net command)`);
+    serverCmd(g, 7, null, ['ul', t2.id, r1.id]); check(!r1.inside && r2.inside === t2, 'online: letting one body out'); check(g.unload(t2) === 1 && !r2.inside, 'and then all of them'); }
   const ferry = g.spawn('xferry' as Kind, H, b.pos.x, b.pos.z); load(g, ferry, b); g.damage(ferry, 1e4, null); check(!b.alive, 'riders of a flier that goes down die with it');
   const bunker = g.addBuilding('xbunker' as BKind, H, 70, 110, true), c = g.spawn('xplain' as Kind, H, 70, 113); check(load(g, bunker, c), 'a bunker takes a body in');
   g.truce = false; const f2 = g.spawn('xplain' as Kind, O, 74, 118); f2.hp = 5; let shot = false; run(g, 6, () => { if (!f2.alive) { shot = true; return true; } });
@@ -223,8 +252,10 @@ const run = (g: Game, secs: number, each?: () => boolean | void) => { for (let i
   defineFaction(f, { works: (gg, b) => b === bk ? 0 : 1, whySilent: () => 'It is outside a song field.' }); g.train(bk, 'xsoft' as Kind);
   check(g.silent(bk) === 'It is outside a song field.' && bk.queue.length === 0, 'a silent building refuses to train, with the faction\'s reason');
   defineFaction(f, { works: undefined, whySilent: undefined });
+  // A spot the supply building may take on its own (vents now keep a tap's room clear round them, so a fixed spot can land too near one).
+  const [px, pz] = [[-14, 14], [-14, 24], [14, 24], [-24, 0], [24, 0], [0, 24]].find(([x, z]) => g.canPlace(FACTION[H].supply, x, z, false, H)) || [-14, 14];
   defineFaction(f, { placeOK: (gg, k) => k === FACTION[H].supply ? 'It has to stand inside a song field.' : '' });
-  check(!g.canPlace(FACTION[H].supply, -14, 14, false, H) && g.placeWhy.includes('song field'), 'a faction can refuse a building spot and say why'); defineFaction(f, { placeOK: undefined });
+  check(!g.canPlace(FACTION[H].supply, px, pz, false, H) && g.placeWhy.includes('song field'), 'a faction can refuse a building spot and say why'); defineFaction(f, { placeOK: undefined });
   add('xtall', { tall: true }); add('xsky', { hits: 'air' }); const tall = g.spawn('xtall' as Kind, O, 60, 60), sky = g.spawn('xsky' as Kind, H, 60, 52), short = g.spawn('xplain' as Kind, O, 62, 60);
   check(canHit(sky, tall) && !canHit(sky, short), 'an air-only weapon can hit a tall walker but not a short one');
   const depot = g.addBuilding(FACTION[H].supply, H, 20, 60, true); defineBuildings({ [FACTION[H].supply]: { hq: true } });

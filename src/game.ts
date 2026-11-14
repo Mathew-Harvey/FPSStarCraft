@@ -11,7 +11,7 @@ import * as T from './terrain';
 import { seamsFor } from './teammaps';
 import { LOD } from './meshes';
 import { Intel } from './scout';
-import { Kind, BKind, UNIT, BLD, BUILDABLE, UPGRADES, TRAINS, UNIT_NEEDS, UpKey, Unit, Building, Prop, OreNode, Difficulty, DIFFS, OUTPOST, GATE, MAP, MAPS, ROAD, VHOME, FACTION, SIDE, setMap, veylPt, isUnit, isSoldier, isWorker, isFighter, foeOf, fac, MIRROR, atHome, endPt, swapEnd , STORY, turnOf, LAYOUT, OVERTIME, CHOIR_REACH, CLEAVE, turnPt, startXZ } from './data';
+import { isFoe, isOwn, Kind, BKind, UNIT, BLD, BUILDABLE, UPGRADES, TRAINS, UNIT_NEEDS, UpKey, Unit, Building, Prop, OreNode, Difficulty, DIFFS, OUTPOST, GATE, MAP, MAPS, ROAD, VHOME, FACTION, SIDE, setMap, veylPt, isUnit, isSoldier, isWorker, isFighter, foeOf, fac, MIRROR, atHome, endPt, swapEnd , STORY, turnOf, LAYOUT, OVERTIME, CHOIR_REACH, CLEAVE, turnPt, startXZ } from './data';
 import { Director } from './director';
 import { ENV, hourOf, matchHour, matchWeather, lampsBegin, lamp, flashLamp, lampsCommit, flicker, LAMP_ON } from './light';
 import type { Mission } from './campaign';
@@ -27,7 +27,7 @@ import { tickStatus, statusPace, canAct, soak, hasStatus } from './core/status';
 import { initEnergy, tickAbilities, useAbility, type Target } from './core/ability';
 import { initAir, tickAir, airCollide, sameLayer, flyKeys } from './core/air';
 import { seenBy, drawShimmer } from './core/sight';
-import { tickCargo, spill, fightsInside } from './core/cargo';
+import { tickCargo, spill, fightsInside, board, boardWork, unload } from './core/cargo';
 import { tickMorph } from './core/morph';
 import { isEnemy, isFriend, TEAM_SLOTS, MATCH, multi } from './core/sides';
 import { type Vent, layVents, costOf, canPay, pay, refund, shortOf, ventWork, ventAt, seamRate, seamFull, capSupply } from './core/econ';
@@ -42,8 +42,13 @@ const UP = V3(0, 1, 0), QT = new THREE.Quaternion();
 /** The far side of a mirror match wears different colours, so two Ironhold crews (or two Choruses, or two swarms) can tell each other apart.
  *  Every material on the body is swapped for a copy with its colour shifted; the copies share every other uniform (shadows, fog, time). */
 const MIRROR_TINT = [new THREE.Color(.62, .82, 1.35), new THREE.Color(1.35, .78, .7), new THREE.Color(1.15, .68, 1.3)], tinted = new Map<THREE.Material, THREE.Material>();
+/** How far other buildings keep off an untapped vent: the widest tap's half-width plus the usual 1.6 m gap, so a tap always fits on it later. */
+let VENT_ROOM = 0; const ventRoom = () => VENT_ROOM || (VENT_ROOM = Math.max(2.6, ...Object.keys(BLD).filter(k => bldRule(k as BKind).tap).map(k => Math.max(BLD[k as BKind].hx, BLD[k as BKind].hz))) + 1.6);
+/** Team games can hold a faction three or more times: the third copy on wears these, one each, so every copy looks different. */
+const COPY_TINT = [new THREE.Color(1.3, 1.25, .62), new THREE.Color(.7, 1.3, .8), new THREE.Color(1.35, 1, 1.35), new THREE.Color(.75, .75, .75), new THREE.Color(1.25, .95, .6), new THREE.Color(.6, 1.15, 1.25)], copyTinted = new Map<number, Map<THREE.Material, THREE.Material>>();
+const copyCache = (copy: number) => { let m = copyTinted.get(copy); if (!m) copyTinted.set(copy, m = new Map()); return m; };
 function tintMirror(obj: THREE.Object3D, team: number) {
-  const corp = team === STORY.charter; if ((team < MIRROR || STORY.charter >= 0) && !corp) return; const tint = MIRROR_TINT[fac(team)], cache = corp ? greyed : tinted;
+  const corp = team === STORY.charter; if ((team < MIRROR || STORY.charter >= 0) && !corp) return; const copy = Math.floor(team / MIRROR), tint = copy <= 1 ? MIRROR_TINT[fac(team)] : COPY_TINT[(copy - 2) % COPY_TINT.length], cache = corp ? greyed : copy <= 1 ? tinted : copyCache(copy);
   // Charter Security wear company grey: the same kit with most of the colour taken out and a cold blue left in.
   const shift = (c: THREE.Color) => { if (!corp) return c.clone().multiply(tint); const l = c.r * .3 + c.g * .59 + c.b * .11; return new THREE.Color(l, l, l).lerp(c, .18).multiply(GREY); };
   obj.traverse(o => { const m = o as THREE.Mesh; if (!m.isMesh) return; const swap = (mat: THREE.Material) => { const sm = mat as THREE.ShaderMaterial; if (!sm.uniforms?.uColor) return mat; let c = cache.get(mat); if (!c) { const t = sm.clone(); t.uniforms = { ...sm.uniforms, uColor: { value: shift(sm.uniforms.uColor.value as THREE.Color) } }; cache.set(mat, c = t); } return c; }; m.material = Array.isArray(m.material) ? m.material.map(swap) : swap(m.material); });
@@ -244,6 +249,10 @@ export class Game {
     if (a.cost) pay(this, b.team, a.cost); a.run(this, b, aim); if (manual) sfx.blip(); return true;
   }
   /** Takes an order off a building's training queue and gives the price back. Online the client asks ('cq') and the server does it. */
+  /** Sends bodies to get into a carrier of their side (a transport or a building with room); they walk there and climb in. */
+  board(list: Unit[], c: Unit | Building) { if (this.net) { this.net.cmd('ld', ...list.map(u => u.id), c.id); return list.length; } let n = 0; for (const u of list) if (board(this, u, c)) n++; return n; }
+  /** Lets one body (or with none given, every body) out of a carrier. */
+  unload(c: Unit | Building, which?: Unit) { if (this.net) { this.net.cmd('ul', c.id, which ? which.id : 0); return 0; } return unload(this, c, which); }
   cancelTrain(b: Building, i: number) {
     if (this.net) { this.net.cmd('cq', b.id, i); return true; }
     const q = b.queue[i]; if (!q || !b.alive) return false; b.queue.splice(i, 1); refund(this, b.team, costOf(q.kind)); return true;
@@ -391,8 +400,8 @@ export class Game {
   explode(p: THREE.Vector3, team: number, dmg: number, radius: number, from: Unit | null, mode: boolean | number = false) {
     const veyl = !!mode, acid = mode === 2; this.fx.blastAt(p, radius);
     if (this.evq) this.evq.push(['ex', r1(p.x), r1(p.y), r1(p.z), radius, +mode]);
-    for (const u of this.units) { if (!u.alive || u.team === team) continue; const d = Math.hypot(u.pos.x - p.x, u.pos.z - p.z); if (d > radius + UNIT[u.kind].rad) continue; const k = 1 - .6 * Math.min(1, d / radius); this.damage(u, dmg * k, from); if (d > .1) { u.kx += (u.pos.x - p.x) / d * 9 * k; u.kz += (u.pos.z - p.z) / d * 9 * k; } }
-    for (const b of this.buildings) { if (!b.alive || b.team === team) continue; if (this.distToBox(b, p.x, p.z) < radius * .7) this.damage(b, dmg * 1.4, from); }
+    for (const u of this.units) { if (!u.alive || !isEnemy(u.team, team)) continue; const d = Math.hypot(u.pos.x - p.x, u.pos.z - p.z); if (d > radius + UNIT[u.kind].rad) continue; const k = 1 - .6 * Math.min(1, d / radius); this.damage(u, dmg * k, from); if (d > .1) { u.kx += (u.pos.x - p.x) / d * 9 * k; u.kz += (u.pos.z - p.z) / d * 9 * k; } }
+    for (const b of this.buildings) { if (!b.alive || !isEnemy(b.team, team)) continue; if (this.distToBox(b, p.x, p.z) < radius * .7) this.damage(b, dmg * 1.4, from); }
     this.blastProps(p, radius, dmg, from); this.shove(p, radius * 1.6, 9);
     const g = V3(p.x, .6, p.z); this.puff(g, 5, radius * .62, acid ? M.gS : veyl ? M.teal : M.fire, 2.2, 1.5); this.puff(g, 3, radius * .5, acid ? M.gGlow : veyl ? M.cyan : M.fireD, 1.6, 2); this.puff(TMP2.set(p.x, 1.1, p.z), 5, radius * .7, acid ? M.gGlow : veyl ? M.indigoL : M.soot, 1.5, 1.7, 2.3); this.debris(g, 8, .3, acid ? M.gH : veyl ? M.crys : M.rock, 7); this.pow(g, radius * 1.5, acid ? 2 : veyl ? 1 : 0); this.scorchAt(p, radius * 1.5); if (radius >= 3.5) this.crater(p, radius * .55);
     const v = this.vol(p); this.shake = Math.max(this.shake, v * 1.1); if (!veyl) this.pipe.flash = Math.max(this.pipe.flash, v * .5); sfx.boom(v);
@@ -422,8 +431,9 @@ export class Game {
     let warded = false;
     if (!u && !bldRule((t as Building).kind).ward) { const w = this.ward(t.pos, t.team); if (w) { amt *= .7; warded = true; if (this.time > this.wardFx) { this.wardFx = this.time + .35; this.tracer(V3(w.pos.x, 4.6, w.pos.z), V3(t.pos.x, (t as Building).h * .6, t.pos.z), beamMat, .22); this.puff(TMP.set(t.pos.x, (t as Building).h * .6, t.pos.z), 3, .7, M.cyan, .5); } } }
     const dealt = amt, shielded = (!!u && u.shield > 0) || warded;
-    // A paid-for Veyl body the AI drives shrugs off part of each hit (see vBoost). A body a player drives takes hits at face value, the same as an Ironhold one.
-    if (u && fac(u.team) === 1 && this.eco && !u.pilot && !isWorker(u.kind)) amt /= this.vBoost.hp;
+    // A paid-for Veyl body shrugs off part of each hit (see vBoost), whether the AI or a player drives it: a driven body used to take hits at face
+    // value and was weaker than the same kind under a bot. Its hits go through vMul the same way (stream C).
+    if (u && fac(u.team) === 1 && this.eco && !isWorker(u.kind)) amt /= this.vBoost.hp;
     if (u && u.status) amt = soak(u, amt);
     if (u) { u.pop = 1; this.fx.hit(u, dealt, from, crit, shielded); if (u.shield > 0) { const a = Math.min(u.shield, amt); u.shield -= a; amt -= a; this.bubble(u); } }
     // A hit from a body somebody is driving lands with weight: the target is shoved back and loses a beat.
@@ -607,7 +617,8 @@ export class Game {
       else if (this.me?.alive && !this.tab && !this.cmd.on) this.updatePlayer(dt, P);
       // Who is leading from the ground this tick: this screen's own body offline, every driven body on a server.
       { const L = this.leads; L.length = 0; const me = this.me; if (LEAD.dmg !== 1 || LEAD.guard !== 1) { if (me && me.alive && !this.net && !this.cmd.on && this.staticT <= 0 && this.human[me.team]) L.push(me); for (const u of this.units) if (u.alive && u.pilot && !u.aloft && u !== me) L.push(u); } }
-      if (SIDE.out === 2) gloamFx(this, dt);
+      // Each faction's own per-frame systems (the Gloam's Bloom and Buds), for every faction in the match at either end.
+      for (const f of new Set([fac(SIDE.home), fac(SIDE.out), ...MATCH.teams.map(fac)])) factionRule(f).fx?.(this, dt);
       if (this.net) { netTick(this, dt); this.intel.update(dt); this.poseUnits(dt); this.updateProjs(dt); this.updateChunks(dt); this.updateWrecks(dt); this.updateFx(dt); } else {
       if (this.mission && this.endT <= 0) { this.mission.tick?.(this, this.ms, dt); if (this.ms.lose) { this.endT = 2.4; this.endWon = false; this.pipe.flash = 1; } else if (this.mission.objectives.every(o => o.done(this))) { this.endT = 2.4; this.endWon = true; this.pipe.flash = 1; } }
       this.updateUnits(dt); this.updateBuildings(dt); this.updateProjs(dt); this.updateChunks(dt); this.updateWrecks(dt); this.dir.update(dt); this.intel.update(dt);
@@ -726,7 +737,7 @@ export class Game {
     if (bud && !(b.buds! > 0)) { if (manual) { sfx.deny(); this.feed(v, 'No Bud is ripe on this Cap. Give it a moment, or grow another Mother Cap.', 'al', t); } return false; }
     const price = costOf(k); if (!canPay(this, t, price, n)) { if (manual) { sfx.deny(); this.feed(v, this.cash(t) < price[0] * n ? (fac(t) === 2 ? 'The Overgrowth is hungry. Send the Grazers to chew.' : fac(t) ? 'The Chorus is out of ore. Send the Tenders to the seams.' : 'Can\'t. We\'re broke. Go hit a rock.') : `Short of ${shortOf(this, t, price, n)}. Tap a vent.`, 'al', t); } return false; }
     if (this.supplyUsed(t) + st.supply * n > this.supplyCap(t)) { if (manual) { sfx.deny(); this.feed(v, fac(t) === 2 ? 'No room to grow. Root a Spore Sac first.' : fac(t) ? 'No room in the song. Grow a Hush Well first.' : 'No beds. Build a Depot first.', 'al', t); } return false; }
-    if (!bud && b.queue.length >= 5) { if (manual) sfx.deny(); return false; }
+    if (!bud && b.queue.filter(q => !bldRule(b.kind).buds || unitRule(q.kind).noBud).length >= 5) { if (manual) sfx.deny(); return false; }
     if (bud) b.buds!--; pay(this, t, price, n); for (let i = 0; i < n; i++) b.queue.push({ kind: k, t: st.time }); if (manual) sfx.blip(); return true;
   }
   buyUpgrade(key: UpKey, team = this.myTeam, manual = false) {
@@ -759,7 +770,7 @@ export class Game {
     if (!T.flat(x, z, hx + .6, hz + .6, true)) return false;   // terrain (J): on one level, off the ramps (the vents are checked below)
     // A tap goes square on a vent nobody has tapped; nothing else may cover a vent.
     if (bldRule(k).tap) { const v = ventAt(this, x, z, 1.01); if (!v || (v.tap && v.tap.alive)) return false; }
-    else for (const v of this.vents) if (Math.abs(x - v.pos.x) < hx + 1.6 && Math.abs(z - v.pos.z) < hz + 1.6) return false;
+    else for (const v of this.vents) if (!(v.tap && v.tap.alive) && Math.abs(x - v.pos.x) < hx + ventRoom() && Math.abs(z - v.pos.z) < hz + ventRoom()) return false;   // room for a tap's footprint round an open vent (stream L: a far-end Depot and Assay Office left no room for the Pump Jack)
     if (fac(team) === 2 && !onBloom(this, k as GBKind, x, z, team)) return false;
     const why = factionRule(team).placeOK?.(this, k, x, z, team); if (why) { this.placeWhy = why; return false; }
     return true;
@@ -784,8 +795,8 @@ export class Game {
     else if (this.tool === 1 && P.has('Mouse2') && this.bashCd <= 0) {
       // Right click: the drill kicks like a jackhammer (a Tender throws one sharp note). Short reach, big shove, and it cracks scenery.
       this.bashCd = 1.1; this.bashT = .25; this.recoil = 1; this.jaw = 1; this.shake = Math.max(this.shake, .4); veyl ? sfx.zap(1) : gl ? sfx.slash(1) : sfx.clang(); sfx.dash(.6); let any = false;
-      for (const u of this.units) { if (!u.alive || u.team !== foe) continue; const dx = u.pos.x - me.pos.x, dz = u.pos.z - me.pos.z, d = Math.hypot(dx, dz); if (d > 3.2 + UNIT[u.kind].rad || (dx * dir.x + dz * dir.z) / (d || 1) < .45) continue; this.damage(u, 22, me); any = true; }
-      if (look?.prop && look.dist < 3.6) { this.damageProp(look.prop, 60, me, V3().copy(eye).addScaledVector(dir, look.dist)); any = true; } else if (look?.b && look.b.team === foe && look.dist < 3.6) { this.damage(look.b, 40, me); any = true; }
+      for (const u of this.units) { if (!u.alive || !isFoe(u.team, side)) continue; const dx = u.pos.x - me.pos.x, dz = u.pos.z - me.pos.z, d = Math.hypot(dx, dz); if (d > 3.2 + UNIT[u.kind].rad || (dx * dir.x + dz * dir.z) / (d || 1) < .45) continue; this.damage(u, 22, me); any = true; }
+      if (look?.prop && look.dist < 3.6) { this.damageProp(look.prop, 60, me, V3().copy(eye).addScaledVector(dir, look.dist)); any = true; } else if (look?.b && isFoe(look.b.team, side) && look.dist < 3.6) { this.damage(look.b, 40, me); any = true; }
       if (any) { this.hud.hitmark(false); sfx.hit(); this.hud.damage(V3().copy(eye).addScaledVector(dir, 2), gl ? 'CHOMP!' : veyl ? 'TWANG!' : 'CLONK!', 'ko'); }
     }
     let biting = false; const drilling = this.tool === 1 && this.lmb;
@@ -805,7 +816,7 @@ export class Game {
         else if (look.b && look.b.team === side && !look.b.built) { biting = true; look.b.progress += dt / BLD[look.b.kind].time * 1.6; this.weldAcc += dt; if (this.mineT <= 0) { if (this.net) { this.net.cmd('wd', look.b.id, r1(this.weldAcc * 100) / 100); } this.weldAcc = 0; this.mineT = .16; this.debris(at, 2, .06, veyl ? M.crys : M.spark, 4); } }
         else if (look.b && look.b.team === side && look.b.built && look.b.hp < look.b.maxHp) { biting = true; look.b.hp = Math.min(look.b.maxHp, look.b.hp + 40 * dt); this.weldAcc += dt; if (this.mineT <= 0) { if (this.net) { this.net.cmd('fx', look.b.id, r1(this.weldAcc * 100) / 100); } this.weldAcc = 0; this.mineT = .16; this.debris(at, 2, .06, veyl ? M.crys : M.spark, 4); } }
         else if (look.prop) { biting = true; if (this.mineT <= 0) { this.mineT = .2; this.damageProp(look.prop, 11, me, at); sfx.hit(); } }
-        else if ((look.unit && look.unit.team === foe && look.dist < 3) || (look.b && look.b.team === foe && look.dist < 3)) { biting = true; if (this.mineT <= 0) { this.mineT = .25; this.damage((look.unit || look.b)!, 10, me); sfx.hit(); this.debris(at, 2, .08, M.spark, 4); } }
+        else if ((look.unit && isFoe(look.unit.team, side) && look.dist < 3) || (look.b && isFoe(look.b.team, side) && look.dist < 3)) { biting = true; if (this.mineT <= 0) { this.mineT = .25; this.damage((look.unit || look.b)!, 10, me); sfx.hit(); this.debris(at, 2, .08, M.spark, 4); } }
       }
       if (gl) { if (biting) this.jaw = .5 + .5 * Math.sin(this.time * 26); }
       else if (veyl) { const f = this.vm.veyl.userData.flash; f.visible = biting || Math.random() < .3; f.scale.setScalar(biting ? .55 + Math.random() * .25 : .3); } else this.vm.drill.userData.bit.rotation.z += dt * (biting ? 34 : 24); if (biting) this.shake = Math.max(this.shake, .06);
@@ -939,8 +950,8 @@ export class Game {
       const p = this.projs[i]; p.life -= dt; if (p.nade) p.vel.y -= 20 * dt; p.pos.addScaledVector(p.vel, dt); p.obj.position.copy(p.pos);
       if (p.nade) { p.obj.rotation.x += dt * 9; p.obj.rotation.z += dt * 5; } else { p.obj.lookAt(TMP.copy(p.pos).add(p.vel)); p.obj.rotateZ(this.time * 12); }
       let hit = p.life <= 0 || p.pos.y <= .12, tgt: Unit | Building | null = null;
-      if (!hit) for (const u of this.units) { if (!u.alive || u.team === p.team) continue; const st = UNIT[u.kind]; if (Math.abs(u.pos.x - p.pos.x) > 3) continue; if (Math.hypot(u.pos.x - p.pos.x, u.pos.z - p.pos.z) < st.rad + .3 && p.pos.y < st.headY + .5) { hit = true; tgt = u; break; } }
-      if (!hit) for (const b of this.buildings) { if (!b.alive || (b.team === p.team && !p.nade)) continue; if (Math.abs(p.pos.x - b.pos.x) < b.hx && Math.abs(p.pos.z - b.pos.z) < b.hz && p.pos.y < b.h) { hit = true; if (b.team !== p.team) tgt = b; break; } }
+      if (!hit) for (const u of this.units) { if (!u.alive || !isEnemy(u.team, p.team)) continue; const st = UNIT[u.kind]; if (Math.abs(u.pos.x - p.pos.x) > 3) continue; if (Math.hypot(u.pos.x - p.pos.x, u.pos.z - p.pos.z) < st.rad + .3 && p.pos.y < st.headY + .5) { hit = true; tgt = u; break; } }
+      if (!hit) for (const b of this.buildings) { if (!b.alive || (isOwn(b.team, p.team) && !p.nade)) continue; if (Math.abs(p.pos.x - b.pos.x) < b.hx && Math.abs(p.pos.z - b.pos.z) < b.hz && p.pos.y < b.h) { hit = true; if (isEnemy(b.team, p.team)) tgt = b; break; } }
       if (!hit) for (const s of this.spires) if (Math.abs(p.pos.x - s.x) < s.r && Math.abs(p.pos.z - s.z) < s.r && p.pos.y < s.h) { hit = true; if (!p.nade) this.damageProp(s, p.dmg, p.from); break; }
       if (!hit) continue;
       if (p.ghost === 1) { /* the server's own shot: it sends the result */ if (!p.nade) this.puff(p.pos, 3, .5, M.cyan, .8); }
@@ -962,7 +973,7 @@ export class Game {
       if (u.kx || u.kz) { u.pos.x += u.kx * dt; u.pos.z += u.kz * dt; const k = Math.max(0, 1 - dt * 7); u.kx *= k; u.kz *= k; if (Math.abs(u.kx) + Math.abs(u.kz) < .05) u.kx = u.kz = 0; this.collide(u, u.pos.x, u.pos.z); }
       if (fac(u.team) === 0 && u.hp < u.maxHp && t - u.lastHit > 5) for (const b of this.buildings) if (b.team === u.team && b.built && bldRule(b.kind).mends && Math.abs(b.pos.x - u.pos.x) < 16 && Math.abs(b.pos.z - u.pos.z) < 16) { u.hp = Math.min(u.maxHp, u.hp + 5 * dt); break; }
       if (u.pilot) { u.kx = u.kz = 0; if (u.hp < u.maxHp && t - u.lastHit > 6) u.hp = Math.min(u.maxHp, u.hp + u.maxHp * .05 * dt); }
-      else if ((u !== me || this.staticT > 0 || this.cmd.on) && (!u.status || canAct(u, !!unitRule(u.kind).dugFight))) { if (u.order.type === 'scout') this.intel.walk(u, dt); else if (isWorker(u.kind)) { const w = unitRule(u.kind).work; if (!w || !w(this, u, dt)) this.aiRigger(u, dt); } else (unitRule(u.kind).ai || factionRule(u.team).ai || DEFAULTS.ai)?.(this, u, dt); }
+      else if ((u !== me || this.staticT > 0 || this.cmd.on) && (!u.status || canAct(u, !!unitRule(u.kind).dugFight))) { if (u.boarding && boardWork(this, u, dt)) { /* walking to its carrier */ } else if (u.order.type === 'scout') this.intel.walk(u, dt); else if (isWorker(u.kind)) { const w = unitRule(u.kind).work; if (!w || !w(this, u, dt)) this.aiRigger(u, dt); } else (unitRule(u.kind).ai || factionRule(u.team).ai || DEFAULTS.ai)?.(this, u, dt); }
     }
     // keep bodies apart
     for (let i = 0; i < us.length; i++) { const a = us[i]; if (!a.alive) continue; const ra = UNIT[a.kind].rad; for (let j = i + 1; j < us.length; j++) { const b = us[j]; if (!b.alive) continue; const dx = b.pos.x - a.pos.x; if (dx > 4 || dx < -4) continue; if ((a.air || b.air || a.inside || b.inside) && (!sameLayer(a, b) || a.inside || b.inside)) continue; const dz = b.pos.z - a.pos.z, mine = a === me || b === me, lim = (ra + UNIT[b.kind].rad) * (mine ? (a.team === b.team ? 1.8 : 1.25) : 1.12), d2 = dx * dx + dz * dz; if (d2 < lim * lim && d2 > 1e-5) { const d = Math.sqrt(d2), p = (lim - d) * .5; const wa = a === me || a.pilot ? 0 : unitRule(b.kind).heavy ? 2 : mine ? 2 : 1, wb = b === me || b.pilot ? 0 : unitRule(a.kind).heavy ? 2 : mine ? 2 : 1; a.pos.x -= dx / d * p * wa; a.pos.z -= dz / d * p * wa; b.pos.x += dx / d * p * wb; b.pos.z += dz / d * p * wb; } } }
@@ -1046,7 +1057,7 @@ export class Game {
     for (const o of this.units) {
       if (!o.alive || !isEnemy(o.team, u.team) || o.inside) continue; const dx = o.pos.x - u.pos.x, dz = o.pos.z - u.pos.z; if (dx > range || dx < -range || dz > range || dz < -range) continue; const d = Math.hypot(dx, dz); if (d >= range) continue;
       if (!T.sees(u.team, u.pos.y, o.pos.x, o.pos.z, o.pos.y)) continue;   // terrain (J): nobody shoots at what is up a cliff out of sight
-      if ((o.air || o.status || UNIT[o.kind].cloak) && (!canHit(u, o) || !seenBy(this, u.team, o))) continue;
+      if ((o.air || o.status || UNIT[o.kind].cloak || UNIT[u.kind].hits === 'air') && (!canHit(u, o) || !seenBy(this, u.team, o))) continue;
       const w = (unitRule(o.kind).threat ?? 1) * (o.hp < o.maxHp * .4 ? .75 : 1) * (o === u.target ? .85 : 1);
       const sc = (d + 4) * w; if (sc < bs) { bs = sc; bd = d; best = o; }
     }

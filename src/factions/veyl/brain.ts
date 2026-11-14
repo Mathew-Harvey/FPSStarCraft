@@ -6,6 +6,9 @@ import type { Director, Side, Wave } from '../../director';
 import { docOf } from '../../director';
 import { Kind, BKind, UNIT, BLD, UPGRADES, Building, OUTPOST, GATE, RALLY_N, NORTH_PATH, MAP, ROAD, SIDE, veylPt, roadPt, foeOf, fac, endPt, homeXZ } from '../../data';
 import { defineFaction } from '../../core/registry';
+import { conductor } from './conductor';
+import { V_TUNE } from './numbers';
+export { conductor };
 const LOOKOUT = ['Lookout', 'Watcher', 'Rootwatch'];
 
 export const VHINTS: [number, string, string][] = [
@@ -27,54 +30,6 @@ export const VCHATTER = [
 export const VKILL = ['One fewer hammer.', 'That one has stopped banging.', 'The rust takes them.', 'Quiet, at last.'];
 export const VDOWN = ['A voice is gone.', 'We are one fewer.', 'The song thins.', 'They broke a shell. Remember it.'];
 
-/** The Veyl economy, when the Chorus runs one: what to grow next, what to learn, and who to wake. It mirrors the Quartermaster. */
-export function conductor(D: Director, dt: number, V: Side = D.vs) {
-  const g = D.g, T = V.team, U = g.upOf(T), [HX, HZ] = homeXZ(T), VP = (lx: number, lz: number) => endPt(T, ...veylPt(lx, lz), false); V.qmT -= dt; if (V.qmT > 0 || !V.auto) return; V.qmT = 1;
-  const own = (k: BKind) => g.ownB(k, false, T), up = (k: BKind) => g.ownB(k, true, T), cash = () => g.cash(T);
-  const pits = own('broodpit'), pitsUp = up('broodpit'), sites = g.ownB(undefined, false, T).filter(b => !b.built), building = sites.length > 0;
-  const free = g.supplyCap(T) - g.supplyUsed(T), army = g.army(T).length, spires = own('thornspire').length, ward = own('wardpylon'), wardUp = up('wardpylon').length > 0, gate = own('reedgate'), gateUp = up('reedgate')[0];
-  const stones = own('choir'), home = up('choir')[0] || stones[0]; if (!home) return;
-  const wantWell = pits.length > 0 && free <= 3 && !sites.some(b => b.kind === 'hushwell') && own('hushwell').length < 6;
-  const DOC = docOf(V), wantSpires = Math.max(0, (army >= 3 || g.human[foeOf(T)] ? 1 + (g.time > 420 ? 1 : 0) + (g.time > 840 ? 1 : 0) : 0) + DOC.towers);
-  const put = (k: BKind, slots: number[][], line: string) => { if (cash() < BLD[k].cost || (g.paper(T) && !g.paper(T)!.allow.includes(k) && k !== 'choir')) return false; for (const [lx, lz] of slots) { const [x, z] = VP(lx, lz), at = D.freeSpot(k, Math.round(x), Math.round(z), T); if (at) { g.place(k, at[0], at[1], false, T); D.say('Conductor', line, '', T); return true; } } return false; };
-  const spare = (keys: string[]) => { for (const k of keys) { const u = UPGRADES.find(x => x.key === k)!; if (!U[u.key] && g.ownB(u.at, true, T).length && (!u.needs || U[u.needs]) && cash() >= u.cost + 120) return g.buyUpgrade(u.key, T); } return false; };
-  const homeLeft = g.ores.filter(n => Math.hypot(n.pos.x - HX, n.pos.z - HZ) < 40).reduce((a, n) => [a[0] + n.amount, a[1] + n.max], [0, 0]);
-  const wantStones = Math.min((MAP.sites || []).length + 1, 1 + (g.time > DOC.expT || homeLeft[0] < homeLeft[1] * .5 ? 1 : 0) + (g.time > 960 ? 1 : 0) + (g.time > 1440 ? 1 : 0));
-  const exp = D.vExpansion(stones, T);
-  let saving = true, hold = 95;
-  if (!pits.length) put('broodpit', [[-2, -10], [-2, 12], [-8, 1]], 'A Brood Pit first. The voices need somewhere to wake.');
-  else if (wantWell) put('hushwell', [[6, -14], [6, 16], [0, -18], [0, 20], [-6, -16], [-6, 18]], 'The song is crowded. Growing a Hush Well.');
-  else if (building) saving = false;
-  // The second Stone comes before the extra towers and songs: a Chorus that waited for all of them first expanded minutes after the Ironhold, or never.
-  else if (pitsUp.length && army >= Math.max(1, 4 + DOC.expArmy) && g.time > Math.min(360, DOC.expT) && exp.site && stones.length < wantStones) { hold = BLD.choir.cost; const [sx, sz] = exp.site, dx = HX - sx, dz = HZ - sz, l = Math.hypot(dx, dz) || 1, at = [4, 5, 6, 7, 9].map(r => [Math.round(sx + dx / l * r), Math.round(sz + dz / l * r)]).find(p => g.canPlace('choir', p[0], p[1], false, T));
-    // As close to the seams as it will stand. A Stone is a pillar, not a shed with a long front wall: nine metres out, every Tender at a new
-    // Stone walked further than a Rigger does to a Headframe's near face, and the Chorus mined a third less from the same number of hands.
-    if (cash() >= BLD.choir.cost && at) { const [x, z] = at; g.place('choir', x, z, false, T); D.say('Conductor', 'Seeding a new Choir Stone on the far seam. Some Tenders will drift over.', '', T); } }
-  else if (pitsUp.length && spires < Math.min(1, wantSpires)) put('thornspire', [[-12, -8], [-12, 10], [-16, 1]], 'A Thorn Spire by the road, to listen for boots.');
-  else if (pitsUp.length && !ward.length && army >= 4 + DOC.tech) put('wardpylon', [[-4, 2], [-5, -4], [-5, 7]], 'A Ward Pylon. It keeps the Stones whole, and it knows the first songs.');
-  else if (pitsUp.length && spires < wantSpires) put('thornspire', [[-12, -8], [-12, 10], [-16, 1], [-8, -16], [-8, 18]], 'Another Thorn Spire. The road should sting.');
-  else if (wardUp && !U.vedge && army >= 5) g.buyUpgrade('vedge', T);
-  else if (exp.bare) { const [bx, bz] = exp.bare; for (const [ox, oz] of [[6, 6], [-6, 6], [6, -6], [-6, -6]]) if (cash() >= BLD.thornspire.cost && g.canPlace('thornspire', bx + ox, bz + oz, false, T)) { g.place('thornspire', bx + ox, bz + oz, false, T); D.say('Conductor', 'A Thorn Spire to keep the new Stone company.', '', T); break; } }
-  else if (wardUp && U.vedge && !gate.length && army >= 7 + DOC.tech) { hold = 200; put('reedgate', [[2, -17], [2, 19], [-10, -14], [-10, 16]], 'The Reed Gate grows. Something deep is listening.'); }
-  else if (gateUp && army >= 6 && free >= 6 && g.own('warden', T).length + gateUp.queue.length < (g.time > 660 ? 2 : 1)) { hold = UNIT.warden.cost; if (cash() >= hold) g.train(gateUp, 'warden'); }
-  else if (pits.length === 1 && pitsUp.length === 1 && g.time > DOC.prodT) put('broodpit', [[-2, 12], [-2, -10], [-8, 1], [-10, -14]], 'A second Brood Pit. Twice the voices.');
-  else if (wardUp && !U.vglass && army >= 6) g.buyUpgrade('vglass', T);
-  else if (gateUp && !U.vedge2 && army >= 9) { hold = 150; g.buyUpgrade('vedge2', T); }
-  else if (gateUp && !U.vglass2 && army >= 10) { hold = 150; g.buyUpgrade('vglass2', T); }
-  else if (spare(['vhum', 'vstep', 'vthorn', 'vbreath', 'vwide', 'vbloom'])) saving = true;
-  else saving = false;
-  // Tenders: eight for the home Stone and six more for each new one, woken at whichever Stone is shortest of hands.
-  const tend = g.own('tender', T), hqs = up('choir');
-  if (tend.length < 8 + DOC.crew + 6 * (hqs.length - 1) && free > 0 && cash() >= 50 && (pits.length || tend.length < 6)) {
-    const crew = (h: Building) => tend.filter(u => g.nearHQ((u.node || u).pos.x, (u.node || u).pos.z, T) === h).length + h.queue.length;
-    const h = hqs.filter(b => !b.queue.length && crew(b) < (b === home ? 8 + DOC.crew : 6)).sort((a, b) => crew(a) - crew(b))[0]; if (h) g.train(h, 'tender');
-  }
-  const cans = g.own('cantor', T).length, lans = g.own('lancer', T).length;
-  for (const b of pitsUp) if (b.queue.length < 2) {
-    const q = (k: Kind) => b.queue.filter(x => x.kind === k).length, k: Kind = lans + q('lancer') < Math.floor((cans + q('cantor')) / 2) + 1 && army >= 2 ? 'lancer' : 'cantor';
-    if (cash() >= UNIT[k].cost + (saving ? hold : 0)) g.train(b, k);
-  }
-}
 export function enemy(D: Director, dt: number) {
   const g = D.g, stones = g.stones(); if (!stones.length) return;
   const gate = g.gate(), pits = g.pits(), src = gate ? { x: GATE.x - 6, z: GATE.z } : { x: OUTPOST.x, z: OUTPOST.z };
@@ -154,10 +109,30 @@ defineFaction(1, {
   brain: (D, dt, S) => conductor(D, dt, S), classic: (D, dt) => enemy(D, dt), hints: VHINTS, books: VBOOKS,
   chatter: () => VCHATTER, lines: kind => kind === 'kill' ? VKILL : VDOWN,
   trained(D, u) {
-    if (!D.g.eco) return;
-    if (u.kind === 'cantor' && !D.flags.vcan) { D.flags.vcan = true; D.say('Cantor', 'A Cantor wakes. Look at me and press F to take the blades. Right click whirls.', 'in', u.team); sfx.callout(); }
-    if (u.kind === 'lancer' && !D.flags.vlan) { D.flags.vlan = true; D.say('Lancer', 'A Lancer, listening. Click throws the long note; right click holds it through a whole line.', 'in', u.team); sfx.callout(); }
-    if (u.kind === 'warden' && !D.flags.vwar) { D.flags.vwar = true; D.say('Warden', 'The deep voice is awake. Click slams the ground; right click gives every Veyl near me its shield back.', 'in', u.team); sfx.callout(); }
+    const g = D.g, U = g.upOf(u.team) as any;
+    // Research a new body is born with that game.ts does not count: Shell levels, and Air Glass for fliers.
+    const sh = (U.vshell ? 1.1 : 1) * (U.vshell2 ? 1.1 : 1) * (U.vshell3 ? 1.1 : 1); u.maxShield *= sh; u.shield *= sh;
+    if (UNIT[u.kind].air) { const a = (U.vaglass ? V_TUNE.air[0] : 1) * (U.vaglass2 ? V_TUNE.air[1] : 1) * (U.vaglass3 ? V_TUNE.air[2] : 1); u.maxHp *= a; u.hp *= a; u.maxShield *= a; u.shield *= a; }
+    if (u.kind === 'omen' && U.vomen) { u.maxEnergy = (u.maxEnergy || 200) + 50; u.energy = (u.energy || 0) + 50; }
+    if (!g.eco) return;
+    const first = (flag: string, who: string, line: string) => { if (D.flags[flag + u.team]) return; D.flags[flag + u.team] = true; D.say(who, line, 'in', u.team); sfx.callout(); };
+    if (u.kind === 'cantor') first('vcan', 'Cantor', 'A Cantor is ready. Look at it and press F to drive it. Click cuts, right click spins and cuts everything around you.');
+    if (u.kind === 'lancer') first('vlan', 'Lancer', 'A Lancer is ready. Click fires a bolt; right click holds a long beam that goes through a whole line.');
+    if (u.kind === 'warden') first('vwar', 'Warden', 'A Warden is ready. Click slams the ground in front of it; right click puts 60 shield back on every Veyl body near it.');
+    if (u.kind === 'tuner') first('vtun', 'Tuner', 'A Tuner is ready. R puts up a glass pane that blocks a path for 11 seconds, C makes friends near it take 2 less from each hit, V makes two fake copies of a friend.');
+    if (u.kind === 'mute') first('vmut', 'Conductor', 'A Mute is ready. Enemies cannot see it unless something of theirs that detects is near. Click cuts.');
+    if (u.kind === 'choirmaster') first('vcho', 'Choirmaster', 'A Choirmaster is ready. R marks a circle that cracks for 80 damage over 4 seconds, C drains an enemy\'s energy, V joins with another Choirmaster into a Chord.');
+    if (u.kind === 'chord') first('vchd', 'Conductor', 'Two Choirmasters joined into a Chord: one body, nearly all shield, hitting everything near its target.');
+    if (u.kind === 'bell') first('vbel', 'Bell', 'A Bell is ready. Its shots do 30 more to plated and huge bodies. Its Ring Shell soaks the first 100 damage, and grows back 30 seconds after it breaks.');
+    if (u.kind === 'reedwalker') first('vree', 'Reedwalker', 'A Reedwalker is ready. Its beam sweeps a 4 metre line. It can step up cliffs, and enemy anti-air guns can hit it.');
+    if (u.kind === 'knell') first('vkne', 'Knell', 'A Knell is ready. Click rolls an orb to a spot; 3 seconds later it bursts for 145 on everything near it, ours too.');
+    if (u.kind === 'listener') first('vlis', 'Listener', 'A Listener is in the air. Enemies cannot see it, and it shows us their unseen bodies within 12 metres. C makes it stop and stay.');
+    if (u.kind === 'ferry') first('vfer', 'Ferry', 'A Ferry is ready. R takes in friends next to it, V lets them out, C lands it and opens a song field.');
+    if (u.kind === 'swift') first('vswi', 'Swift', 'A Swift is in the air. It only hits fliers. C lifts an enemy ground body off its feet for 8 seconds.');
+    if (u.kind === 'prism') first('vpri', 'Prism', 'A Prism is in the air. Its beam does more to plated bodies, and C makes it much stronger against them for 12 seconds.');
+    if (u.kind === 'omen') first('vome', 'Omen', 'An Omen is in the air. Click turns its beam on and off (it burns energy). C shows every unseen enemy in a circle, V leaves a trap that freezes bodies for 20 seconds.');
+    if (u.kind === 'lyre') first('vlyr', 'Lyre', 'A Lyre is in the air. It builds Shards, 15 ore each, up to 8, and sends them at whatever it fights.');
+    if (u.kind === 'cantus') first('vcan2', 'Cantus', 'The Cantus is in the air. Friends near it cannot be seen. C calls a group to it from anywhere, R slows every enemy in a circle.');
   },
   built(D, b) {
     if (!D.g.eco) return;

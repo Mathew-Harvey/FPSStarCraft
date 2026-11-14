@@ -155,7 +155,7 @@ export const STORY = {
 export const LAYOUT = { fair: false };
 /** How many more bodies a Cantor's sweep cuts into (at half damage) beside its target. */
 /** A bot Cantor's swing also cuts up to `n` more bodies within 1.9 m of its target, each for `k` of the damage. The balance stream (L) sets both. */
-export const CLEAVE = { n: 2, k: .45 };
+export const CLEAVE = { n: 2, k: .03 };
 /** How far out a Choir Stone takes ore from a Tender's sling, in metres, on top of the reach every home building has (see Game.bankReach).
  *  A dial for balance tables, left at 0. A Choir Stone is thinner than a Headframe, so a Tender walks about 4 m further each way than a Rigger and
  *  the Veyl bot mines about a fifth less. At 5 the bots' Ironhold v Veyl table went from 49-11 to 28-32, and Veyl v Gloam from 34-23 to 60-0. */

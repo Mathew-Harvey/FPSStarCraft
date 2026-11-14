@@ -14,7 +14,7 @@ try {
   p.on('pageerror', e => { console.log('[pageerror]', e.message.slice(0, 400)); fail.push('page error'); });
   await p.goto(page); await p.waitForFunction('window.__ore && __ore.game');
   await p.evaluate(() => {
-    __ore.setFree(true); __ore.pickMap(0); document.querySelectorAll('#diff button')[0].click(); __ore.start(); __ore.hold(true);
+    __ore.setFree(true); __ore.pickMap(0); document.querySelectorAll('#diff button')[0].click(); __ore.setRaid(true); __ore.start(); __ore.hold(true);
     const g = __ore.game; g.introT = 0; g.hourFix = 13; g.wxFix = 'clear'; g.truce = true; g.dir.raidIn = 9999; g.dir.auto = false;
     window.step = n => { const g = __ore.game; for (let i = 0; i < n; i++) { if (g.phase === 'card') g.phase = 'play'; g.noRender = i < n - 1; g.update(1 / 30); if (window.kit) kit.update(1 / 30); } g.noRender = false; __ore.pipe.flash = 0; };
     window.grab = () => { const c = document.getElementById('c'); const x = document.createElement('canvas'); x.width = 240; x.height = 135; const t = x.getContext('2d'); t.drawImage(c, 0, 0, 240, 135); return t.getImageData(0, 0, 240, 135).data; };

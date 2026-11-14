@@ -7,7 +7,7 @@ const { chromium } = require('playwright');
   const p = await b.newPage({ viewport: { width: 640, height: 360 } }); p.setDefaultTimeout(900000);
   p.on('pageerror', e => console.log('PAGEERROR', e.message.slice(0, 300)));
   await p.goto(require('url').pathToFileURL(require('path').join(__dirname, '..', 'dist', 'index.html')).href); await p.waitForFunction('window.__ore && __ore.game');
-  await p.evaluate(() => { __ore.setFree(true); __ore.pickMap(0); document.querySelectorAll('#diff button')[1].click(); __ore.start(); const g = __ore.game; g.noRender = true; g.introT = 0; });
+  await p.evaluate(() => { __ore.setFree(true); __ore.pickMap(0); document.querySelectorAll('#diff button')[1].click(); __ore.setRaid(true); __ore.start(); const g = __ore.game; g.noRender = true; g.introT = 0; });
   // Ironhold squads worth about 360 ore, against Veyl squads the raid budget prices the same (a Cantor or Lancer is one point, a Warden five).
   const iron = { '6 Linesmen': { linesman: 6 }, '3 Breachers': { breacher: 3 }, '3 Longshots': { longshot: 3 }, 'Gantry + 2 Linesmen': { gantry: 1, linesman: 2 }, '4 Linesmen + Patch': { linesman: 4, patch: 1 }, 'Breacher, 2 Linesmen, Longshot': { breacher: 1, linesman: 2, longshot: 1 } };
   const veyl = { '6 Cantors': { cantor: 6 }, '6 Lancers': { lancer: 6 }, '3 Cantors + 3 Lancers': { cantor: 3, lancer: 3 }, 'Warden + Cantor': { warden: 1, cantor: 1 } };

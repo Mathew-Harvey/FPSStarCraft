@@ -100,6 +100,7 @@ for (const [map, home, out] of [[mapCode(0, VAST) + 500, 0, 1], [mapCode(2, VAST
 
 // 6. The scout order: a body walks out to the end of a road nobody has looked down, then home, and goes back to what it was doing.
 {
+  seed = 11;   // its own dice, so a change to any faction's bots in the matches above cannot move this walk
   const g = match(mapCode(1, VAST) + 300), I = g.intel, H = SIDE.home; g.dir.vs.auto = false; g.dir.docSet = g.dir.vs.docSet = true; g.human[H] = true; g.dir.auto = false;
   g.dir.order('S', 0, 0, null); const u = g.units.find(x => x.alive && x.order.type === 'scout')!;
   check(!!u && u.team === H && I.spots[0].some(s => s.sent && Math.hypot(s.x - u.order.x, s.z - u.order.z) < 1), 'the scout order sends one free body to the end of a road');
@@ -108,7 +109,7 @@ for (const [map, home, out] of [[mapCode(0, VAST) + 500, 0, 1], [mapCode(2, VAST
   // Out to the end of its road (it turns once within a few metres of it; the nearest road end can be under 90 m out), then home.
   const end = Math.hypot(u.order.x, u.order.z); let far = 0; run(g, 150, () => { far = Math.max(far, Math.hypot(u.pos.x, u.pos.z)); });
   check(end > 40 && far > end - 8 && (u.order.type !== 'scout' || u.order.back === true), `a scout walks out (${Math.round(far)} m of a road ${Math.round(end)} m long) and turns for home`);
-  run(g, 120); const back = g.units.filter(x => x.alive && x.order.type === 'scout').length;
+  run(g, 120); const back = g.units.filter(x => x.alive && x.team === H && x.order.type === 'scout').length;   // our three; the far side's bot may send its own scouts round and round
   check(back <= 1 && I.spots[0].filter(s => s.seen).length >= 2, `scouts come home and go back to work, and the roads they walked are marked as looked at (${I.spots[0].filter(s => s.seen).length} of ${I.spots[0].length})`);
 }
 

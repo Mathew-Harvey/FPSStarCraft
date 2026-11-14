@@ -34,14 +34,16 @@ export type Aim = { k: 'move' } | { k: 'patrol' } | { k: 'gather' } | { k: 'rall
 export const KEYS = {
   move: 'KeyQ', stop: 'KeyH', board: 'KeyJ', unload: 'KeyK', patrol: 'KeyP', release: 'KeyR', jump: 'KeyF', gather: 'KeyO', build: 'KeyB', rally: 'KeyL', cancel: 'Backspace',
   /** Train and research slots on a building, in order: E T Y U are the keys the first-person shop already uses. Fourteen, so a Cap's
-   *  eleven kinds all fit; V is left out because the squad orders use it. */
-  slots: ['KeyE', 'KeyT', 'KeyY', 'KeyU', 'KeyI', 'KeyO', 'KeyP', 'KeyJ', 'KeyK', 'KeyQ', 'KeyZ', 'KeyX', 'KeyC', 'KeyG'],
+   *  eleven kinds all fit; V is left out because the squad orders use it. The last three (, . /) are for the Mother Cap, whose eleven
+   *  kinds, four research and Ripen need seventeen. (With a second player on the keyboard those keys are theirs, as I O P J K already are; the buttons still click.) */
+  slots: ['KeyE', 'KeyT', 'KeyY', 'KeyU', 'KeyI', 'KeyO', 'KeyP', 'KeyJ', 'KeyK', 'KeyQ', 'KeyZ', 'KeyX', 'KeyC', 'KeyG', 'Comma', 'Period', 'Slash'],
   /** Abilities of the picked bodies, in order, after the fixed orders. */
   abilities: ['KeyE', 'KeyT', 'KeyY', 'KeyU', 'KeyZ', 'KeyX', 'KeyC', 'KeyG'],
   /** Buildings in the build list, in order. */
   builds: ['KeyQ', 'KeyE', 'KeyT', 'KeyY', 'KeyU', 'KeyI', 'KeyO', 'KeyP', 'KeyH', 'KeyJ', 'KeyK', 'KeyL'],
 };
-export const keyName = (code: string) => code === 'Backspace' ? '⌫' : code.replace(/^Key|^Digit/, '');
+const PUNCT: Record<string, string> = { Backspace: '⌫', Comma: ',', Period: '.', Slash: '/' };
+export const keyName = (code: string) => PUNCT[code] ?? code.replace(/^Key|^Digit/, '');
 
 /** The reason a building cannot train a kind now, or '' when it can. Mirrors the checks in Game.train so the button and the order agree. */
 export function trainBlock(g: Game, b: Building, k: Kind): string {

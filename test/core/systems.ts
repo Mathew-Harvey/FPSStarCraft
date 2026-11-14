@@ -252,8 +252,10 @@ const run = (g: Game, secs: number, each?: () => boolean | void) => { for (let i
   defineFaction(f, { works: (gg, b) => b === bk ? 0 : 1, whySilent: () => 'It is outside a song field.' }); g.train(bk, 'xsoft' as Kind);
   check(g.silent(bk) === 'It is outside a song field.' && bk.queue.length === 0, 'a silent building refuses to train, with the faction\'s reason');
   defineFaction(f, { works: undefined, whySilent: undefined });
+  // A spot the supply building may take on its own (vents now keep a tap's room clear round them, so a fixed spot can land too near one).
+  const [px, pz] = [[-14, 14], [-14, 24], [14, 24], [-24, 0], [24, 0], [0, 24]].find(([x, z]) => g.canPlace(FACTION[H].supply, x, z, false, H)) || [-14, 14];
   defineFaction(f, { placeOK: (gg, k) => k === FACTION[H].supply ? 'It has to stand inside a song field.' : '' });
-  check(!g.canPlace(FACTION[H].supply, -14, 14, false, H) && g.placeWhy.includes('song field'), 'a faction can refuse a building spot and say why'); defineFaction(f, { placeOK: undefined });
+  check(!g.canPlace(FACTION[H].supply, px, pz, false, H) && g.placeWhy.includes('song field'), 'a faction can refuse a building spot and say why'); defineFaction(f, { placeOK: undefined });
   add('xtall', { tall: true }); add('xsky', { hits: 'air' }); const tall = g.spawn('xtall' as Kind, O, 60, 60), sky = g.spawn('xsky' as Kind, H, 60, 52), short = g.spawn('xplain' as Kind, O, 62, 60);
   check(canHit(sky, tall) && !canHit(sky, short), 'an air-only weapon can hit a tall walker but not a short one');
   const depot = g.addBuilding(FACTION[H].supply, H, 20, 60, true); defineBuildings({ [FACTION[H].supply]: { hq: true } });

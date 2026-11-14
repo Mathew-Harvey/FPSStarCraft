@@ -5,7 +5,7 @@ import { V3, R, M } from '../../gfx';
 import { sfx } from '../../audio';
 import { isEnemy } from '../../core/sides';
 import type { Game } from '../../game';
-import { UNIT, BLD, Unit, Building, Kind, isUnit, fac } from '../../data';
+import { UNIT, BLD, Unit, Building, Kind, BKind, isUnit, fac } from '../../data';
 import { defineAbilities, bodyOf, type AbilityDef, type Target } from '../../core/ability';
 import { addStatus } from '../../core/status';
 import { morph } from '../../core/morph';
@@ -63,15 +63,46 @@ const sporePod: AbilityDef = {
   key: 'pod', name: 'Spore Pod', hotkey: 'KeyE', energy: G2.keeper.pod.energy, cd: 1, cast: .8, range: G2.keeper.pod.range, target: 'point',
   blurb: 'Plants a Spore Pod on your Bloom: it spreads Bloom 10 m round it and can plant one more pod further on.',
   can: (g, u, t) => g.carpet.on(t.x, t.z, 0, u.team) && podRoom(g, t.x, t.z),
-  effect: (g, u, t) => { const b = g.addBuilding('sporepod', u.team, Math.round(t.x), Math.round(t.z), false); (b as any).hops = 1; u.swing = 1; if (g.vol(b.pos) > .2) sfx.place(); },
+  effect: (g, u, t) => {
+    /* a pod the Keeper chose by itself is checked again as it lands: Keepers casting together all saw the same room 0.8 s ago */
+    const ai = (u as any).podAi; (u as any).podAi = false; if (ai && !keepsRoom(g, u.team, t.x, t.z, true)) return;
+    const b = g.addBuilding('sporepod', u.team, Math.round(t.x), Math.round(t.z), false); (b as any).hops = 1; u.swing = 1; if (g.vol(b.pos) > .2) sfx.place(); },
   ai: (g, u) => {
     if (busyFight(g, u, 14) || (u.energy ?? 0) < G2.keeper.seed.energy + G2.keeper.pod.energy) return null;
     const home = caps(g, u.team).sort((a, b) => dist(a, u) - dist(b, u))[0]; if (!home) return null;
     const pods = g.buildings.filter(b => b.alive && b.team === u.team && b.kind === 'sporepod' && Math.hypot(b.pos.x - home.pos.x, b.pos.z - home.pos.z) < 45).length; if (pods >= 3) return null;
-    for (let i = 0; i < 10; i++) { const a = R(0, 6.283), r = R(4, G2.keeper.pod.range - .5), x = u.pos.x + Math.cos(a) * r, z = u.pos.z + Math.sin(a) * r; if (Math.hypot(x - home.pos.x, z - home.pos.z) > 14 && g.carpet.on(x, z, 0, u.team) && podRoom(g, x, z)) return { x, z }; }
+    for (let i = 0; i < 10; i++) { const a = R(0, 6.283), r = R(4, G2.keeper.pod.range - .5), x = u.pos.x + Math.cos(a) * r, z = u.pos.z + Math.sin(a) * r; if (Math.hypot(x - home.pos.x, z - home.pos.z) > 14 && g.carpet.on(x, z, 0, u.team) && podRoom(g, x, z)) if (!keepsRoom(g, u.team, x, z)) return null; (u as any).podAi = true; return { x, z }; }
     return null;
   },
 };
+/** Whether a pod at x, z still leaves every Cap near it room for one more big building (a Tusk Hollow, either way round) on its own
+ *  ground. The Keepers and pod hops ask this before they plant by themselves, so the Overgrowth never fills a Cap's Bloom with pods
+ *  and leaves a player nowhere to put a Tusk Hollow. A player's own Spore Pod click is not held to it. The answer for a Cap is kept for
+ *  5 s, since a full scan is a few hundred placement checks. */
+const ROOM = new WeakMap<Building, { t: number; ok: boolean; x: number; z: number }>();
+export function keepsRoom(g: Game, team: number, x: number, z: number, fresh = false) {
+  const R = G_TUNE.bloomR.mothercap;
+  for (const c of caps(g, team)) {
+    if (Math.hypot(x - c.pos.x, z - c.pos.z) > R + BLD.tuskhollow.hx + 2) continue;
+    const was = ROOM.get(c); if (was && !fresh && g.time - was.t < 5 && Math.hypot(was.x - x, was.z - z) < 1) { if (!was.ok) return false; continue; }
+    const ok = bigRoom(g, team, c, x, z); ROOM.set(c, { t: g.time, ok, x, z }); if (!ok) return false;
+  }
+  return true;
+}
+/** Whether a Tusk Hollow fits anywhere on a Cap's own ground (its 20 m of Bloom), with a pod standing at px, pz. */
+export function bigRoom(g: Game, team: number, cap: Building, px?: number, pz?: number) {
+  const pod = px === undefined || pz === undefined ? null : { alive: true, team, kind: 'sporepod', pos: { x: px, y: 0, z: pz }, hx: BLD.sporepod.hx, hz: BLD.sporepod.hz } as unknown as Building;
+  if (pod) g.buildings.push(pod);
+  try {
+    const R = G_TUNE.bloomR.mothercap;
+    for (let dx = -R; dx <= R; dx += 2) for (let dz = -R; dz <= R; dz += 2) {
+      if (Math.hypot(dx, dz) > R) continue;
+      const x = Math.round(cap.pos.x + dx), z = Math.round(cap.pos.z + dz);
+      if (g.canPlace('tuskhollow' as BKind, x, z, false, team) || g.canPlace('tuskhollow' as BKind, x, z, true, team)) return true;
+    }
+    return false;
+  } finally { if (pod) g.buildings.splice(g.buildings.indexOf(pod), 1); }
+}
 export function podRoom(g: Game, x: number, z: number) {
   for (const b of g.buildings) if (b.alive && Math.abs(x - b.pos.x) < b.hx + 1.6 && Math.abs(z - b.pos.z) < b.hz + 1.6) return false;
   for (const o of g.ores) if (o.amount > 0 && Math.hypot(x - o.pos.x, z - o.pos.z) < 3.2) return false;

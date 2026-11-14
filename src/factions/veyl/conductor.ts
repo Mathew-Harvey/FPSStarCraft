@@ -152,7 +152,8 @@ export function conductor(D: Director, dt: number, V0: Side = D.vs) {
   const foeBeds = foes.filter(o => !o.air).reduce((n, o) => n + UNIT[o.kind].supply, 0), swarm = now < 420 && foeBeds >= Math.max(3, N * 1.2);
   const rushed = now < 720 && foes.filter(o => !o.air && Math.hypot(o.pos.x - HX, o.pos.z - HZ) < 45).length >= Math.max(3, army.length);
   if (!rushed || !pits.length) step();
-  if (rushed || swarm) for (const p of up('broodpit')) { quicken(g, p, T); if (p.queue.length < 2 && g.rate(p) > 0 && !capped(V, 'cantor') && canPay(g, T, costOf('cantor')) && free >= 2 && g.train(p, 'cantor')) paid('cantor'); }
+  // (whatever the army mix and its cap say: a rush at the door is answered first)
+  if (rushed || swarm) for (const p of up('broodpit')) { quicken(g, p, T); if (p.queue.length < 2 && g.rate(p) > 0 && canPay(g, T, costOf('cantor')) && free >= 2 && g.train(p, 'cantor')) paid('cantor'); }
 
   // ---- songs: the levels first, then what the army is using
   const L = (keys: UpKey[], keep = 0) => { for (const k of keys) if (learn(k, keep)) return true; return false; };

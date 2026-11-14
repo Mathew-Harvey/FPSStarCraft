@@ -39,6 +39,10 @@ try {
   await A.wait(m => m.t === 's'); V.send({ t: 'in', me: null, c: [['dm', 1, 'x'], ['pl', null], ['mn', -1, 1e9], ['zz'], 'x', null] }); await sleep(400);
   const r1 = await fetch(`http://localhost:${PORT}/healthz`).then(r => r.text(), () => '');
   check(/^ok 1 lobbies/.test(r1), 'junk commands in a running match leave the server up (' + r1 + ')');
+  // A doctored client cannot run faster than its body: thirty position reports in one burst, each 3.5 m further on, used to be taken whole.
+  { const at = () => A.last('s').u.find(r => r[0] === bA.unit), p0 = at(); for (let i = 1; i <= 30; i++) A.send({ t: 'in', me: [p0[3] + 2.5 * i, p0[4] + 2.5 * i, 0, 0, 0], c: [] });
+    await sleep(500); const p1 = at(), went = Math.hypot(p1[3] - p0[3], p1[4] - p0[4]);
+    check(went > 2 && went < 30, `a body that reports 106 m of running in half a second is held to its own speed (it got ${went.toFixed(1)} m)`); }
   // Vex drops out and comes back with the same name: still on the Veyl side
   V.close(); await A.wait(m => m.t === 'lobby' && m.players.length === 1);
   const V2 = await client('Vex again'); V2.send({ t: 'join', code, name: 'Vex' }); const b2 = await V2.wait(m => m.t === 'begin');

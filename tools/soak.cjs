@@ -5,7 +5,7 @@ const { chromium } = require('playwright');
     const p = await b.newPage({ viewport: { width: 640, height: 360 } }); p.setDefaultTimeout(900000);
     p.on('pageerror', e => console.log('PAGEERROR', e.message.slice(0, 300))); p.on('console', m => { if (m.type() === 'error') console.log('CONSOLE', m.text().slice(0, 200)); });
     await p.goto(require('url').pathToFileURL(require('path').join(__dirname, '..', 'dist', 'index.html')).href); await p.waitForFunction('window.__ore && __ore.game');
-    await p.evaluate(([map, d]) => { __ore.setFree(true); __ore.pickMap(map); document.querySelectorAll('#diff button')[d].click(); __ore.start(); const g = __ore.game; g.noRender = true; window.prev = new Map(); window.bad = {}; }, [map, d]);
+    await p.evaluate(([map, d]) => { __ore.setFree(true); __ore.pickMap(map); document.querySelectorAll('#diff button')[d].click(); __ore.setRaid(true); __ore.start(); const g = __ore.game; g.noRender = true; window.prev = new Map(); window.bad = {}; }, [map, d]);
     let res = null;
     for (let i = 0; i < 70 && !res; i++) {
       const r = await p.evaluate(() => { const g = __ore.game, note = k => { bad[k] = (bad[k] || 0) + 1; };

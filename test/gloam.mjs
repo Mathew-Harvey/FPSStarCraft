@@ -4,8 +4,9 @@ import { spawn } from 'node:child_process';
 import { createRequire } from 'node:module';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { dirname, join } from 'node:path';
+import { testPage } from './page.mjs';
 const require = createRequire(import.meta.url); const { chromium } = require('playwright');
-const page = pathToFileURL(join(dirname(fileURLToPath(import.meta.url)), '..', 'dist', 'index.html')).href, SHOTS = process.env.SHOTS || '';
+const page = await testPage(), SHOTS = process.env.SHOTS || '';
 const PORT = 8141, URL = `http://localhost:${PORT}/`;
 const fail = []; const check = (ok, what) => { console.log((ok ? 'PASS ' : 'FAIL ') + what); if (!ok) fail.push(what); };
 const sleep = ms => new Promise(r => setTimeout(r, ms));
@@ -81,7 +82,7 @@ try {
   await p.close();
 
   // ---- 3. online: Vex leads the Gloam against Ada's crew
-  srv = spawn('node', ['dist/server.mjs'], { env: { ...process.env, PORT: String(PORT) }, stdio: ['ignore', 'pipe', 'pipe'] }); let log = ''; srv.stdout.on('data', d => { log += d; }); srv.stderr.on('data', d => { log += d; });
+  srv = spawn('node', ['dist/server.mjs'], { env: { ...process.env, PORT: String(PORT), ORE_TRUST_HITS: '1', ORE_WIRE_FOG: '0' /* both screens must agree on the whole world here; fog is tested in test/online */ }, stdio: ['ignore', 'pipe', 'pipe'] }); let log = ''; srv.stdout.on('data', d => { log += d; }); srv.stderr.on('data', d => { log += d; });
   await sleep(1200);
   // Two pages drawing at once starve each other under software rendering: a menu alone made the next page load five times slower, and a kick-off could stall long enough to drop the connection. Both hold still until a check needs a picture.
   const A = await open(URL, 'Ada'); await A.evaluate(() => { __ore.hold(true); }); const V = await open(URL, 'Vex'); await V.evaluate(() => { __ore.hold(true); });
@@ -93,7 +94,7 @@ try {
   check(await until(V, () => /Gloam/.test(document.getElementById('mSide').textContent), null, 10000), 'the lobby offers the Gloam side once the host picks them');
   await V.click('#mSide'); check(await until(A, () => /The Gloam/.test(document.getElementById('mPlayers').textContent), null, 10000), 'Ada sees Vex on the Gloam side');
   await V.click('#mReady'); await A.waitForFunction(() => !document.getElementById('mStart').disabled); await A.click('#mStart');
-  for (const q of [A, V]) { await q.waitForFunction(() => __ore.game.net && __ore.game.me && __ore.game.units.length > 6); await q.evaluate(() => { __ore.game.noRender = true; __ore.hold(false); }); }
+  for (const q of [A, V]) { await q.waitForFunction(() => __ore.game.net && __ore.game.me && __ore.game.units.length > 6); await q.evaluate(() => { __ore.hold(false); __ore.game.noRender = true; }); }
   const st = q => q.evaluate(() => { const g = __ore.game; return { team: g.me && g.me.team, kind: g.me && g.me.kind, my: g.myTeam, eco: g.eco, caps: g.buildings.filter(b => b.alive && b.kind === 'mothercap').length, bloom: g.carpet.patches.length, purse: g.purse[2] }; });
   const a = await st(A), v = await st(V);
   console.log(JSON.stringify({ a, v }));

@@ -6,7 +6,7 @@ const { chromium } = require('playwright');
   const p = await b.newPage({ viewport: { width: 640, height: 360 } }); p.setDefaultTimeout(900000);
   p.on('pageerror', e => console.log('PAGEERROR', e.message.slice(0, 300)));
   await p.goto(require('url').pathToFileURL(require('path').join(__dirname, '..', 'dist', 'index.html')).href); await p.waitForFunction('window.__ore && __ore.game');
-  await p.evaluate(([mode, d, map]) => { __ore.setFree(true); __ore.pickMap(map); document.querySelectorAll('#diff button')[d].click(); __ore.start(); const g = __ore.game; g.noRender = true; g.introT = 0;
+  await p.evaluate(([mode, d, map]) => { __ore.setFree(true); __ore.pickMap(map); document.querySelectorAll('#diff button')[d].click(); __ore.setRaid(true); __ore.start(); const g = __ore.game; g.noRender = true; g.introT = 0;
     const S = window.S = { deaths: 0, lastMe: null, stuck: 0, px: 0, pz: 0, strafe: 0, dealt: 0 };
     window.step = () => { const me = g.me; g.keys.clear(); g.lmb = false; g.rmb = false; if (g.phase === 'card') return; if (!me || !me.alive || g.staticT > 0) { if (S.lastMe) { S.deaths++; S.lastMe = null; } return; } S.lastMe = me;
       const want = mode === 'rigger' ? 'rigger' : mode === 'longshot' ? 'longshot' : mode === 'gantry' ? 'gantry' : 'linesman';

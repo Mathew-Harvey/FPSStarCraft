@@ -10,7 +10,7 @@ from kit import sdf as S, build as B, human as Hu
 from kit.sdf import V, rot
 
 PI = np.pi
-fig = B.Figure('rigger', scale=1.06, detail=.85, paint=1024, grade=(.96, 1.06), hi=(1.2, 2.6, 1.2))      # he is all cloth, which takes the deepest tone: keep him as warm and light as the troopers' plate
+fig = B.Figure('rigger', scale=1.06, detail=.6, paint=1024, grade=(.96, 1.06), hi=(1.2, 2.6, 1.2))      # he is all cloth, which takes the deepest tone: keep him as warm and light as the troopers' plate
 HIP = .93
 fig.group('body', (0, 0, 0))
 fig.group('legL', (-.105, HIP, 0))

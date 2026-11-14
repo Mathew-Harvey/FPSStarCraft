@@ -3,3 +3,4 @@ dist/
 .sfx-cache/
 art/out/
 __pycache__/
+dist-bench/

@@ -21,7 +21,7 @@ for (const [m, d] of [[0, 0], [1, 1], [2, 2], [10, 1], [21, 1]]) SCEN.push({ nam
     await p.goto(require('url').pathToFileURL(require('path').join(__dirname, '..', 'dist', 'index.html')).href); await p.waitForFunction('window.__ore && __ore.game');
     await p.evaluate(sc => {
       __ore.setFree(true);
-      if (sc.kind === 'sp') { __ore.pickMap(sc.map % 10); __ore.pickSize(Math.floor(sc.map / 10)); document.querySelectorAll('#diff button')[sc.diff].click(); __ore.start(); }
+      if (sc.kind === 'sp') { __ore.pickMap(sc.map % 10); __ore.pickSize(Math.floor(sc.map / 10)); document.querySelectorAll('#diff button')[sc.diff].click(); __ore.setRaid(true); __ore.start(); }
       else if (sc.kind === 'job') { __ore.pickJob(sc.job); __ore.start(); }
       else if (sc.kind === 'veyl') { __ore.pickMap(sc.map % 10); __ore.pickSize(Math.floor(sc.map / 10)); document.querySelectorAll('#diff button')[sc.diff].click(); __ore.startVeyl(); }
       else { document.querySelectorAll('#diff button')[1].click(); __ore.startSplit(sc.vs); }

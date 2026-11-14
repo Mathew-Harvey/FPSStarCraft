@@ -128,3 +128,60 @@ def crescent_fin(c, r, t, R, a0=-.9, a1=.9, n=7):
         ribs.append(S.rcone(c, c + R @ V(np.sin(a) * r, np.cos(a) * r, 0) * (.8 + .2 * np.cos(a * 1.3)), t * 1.6, t * .5))
     web = S.both(S.both(S.sphere(c, r * .8), S.slab(c, R @ V(0, 0, 1), t * .45)), S.plane(c, R @ V(0, -1, 0)))
     return S.union(S.union(*ribs), web, k=t)
+
+
+# ---------------------------------------------------------------- added for the full-depth cast (stream G, 2026-11-13)
+def ribbed(f, c, n, amp, ax=2):
+    """A belly in soft bands."""
+    return S.bump(f, lambda p: amp * np.sin((p[..., ax] - c) * n))
+
+
+def eyes(pts, r, look=.4):
+    """Amber eyes: each a bead set in a socket, turned a little outward."""
+    return S.union(*[S.ellipsoid(q, (r, r * .95, r * .8), rot(0, np.sign(q[0]) * look, 0)) for q in pts])
+
+
+def bands(z0, z1, n, rx, ry, y, lap=.55, tilt=-.22, ridge=.0):
+    """A pill-bug back: a low dome stepped into n bands from z0 (front) to z1 (rear). Each band rises toward its back edge and drops to the
+    next, so the edges read as lapped plates without the thin overlapping sheets that crumple when the mesh is thinned. Returns one shape."""
+    zc, rz = (z0 + z1) / 2, abs(z0 - z1) / 2 * 1.06
+    pitch = abs(z0 - z1) / n
+    dome = S.ellipsoid((0, y, zc), (rx, ry, rz))
+    def step(p):
+        t = (z0 - p[..., 2]) / pitch
+        f = t - np.floor(t)
+        on = np.clip((p[..., 1] - y + ry * .2) / (ry * .5), 0, 1)                                                     # the steps fade out down the sides into the rim
+        return ry * .09 * lap * (f ** 2 - .4) * on
+    dome = S.bump(dome, step)
+    if ridge:
+        dome = S.union(dome, S.both(S.ellipsoid((0, y + ry * .9, zc), (ridge, ry * .25, rz * .85)), S.above(y)), k=ridge * .6)
+    return S.both(dome, S.above(y - ry * .5))
+
+
+def arm(sh, el, wr, r, sx):
+    """A thin feeding arm from shoulder to elbow to wrist, ridged. Returns (arm, wrist point)."""
+    sh, el, wr = V(sh), V(el), V(wr)
+    a = S.union(S.chain([sh, el], [r * 1.2, r]), S.chain([el, wr], [r, r * .72]), S.sphere(el, r * 1.15), k=r * .4)
+    L = S.Limb(sh, wr, (0, 1, 0))
+    a = S.bump(a, lambda p: r * .1 * np.sin(L.coords(p)[0] * 30))
+    return hide(a, 2.2 + sx, r * .12, 12, r * .04), wr
+
+
+def spade(at, d, w, l, sx):
+    """A flat digging claw: a bone blade with a hooked tip, for the burrowers."""
+    at, d = V(at), V(d) / np.linalg.norm(V(d))
+    R = S.basis(d, (0, 1, 0))
+    blade = S.ellipsoid(at + d * l * .5, (w, w * .22, l * .55), R)
+    tip = spine(at + d * l * .9, d + V(0, -.6, 0), l * .35, w * .3)
+    return S.union(blade, tip, k=w * .1)
+
+
+def bud(c, r, seed=1.0):
+    """A Bud: a lime pod in a ring of hide leaves, for brood pouches and the Caps."""
+    c = V(c)
+    pod = S.bump(S.ellipsoid(c + V(0, r * .3, 0), (r * .8, r, r * .8)), lambda p: r * .04 * np.sin((p[..., 1] - c[1]) * 40 / r))
+    leaves = []
+    for k in range(5):
+        q = k / 5 * 2 * PI + seed
+        leaves.append(S.ellipsoid(c + V(np.cos(q) * r * .55, -r * .05, np.sin(q) * r * .55), (r * .5, r * .5, r * .12), rot(0, -q + PI / 2, 0) @ rot(.5, 0, 0)))
+    return pod, S.union(*leaves, k=r * .1)

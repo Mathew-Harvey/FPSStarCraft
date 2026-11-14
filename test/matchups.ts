@@ -70,6 +70,9 @@ for (const out of [1, 2]) {
   // 6. A push that breaks nothing for a long time ends, so both armies do not stand still for the rest of the match.
   {
     const g = match(out), D = g.dir; g.purse = g.purse.map(() => 0);
+    // The push must break nothing, so the far end's buildings cannot fall: with the map's own vents laid every time (they used to go
+    // missing after the first match in a run) three Linesmen broke an unguarded Mother Cap in 141 s, and the test was no longer about a stale push.
+    for (const b of g.buildings) if (b.team === out) b.hp = b.maxHp = 1e7;
     const sq: any[] = []; for (let i = 0; i < 3; i++) { const u = g.spawn('linesman', 0, 10 + i, 30); u.order = { type: 'amove', x: 900, z: 900 }; u.pilot = 0; sq.push(u); }
     D.plan = { phase: 'go', t: 0, target: hq(g, out), book: 0, label: '', goT: g.time }; D.incoming(D, 0);
     check(D.vs.raidLive, `vs ${name}: the defenders see the push coming`);
@@ -174,17 +177,20 @@ for (const f of [0, 1, 2]) {
 }
 
 // 13. Every pairing, bots on both sides, plays out to a result without the stalemates the sweep found.
-// At most two of the six may run past 40 minutes. Merging PR 18 (fair ore) with PR 20 (Vast maps) shifted the seeded matches, and two
-// stalled (Ironhold v Veyl on map 2, the Veyl mirror on map 0) though each PR alone finished all six. That is seeded noise, not a new
-// stalemate; the balance stream (wave 3) looks at it again.
+// Each match has its own seed, so a change to an earlier section of this file no longer moves these six (it used to: the whole file
+// shared one stream of dice). Stalls are still real elsewhere: in the 810-match table
+// (tools/table.mjs 30) 51 matches were undecided at 40 minutes, 30 of them Veyl mirrors, where every push dies to the defenders before
+// it breaks a building. Ending those is either balance work or a hard end rule (OVERTIME, switched off), and the end rule is Mat's call.
+// With their own seeds five of the six finish. Ironhold vs Veyl on map 2 still stalls since stream J's map work (0dbb66b): that is the
+// balance stream's to fix, not this test's, so one stall is allowed and named. Picking a different seed to hide it would be cheating.
 { const late: string[] = [];
-  for (const [home, out, map] of [[0, 1, 2], [0, 2, 20], [0, 0, 1], [1, 1, 0], [2, 2, 10], [1, 2, 0]]) {
-    const g = match(out, map, home), H = SIDE.home, O = SIDE.out, tag = `${FACTION[H].short} vs ${NAME(O)} on map ${map}`; let bad = '';
+  for (const [i, [home, out, map]] of ([[0, 1, 2], [0, 2, 20], [0, 0, 1], [1, 1, 0], [2, 2, 10], [1, 2, 0]] as const).entries()) {
+    seed = 7 + 1000 * (i + 1); const g = match(out, map, home), H = SIDE.home, O = SIDE.out, tag = `${FACTION[H].short} vs ${NAME(O)} on map ${map}`; let bad = '';
     for (let i = 0; i < 40 * 60 * 30 && g.phase !== 'over'; i++) { g.update(1 / 30); g.evq!.length = 0; if (g.cash(H) < -1 || g.cash(O) < -1) bad = 'negative ore'; }
     check(!bad, `${tag}: no negative ore`);
     console.log(`     ${tag}: ${g.phase === 'over' ? 'finished' : 'still going'} at ${Math.round(g.time)} s`); if (g.phase !== 'over') late.push(tag);
   }
-  check(late.length <= 2, `the bots finish at least four of the six matches inside 40 minutes (${late.length ? 'still going: ' + late.join(', ') : 'all finished'})`);
+  check(late.length <= 1, `the bots finish at least five of the six matches inside 40 minutes (${late.length ? 'still going: ' + late.join(', ') : 'all finished'})`);
 }
 
 // Each side's squad waits at its own end, and a back-door alarm sends it toward the ridge path's end at its own base. The far end used to borrow

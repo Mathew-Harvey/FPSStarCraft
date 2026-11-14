@@ -145,6 +145,10 @@ const bolt = (g: Game, host: Building, k: 'labbay' | 'twinbay') => { const ok = 
   // Flak Kite lands and takes off
   const kite = at('flakkite', 80, 20); useAbility(g, kite, 'land'); run(g, TUNE.land + 1); check(kite.kind === 'flakwalker' && !kite.air, 'a Flak Kite lands as a walker');
   useAbility(g, kite, 'takeoff'); run(g, TUNE.land + 1); check(kite.kind === 'flakkite' && !!kite.air, 'and takes off again');
+  { // its bot asks whether to land when a hidden ground foe is near: that check needs the real game (a copy loses upOf), or the match dies
+    const FT = g.units.find(u => u.alive && u.team !== T)!.team, hid = g.spawn('cantor' as Kind, FT, kite.pos.x + 4, kite.pos.z); require('../../src/core/status').addStatus(hid, 'unseen', 9); const post = g.addBuilding('watchpost' as any, T, kite.pos.x - 6, kite.pos.z + 6, true);
+    let ok = true; try { abilitiesOf('flakkite').find(a => a.key === 'land')!.ai!(g, kite); } catch (e) { ok = false; console.log(String(e)); }
+    check(ok, 'a Flak Kite weighs landing near a hidden ground foe without throwing'); hid.alive = false; hid.obj.visible = false; post.alive = false; post.obj.visible = false; }
   // Gadfly cloak
   const gad = at('gadfly', 85, 30); gad.energy = 200; check(!!why(gad, 'cloak'), 'Smoke Cloak is refused before the research');
   U.smoke = true; check(useAbility(g, gad, 'cloak') && isHidden(gad), 'with the research the Gadfly goes unseen');
@@ -176,7 +180,8 @@ const bolt = (g: Game, host: Building, k: 'labbay' | 'twinbay') => { const ok = 
   check(!g.buildingAction(bunk, 'labbay'), 'a host takes only one add-on');
   g.train(bunk, 'linesman'); g.train(bunk, 'linesman'); const before = g.own('linesman', T).length; run(g, UNIT.linesman.time + 1); check(g.own('linesman', T).length - before === 2, 'with a Twin Bay two Linesmen come out at once');
   const twin = addonOf(bunk)!; const ox = bunk.pos.x; bunk.queue.length = 0;
-  check(g.buildingAction(bunk, 'crawl'), 'a Bunkhouse packs up to crawl'); run(g, 12); check(Math.abs(bunk.pos.x - ox) > 3 && !addonOf(bunk) && twin.alive, 'it crawls away and leaves its add-on behind');
+  // Aimed 15 m off: with no aim it picks a random spot within 20 m, and one that lands within 3 m failed the check below by chance.
+  check(g.buildingAction(bunk, 'crawl', false, { x: ox + 15, z: bunk.pos.z }), 'a Bunkhouse packs up to crawl'); run(g, 12); check(Math.abs(bunk.pos.x - ox) > 3 && !addonOf(bunk) && twin.alive, 'it crawls away and leaves its add-on behind');
   check(!g.train(bunk, 'linesman') || !!(require('../../src/factions/ironhold/kit').mem(bunk).crawl) === false, 'it does not train while crawling');
   const hq = g.hqs(T)[0]; g.purse[T] = 1e5; g.fluxPurse[T] = 1e5; hq.queue.length = 0;
   check(g.buildingAction(hq, 'surveyrig'), 'the Headframe starts refitting into a Survey Rig'); run(g, BLD.surveyrig.time + 2); check(hq.kind === 'surveyrig' && g.isHQ(hq), 'and becomes one, still a home building');

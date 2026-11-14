@@ -11,7 +11,7 @@ initHeadless();
 const mins = +(process.argv[2] || 30);
 const fail: string[] = []; const check = (ok: boolean, what: string) => { console.log((ok ? 'PASS ' : 'FAIL ') + what); if (!ok) fail.push(what); };
 
-function play(name: string, plan: TeamPlan, seed: number) {
+function play(name: string, plan: TeamPlan, seed: number, cramped = false) {
   let sd = seed; Math.random = () => { sd = (sd * 16807) % 2147483647; return (sd - 1) / 2147483646; };
   setMap(0); const T = setTeamGame(plan)!, teams = T.teams;
   const g = new Game(noPipe(), noHud, DIFFS[1], 0, null, null, true); g.noRender = true; g.evq = []; g.me = null; g.phase = 'play';
@@ -33,8 +33,8 @@ function play(name: string, plan: TeamPlan, seed: number) {
     }
     if (g.time > 400 && tick % 300 === 0) for (const t of teams) if (!g.outOf.includes(t) && MATCH.foe[t] !== undefined && !isEnemy(t, foeOf(t))) wrongMarch.push(`${t} picks friend ${foeOf(t)}`);
   }
-  for (const t of teams) check((built[t] || 0) >= 4, `${name}: ${g.sideName(t)} built a base (${built[t] || 0} buildings at most)`);
-  check(teams.filter(t => marched[t]).length >= teams.length / 2, `${name}: sides march on the enemy (${teams.map(t => g.sideName(t) + ' ' + (marched[t] || 0)).join(', ')})`);
+  if (!cramped) for (const t of teams) check((built[t] || 0) >= 4, `${name}: ${g.sideName(t)} built a base (${built[t] || 0} buildings at most)`);
+  if (!cramped) check(teams.filter(t => marched[t]).length >= teams.length / 2, `${name}: sides march on the enemy (${teams.map(t => g.sideName(t) + ' ' + (marched[t] || 0)).join(', ')})`);
   check(!wrongMarch.length, `${name}: nobody marches on a friend ${wrongMarch.slice(0, 3).join('; ')}`);
   check(!friendly, `${name}: nobody hurts a friend (${friendly}${foul ? ', e.g. ' + foul : ''})`);
   const out = g.outOf.map(t => g.sideName(t)).join(', ') || 'nobody';
@@ -57,6 +57,11 @@ function play(name: string, plan: TeamPlan, seed: number) {
 play('2v2', { n: 4, groups: [[0, 1], [2, 3]], facs: [0, 1, 2, 0] }, 7);
 // Free-for-all: Ironhold, Veyl, Gloam and a second Veyl choir, everyone on their own.
 play('FFA', { n: 4, groups: [[0], [1], [2], [3]], facs: [0, 1, 2, 1] }, 9);
+
+// Four against four with three copies of a faction (teams 6 and 8 are third copies): it sets up, nobody hurts a friend, and it ends. On this
+// small map eight starts stand about 50 m apart, too close to build a base next to an enemy, so the base and march checks are left to the
+// team maps' own test (test/teammaps-play.ts).
+play('4v4', { n: 8, groups: [[0, 1, 2, 3], [4, 5, 6, 7]], facs: [0, 0, 0, 1, 2, 2, 2, 1] }, 3, true);
 
 console.log(fail.length ? `\n${fail.length} FAILED` : '\nALL PASS');
 process.exit(fail.length ? 1 : 0);

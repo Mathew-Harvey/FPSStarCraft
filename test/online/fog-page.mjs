@@ -17,7 +17,7 @@ try {
   const code = await A.evaluate(() => document.getElementById('mCodeShow').textContent);
   const V = await client(S.url, 'Vex'); V.send({ t: 'join', code, name: 'Vex' }); await V.wait(m => m.t === 'lobby' && m.code === code);
   V.send({ t: 'team', v: 1 }); V.send({ t: 'ready', v: true }); await A.waitForFunction(() => !document.getElementById('mStart').disabled); await A.click('#mStart');
-  const bV = await V.wait(m => m.t === 'begin'); await A.waitForFunction(() => __ore.game.net && __ore.game.me && __ore.game.units.length > 4); await A.evaluate(() => { __ore.game.noRender = true; __ore.hold(false); });
+  const bV = await V.wait(m => m.t === 'begin'); await A.waitForFunction(() => __ore.game.net && __ore.game.me && __ore.game.units.length > 4); await A.evaluate(() => { __ore.hold(false); __ore.game.noRender = true; });
   await sleep(2500);
   const foes = () => A.evaluate(() => { const g = __ore.game; return { u: g.units.filter(u => u.alive && u.team !== g.myTeam).map(u => [u.id, Math.round(u.pos.x), Math.round(u.pos.z)]), b: g.buildings.filter(b => b.alive && b.team !== g.myTeam).map(b => [b.id, b.kind, !!b.ghost]), me: [g.me.pos.x, g.me.pos.z] }; });
   const f0 = await foes();

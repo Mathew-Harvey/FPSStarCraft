@@ -28,6 +28,8 @@ export interface Faction { name: string; short: string; hq: BKind; worker: Kind;
 export const FACTION: Record<number, Faction> = { 0: I_FACTION, 1: V_FACTION, 2: G_FACTION };
 // Teams 3 to 5 are the second side of a mirror match: the same faction as team - 3, holding the other end of the map.
 FACTION[3] = FACTION[0]; FACTION[4] = FACTION[1]; FACTION[5] = FACTION[2];
+// Team games use more copies of a faction (team = faction + 3 per copy, up to 24 teams; see core/sides.ts TEAM_SLOTS).
+for (let t = 6; t < 24; t++) FACTION[t] = FACTION[t % 3];
 /** The faction a team plays: 0 Ironhold, 1 Veyl, 2 Gloam. */
 export const fac = (team: number) => team % 3;
 /** The team that plays a faction at the other end in a mirror match. */
@@ -50,6 +52,11 @@ export function setTeamGame(p: TeamPlan | null) {
 export const setSidesCode = (code: number) => { const c = Number.isInteger(code) && code >= 0 && code < 9 ? code : 1; return setSides(Math.floor(c / 3), c % 3); };
 /** The side a side fights. A one-on-one has two; with more sides it is the enemy this side is going after now (MATCH.foe, set by the Director). */
 export const foeOf = (team: number) => multi() ? MATCH.foe[team] ?? enemiesOf(team)[0] ?? team : team === SIDE.home ? SIDE.out : SIDE.home;
+/** Is team `t` someone `me` may hurt? One on one it is exactly the other side, as it always was; in a team game it is every enemy, not only
+ *  the one the Director is going after. Use it (and isOwn) in every first-person hit, so a shot never lands on a friend. */
+export const isFoe = (t: number, me: number) => multi() ? isEnemy(t, me) : t === foeOf(me);
+/** Is team `t` on `me`'s side: itself one on one, itself or an ally in a team game. A shot passes through these. */
+export const isOwn = (t: number, me: number) => multi() ? !isEnemy(t, me) : t === me;
 /** True for the side that holds the yard. */
 export const atHome = (team: number) => team === SIDE.home;
 /** Turns a point in one end's frame into the same spot at the other end: a half turn about the middle of the two bases.
@@ -99,6 +106,8 @@ export interface Unit {
   energy?: number; maxEnergy?: number; abCd?: Record<string, number>; cast?: { key: string; t: number; x: number; z: number; id: number } | null;
   /** What is on it now (src/core/status.ts): slowed, stunned, unseen and the rest. */ status?: Status[];
   /** The transport or building it rides in, and what it carries (src/core/cargo.ts). */ inside?: Unit | Building | null; cargo?: Unit[];
+  /** The carrier it is walking to get into (g.board). */ boarding?: Unit | Building | null;
+  /** Abilities the player switched off casting by themselves, by key (the command card's right click). */ autoOff?: Record<string, boolean>;
 }
 /** One effect on a body: its key, seconds left, a strength (a slow's fraction, a shield's points, burning's damage a second) and who put it there. */
 export interface Status { k: StatusKey; t: number; n?: number; from?: number }
@@ -131,7 +140,7 @@ export const DIFFS: Difficulty[] = [
 export { GATE, MAP, MAPS, NORTH_PATH, OUTPOST, RALLY, RALLY_N, ROAD, SIZES, TURNS, VAST, VHOME, VRALLY, VRALLY_N, baseOf, compass, mapCode, roadPt, rollMap, setMap, sizeOf, turnOf, validMap, veylPt } from './maps';
 export type { MapDef } from './maps';
 import { VHOME, MAP as MAP_, layoutSites } from './maps';
-import { MATCH, multi, startOf, enemiesOf, planTeams, setMatch, clearMatch, type TeamPlan } from './core/sides';
+import { MATCH, multi, startOf, enemiesOf, planTeams, setMatch, clearMatch, isEnemy, type TeamPlan } from './core/sides';
 /** Story state the engine reads while a campaign job is running. Set before a Game is made, cleared for everything else. */
 export const STORY = {
   /** The Ironhold team that is Charter Security on this job (they wear company grey), or -1. */

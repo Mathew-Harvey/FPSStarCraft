@@ -4,8 +4,9 @@
 import { createRequire } from 'node:module';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { dirname, join, resolve } from 'node:path';
+import { testPage } from './page.mjs';
 const require = createRequire(import.meta.url); const { chromium } = require('playwright');
-const page = pathToFileURL(process.argv[2] ? resolve(process.argv[2]) : join(dirname(fileURLToPath(import.meta.url)), '..', 'dist', 'index.html')).href;
+const page = process.argv[2] ? pathToFileURL(resolve(process.argv[2])).href : await testPage();
 const fail = []; const check = (ok, what) => { console.log((ok ? 'PASS ' : 'FAIL ') + what); if (!ok) fail.push(what); };
 const b = await chromium.launch({ args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist', '--enable-webgl'] });
 try {
@@ -147,6 +148,16 @@ try {
     document.dispatchEvent(new KeyboardEvent('keydown', { code: 'Escape', bubbles: true })); document.getElementById('resume').click(); g.update(1 / 30);
     const shown = !document.getElementById('tcard').hidden; __ore.quit(); return { was, shown }; });
   check(tc.was === 'card' && !tc.shown, 'pausing during a title card clears the card');
+
+  // 8. A flier the player drives reaches the ground: a short gun's reach is measured along the ground, as its bot's is, not from the eye.
+  const fl = await p.evaluate(() => { __ore.pickMap(0); __ore.start(); const g = __ore.game; g.introT = 0; g.truce = true; g.dir.raidIn = 9999; const out = {};
+    for (const [k, far] of [['gadfly', 6], ['claimbarge', 8], ['gadfly', 12]]) { const me = g.spawn(k, 0, 40, 40), f = g.spawn('cantor', 1, 40, 40 + far); f.maxShield = f.shield = 0; f.hp = f.maxHp = 5000; g.jumpCd = 0; g.possess(me);
+      ff(4, () => { if (g.me !== me) return; f.pos.x = 40; f.pos.z = 40 + far; me.pos.x = 40; me.pos.z = 40; g.yaw = 0; g.pitch = Math.atan2(1 - (me.alt || 0) - 1.6, far); g.lmb = true; });
+      g.lmb = false; out[k + far] = [5000 - f.hp, me.alt || 0]; g.killUnit(f, null); g.jumpCd = 0; g.possess(g.own('rigger')[0]); g.killUnit(me, null); }
+    __ore.quit(); return out; });
+  check(fl.gadfly6[0] > 0 && fl.gadfly6[1] > 5, `a driven Gadfly at cruise height hits a body 6 m off along the ground (${Math.round(fl.gadfly6[0])} damage from ${fl.gadfly6[1].toFixed(1)} m up)`);
+  check(fl.claimbarge8[0] > 0, `a driven Claim Barge hits a body 8 m off along the ground (${Math.round(fl.claimbarge8[0])} damage)`);
+  check(fl.gadfly12[0] === 0, 'a driven Gadfly still cannot hit a body past its reach');
 
   // 7. Starting shift after shift does not pile up old worlds on the graphics card.
   const geo = await p.evaluate(async () => { const n = []; for (let i = 0; i < 4; i++) { __ore.pickMap(i % 3); __ore.start(); __ore.game.update(1 / 30); n.push(__ore.pipe.renderer.info.memory.geometries); __ore.quit(); } return n; });

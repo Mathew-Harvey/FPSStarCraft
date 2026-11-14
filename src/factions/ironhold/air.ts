@@ -66,7 +66,7 @@ defineAbilities('flakkite', [{
   key: 'land', name: 'Land', hotkey: 'C', energy: 0, cd: 1, cast: 0, range: 0, target: 'self',
   blurb: `Comes down over ${TUNE.land} s and walks with a short gun that hits the ground.`,
   effect(g, u) { morph(g, u, 'flakwalker', TUNE.land); },
-  ai(g, u) { const air = nearest(g, u, 34, o => !!o.air && fair(g, u, o)); if (air) return null; const ground = nearest(g, u, 12, o => !o.air && fair({ ...g } as Game, { ...u, kind: 'flakwalker' } as Unit, o)); return ground && u.order.type !== 'follow' ? { x: u.pos.x, z: u.pos.z } : null; },
+  ai(g, u) { const air = nearest(g, u, 34, o => !!o.air && fair(g, u, o)); if (air) return null; const ground = nearest(g, u, 12, o => !o.air && fair(g, { ...u, kind: 'flakwalker' } as Unit, o)); return ground && u.order.type !== 'follow' ? { x: u.pos.x, z: u.pos.z } : null; },
 }]);
 defineAbilities('flakwalker', [{
   key: 'takeoff', name: 'Take off', hotkey: 'C', energy: 0, cd: 1, cast: 0, range: 0, target: 'self',
@@ -193,14 +193,16 @@ const W: Record<string, Weapon> = {
   flakkite: { name: 'Sky Rockets', mag: 8, cd: KITE.cd * .6, reload: 2.4 }, flakwalker: { name: 'Short Gun', mag: 20, cd: WALKER.cd * .5, reload: 1.8 },
   gadfly: { name: 'Twin Guns', mag: 10, cd: GADFLY.cd * .6, reload: 2.2 }, claimbarge: { name: 'Gun Decks', mag: 40, cd: BARGE.cd, reload: 2.5 },
   gantryflak: { name: 'Flak Shells', mag: 10, cd: FLAK.cd * .7, reload: 2.4 }, staketurret: { name: 'Stake Gun', mag: 30, cd: STAKE.cd, reload: 2 },
+  // No gun, but the first-person ammo panel reads one from every body that is not a worker: an empty one says so.
+  hopper: { name: 'No gun · RMB doors', mag: 0, cd: 1, reload: 1 }, surveyor: { name: 'No gun · C T Y casts', mag: 0, cd: 1, reload: 1 },
 };
 const flier = (gun: Gun) => (g: Game, dt: number, P: Set<string>, e: THREE.Vector3, d: THREE.Vector3, l: Hit | null, w: Weapon | null) => driveGun(g, dt, P, e, d, l, w, gun, { spread: .02, shake: .2, tracer: .1 });
 defineUnits({
-  hopper: { ai: aiHopper, step: 0, hop: 0, threat: .9, skipRespawn: true, drive: (g, _dt, P, e, d, l) => abilityKeys(g, P, e, d, l), task: (_g, u) => u.cargo?.length ? `Carrying ${u.cargo.length}` : 'Waiting for riders' },
+  hopper: { gun: W.hopper, ai: aiHopper, step: 0, hop: 0, threat: .9, skipRespawn: true, drive: (g, _dt, P, e, d, l) => abilityKeys(g, P, e, d, l), task: (_g, u) => u.cargo?.length ? `Carrying ${u.cargo.length}` : 'Waiting for riders' },
   flakkite: { gun: W.flakkite, ai: (g, u, dt) => { const t = aiGun(g, u, dt, KITE, 34); if (t && isUnit(t) && u.cd > KITE.cd * .8) airBurst(g, u, t, 0, 0); }, step: 0, hop: 0, threat: 1.1, drive: flier(KITE) },
   flakwalker: { gun: W.flakwalker, ai: (g, u, dt) => { aiGun(g, u, dt, WALKER); }, step: 2, hop: 12, drive: (g, dt, P, e, d, l, w) => driveGun(g, dt, P, e, d, l, w, WALKER) },
   gadfly: { gun: W.gadfly, ai: (g, u, dt) => { aiGun(g, u, dt, GADFLY, 24); }, step: 0, hop: 0, threat: 1.3, drive: flier(GADFLY) },
-  surveyor: { ai: aiSurveyor, step: 0, hop: 0, threat: 1.2, skipRespawn: true, drive: (g, _dt, P, e, d, l) => abilityKeys(g, P, e, d, l), task: () => 'Watching for hidden bodies' },
+  surveyor: { gun: W.surveyor, ai: aiSurveyor, step: 0, hop: 0, threat: 1.2, skipRespawn: true, drive: (g, _dt, P, e, d, l) => abilityKeys(g, P, e, d, l), task: () => 'Watching for hidden bodies' },
   staketurret: { gun: W.staketurret, ai: (g, u, dt) => { aiGun(g, u, dt, STAKE, STAKE.range + 1, STAKE.range); }, skipRespawn: true, steady: true, threat: .8, drive: (g, dt, P, e, d, l, w) => driveGun(g, dt, P, e, d, l, w, STAKE) },
   claimbarge: { gun: W.claimbarge, ai: (g, u, dt) => { aiGun(g, u, dt, BARGE, 22); }, heavy: true, steady: true, step: 0, hop: 0, threat: 1.5, skipRespawn: true, drive: (g, dt, P, e, d, l, w) => driveGun(g, dt, P, e, d, l, w, BARGE, { spread: .03, shake: .1 }) },
   gantryflak: { gun: W.gantryflak, ai: (g, u, dt) => { const t = aiGun(g, u, dt, FLAK, 30); if (t && isUnit(t) && u.cd > FLAK.cd * .85) airBurst(g, u, t, FLAK.hit(g, u, t) * mulOf(g, u)); }, steady: true, step: 2, hop: 11, stride: 6.5, threat: 1.2, drive: (g, dt, P, e, d, l, w) => driveGun(g, dt, P, e, d, l, w, FLAK, { shake: .3, tracer: .14 }) },

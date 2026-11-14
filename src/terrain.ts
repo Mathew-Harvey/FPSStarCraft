@@ -234,7 +234,7 @@ function paths() {
 export function layoutTerrain() {
   // Story jobs keep the flat ground they were written on. So does a map that turned off its ground (a classic raid map has none either way).
   if (MAP.set || MAP.code === undefined || !TERRAIN.on) { Object.assign(TER, none()); MAP.vents = []; settle(); return; }
-  const key = MAP.code + ':' + (madeHere() ? MADE.code + ':' : '') + (MAP.sites || []).map(s => s.join(',')).join(';'); if (TER.key === key) return;
+  const key = MAP.code + ':' + (madeHere() ? MADE.code + ':' : '') + (MAP.sites || []).map(s => s.join(',')).join(';'); if (TER.key === key) { MAP.vents = TER.vents; return; }   // a fresh MAP (setMap) has no vents list yet: a page that laid this ground before would fall back to the engine's own vent spots, and its vents would not be the server's
   const had = CACHE.get(key); if (had) { Object.assign(TER, had, { beacons: had.beacons.map(b => ({ ...b, held: 0, alive: true })) }); MAP.vents = TER.vents; settle(); return; }
   const T = none(); T.key = key; const k = MAP.k || 1, D = dice(MAP.code * 131 + 17), sites = MAP.sites || [], hx = VHOME.x, hz = VHOME.z;
   const [mx, mz] = MAP.mid || [OUTPOST.x / 2, OUTPOST.z / 2], rad = MAP.rad || 200 * k, segs = paths(), cx = hx / 2, cz = hz / 2;

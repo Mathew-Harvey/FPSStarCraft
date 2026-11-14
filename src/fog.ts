@@ -12,6 +12,8 @@ export const SIGHT: Record<string, number> = { longshot: 46, gantry: 38, warden:
 export class Fog {
   /** Cells this side has ever seen (1), and cells it can see right now (2). */
   cells: Uint8Array; n: number; x0: number; z0: number; private t = 0;
+  /** Everything in sight: someone watching a match online, who is sent the whole world (src/watch.ts). */
+  all = false;
   /** How high the ground stands in each cell, in tenths of a metre (high ground, see terrain.ts). */
   lvl: Uint8Array;
   constructor() {
@@ -34,6 +36,7 @@ export class Fog {
   /** Redraws what this side sees, a few times a second. */
   update(g: Game, dt: number, force = false) {
     this.t -= dt; if (this.t > 0 && !force) return; this.t = .25; const c = this.cells, team = g.myTeam;
+    if (this.all) { c.fill(2); return; }
     for (let i = 0; i < c.length; i++) if (c[i] === 2) c[i] = 1;
     for (const u of g.units) if (u.alive && (u.team === team || isFriend(u.team, team))) this.stamp(u.pos.x, u.pos.z, SIGHT[u.kind] || 30, u.pos.y);
     for (const b of g.buildings) if (b.alive && (b.team === team || isFriend(b.team, team))) this.stamp(b.pos.x, b.pos.z, SIGHT[b.kind] || (b.built ? 26 : 14), b.pos.y);

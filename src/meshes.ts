@@ -3,11 +3,12 @@
 // every vertex that the toon shader inks in. The match server has none of these and falls back to the code-built figures.
 import * as THREE from 'three';
 import { inflateSync } from 'fflate';
-import { artBin, artTex, artVersion } from './artfiles';
+import { artBin, artTex, artImg, artVersion } from './artfiles';
 import { M, toonMaterial, PRE_DRAW, SHADOW_SWAP, farInkOf, L_FX } from './gfx';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import * as FX from './fx/kit';
 import { airShadows } from './fx/air';
+import { isEnemy } from './core/sides';
 import './fx/hide';
 /** The effect kit (src/fx/kit.ts), re-exported so it is in the bundle and tests can reach it as __oreFx. */
 export { FX };
@@ -19,7 +20,8 @@ export const hasFigure = (kind: string) => !!artBin(kind);
 const PAINTED: Record<string, THREE.ShaderMaterial> = {};
 function painted(kind: string) {
   let m = PAINTED[kind]; if (m) return m;
-  const img = new Image(), tex = new THREE.Texture(img); tex.anisotropy = 4; img.onload = () => { tex.needsUpdate = true; }; img.src = artTex(kind + '.tex') || '';
+  const ready = artImg(kind + '.tex'), img = ready || new Image(), tex = new THREE.Texture(img); tex.anisotropy = 4;
+  if (ready) tex.needsUpdate = true; else { img.onload = () => { tex.needsUpdate = true; }; img.src = artTex(kind + '.tex') || ''; }
   m = PAINTED[kind] = toonMaterial(tex); m.uniforms.uShine.value = 0; m.userData.fig = kind; return m;   // the tag survives the copies a mirror match tints (game.ts tintMirror)
 }
 // A building keeps the game's tiled skins and lays its own picture of wear over them (art/kit/bake.py `coat`): rust runs, bleached roofs,
@@ -27,7 +29,7 @@ function painted(kind: string) {
 const WORN = new Map<string, THREE.ShaderMaterial>(), WEAR: Record<string, THREE.Texture> = {};
 function worn(kind: string, src: THREE.ShaderMaterial) {
   const key = kind + '/' + src.uuid; let m = WORN.get(key); if (m) return m;
-  let tex = WEAR[kind]; if (!tex) { const img = new Image(); tex = WEAR[kind] = new THREE.Texture(img); img.onload = () => { tex.needsUpdate = true; }; img.src = artTex(kind + '.wear.tex') || ''; }
+  let tex = WEAR[kind]; if (!tex) { const ready = artImg(kind + '.wear.tex'), img = ready || new Image(), t = tex = WEAR[kind] = new THREE.Texture(img); if (ready) t.needsUpdate = true; else { img.onload = () => { t.needsUpdate = true; }; img.src = artTex(kind + '.wear.tex') || ''; } }
   m = src.clone(); m.uniforms = { ...src.uniforms, uWear: { value: tex } }; m.defines = { ...src.defines, WEAR: 1 }; WORN.set(key, m); return m;
 }
 // A building is made afresh every time one is placed, so the unpacked geometry is kept. Whoever takes a figure merges it (bake) before changing it, which copies it.
@@ -203,8 +205,9 @@ const markMat = (hex: string) => new THREE.ShaderMaterial({ transparent: true, d
   vertexShader: 'attribute float aA; varying float vA; void main(){ vA=aA; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.); }',
   fragmentShader: 'uniform vec3 uC; uniform float uK,uFill; varying float vA; void main(){ gl_FragColor=vec4(uC,(vA<.99?vA*uFill:.75)*uK); }' });
 const MARKS = { mine: markMat('#f4ead2'), work: markMat('#8be04e'), foe: markMat('#ff4f9a'), foeCb: markMat('#ff9d1a'), workCb: markMat('#4da3ff'),
-  /** buildings get the rim only: a filled disc that size reads as a floor */ mineB: markMat('#f4ead2'), foeB: markMat('#ff4f9a'), foeBCb: markMat('#ff9d1a') };
-for (const k of ['mineB', 'foeB', 'foeBCb'] as const) MARKS[k].uniforms.uFill.value = 0;
+  /** buildings get the rim only: a filled disc that size reads as a floor */ mineB: markMat('#f4ead2'), foeB: markMat('#ff4f9a'), foeBCb: markMat('#ff9d1a'),
+  /** a friendly side in a team game: the HUD's ally blue */ pal: markMat('#5ab4ff'), palB: markMat('#5ab4ff') };
+for (const k of ['mineB', 'foeB', 'foeBCb', 'palB'] as const) MARKS[k].uniforms.uFill.value = 0;
 const MARKED = new WeakMap<THREE.Object3D, THREE.Mesh>();
 const MP = new THREE.Vector3();
 function markPass(scene: THREE.Scene, cam: THREE.Camera, h: number) {
@@ -216,8 +219,8 @@ function markPass(scene: THREE.Scene, cam: THREE.Camera, h: number) {
     let mk = MARKED.get(o);
     if (!k) { if (mk) mk.visible = false; continue; }
     if (!mk) { mk = new THREE.Mesh(MARK_GEO, MARKS.mine); mk.layers.set(L_FX); mk.renderOrder = 2; mk.frustumCulled = false; mk.name = 'sideMark'; o.add(mk); MARKED.set(o, mk); }
-    const foe = team !== LOD.myTeam, work = !foe && !!o.userData.worker, bld = !!o.userData.markR;
-    mk.material = bld ? (foe ? (LOD.cb ? MARKS.foeBCb : MARKS.foeB) : MARKS.mineB) : foe ? (LOD.cb ? MARKS.foeCb : MARKS.foe) : work ? (LOD.cb ? MARKS.workCb : MARKS.work) : MARKS.mine;
+    const pal = team !== LOD.myTeam && !isEnemy(team, LOD.myTeam), foe = team !== LOD.myTeam && !pal, work = !foe && !pal && !!o.userData.worker, bld = !!o.userData.markR;
+    mk.material = pal ? (bld ? MARKS.palB : MARKS.pal) : bld ? (foe ? (LOD.cb ? MARKS.foeBCb : MARKS.foeB) : MARKS.mineB) : foe ? (LOD.cb ? MARKS.foeCb : MARKS.foe) : work ? (LOD.cb ? MARKS.workCb : MARKS.work) : MARKS.mine;
     mk.visible = o.visible;
     // at least 7 pixels across, else the footprint the body was given (userData.markR) or its height
     o.getWorldPosition(MP); const perPx = ortho ? 2 / (pe[5] * h) : 2 * MP.distanceTo(CP) / (pe[5] * h);

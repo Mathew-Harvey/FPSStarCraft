@@ -110,9 +110,10 @@ export function quartermaster(D: Director, dt: number, S: Side = D) {
   else if (exp.bare) { const [bx, bz] = exp.bare, rx = bx - HX, rz = bz - HZ, l = Math.hypot(rx, rz) || 1; spot('watchpost', [[Math.round(bx - rz / l * 9), Math.round(bz + rx / l * 9)], [Math.round(bx + rz / l * 9), Math.round(bz - rx / l * 9)]], 'Watchpost by the new Headframe. Out there it gets lonely.', true); }
   else if (shopUp.length && !shopUp.some(hasLab) && hostNoAddon(shopUp) && army >= 6) { hold = costOf('labbay'); bolt(hostNoAddon(shopUp), 'labbay'); }
   else if (shopUp.length && !hang.length && (army >= (air ? 6 : 9) + DOC_T || g.time > 660)) { hold = costOf('hangar'); spot('hangar', [[-16, 18], [14, 22], [-24, -4], [24, -6]], LINES.hangar!); }
+  // The Hangar's Lab Bay straight after the Hangar: Gadflies, Surveyors and the Claim Barge all wait on it.
+  else if (hangUp.length && !hangUp.some(hasLab) && hostNoAddon(hangUp) && army >= 6) { hold = costOf('labbay'); bolt(hostNoAddon(hangUp), 'labbay'); }
   else if (shopUp.length && !fdy.length && (army >= (mech ? 6 : 9) + DOC_T || g.time > 720)) { hold = costOf('foundry'); spot('foundry', [[-14, -14], [-15, 6], [15, -17], [-4, -28]], LINES.foundry!); }
   else if (labUp.length && !U.armor && army >= 6) { hold = costOf('armor'); buy('armor'); }
-  else if (hangUp.length && !hangUp.some(hasLab) && hostNoAddon(hangUp) && army >= 8) { hold = costOf('labbay'); bolt(hostNoAddon(hangUp), 'labbay'); }
   else if (labUp.length && !mast.length && army >= 9 + DOC_T && allow('mast')) { hold = costOf('mast'); spot('mast', [[15, -17], [-4, -28], [-16, 18], [-24, -4], [14, 22]], LINES.mast!); }
   else if (bunkUp.length >= 2 && hostNoAddon(bunkUp) && army >= 8) { hold = costOf('twinbay'); bolt(hostNoAddon(bunkUp), 'twinbay'); }
   else if (fdyUp.length && !U.mdmg && army >= 9) { hold = costOf('mdmg'); buy('mdmg'); }
@@ -149,7 +150,7 @@ export function quartermaster(D: Director, dt: number, S: Side = D) {
   for (const b of g.ownB(undefined, true, T)) for (const q of b.queue) have[q.kind] = (have[q.kind] || 0) + UNIT[q.kind].supply;
   const total = Object.values(have).reduce((a, n) => a + n!, 0) + 1, wsum = Object.values(mix).reduce((a, n) => a + n!, 0);
   // Fliers are wanted at all only against fliers, or for an air lean, or late; detectors once something unseen has shown up.
-  const want = (k: Kind) => { let w = (mix[k] || 0) / wsum; if (k === 'flakkite' && foeAir) w *= 3; if (k === 'surveyor' && mem(S).hidT) w = Math.max(w, .06); if (k === 'hopper' && army < 10) w = 0; if (k === 'claimbarge' && army < 14) w = 0; if (w > 0 && !have[k] && army >= 12) w = Math.max(w, k === 'claimbarge' ? .25 : .1); return w; };
+  const want = (k: Kind) => { let w = (mix[k] || 0) / wsum; if (k === 'flakkite' && foeAir) w *= 3; if (k === 'surveyor' && mem(S).hidT) w = Math.max(w, .06); if (k === 'hopper' && army < 10) w = 0; if (k === 'claimbarge' && army < 14) w = 0; if (w > 0 && !have[k] && army >= 8) w = Math.max(w, k === 'claimbarge' ? .25 : .15); return w; };
   const hosts = [...bunkUp, ...shopUp, ...fdyUp, ...hangUp].filter(b => b.queue.length < (hasTwin(b) ? 3 : 2) && !mem(b).crawl);
   const optsOf = (b: Building) => (TRAINS[b.kind] || []).filter(k => !g.gated(T, k) && !bldRule(b.kind).trains?.(g, b, k) && (!UNIT_NEEDS[k] || g.ownB(UNIT_NEEDS[k]!, true, T).length));
   const gapOf = (k: Kind) => (have[k] || 0) / total - want(k), best = (ks: Kind[]) => ks.filter(k => want(k) > 0).sort((a, c) => gapOf(a) - gapOf(c))[0];

@@ -88,7 +88,7 @@ function freeHostAddon(g: Game, b: Building): Building | null {
 const crawlAction: BldAction = {
   key: 'crawl', name: 'Crawl', hotkey: 'K', blurb: 'Packs onto skids and crawls at walking pace to where you are looking. An add-on stays behind.',
   ok(g, b) { if (mem(b).crawl) return 'Already crawling.'; if (b.queue.length) return 'Finish or cancel the training first.'; if (mem(b).form) return 'Not while it is being refitted.'; return ''; },
-  run(g, b) { const me = g.me, p = V3(); if (me && g.groundPoint(p, 200)) crawl(g, b, p.x, p.z); else crawl(g, b, b.pos.x + R(-20, 20), b.pos.z + R(-20, 20)); },
+  run(g, b, aim) { const me = g.me, p = V3(); if (aim) crawl(g, b, aim.x, aim.z); /* online: the player's aim, sent with the ask (K) */ else if (me && g.groundPoint(p, 200)) crawl(g, b, p.x, p.z); else crawl(g, b, b.pos.x + R(-20, 20), b.pos.z + R(-20, 20)); },
 };
 
 // ---------------------------------------------------------------- Headframe, Survey Rig, Bastion Head
@@ -113,7 +113,7 @@ export function scan(g: Game, b: Building, x: number, z: number) {
 export function callDrone(g: Game, b: Building) { const u = g.spawn('hauldrone', b.team, b.pos.x + R(-2, 2), b.pos.z + b.hz + 1.5); mem(u).born = g.time; g.puff(TMP.set(u.pos.x, 2, u.pos.z), 5, .8, M.dust, -.5, 1.5); return u; }
 const rigActions = (): BldAction[] => [
   { key: 'drone', name: 'Haul Drone', hotkey: 'P', blurb: `${TUNE.rig.drone} of the Rig's energy: a drone that mines twice as fast for ${TUNE.rig.droneT} s.`, ok: (_g, b) => energyOf(b) >= TUNE.rig.drone ? '' : `Needs ${TUNE.rig.drone} energy (has ${Math.floor(energyOf(b))}).`, run(g, b) { mem(b).energy -= TUNE.rig.drone; callDrone(g, b); } },
-  { key: 'scan', name: 'Scan', hotkey: 'O', blurb: `${TUNE.rig.scan} energy: shows everything in ${TUNE.rig.scanR} m of where you are looking for ${TUNE.rig.scanT} s, unseen bodies too.`, ok: (_g, b) => energyOf(b) >= TUNE.rig.scan ? '' : `Needs ${TUNE.rig.scan} energy (has ${Math.floor(energyOf(b))}).`, run(g, b) { mem(b).energy -= TUNE.rig.scan; const p = V3(); if (g.me && g.groundPoint(p, 400)) scan(g, b, p.x, p.z); else scan(g, b, b.pos.x, b.pos.z); } },
+  { key: 'scan', name: 'Scan', hotkey: 'O', blurb: `${TUNE.rig.scan} energy: shows everything in ${TUNE.rig.scanR} m of where you are looking for ${TUNE.rig.scanT} s, unseen bodies too.`, ok: (_g, b) => energyOf(b) >= TUNE.rig.scan ? '' : `Needs ${TUNE.rig.scan} energy (has ${Math.floor(energyOf(b))}).`, run(g, b, aim) { mem(b).energy -= TUNE.rig.scan; const p = V3(); if (aim) scan(g, b, aim.x, aim.z); /* online (K) */ else if (g.me && g.groundPoint(p, 400)) scan(g, b, p.x, p.z); else scan(g, b, b.pos.x, b.pos.z); } },
 ];
 
 // ---------------------------------------------------------------- Dugout
@@ -160,7 +160,7 @@ defineBuildings({
   dugout: { actions: () => dugActions(), note: b => `${usedOf(b)} of 4 inside` },
   flaktower: { tick(g, b, dt) {
     b.cd -= dt; if (b.cd > 0) return; const t = nearest(g, { pos: b.pos, team: b.team }, 13, o => !!o.air && seenBy(g, b.team, o)); if (!t) { b.cd = .25; return; }
-    b.cd = .6; const a = V3(b.pos.x, b.h, b.pos.z), e = V3(t.pos.x, UNIT[t.kind].bodyY + (t.alt || 0), t.pos.z); g.tracer(a, e, tracerMat, .1); if (g.vol(b.pos) > .05) sfx.turret(g.vol(b.pos) * .6); g.damage(t, 12 * g.gunMul(b.team), b);
+    b.cd = .6; mem(b).aim = t; mem(b).aimT = g.time; const a = V3(b.pos.x, b.h, b.pos.z), e = V3(t.pos.x, UNIT[t.kind].bodyY + (t.alt || 0), t.pos.z); g.tracer(a, e, tracerMat, .1); if (g.vol(b.pos) > .05) sfx.turret(g.vol(b.pos) * .6); g.damage(t, 12 * g.gunMul(b.team), b);
   } },
   watchpost: { detect: (g, b) => g.upOf(b.team).spotlight ? 11 : 0 },
   mast: { actions: () => mastActions(), note: b => (mem(b).charges || 0) > 0 ? 'A Deep Charge is ready' : mem(b).chargeT > 0 ? `Deep Charge ready in ${Math.ceil(mem(b).chargeT)} s` : '' },

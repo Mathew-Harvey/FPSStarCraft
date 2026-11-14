@@ -85,7 +85,7 @@ export function aiCantor(g: Game, u: Unit, dt: number) {
       let wx = 0, wz = 0; if (!isB && d > 7 && u.dashT <= 0) { const k = Math.sin(g.time * 3.1 + u.id * 1.7) * Math.min(4.5, d * .3), nx = -(t.pos.z - u.pos.z) / d, nz = (t.pos.x - u.pos.x) / d; wx = nx * k; wz = nz * k; }
       g.moveTo(u, t.pos.x + wx, t.pos.z + wz, dt, .5, u.dashT > 0 ? 2.6 : 1); }
     else { u.yaw = Math.atan2(t.pos.x - u.pos.x, t.pos.z - u.pos.z); if (u.cd <= 0) { u.cd = V_TUNE.cantor.cd; u.swing = 1; sfx.slash(g.vol(u.pos)); const d = (isB ? V_TUNE.cantor.cut * .77 : V_TUNE.cantor.cut + ((u as any).rushHit ? V_TUNE.cantor.rushHit : 0)) * hitK(g, u); (u as any).rushHit = 0; g.damage(t, d, u);
-      // The sweep carries on through whatever is pressed up against the target: half the cut to two more bodies inside the arc. Against a spread
+      // The sweep carries on through whatever is pressed up against the target: a share of the cut (CLEAVE.k) to two more bodies inside the arc. Against a spread
       // rifle line it finds nobody; against a swarm at its ankles it is the only thing that keeps a Cantor worth its ore.
       if (!isB) { let n = 0; for (const o of g.units) { if (n >= CLEAVE.n) break; if (o === t || !o.alive || !isEnemy(o.team, u.team) || Math.hypot(o.pos.x - t.pos.x, o.pos.z - t.pos.z) > 1.9 || Math.hypot(o.pos.x - u.pos.x, o.pos.z - u.pos.z) > 3.8) continue; n++; g.damage(o, d * CLEAVE.k, u); } } } }
     return;
@@ -168,4 +168,6 @@ defineFaction(1, {
 
 // The Warden's low note: every friend within 16 m gets 60 shield back. Online the server casts it when the player's browser asks.
 defineAbilities('warden', [{ key: 'lownote', name: 'Low Note', hotkey: 'Mouse2', energy: 0, cd: 19, cast: 0, range: 0, target: 'self', radius: 16, blurb: 'Every friend close by gets 60 shield back.',
-  effect: (g, u) => { for (const o of g.units) if (o.alive && o.team === u.team && Math.hypot(o.pos.x - u.pos.x, o.pos.z - u.pos.z) < 16) { o.shield = Math.min(o.maxShield, o.shield + 60); o.pop = .6; } } }]);
+  effect: (g, u) => { for (const o of g.units) if (o.alive && o.team === u.team && Math.hypot(o.pos.x - u.pos.x, o.pos.z - u.pos.z) < 16) { o.shield = Math.min(o.maxShield, o.shield + 60); o.pop = .6; } },
+  // a bot Warden sings it once the friends close by have lost 150 shield between them (the note gives up to 60 to each)
+  ai: (g, u) => g.units.reduce((n, o) => n + (o.alive && o.team === u.team && Math.hypot(o.pos.x - u.pos.x, o.pos.z - u.pos.z) < 16 ? Math.min(60, o.maxShield - o.shield) : 0), 0) >= 150 ? { x: u.pos.x, z: u.pos.z } : null }]);

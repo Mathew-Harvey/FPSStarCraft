@@ -9,7 +9,8 @@ import { costOf, canPay, sendToVent, tapped, ventAt } from '../../core/econ';
 import { isHidden } from '../../core/sight';
 import { hasTag } from '../../core/combat';
 import { useAbility } from '../../core/ability';
-import { load, unload } from '../../core/cargo';
+import { seenFoe, spent, shareOf, capped, hunt } from '../../core/brainkit';
+import { weights, pickKind, type SeenMix } from './mix';
 import { V_TRAINS, V_NEEDS, FIELD, type VKind, type VBKind } from './numbers';
 import { fieldsOf, inField, quicken, energyOf, unfolded } from './fields';
 
@@ -46,7 +47,10 @@ function wellSpot(D: Director, T: number, prefer: [number, number]): [number, nu
 }
 
 export function conductor(D: Director, dt: number, V0: Side = D.vs) {
-  const V = V0 as VS, g = D.g, T = V.team, U = g.upOf(T) as any, [HX, HZ] = homeXZ(T); V.qmT -= dt; if (V.qmT > 0 || !V.auto) return; V.qmT = 1;
+  const V = V0 as VS, g = D.g, T = V.team, U = g.upOf(T) as any, [HX, HZ] = homeXZ(T); if (!V.auto) return;
+  // the finish (stream L's spec, shared with the other brains): once the foe has nothing left to fight with, hunt its buildings down
+  hunt(D, V, dt);
+  V.qmT -= dt; if (V.qmT > 0) return; V.qmT = 1;
   const own = (k: BKind) => g.ownB(k, false, T), up = (k: BKind) => g.ownB(k, true, T), has = (k: BKind) => up(k).length > 0, any = (k: BKind) => own(k).length > 0;
   const stones = own('choir'), home = up('choir')[0] || stones[0]; if (!home) return;
   const DOC = docOf(V), foe = foeOf(T), now = g.time;
@@ -59,6 +63,8 @@ export function conductor(D: Director, dt: number, V0: Side = D.vs) {
   // Away from the enemy: new buildings go behind the Stone.
   const [fx0, fz0] = homeXZ(foe), away = Math.atan2(HZ - fz0, HX - fx0), behind: [number, number] = [HX + Math.cos(away) * 12, HZ + Math.sin(away) * 12];
   let saving = 0, opening = false; const say = (line: string) => D.say('Conductor', line, '', T);
+  // fighter spend (ore + Flux, the whole match, as stream L's table counts it) goes to the shared kit, which caps each kind at 30%
+  const paid = (k: Kind) => spent(g, V, k), shareMix = (k: Kind) => shareOf(V, k);
   const put = (k: VBKind, line: string): boolean => {
     if (g.paper(T) && !g.paper(T)!.allow.includes(k)) return false; if (!g.unlocked(k, T)) return false;
     const c = costOf(k); if (!canPay(g, T, c)) { saving = Math.max(saving, c[0]); return true; }
@@ -91,10 +97,10 @@ export function conductor(D: Director, dt: number, V0: Side = D.vs) {
     // Quiet House; tech goes Kiln, Tuning Fork; air goes Kiln, Skyloft, High Beacon. The rest follow later, by army size or the clock.
     const K = (k: VBKind, n: number, t: number, ok = true): [VBKind, boolean] => [k, ok && (N >= n || now > t)];
     const path: [VBKind, boolean][] = ground
-      ? [K('duskhall', 8, 420), K('songarchive', 12, 540, has('duskhall')), K('quiethouse', 16, 660, has('duskhall')), K('kiln', 18, 600), K('mendingpool', 14, 720), K('tuningfork', 24, 840, has('kiln')), K('skyloft', 26, 900, has('kiln')), K('highbeacon', 34, 1080, has('skyloft'))]
+      ? [K('duskhall', 8, 420), K('songarchive', 10, 480, has('duskhall')), K('quiethouse', 12, 600, has('duskhall')), K('kiln', 16, 600), K('mendingpool', 14, 720), K('tuningfork', 20, 780, has('kiln')), K('skyloft', 22, 840, has('kiln')), K('highbeacon', 26, 960, has('skyloft'))]
       : tech
-      ? [K('kiln', 6, 360), K('tuningfork', 10, 480, has('kiln')), K('mendingpool', 12, 600), K('duskhall', 14, 600), K('songarchive', 18, 720, has('duskhall')), K('skyloft', 22, 840, has('kiln')), K('quiethouse', 24, 900, has('duskhall')), K('highbeacon', 30, 1020, has('skyloft'))]
-      : [K('kiln', 6, 360), K('skyloft', 8, 450, has('kiln')), K('highbeacon', 16, 660, has('skyloft')), K('duskhall', 14, 600), K('mendingpool', 16, 720), K('tuningfork', 22, 840, has('kiln')), K('songarchive', 22, 840, has('duskhall')), K('quiethouse', 28, 960, has('duskhall'))];
+      ? [K('kiln', 6, 360), K('tuningfork', 10, 480, has('kiln')), K('duskhall', 12, 540), K('songarchive', 14, 600, has('duskhall')), K('mendingpool', 12, 660), K('skyloft', 18, 780, has('kiln')), K('quiethouse', 18, 780, has('duskhall')), K('highbeacon', 24, 900, has('skyloft'))]
+      : [K('kiln', 6, 360), K('skyloft', 8, 450, has('kiln')), K('highbeacon', 14, 600, has('skyloft')), K('duskhall', 12, 600), K('songarchive', 16, 720, has('duskhall')), K('mendingpool', 16, 720), K('tuningfork', 20, 780, has('kiln')), K('quiethouse', 20, 840, has('duskhall'))];
     const LINE: Partial<Record<VBKind, string>> = { kiln: 'A Kiln. Bells, Listeners and Ferries come out of it.', duskhall: 'A Dusk Hall: Rush, Skip, Long Breath and Quick Bloom.', skyloft: 'A Skyloft. The fliers grow there.', mendingpool: 'A Mending Pool: it puts shields back on anything near it.', songarchive: 'A Song Archive: Choirmasters and Wardens.', tuningfork: 'A Tuning Fork: Reedwalkers and Knells.', quiethouse: 'A Quiet House. Mutes, the ones nobody sees.', highbeacon: 'A High Beacon: the Lyre and the Cantus.' };
     const order: [VBKind, boolean, string][] = path.map(([k, w]) => [k, w, LINE[k]!]);
     for (const [k, when, line] of order) if (when && !any(k) && g.unlocked(k, T)) { put(k, line); return true; }
@@ -126,7 +132,7 @@ export function conductor(D: Director, dt: number, V0: Side = D.vs) {
       const at = [[4, 0], [5, 0], [6, 0], [7, 0], [9, 0], [7, .6], [7, -.6], [9, 1.2], [9, -1.2], [11, .3], [11, -.3]].map(([r, da]) => [Math.round(sx + Math.cos(a0 + da) * r), Math.round(sz + Math.sin(a0 + da) * r)]).find(p => g.canPlace('choir', p[0], p[1], false, T));
       if (at) { if (canPay(g, T, costOf('choir'))) { V.stoneT = now + 90; g.place('choir', at[0], at[1], false, T); say('Seeding a new Choir Stone on the far seam. Some Tenders will drift over.'); } else saving = Math.max(saving, BLD.choir.cost); return; }
     }
-    if (!any('reedgate') && has('broodpit') && (army.length >= 4 + Math.max(0, DOC.tech) || now > 330)) { put('reedgate', 'The Reed Gate grows. Lancers and the deeper songs need it.'); return; }
+    if (!any('reedgate') && has('broodpit') && (army.length >= 3 + Math.max(0, DOC.tech) || now > 240)) { put('reedgate', 'The Reed Gate grows. Lancers and the deeper songs need it.'); return; }
     if (!ground && N >= 6 && !any('kiln') && techStep()) return;
     if (!any('wardpylon') && has('broodpit') && army.length >= 5 + DOC.tech) { put('wardpylon', 'A Ward Pylon. It keeps the buildings near it whole, and it teaches the ground levels.'); return; }
     const spires = own('thornspire').length, wantSpires = Math.max(0, (army.length >= 3 || g.human[foe] ? 1 + (now > 420 ? 1 : 0) + (now > 840 ? 1 : 0) : 0) + DOC.towers + (cloakSeen ? 1 : 0) + (fAir >= 3 ? 1 : 0));
@@ -146,7 +152,8 @@ export function conductor(D: Director, dt: number, V0: Side = D.vs) {
   const foeBeds = foes.filter(o => !o.air).reduce((n, o) => n + UNIT[o.kind].supply, 0), swarm = now < 420 && foeBeds >= Math.max(3, N * 1.2);
   const rushed = now < 720 && foes.filter(o => !o.air && Math.hypot(o.pos.x - HX, o.pos.z - HZ) < 45).length >= Math.max(3, army.length);
   if (!rushed || !pits.length) step();
-  if (rushed || swarm) for (const p of up('broodpit')) { quicken(g, p, T); if (p.queue.length < 2 && g.rate(p) > 0 && canPay(g, T, costOf('cantor')) && free >= 2) g.train(p, 'cantor'); }
+  // (whatever the army mix and its cap say: a rush at the door is answered first)
+  if (rushed || swarm) for (const p of up('broodpit')) { quicken(g, p, T); if (p.queue.length < 2 && g.rate(p) > 0 && canPay(g, T, costOf('cantor')) && free >= 2 && g.train(p, 'cantor')) paid('cantor'); }
 
   // ---- songs: the levels first, then what the army is using
   const L = (keys: UpKey[], keep = 0) => { for (const k of keys) if (learn(k, keep)) return true; return false; };
@@ -171,7 +178,7 @@ export function conductor(D: Director, dt: number, V0: Side = D.vs) {
 
   // ---- Tenders: eight for the home Stone, six for each other Stone, four for each Siphon Bell
   const tend = g.own('tender', T), hqs = up('choir'), tapsUp = up('siphonbell').filter(b => g.vents.some(v => v.tap === b && v.amount > 0));
-  const onFlux = tend.filter(u => u.vent), wantFlux = tapsUp.length * (flux() > 700 ? 1 : flux() > 400 ? 2 : ore() > 300 || has('kiln') || has('skyloft') ? 4 : 3);
+  const onFlux = tend.filter(u => u.vent), wantFlux = tapsUp.length * (flux() > 700 ? 1 : flux() > 400 ? 2 : (ore() > 300 || has('kiln') || has('skyloft') ? 4 : 3) + (capped(V, 'cantor') && flux() < 200 && ore() > 400 ? 2 : 0));   // Cantors at their cap and Flux short: more Tenders on the vents
   if (onFlux.length < wantFlux) { const v = g.vents.filter(v => v.tap && tapsUp.includes(v.tap) && tapped(g, v, T)).sort((a, b) => tend.filter(u => u.vent === a).length - tend.filter(u => u.vent === b).length)[0]; const w = v && tend.filter(u => !u.vent && !u.site && !u.pilot && u !== g.me && u.carrying === 0).sort((a, b) => Math.hypot(a.pos.x - v.pos.x, a.pos.z - v.pos.z) - Math.hypot(b.pos.x - v.pos.x, b.pos.z - v.pos.z))[0]; if (v && w) sendToVent(g, w, v); }
   else if (onFlux.length > wantFlux + 1) { const w = onFlux.find(u => !(u.fluxing! > 0)); if (w) sendToVent(g, w, null); }
   // the enemy already fields a crowd before seven minutes (a swarm, a rush): fewer Tenders for now, more Cantors
@@ -182,27 +189,17 @@ export function conductor(D: Director, dt: number, V0: Side = D.vs) {
     const h = hqs.filter(b => !b.queue.length && crew(b) < (b === home ? 12 + DOC.crew : 7)).sort((a, b) => crew(a) - crew(b))[0] || (tend.length < wantTend ? hqs.find(b => !b.queue.length) : undefined); if (h) g.train(h, 'tender');
   }
 
-  // ---- the army: how many of each kind it wants, given the tech standing and what the enemy fields
-  const count = (k: Kind) => army.filter(u => u.kind === k).length + g.ownB(undefined, false, T).reduce((n, b) => n + b.queue.filter(q => q.kind === k).length, 0) + (k === 'chord' ? 0 : 0);
-  const casters = count('choirmaster') + 2 * count('chord');
-  const want: Partial<Record<VKind, number>> = {
-    // once a Kiln or Skyloft stands its bodies get the Flux first: fewer Lancers
-    lancer: has('reedgate') ? Math.max(1, Math.round(N * (has('kiln') || has('skyloft') ? .08 : .2) + fPlated * .3)) : 0,
-    tuner: has('reedgate') ? Math.min(3, 1 + Math.floor(N / 16)) : 0,
-    mute: has('quiethouse') ? (foeDetects ? 1 : 3) + (tech ? 1 : 0) : 0,
-    choirmaster: has('songarchive') ? Math.max(0, Math.min(5, 2 + Math.floor(N / 14) + (tech ? 1 : 0)) - casters) + count('choirmaster') : 0,
-    listener: has('kiln') ? (cloakSeen ? 2 : 1) : 0,
-    bell: has('kiln') ? Math.min(5, 1 + Math.floor(fPlated / 3) + (tech ? 1 : 0) - (air ? 1 : 0)) : 0,
-    ferry: has('kiln') && now > 480 ? 1 : 0,
-    reedwalker: has('tuningfork') ? Math.min(4, 1 + Math.floor(N / 24) + (tech ? 1 : 0)) : 0,
-    knell: has('tuningfork') ? 1 + (tech ? 1 : 0) + (N > 40 ? 1 : 0) : 0,
-    swift: has('skyloft') ? Math.min(8, Math.max(air ? 2 : 1, fAir + (air ? 1 : 0))) : 0,
-    prism: has('skyloft') ? Math.min(6, (air ? 2 : 1) + Math.floor(N / 22) + Math.floor(fPlated / 5)) : 0,
-    omen: has('skyloft') ? (air ? 2 : 1) : 0,
-    lyre: has('highbeacon') ? (air ? 3 : 1) + (N > 60 ? 1 : 0) : 0,
-    warden: has('songarchive') ? (now > 900 ? 2 : 1) + (tech ? 1 : 0) : 0,
-    cantus: has('highbeacon') ? 1 : 0,
-  };
+  // ---- the army: a mix that answers what the Conductor has seen of the enemy (src/factions/veyl/mix.ts, stream L's spec). No kind past
+  // 30% of the fighter spend since minute 4; every kind keeps a little weight once its building stands; a few hard limits on top.
+  const count = (k: Kind) => army.filter(u => u.kind === k).length + g.ownB(undefined, false, T).reduce((n, b) => n + b.queue.filter(q => q.kind === k).length, 0);
+  const seen = seenFoe(g, V), mix: SeenMix = { soft: seen.tags.soft, plated: seen.tags.plated, huge: seen.tags.huge, air: seen.tags.air, unseen: seen.tags.unseen, melee: seen.tags.melee, swarm: seen.swarm, total: Object.values(seen.kinds).reduce((a, b) => a + (b ?? 0), 0) };
+  const most: Partial<Record<VKind, number>> = { cantus: 1, ferry: has('kiln') && now > 480 ? 1 : 0, listener: seen.tags.unseen > 0 || cloakSeen ? 2 : 1, tuner: 3, choirmaster: Math.max(0, 5 - 2 * count('chord')) };
+  const canMake = (k: VKind) => { const nb = V_NEEDS[k]; return (!nb || has(nb)) && (most[k] === undefined || count(k) < most[k]!) && Object.entries(V_TRAINS).some(([b, l]) => l!.includes(k) && has(b as BKind)); };
+  // the plan leans the mix; a Mute nobody can see is worth more; an unseen enemy wants a Listener now (the plan's detector rule)
+  const extra: Partial<Record<VKind, number>> = air ? { swift: 1, prism: 1, omen: .8, lyre: 1 } : tech ? { bell: .8, reedwalker: .8, knell: .8, choirmaster: .8, tuner: .3 } : { cantor: .5, lancer: .5, warden: .5 };
+  if (!seen.detectors && !foeDetects) extra.mute = (extra.mute ?? 0) + 1.5;
+  if ((seen.tags.unseen > 0 || cloakSeen) && !count('listener')) extra.listener = 20;
+  const W = weights(mix, canMake, extra);
   const RANK: Partial<Record<BKind, number>> = { skyloft: 0, kiln: 1, reedgate: 2, choir: 3, broodpit: 4 };
   // the share of ore a building may spend this second, so the Tender line and the next building are never starved for long
   const keep = opening ? saving : saving > 0 && army.length >= 6 + Math.max(0, DOC.tech) ? Math.min(saving, army.length >= 8 ? 400 : 150) : 0;
@@ -211,15 +208,17 @@ export function conductor(D: Director, dt: number, V0: Side = D.vs) {
   const tryTrain = (b: Building, k: Kind) => { const nb = V_NEEDS[k as VKind]; if (nb && !has(nb)) return false; const c = costOf(k), deep = (RANK[b.kind] ?? 5) <= 2;
     // the hold only counts against what this body costs: a Cantor (no Flux) is never kept waiting for Flux a Kiln is saving
     if (!canPay(g, T, [c[0] + keep + (deep ? 0 : hold[0]), c[1] + (deep || !c[1] ? 0 : hold[1])])) { if (deep && army.length >= 5 && !hold[0]) hold = [Math.min(c[0], 300), Math.min(c[1], 250)]; return false; }
-    if (UNIT[k].supply > free) return false; return g.train(b, k); };
+    if (UNIT[k].supply > free) return false; if (!g.train(b, k)) return false; paid(k); return true; };
+  const isCapped = (k: VKind) => capped(V, k);
   // the deeper buildings pick first, so a Kiln or Skyloft is not left idle while every coin goes into Cantors
   for (const b of g.ownB(undefined, true, T).sort((a, c) => (RANK[a.kind] ?? 5) - (RANK[c.kind] ?? 5))) {
     if (b.queue.length >= 2 || !V_TRAINS[b.kind as VBKind] || g.rate(b) <= 0) continue; const list = V_TRAINS[b.kind as VBKind]!.filter(k => k !== 'tender');
-    const turn = Math.floor(now / 90), short = list.filter(k => (want[k] ?? 0) > count(k)).sort((a, c) => (count(a) / (want[a] || 1)) - (count(c) / (want[c] || 1)) || ((list.indexOf(a) + turn) % list.length) - ((list.indexOf(c) + turn) % list.length));
-    if (short.length && tryTrain(b, short[0])) continue;
-    if (b.kind === 'broodpit') tryTrain(b, count('cantor') > count('lancer') * 3 && has('reedgate') && !has('kiln') && !has('skyloft') ? 'lancer' : 'cantor');
-    if (b.kind === 'skyloft' && air) tryTrain(b, count('prism') <= count('swift') ? 'prism' : 'swift');
-    if (b.kind === 'kiln' && tech && N > 30) tryTrain(b, 'bell');
+    const k = pickKind(list, W, shareMix, isCapped); if (k && tryTrain(b, k)) continue;
+    // short of Flux for what it wanted: a Brood Pit puts a Cantor out instead, while Cantors are under the cap. (Holding the price of the
+    // wanted body back from the Pits instead kept Cantors near a fifth of the army, and the Veyl won 34 of 72 matches against 47.)
+    // Ore piling up with no Flux to spend it on: Cantors up to a third of the spend past 900 ore, and past the cap altogether past 1500
+    // (a Veyl mirror sat on 3000 to 4000 ore at 35 min with ten bodies a side and never ended: a cap is worth less than an army)
+    if (b.kind === 'broodpit' && k !== 'cantor' && (!isCapped('cantor') || (ore() > 900 && shareMix('cantor') < .34) || ore() > 1500)) tryTrain(b, 'cantor');
   }
 
   // ---- Ferry drops: four blades flown to the enemy's ore line now and then
@@ -232,9 +231,11 @@ function ferryDrop(D: Director, V: VS, _dt: number) {
   if (d) {
     const f = d.ferry; if (!f.alive) { V.drop = null; return; } d.t += 1;
     if (d.phase === 'load') { const riders = g.army(T).filter(u => (u.kind === 'cantor' || u.kind === 'mute') && !u.inside && u.order.type === 'guard' && !u.pilot && u !== g.me).slice(0, 4);
-      for (const u of riders) { if (Math.hypot(u.pos.x - f.pos.x, u.pos.z - f.pos.z) < 5) load(g, f, u); else u.order = { type: 'guard', x: f.pos.x, z: f.pos.z }; }
-      if ((f.cargo?.length ?? 0) >= 4 || (d.t > 25 && (f.cargo?.length ?? 0) >= 2)) { d.phase = 'fly'; d.t = 0; f.order = { type: 'amove', x: d.x, z: d.z }; } else if (d.t > 40) { unload(g, f); V.drop = null; } return; }
-    if (d.phase === 'fly') { f.order = { type: 'amove', x: d.x, z: d.z }; f.target = null; if (Math.hypot(f.pos.x - d.x, f.pos.z - d.z) < 6 || d.t > 70 || f.shield <= 0) { const out = (f.cargo || []).slice(); unload(g, f); const hq = g.ownB(undefined, true, foe).sort((a, b) => Math.hypot(a.pos.x - f.pos.x, a.pos.z - f.pos.z) - Math.hypot(b.pos.x - f.pos.x, b.pos.z - f.pos.z))[0]; for (const u of out) u.order = { type: 'amove', x: hq ? hq.pos.x : d.x, z: hq ? hq.pos.z : d.z }; d.phase = 'home'; d.t = 0; D.say('Conductor', 'The Ferry let four blades out by their seams.', '', T); } return; }
+      // through the Ferry's own Load and Unload, so every screen online sees them used
+      for (const u of riders) if (Math.hypot(u.pos.x - f.pos.x, u.pos.z - f.pos.z) >= 4 + UNIT.ferry.rad) u.order = { type: 'guard', x: f.pos.x, z: f.pos.z };
+      if (riders.some(u => Math.hypot(u.pos.x - f.pos.x, u.pos.z - f.pos.z) < 4 + UNIT.ferry.rad)) useAbility(g, f, 'load');
+      if ((f.cargo?.length ?? 0) >= 4 || (d.t > 25 && (f.cargo?.length ?? 0) >= 2)) { d.phase = 'fly'; d.t = 0; f.order = { type: 'amove', x: d.x, z: d.z }; } else if (d.t > 40) { useAbility(g, f, 'drop'); V.drop = null; } return; }
+    if (d.phase === 'fly') { f.order = { type: 'amove', x: d.x, z: d.z }; f.target = null; if (Math.hypot(f.pos.x - d.x, f.pos.z - d.z) < 6 || d.t > 70 || f.shield <= 0) { const out = (f.cargo || []).slice(); useAbility(g, f, 'drop'); const hq = g.ownB(undefined, true, foe).sort((a, b) => Math.hypot(a.pos.x - f.pos.x, a.pos.z - f.pos.z) - Math.hypot(b.pos.x - f.pos.x, b.pos.z - f.pos.z))[0]; for (const u of out) u.order = { type: 'amove', x: hq ? hq.pos.x : d.x, z: hq ? hq.pos.z : d.z }; d.phase = 'home'; d.t = 0; D.say('Conductor', 'The Ferry let four blades out by their seams.', '', T); } return; }
     if (d.phase === 'home') { const [hx, hz] = homeXZ(T); f.order = { type: 'guard', x: hx, z: hz }; if (d.t > 10) V.drop = null; return; }
   }
   if (now < (V.dropT ?? 600)) return;

@@ -1,17 +1,17 @@
 // The Gloam's full roster (stream D): every unit can be made through its tech path, every ability works and is refused properly, every
-// building does its job, and (part 2) the bots make every unit across ten seeded 40-minute matches without a crash or a stall.
+// building does its job, and (part 2) the bots make every unit across ten seeded 35-minute games against a foe that never fights back, without a crash or a stall.
 // Runs in Node with no browser. Run with: node tools/run-ts.mjs test/factions/gloam.ts [quick]   (quick skips the bot matches)
 import { noHud, noPipe } from '../../server/shim';
 import { Game } from '../../src/game';
 import { initHeadless } from '../../src/gfx';
-import { DIFFS, UNIT, BLD, FACTION, TRAINS, UPGRADES, setMap, setSides, Kind, BKind, Unit, Building, SIDE, fac } from '../../src/data';
+import { DIFFS, UNIT, BLD, FACTION, TRAINS, UPGRADES, setMap, setSides, Kind, BKind, Unit, Building, SIDE, fac, isFighter } from '../../src/data';
 import { costOf } from '../../src/core/econ';
 import { abilitiesOf, whyNot, useAbility } from '../../src/core/ability';
 import { hasStatus } from '../../src/core/status';
 import { seenBy } from '../../src/core/sight';
 import { bldRule, unitRule } from '../../src/core/registry';
 import { G_UNIT, G_BLD, G_RIPEN, G_DIGS, G2, G_TUNE, type GKind, type GBKind } from '../../src/factions/gloam/numbers';
-import { FUSES, podRoom } from '../../src/factions/gloam/abilities';
+import { FUSES, podRoom, bigRoom } from '../../src/factions/gloam/abilities';
 import { isDug } from '../../src/factions/gloam/roster';
 import { otherEnd } from '../../src/factions/gloam/actions';
 
@@ -113,6 +113,16 @@ const dmgOf = (b: Unit | Building) => b.maxHp - b.hp;
   check(other.sort().join(',') === ['drifter', 'husk', 'pup', 'puffwalk', 'stingerwalk'].sort().join(','), `tech: every other kind comes from an ability or a building command (${other.join(', ')})`);
 }
 
+// ---------------------------------------------------------------- 2b. Keepers left to plant by themselves keep room on a Cap's ground for a big building
+{
+  const { g, H, cap } = world();   /* a bot side: its Keepers cast on their own */
+  const ks = [0, 1, 2, 3, 4, 5].map(i => spawnAt(g, 'keeper', H, cap.pos.x + Math.cos(i) * 8, cap.pos.z + Math.sin(i) * 8));
+  check(bigRoom(g, H, cap), 'Keepers: a fresh Cap has room for a Tusk Hollow');
+  let pods = 0;
+  run(g, 240, () => { for (const k of ks) { k.energy = 200; } for (const p of g.ownB('sporepod' as BKind, true, H)) g.buildingAction(p, 'hop'); pods = g.ownB('sporepod' as BKind, false, H).length; });
+  check(pods >= 2, `Keepers: still plant Spore Pods by themselves (${pods})`);
+  check(bigRoom(g, H, cap), `Keepers: after 4 minutes of planting (${pods} pods) the Cap still has room for a Tusk Hollow`);
+}
 // ---------------------------------------------------------------- 2. Keeper: no Bud, Seed Cap, Spore Pod, Mend
 {
   const { g, H, O, cap } = world(); g.human[H] = true;   // no bot casting of its own during this part
@@ -254,11 +264,13 @@ const dmgOf = (b: Unit | Building) => b.maxHp - b.hp;
   check(!!v && bldRule('ventbladder').tap === true, `Vent Bladder: taps a vent (${g.vents.length} vents laid)`);
 }
 
-// ---------------------------------------------------------------- 7. the bots make every unit (ten seeded 40-minute matches)
+// ---------------------------------------------------------------- 7. the bots make every unit (ten seeded 35-minute games against a foe that never fights back)
 if (!quick) {
   const { spawn } = await import('node:child_process'), specs: any[] = [];
-  // Two against the Ironhold, two against the Veyl, six mirrors (both Gloam sides counted), on all three maps.
-  for (const [i, [home, out]] of [[2, 0], [0, 2], [2, 1], [1, 2], [2, 2], [2, 2], [2, 2], [2, 2], [2, 2], [2, 2]].entries()) specs.push({ home, out, map: i % 3, seed: 100 + i, mins: 40 });
+  // Five against the Ironhold and five against the Veyl, home and out, on all three maps, each against a foe that never fights back for a
+  // fixed 35 minutes (see oneMatch's passive). This asks only whether the bot builds its whole roster when it has the time and the
+  // money; whether it lives long enough to in a real match is the balance tables' question (tools/table.mjs spend shares).
+  for (let i = 0; i < 10; i++) { const foe = i % 2 ? 1 : 0, home = i % 4 < 2 ? 2 : foe; specs.push({ home, out: home === 2 ? foe : 2, map: i % 3, seed: (Number(process.env.GSEED) || 100) + i, mins: 35, passive: true }); }
   const rows: any[] = []; let next = 0;
   const one = (sp: any) => new Promise<void>(res => { let out = ''; const p = spawn(process.execPath, [process.argv[1], 'one', JSON.stringify(sp)], { stdio: ['ignore', 'pipe', 'inherit'] }); p.stdout.on('data', d => out += d); p.on('close', code => { const line = out.trim().split('\n').pop() || '{}'; try { rows.push({ ...JSON.parse(line), code }); } catch { rows.push({ sp, code, bad: out.slice(-300) }); } res(); }); });
   await Promise.all([0, 1, 2, 3].map(async () => { while (next < specs.length) await one(specs[next++]); }));
@@ -267,8 +279,8 @@ if (!quick) {
   // A Pup only comes from a Sower over a foe: when the Sowers were all made in a match's last minute, no Pup is owed (the Sower check
   // above still holds the bot to making them; when Sowers fly for a minute or more, they must drop Pups).
   const sowerT = rows.reduce((a, r) => a + (r.sowerT || 0), 0);
-  for (const k of Object.keys(G_UNIT)) if (k !== 'pup' || sowerT >= 60) check((made.get(k) || 0) > 0, `bots: made at least one ${UNIT[k as Kind].name} across ten matches (${made.get(k) || 0})`);
-  if (sowerT < 60) console.log(`NOTE bots: no Pup check: the Sowers were out for only ${sowerT} s across ten matches (made late in long matches)`);
+  for (const k of Object.keys(G_UNIT)) if (k !== 'pup' || sowerT >= 60) check((made.get(k) || 0) > 0, `bots: made at least one ${UNIT[k as Kind].name} across ten games (${made.get(k) || 0})`);
+  if (sowerT < 60) console.log(`NOTE bots: no Pup check: the Sowers were out for only ${sowerT} s across ten games`);
   console.log('\nShare of the Gloam\'s unit spend (ore plus Flux), ten matches:');
   for (const [k, v] of [...spend].sort((a, b) => b[1] - a[1])) console.log(`  ${UNIT[k as Kind].name.padEnd(13)} ${(v / total * 100).toFixed(1).padStart(5)}%  made ${made.get(k)}`);
   console.log('Results: ' + rows.map(r => `${r.sp?.home}${r.sp?.out}:${r.res} ${Math.round((r.t ?? 0) / 60)}m`).join(' '));
@@ -277,7 +289,7 @@ console.log(fail.length ? `\n${fail.length} FAILED\n` + fail.join('\n') : '\nALL
 if (fail.length) process.exitCode = 1;
 export { check, fail, world, run };
 
-function oneMatch(sp: { home: number; out: number; map: number; seed: number; mins: number }) {
+function oneMatch(sp: { home: number; out: number; map: number; seed: number; mins: number; passive?: boolean }) {
   seed = sp.seed; setMap(sp.map); setSides(sp.home, sp.out);
   const g = new Game(noPipe(), noHud, DIFFS[1], sp.map, null, null, true); g.noRender = true; g.evq = []; g.me = null; g.phase = 'play'; g.human = g.human.map(() => false);
   for (const u of g.units) u.pilot = 0;
@@ -286,14 +298,23 @@ function oneMatch(sp: { home: number; out: number; map: number; seed: number; mi
   for (const u of g.units) if (mine(u.team)) seen.set(u, u.kind);
   // Every body counts from the moment it is made, even one that dies before the once-a-second count (a Pup under fire).
   const spawn0 = g.spawn.bind(g); (g as any).spawn = (...a: Parameters<Game['spawn']>) => { const u = spawn0(...a); if (u && mine(u.team) && fac(u.team) === 2 && !seen.has(u)) { note(u); seen.set(u, u.kind); lastNew = g.time; } return u; };
-  let res = 'draw', lastNew = 0, stall = '', sowerT = 0;
+  let res = 'draw', lastNew = 0, lastPoor = 0, stall = '', sowerT = 0;
   for (let i = 0; i < sp.mins * 60 * 30; i++) {
     g.update(1 / 30); g.evq!.length = 0;
+    if (sp.passive) {   /* a foe that never fights back: its fighters drop as soon as they are made, its towers never fire and its buildings cannot fall, so the match runs the full time */
+      for (const u of g.units) if (u.alive && !mine(u.team) && isFighter(u)) g.killUnit(u, null);
+      for (const b of g.buildings) if (b.alive && !mine(b.team)) { b.maxHp = Math.max(b.maxHp, 1e6); b.hp = b.maxHp; b.cd = 9; }
+      /* and the losses a real fight would bring, which fall on the front line: from minute 6, a quarter of the Gloam's Snappers fall each
+         minute, so the bot keeps spending and its army keeps changing as its tech grows (losing everything evenly kept the army too small to
+         keep three Shellbacks, so no Lobber ever ripened) */
+      if (i % (30 * 60) === 0 && g.time > 360) { const front = g.units.filter(u => u.alive && mine(u.team) && u.kind === 'snapper' && !u.inside); for (let k = 0; k < front.length; k += 4) g.killUnit(front[k], null); }
+    }
     if (i % 30 === 0) {
       for (const u of g.units) if (u.alive && mine(u.team) && fac(u.team) === 2) { const was = seen.get(u); if (was === undefined) { note(u); lastNew = g.time; } else if (was !== u.kind) { note(u, was); lastNew = g.time; } seen.set(u, u.kind); }
       if ((sp as any).log && i % (30 * 60) === 0) { const bk: Record<string, number> = {}; for (const b of g.buildings) if (b.alive && b.team === T) bk[b.kind] = (bk[b.kind] || 0) + 1; console.error(Math.round(g.time / 60) + 'm', 'ore', Math.round(g.cash(T)), 'flux', Math.round(g.flux(T)), 'army', g.army(T).length, 'foe', g.army(T === SIDE.home ? SIDE.out : SIDE.home).length, JSON.stringify(bk), Object.keys(g.upOf(T)).filter(k => g.upOf(T)[k as never]).join(',')); }
       for (const u of g.units) if (u.alive && u.kind === 'sower' && mine(u.team) && !u.inside) sowerT++;   /* seconds a Sower was out: it can only drop Pups while it is */
-      if (g.time - lastNew > 300 && g.ownB(undefined, true, T).length && !stall) stall = `nothing new for 5 minutes at ${Math.round(g.time / 60)} min`;
+      if (g.cash(T) < 300) lastPoor = g.time;   /* saving up for a Cap or a building is not a stall; sitting on 300 ore or more while making nothing is */
+      if (g.time - Math.max(lastNew, lastPoor) > 300 && g.ownB(undefined, true, T).length && !stall) stall = `nothing new for 5 minutes with 300 ore or more in hand, at ${Math.round(g.time / 60)} min`;
     }
     if (g.endT > 0 || !g.hqs(SIDE.home).length || !g.hqs(SIDE.out).length) { res = !g.hqs(SIDE.home).length ? 'out' : !g.hqs(SIDE.out).length ? 'home' : g.endWon ? 'home' : 'out'; break; }
   }

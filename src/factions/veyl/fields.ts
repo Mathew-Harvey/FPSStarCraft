@@ -5,7 +5,6 @@
 // front. A Mending Pool spends its energy putting shields back. All of it runs on the host; the classic match (a Veyl outpost nobody runs
 // an economy for) has no fields, so none of this applies there.
 import type { Game } from '../../game';
-import { storyVeyl } from './story-tree';   // STORY STAND-IN: see story-tree.ts
 import type { Unit, Building, Kind, BKind } from '../../data';
 import { UNIT, BLD, fac } from '../../data';
 import { V3, M } from '../../gfx';
@@ -13,8 +12,8 @@ import { sfx } from '../../audio';
 import { TMP } from '../../game';
 import { FIELD, V_TUNE } from './numbers';
 
-/** Is the field rule on for this side? Only when the Chorus runs a real economy. */
-export const fieldsOn = (g: Game, team: number) => g.eco && fac(team) === 1 && !storyVeyl(g);   // STORY STAND-IN: see story-tree.ts
+/** Is the field rule on for this side? Only when the Chorus runs a real economy: a two-economy match, or the player's side in a story job. */
+export const fieldsOn = (g: Game, team: number) => fac(team) === 1 && (g.eco || !!g.paper(team));   // a story job's player side runs a real economy too
 
 /** Every spot that holds a song field for a side right now: [x, z, radius, the thing making it]. */
 export function fieldsOf(g: Game, team: number): [number, number, number, Unit | Building][] {

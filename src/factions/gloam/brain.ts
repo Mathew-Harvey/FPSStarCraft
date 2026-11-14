@@ -5,6 +5,7 @@ import type { Director, Side } from '../../director';
 import { DOCTRINES } from '../../doctrine';
 import { sfx } from '../../audio';
 import { defineFaction } from '../../core/registry';
+import { isEnemy } from '../../core/sides';
 import { costOf, canPay } from '../../core/econ';
 import { overgrowth2, budMix, firstOf } from './brain2';
 const LOOKOUT = ['Lookout', 'Watcher', 'Rootwatch'];
@@ -117,7 +118,7 @@ const count = (caps: Building[], k: Kind) => caps.reduce((a, b) => a + b.queue.f
 /** The next seam worth a Mother Cap (nearest home, nobody there yet, away from the Ironhold), and a new Cap still without a Stinger Stalk. */
 function expansion(D: Director, T: number): { site: number[] | null; bare: number[] | null } {
   const g = D.g, [HX, HZ] = homeXZ(T), near = (x: number, z: number, r: number, f: (b: Building) => boolean) => g.buildings.some(b => b.alive && f(b) && Math.hypot(b.pos.x - x, b.pos.z - z) < r);
-  const free = (MAP.sites || []).filter(([x, z]) => !near(x, z, 30, b => b.team === T && b.kind === 'mothercap') && !near(x, z, 50, b => b.team !== T) && g.ores.some(n => n.amount > 0 && Math.hypot(n.pos.x - x, n.pos.z - z) < 16)).sort((a, b) => Math.hypot(a[0] - HX, a[1] - HZ) - Math.hypot(b[0] - HX, b[1] - HZ));
+  const free = (MAP.sites || []).filter(([x, z]) => !near(x, z, 30, b => b.team === T && b.kind === 'mothercap') && !near(x, z, 50, b => isEnemy(b.team, T)) && g.ores.some(n => n.amount > 0 && Math.hypot(n.pos.x - x, n.pos.z - z) < 16)).sort((a, b) => Math.hypot(a[0] - HX, a[1] - HZ) - Math.hypot(b[0] - HX, b[1] - HZ));
   const bare = g.ownB('mothercap', true, T).find(h => Math.hypot(h.pos.x - HX, h.pos.z - HZ) > 30 && !near(h.pos.x, h.pos.z, 24, b => b.team === T && b.kind === 'stinger'));
   return { site: free[0] || null, bare: bare ? [bare.pos.x, bare.pos.z] : null };
 }

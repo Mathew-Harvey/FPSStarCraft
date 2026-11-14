@@ -78,6 +78,9 @@ export function ventSpots(g: Game): number[][] {
 /** Lays the vents in a new world. No dice are thrown, so the seeded matches run the same. */
 export function layVents(g: Game) {
   if (ECON.vents === 'off' || (ECON.vents === 'auto' && ![SIDE.home, SIDE.out].some(t => FACTION[t].builds.some(k => bldRule(k).tap)))) return;
+  // A rock or crystal standing on a vent would keep a tap off it for good, and props were only kept clear round the yard: on Needle's Eye
+  // a crystal sat on one of the far base's two home vents, so the far end could never tap it (stream L). Clear any solid prop off a vent.
+  for (const [x, z] of ventSpots(g)) for (const p of g.spires.slice()) if (Math.abs(p.x - x) < p.r + 3.2 && Math.abs(p.z - z) < p.r + 3.2) g.clearProp(p);
   for (const [x, z] of ventSpots(g)) { const obj = ventModel(); obj.position.set(x, 0, z); g.scene.add(obj); g.vents.push({ id: g.vents.length + 1 /* per game, so a replay names the same vents (K) */, pos: new THREE.Vector3(x, 0, z), amount: ECON.vent, max: ECON.vent, tap: null, obj }); }
 }
 /** The vent under a spot, if any (for placing a tap). */

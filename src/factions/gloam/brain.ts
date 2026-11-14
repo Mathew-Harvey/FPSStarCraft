@@ -9,7 +9,7 @@ import { isEnemy } from '../../core/sides';
 import { costOf, canPay } from '../../core/econ';
 import { overgrowth2, firstOf } from './brain2';
 import { broodPick } from './brood-mix';
-import { hunt, spent } from '../../core/brainkit';
+import { hunt, spent, seenFoe, worthOf } from '../../core/brainkit';
 const LOOKOUT = ['Lookout', 'Watcher', 'Rootwatch'];
 import { BLD, UNIT, UPGRADES, Kind, BKind, Building, MAP, veylPt, endPt, homeXZ, foeOf, fac } from '../../data';
 export const GHINTS: [number, string, string][] = [
@@ -53,6 +53,9 @@ export function overgrowth(D: Director, dt: number, V: Side = D.vs) {
   const hollow = own('tuskhollow'), hollowUp = up('tuskhollow')[0], old = own('oldgrowth'), oldUp = up('oldgrowth').length > 0, stingers = own('stinger').length;
   // A building costs a Grazer as well as ore. Never root the last few: the belly of the swarm comes first.
   const canRoot = grazers.length > 5;
+  /** The swarm holds: enough bodies, worth half again what the foe army was last seen with, and no foe fighter near home. */
+  const holding = () => { const seen = seenFoe(g, V), mine = g.army(T).reduce((a, u) => a + worthOf(u.kind as Kind), 0);
+    return army >= BROOD_MID.army && mine >= BROOD_MID.k * seen.worth && !g.army(foeOf(T)).some(u => Math.hypot(u.pos.x - HX, u.pos.z - HZ) < 45); };
   let saving = true, hold = 80;
   const put = (k: BKind, line: string) => {
     if (!pays(costOf(k)) || !canRoot || !g.unlocked(k, T)) return false;
@@ -75,10 +78,12 @@ export function overgrowth(D: Director, dt: number, V: Side = D.vs) {
   else if (DOC.key === 'boom' && warrenUp && exp.site && caps.length < Math.min(2, wantCaps)) { hold = BLD.mothercap.cost; const at = capSpot(exp.site);
     if (cash() >= BLD.mothercap.cost && canRoot && at && g.place('mothercap', at[0], at[1], false, T, null)) D.say('Overgrowth', 'A Grazer goes to the far seam early. Ore first, teeth later.', '', T); }
   else if (warrenUp && stingers < Math.min(1, wantStingers)) put('stinger', 'A Stinger Stalk by the road. It will whip anything that sniffs too close.');
+  // BROOD_MID (round 4, off by default): the Garden waits until the swarm holds, then the Buds save for it.
+  else if (BROOD_MID.on && warrenUp && !garden.length) { if (holding()) { hold = BLD.quillgarden.cost; put('quillgarden', 'A Quill Garden. Spitters, and the first new tricks.'); } }
   else if (warrenUp && !garden.length && army >= 4 + DOC.tech) put('quillgarden', 'A Quill Garden. Spitters, and the first new tricks.');
   // Fat Buds once the Garden is down, never before: bought at exactly three fighters it starved the swarm for half a minute, and which side happened
   // to hatch an odd Snapper decided the mirror match.
-  else if (warrenUp && garden.length && !U.gfat && army >= 4 && pays(costOf('gfat'))) g.buyUpgrade('gfat', T);
+  else if (warrenUp && garden.length && !U.gfat && army >= 4 && (!BROOD_MID.on || g.own('quillback', T).length >= BROOD_MID.fatAfter) && pays(costOf('gfat'))) g.buyUpgrade('gfat', T);
   else if (warrenUp && !bed.length && army >= 6 + DOC.tech) put('blisterbed', 'A Blister Bed. Let them come close.');
   else if (warrenUp && stingers < wantStingers) put('stinger', 'Another Stinger Stalk. The road should hurt.');
   // Bite, Spit and Hide grow at the Old Growth; it goes down once the Garden stands.
@@ -100,7 +105,7 @@ export function overgrowth(D: Director, dt: number, V: Side = D.vs) {
   else saving = false;
   // Buds: every Mother Cap ripens what it can. Grazers first, until each Cap has its crew plus a few spare to root with.
   // Plus the Grazers each tapped vent takes (two, three once the Elder stands; brain2.ts sends them).
-  const want = 8 + DOC.crew + 6 * (capsUp.length - 1) + (warren.length && !old.length ? 1 : 0) + g.vents.filter(v => v.tap?.alive && v.tap.built && v.tap.team === T).length * (up('eldercap' as BKind).length ? 3 : 2);
+  const want = 8 + DOC.crew + (BROOD_MID.on && up('quillgarden').length ? BROOD_MID.crew : 0) + 6 * (capsUp.length - 1) + (warren.length && !old.length ? 1 : 0) + g.vents.filter(v => v.tap?.alive && v.tap.built && v.tap.team === T).length * (up('eldercap' as BKind).length ? 3 : 2);
   // After ten minutes the Buds hold back for the second half's tech every other half minute, so the army and the tech both grow.
   const sn = g.own('snapper', T).length, qb = g.own('quillback', T).length, bl = g.own('blister', T).length;
   // The Tusk Hollow grows a Mulcher whenever the mix calls for one more (it answers soft, plated and huge alike).
@@ -145,3 +150,7 @@ defineFaction(2, {
   },
   lost(D, b, left) { D.say('Rootwatch', `The ${BLD[b.kind].name} has withered.`, 'al', b.team); if (b.kind === 'mothercap' && left) D.say(LOOKOUT[fac(foeOf(b.team))], `A Mother Cap is down. ${left} still growing.`, 'in', foeOf(b.team)); else if (b.kind !== 'mothercap') D.say('Alpha', `${BLD[b.kind].name} squashed. Keep swinging.`, '', foeOf(b.team)); },
 });
+/** Round 4 trial (stream L, 2026-11-14): tech once the swarm holds the first push. on: 1 switches it on (tools/review.ts spec key). army and
+ *  k: the Garden waits for this many fighters worth k times the foe army seen; fatAfter: Fat Buds waits for this many Quillbacks; crew:
+ *  more Grazers once the Garden stands. */
+export const BROOD_MID = { on: 0, army: 10, k: 1.5, fatAfter: 2, crew: 4 };

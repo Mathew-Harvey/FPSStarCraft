@@ -198,5 +198,13 @@ const near = (a: number[], b: number[], tol = .3) => Math.hypot(a[0] - b[0], a[1
   usePlan(null); setMap(1); check(JSON.stringify(TER.ridges.map(r => [r.ax, r.az])) === plain, 'putting the made map away gives the map back as it was');
 }
 
+// 9. A body standing exactly where it is told to stop short of nothing (a ramp waypoint sets the stop to 0) stays a number. It used to divide
+//    by zero there: its position went NaN, the bodies steering by it followed, and a won match ran to the time limit (stream L).
+{
+  const g = match(0), u = g.spawn('rigger' as any, 0, 10, 10), x = u.pos.x, z = u.pos.z;
+  const arrived = g.moveTo(u, x, z, 1 / 30, 0);
+  check(Number.isFinite(u.pos.x) && Number.isFinite(u.pos.z) && u.pos.x === x && u.pos.z === z && arrived, `a body already on its stop point stays put and arrives (${u.pos.x}, ${u.pos.z})`);
+}
+
 void VHOME;
 console.log(fail.length ? `\n${fail.length} FAILED` : '\nALL PASS'); process.exit(fail.length ? 1 : 0);

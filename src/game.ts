@@ -364,6 +364,9 @@ export class Game {
   moveTo(u: Unit, x: number, z: number, dt: number, stop = .4, mul = 1) {
     const w = T.via(u, x, z); if (w) { x = w[0]; z = w[1]; stop = 0; }   // terrain (J): to another level by way of a ramp; never 'arrived' on the way
     const dx = x - u.pos.x, dz = z - u.pos.z, d = Math.hypot(dx, dz); if (d < stop) return true;
+    // Standing exactly on a ramp waypoint (stop is 0 then) used to divide by zero: the body's position went NaN, and every body that steered by it
+    // (a Listener follows its army's middle) followed it into NaN. A winning army lost most of its bodies that way and matches ran to the time limit.
+    if (d < 1e-6) return !w;
     const st = Math.min(d, u.speed * mul * this.pace(u) * dt); u.pos.x += dx / d * st; u.pos.z += dz / d * st; u.yaw = Math.atan2(dx, dz); u.moving = true; this.collide(u, x, z); return false;
   }
   /** Follows the unit's order, walking any waypoints first. Returns true on arrival. */

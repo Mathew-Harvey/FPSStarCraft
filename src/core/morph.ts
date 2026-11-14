@@ -9,6 +9,10 @@ import { initAir } from './air';
 /** A body part way through changing: what it is turning into and the seconds left. */
 export interface Ripen { kind: Kind; t: number; total: number }
 const RIPE = new WeakMap<Unit, Ripen>();
+/** What a body is ripening into (morph), or undefined. */
+export const ripeningOf = (u: Unit) => RIPE.get(u)?.kind;
+/** How far a body is through its ripening, 0 to 1, or 0 when it is not ripening. */
+export const ripenShare = (u: Unit) => { const r = RIPE.get(u); return r ? Math.max(0, Math.min(1, 1 - r.t / r.total)) : 0; };
 export const ripening = (u: Unit) => RIPE.get(u) || null;
 
 /** Turns a body into another kind now. Returns false if it is dead or already that kind. */

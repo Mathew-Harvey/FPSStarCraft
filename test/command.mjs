@@ -5,8 +5,9 @@
 import { createRequire } from 'node:module';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { dirname, join } from 'node:path';
+import { testPage } from './page.mjs';
 const require = createRequire(import.meta.url); const { chromium } = require('playwright');
-const page = pathToFileURL(join(dirname(fileURLToPath(import.meta.url)), '..', 'dist', 'index.html')).href, SHOTS = process.env.SHOTS || '';
+const page = await testPage(), SHOTS = process.env.SHOTS || '';
 const fail = []; const check = (ok, what) => { console.log((ok ? 'PASS ' : 'FAIL ') + what); if (!ok) fail.push(what); };
 const b = await chromium.launch({ args: ['--disable-dev-shm-usage', '--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist', '--enable-webgl'] });
 try {
@@ -16,7 +17,7 @@ try {
   const shot = async n => { if (SHOTS) { await p.evaluate(() => { for (const d of document.querySelectorAll('#feed div')) d.style.animation = 'none'; }); await p.screenshot({ path: `${SHOTS}/${n}.jpg`, type: 'jpeg', quality: 85 }); } };
   await p.goto(page); await p.waitForFunction('window.__ore && __ore.game');
   await p.evaluate(() => {
-    __ore.setFree(true); __ore.pickMap(0); document.querySelectorAll('#diff button')[0].click(); __ore.start(); __ore.hold(true);
+    __ore.setFree(true); __ore.pickMap(0); document.querySelectorAll('#diff button')[0].click(); __ore.setRaid(true); __ore.start(); __ore.hold(true);
     const g = __ore.game; g.introT = 0; g.hourFix = 13; g.wxFix = 'clear'; g.truce = true; g.dir.raidIn = 9999; g.dir.auto = false; g.ore = 600;
     for (const k of ['linesman', 'breacher', 'longshot', 'rigger', 'patch', 'gantry']) g.seenKinds.add(k);
     for (let i = 0; i < 6; i++) g.spawn('linesman', 0, -6 + i * 2.2, 14 + (i % 2) * 2);
@@ -64,8 +65,8 @@ try {
   check(r.sel && /Linesman/.test(r.shop) && r.q === 1 && r.ore < 600, `picking a building and pressing E trains from above (${r.q} queued)`);
   await shot('command-building');
 
-  // ---- leading in person
-  r = await p.evaluate(() => { const g = __ore.game, me = g.me, hit = () => { const a = g.spawn('linesman', 0, me.pos.x + 4, me.pos.z), f = g.spawn('cantor', 1, me.pos.x + 8, me.pos.z); step(1); const h0 = f.hp + f.shield; g.damage(f, 10, a); const out = h0 - f.hp - f.shield; const b0 = a.hp; g.damage(a, 10, f); const inn = b0 - a.hp; for (const u of [a, f]) { u.alive = false; g.scene.remove(u.obj); } return [out, inn]; };
+  // ---- leading in person (the target is a Choirmaster: a Veyl body with no armour, so the hit lands at face value)
+  r = await p.evaluate(() => { const g = __ore.game, me = g.me, hit = () => { const a = g.spawn('linesman', 0, me.pos.x + 4, me.pos.z), f = g.spawn('choirmaster', 1, me.pos.x + 8, me.pos.z); step(1); const h0 = f.hp + f.shield; g.damage(f, 10, a); const out = h0 - f.hp - f.shield; const b0 = a.hp; g.damage(a, 10, f); const inn = b0 - a.hp; for (const u of [a, f]) { u.alive = false; g.scene.remove(u.obj); } return [out, inn]; };
     const up = hit(); key('KeyN'); step(20); const down = hit(); const n = g.ledCount(); return { up, down, on: g.cmd.on, n, sub: document.getElementById('whoSub').textContent }; });
   check(Math.abs(r.up[0] - 10) < .01 && Math.abs(r.up[1] - 10) < .01, `crew fight at face value while the player is in the command view (${r.up})`);
   check(!r.on && Math.abs(r.down[0] - 12.5) < .01 && Math.abs(r.down[1] - 8.5) < .01, `crew beside a body the player is driving deal 25% more and take 15% less (${r.down})`);

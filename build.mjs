@@ -1,6 +1,6 @@
-// Bundles src/main.ts and inlines it with the CSS into a single HTML file.
-// dist/index.html is the standalone game. dist/fragment.html is the same page without the
-// document wrapper, for hosts that supply their own.
+// Bundles src/main.ts and inlines it with the CSS into one HTML page, with the art as files beside it in dist/art/.
+// dist/index.html and dist/play.html are the game; dist/fragment.html is the same page without the document wrapper, for hosts that
+// supply their own. INLINE=1 puts the art inside the page too.
 import { build } from 'esbuild';
 import { readFileSync, writeFileSync, mkdirSync, readdirSync, rmSync, existsSync, statSync } from 'node:fs';
 import { createHash } from 'node:crypto';
@@ -18,11 +18,9 @@ const sfxBank = (empty) => ({ name: 'sfx-bank', setup(b) {
 // The sculpted models in assets/mesh (see art/): `<kind>.bin` (deflated here, src/meshes.ts opens them with fflate), and the painted
 // pictures `<kind>.webp` (a figure's paint) and `<kind>.wear.webp` (a building's wear).
 // Two ways to carry them:
-//  - inside the page (`import BANK from 'mesh:bank'` gives base64 keyed by name, a picture as `<name>.tex`). dist/index.html is built
-//    this way so it opens from disk, and so are the tests and tools that open it.
+//  - inside the page (`import BANK from 'mesh:bank'` gives base64 keyed by name, a picture as `<name>.tex`), only with INLINE=1.
 //  - beside the page as files in dist/art/ (models as <kind>.wasm, see artList; `import FILES from 'art:files'` lists them with their sizes and a version), fetched by
-//    src/boot.ts before the game starts. dist/fragment.html (the published page) and dist/play.html are built this way.
-// INLINE=1 builds every page the first way. The match server never draws, so it gets neither and builds the code-made stand-ins.
+//    src/artfiles.ts as each match needs it. Every page is built this way unless INLINE=1. The match server never draws, so it gets neither and builds the code-made stand-ins.
 const ART = 'assets/mesh';
 const artNames = () => readdirSync(ART).filter(f => f.endsWith('.bin') || f.endsWith('.webp')).sort();
 const artBytes = (f) => f.endsWith('.bin') ? deflateRawSync(readFileSync(ART + '/' + f), { level: 9 }) : readFileSync(ART + '/' + f);
@@ -65,10 +63,12 @@ async function page(minify, mode) {
 }
 async function bundle(minify) {
   listed = null; mkdirSync('dist', { recursive: true });
-  const inl = await page(minify, 'inline'), side = INLINE ? inl : await page(minify, 'files');
-  writeFileSync('dist/index.html', wrap(inl));          // opens from disk: everything inside
+  // The art sits beside the page in dist/art/ and is fetched as a match needs it. INLINE=1 puts it all inside instead (one file that opens
+  // from disk, 50 MB and more); without it, a page opened from disk starts with the code-built bodies.
+  const side = await page(minify, INLINE ? 'inline' : 'files'), inl = side;
+  writeFileSync('dist/index.html', wrap(side));         // the game, served from a web server (the match server serves this one)
   writeFileSync('dist/fragment.html', side);            // the published page: art beside it in dist/art/
-  writeFileSync('dist/play.html', wrap(side));          // the same, as a whole document, for a local web server and the tests
+  writeFileSync('dist/play.html', wrap(side));          // the same, for the tests (test/page.mjs)
   if (INLINE) rmSync('dist/art', { recursive: true, force: true });
   // The match server: the same game code, bundled for Node, with the page beside it.
   await build({ entryPoints: ['server/main.ts'], bundle: true, minify: false, platform: 'node', format: 'esm', target: 'node20', outfile: 'dist/server.mjs', legalComments: 'none', plugins: [sfxBank(true), artModules('none')], banner: { js: "import { createRequire as __cr } from 'node:module'; const require = __cr(import.meta.url);" }, logLevel: 'warning' });
@@ -82,10 +82,14 @@ async function bundle(minify) {
 
 if (process.argv.includes('--serve')) {
   createServer(async (req, res) => {
-    try { const html = (await bundle(false)).inl; res.writeHead(200, { 'content-type': 'text/html' }); res.end(html); }
+    try {
+      const path = decodeURIComponent((req.url || '/').split('?')[0]);
+      if (path.startsWith('/art/')) { const f = 'dist' + path; if (!f.includes('..') && existsSync(f)) { res.writeHead(200, { 'content-type': f.endsWith('.webp') ? 'image/webp' : 'application/wasm' }); res.end(readFileSync(f)); } else { res.writeHead(404); res.end(); } return; }
+      const html = (await bundle(false)).inl; res.writeHead(200, { 'content-type': 'text/html' }); res.end(html);
+    }
     catch (e) { res.writeHead(500); res.end(String(e)); }
   }).listen(5173, () => console.log('Ore Else dev server: http://localhost:5173 (rebuilds on every reload)'));
 } else {
   const r = await bundle(true), kb = (n) => (n / 1024).toFixed(0) + ' KB';
-  console.log('built dist/index.html', kb(r.inl.length), '(art inside) · dist/fragment.html', kb(r.side.length), INLINE ? '(art inside, INLINE=1)' : `+ dist/art/ ${r.files} files, ${kb(r.art)}`);
+  console.log('built dist/index.html, play.html and fragment.html', kb(r.side.length), INLINE ? '(art inside, INLINE=1)' : `+ dist/art/ ${r.files} files, ${kb(r.art)}`);
 }

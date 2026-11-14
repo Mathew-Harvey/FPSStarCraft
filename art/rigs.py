@@ -2,7 +2,7 @@
 
 Same rules as the Gantry: nothing here was built for war. The drone is a hired lifting rig, the bike is a yard runabout with a burner on
 the bars, the Pile Driver is a post driver from the claim fences with a gun where the hammer was.
-Run:  python rigs.py hauldrone|dustbike|piledriver [preview.png] [part or group ...]
+Run:  python rigs.py hauldrone|dustbike|piledriver|staketurret [preview.png] [part or group ...]
 """
 import os
 import sys
@@ -272,7 +272,7 @@ def dustbike():
 def piledriver():
     """A claim-fence post driver on tracks, its hammer frame now carrying a gun. Anchored, it drops four stakes into the ground and the
     drop weight behind the breech rides the recoil. Sculpted anchored (stakes down, barrel up); the game folds the stakes for the road."""
-    fig = B.Figure('piledriver', lo=(-1.9, -.2, -2.2), hi=(1.9, 3.6, 3.2), coarse=.04, detail=.9, paint=1536, brush=2.0)
+    fig = B.Figure('piledriver', lo=(-1.9, -.2, -2.2), hi=(1.9, 3.6, 3.2), coarse=.04, detail=.9, paint=1024, brush=2.0)
     fig.group('body', (0, 0, 0))
     fig.group('trackL', (-.88, .42, 0), 'body')
     fig.group('trackR', (.88, .42, 0), 'body')
@@ -363,7 +363,47 @@ def piledriver():
     return fig
 
 
-MAKERS = {'hauldrone': hauldrone, 'dustbike': dustbike, 'piledriver': piledriver}
+# ================================================================ Stake turret (left by the Surveyor's Stake Gun)
+def staketurret():
+    """What the Surveyor's Stake Gun leaves in the ground: a steel-shod claim stake driven in, three angle-iron legs splayed and
+    pinned round it, and on top a little swivel gun on a turntable, with an ammo can and an orange survey flag on a whip. The game
+    turns the head group to aim; it fires from the point 'muzzle'."""
+    fig = B.Figure('staketurret', lo=(-.8, -.25, -.8), hi=(.8, 1.6, 1.2), coarse=.02, detail=.8, paint=512, brush=.9)
+    T = V(0, .98, 0)
+    fig.group('body', (0, 0, 0))
+    fig.group('head', T, 'body')
+    # the stake: a squared timber post with a steel shoe going into the ground and a band round its top
+    post = S.box((0, .45, 0), (.07, .5, .07), .015, rot(0, .3, 0))
+    fig.add('post', 'body', 'wood', dents(post, 2.0, .006, 9), 160, voxel=.008, uv=('side',), sharp=35)
+    fig.add('shoe', 'body', 'bD', S.union(S.rcone((0, -.2, 0), (0, .12, 0), .02, .1), S.box((0, .08, 0), (.09, .06, .09), .01, rot(0, .3, 0))), 120, voxel=.006, uv=('side',))
+    fig.add('collar', 'body', 'bS', S.box((0, .9, 0), (.1, .05, .1), .01, rot(0, .3, 0)), 60, voxel=.006, uv=('side',))
+    # three legs of angle iron, each pinned to the ground with a peg through a foot plate
+    legs, feet, pins = [], [], []
+    for i in range(3):
+        a = i * 2 * PI / 3 + .4
+        top, foot = V(.08 * np.cos(a), .72, .08 * np.sin(a)), V(.62 * np.cos(a), .03, .62 * np.sin(a))
+        legs.append(S.rcone(top, foot, .028, .024))
+        feet.append(S.box(foot + V(0, -.01, 0), (.08, .015, .08), .008, rot(0, -a, 0)))
+        pins.append(S.union(S.cyl(foot + V(0, -.12, 0), foot + V(0, .07, 0), .014), S.sphere(foot + V(0, .075, 0), .025)))
+    fig.add('legs', 'body', 'pY', S.union(*legs), 220, voxel=.006, uv=('side',), sharp=35)
+    fig.add('feet', 'body', 'gunm', S.union(*feet), 80, voxel=.006, uv=('top',))
+    fig.add('pegs', 'body', 'nS', S.union(*pins), 90, voxel=.005, uv=('side',))
+    fig.add('legband', 'body', 'gunm', S.cyl((0, .66, 0), (0, .76, 0), .11, .01), 60, voxel=.006, uv=('side',))
+    # the head: a turntable, a receiver box with a short barrel forward, an ammo can on the left, a hazard plate and the flag
+    fig.add('turntable', 'head', 'gunm', S.union(ycan(T + V(0, -.02, 0), .16, .04), ycan(T + V(0, .04, 0), .11, .03)), 100, voxel=.006, uv=('top',))
+    rcv = S.union(S.box(T + V(0, .16, .02), (.09, .08, .2), .025), S.box(T + V(0, .26, -.04), (.04, .025, .08), .01))
+    fig.add('receiver', 'head', 'bD', dents(rcv, 4.0, .004, 12), 200, voxel=.006, uv=('side',), sharp=35)
+    brl = S.union(zcan(T + V(0, .17, .45), .025, .25, .005), zcan(T + V(0, .17, .7), .038, .035, .008), *[zcan(T + V(0, .17, z), .034, .012, .004) for z in (.3, .42, .54)])
+    fig.add('barrel', 'head', 'gunB', brl, 200, voxel=.005, uv=('side',))
+    fig.add('ammo', 'head', 'cY', S.union(S.box(T + V(-.16, .14, .0), (.06, .07, .1), .015), S.box(T + V(-.16, .22, .0), (.02, .012, .06), .006)), 100, voxel=.006, uv=('side',), sharp=35)
+    fig.add('plate', 'head', 'haz', S.box(T + V(0, .17, -.19), (.08, .05, .012), .006), 40, voxel=.005, uv=('front',))
+    fig.add('whip', 'head', 'nD', S.cyl(T + V(.07, .22, -.14), T + V(.1, .62, -.18), .007), 40, voxel=.004, uv=('side',))
+    fig.add('flag', 'head', 'fabR', S.box(T + V(.17, .55, -.18), (.075, .045, .006), .004, rot(0, .2, 0)), 40, voxel=.004, uv=('side',))
+    fig.point('muzzle', T + V(0, .17, .75), 'head')
+    return fig
+
+
+MAKERS = {'hauldrone': hauldrone, 'dustbike': dustbike, 'piledriver': piledriver, 'staketurret': staketurret}
 
 
 def main():

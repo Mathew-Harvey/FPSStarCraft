@@ -2,7 +2,8 @@
 // pairing. Replays depend on this (src/match.ts). Run with: node tools/run-ts.mjs test/online/same-dice.ts
 import '../../server/shim';
 import { initHeadless } from '../../src/gfx';
-import { Match, worldHash, Seat } from '../../src/match';
+import { Match, worldHash, Seat, playBack } from '../../src/match';
+import { UNIT } from '../../src/data';
 import { planCode, starterPlan, planMap, checkPlan, usePlan } from '../../src/mapcode';
 initHeadless();
 const seats = (): Seat[] => [{ id: 1, name: 'A', team: 0, unit: null, inbox: [] }, { id: 2, name: 'V', team: 1, unit: null, inbox: [] }];
@@ -33,5 +34,19 @@ check(a.join() === c.join(), `and the same again with a Gloam match on another m
   const made = () => { const m = new Match(ms, seats(), () => { /* nobody */ }, 'test', true), hs: string[] = []; for (let i = 0; i < 1200; i++) { if (m.step()) break; if (i % 30 === 29) hs.push(worldHash(m.g)); } return hs; };
   const x = made(); run(false, 300); const y = made();
   check(ok && x.length >= 40 && x.join() === y.join(), `a match on a made map is the same world every second for ${x.length} s, run twice with another match between`);
+}
+// Ironhold's new kit: rich starts (lobby rules) so both Ironhold bots tech fast into fliers, casters and their abilities. Run twice, and the
+// second run is recorded and played back as a replay: the same world every second, and the same end.
+{
+  const rs = { ...setup, out: 0, seed: 4242, rules: { ore: 5000, flux: 2000, speed: 1 } }, N = +(process.env.RICH_TICKS || 9000);
+  const rich = () => {
+    const m = new Match(rs, seats(), () => { /* nobody */ }, 'test', true), hs: string[] = [], air = new Set<string>(), cast = new Set<string>();
+    for (let i = 0; i < N; i++) { if (m.step()) break; if (i % 30 === 29) { hs.push(worldHash(m.g)); for (const u of m.g.units) { if (!u.alive) continue; if (UNIT[u.kind].air) air.add(u.kind); for (const k in u.abCd || {}) cast.add(u.kind + '.' + k); } } }
+    return { m, hs, air, cast };
+  };
+  const x = rich(), y = rich(), back = playBack(y.m.finish('stopped')), at2 = x.hs.findIndex((h, i) => h !== y.hs[i]);
+  check(x.air.size >= 2 && x.cast.size >= 3, `rich Ironhold mirror: the bots field fliers (${[...x.air].join(', ') || 'none'}) and use abilities (${[...x.cast].join(', ') || 'none'})`);
+  check(x.hs.length >= N / 30 - 1 && at2 < 0, `and the match is the same world every second for ${x.hs.length} s, run twice${at2 >= 0 ? ' (first differs at ' + (at2 + 1) + ' s)' : ''}`);
+  check(back.drift < 0 && back.hash === worldHash(y.m.g) && back.match.tick === y.m.tick, `its replay plays back to the same world at ${(y.m.tick / 30).toFixed(0)} s${back.drift >= 0 ? ' (drifts from tick ' + back.drift + ')' : ''}`);
 }
 console.log(fail.length ? `\n${fail.length} FAILED` : '\nall same dice checks passed'); process.exit(fail.length ? 1 : 0);

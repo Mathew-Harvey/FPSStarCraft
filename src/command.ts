@@ -51,6 +51,8 @@ export class Command {
   mapPt: ((x: number, y: number) => [number, number] | null) | null = null;
   /** No way up for this screen: the second half of a split screen has no mouse to point with. */
   locked = false;
+  /** Someone watching from above (src/watch.ts moves the camera): nothing to pick or order, and nothing is hidden. */
+  caster = false;
   /** Ten control groups (Digit1 to Digit0): the bodies in each, or the one building. */
   groups: { us: Unit[]; b: Building | null }[] = Array.from({ length: 10 }, () => ({ us: [], b: null }));
   /** Orders queued with Shift, per body, and the one each body is carrying out now. */
@@ -96,7 +98,9 @@ export class Command {
 
   // ------------------------------------------------------------ every frame
   update(dt: number, P: Set<string>) {
-    const g = this.g, me = g.me; if (!me) return;
+    const g = this.g, me = g.me;
+    if (!me && !this.caster) return;
+    if (this.caster) { this.z += (this.zt - this.z) * Math.min(1, dt * 7); if (Math.abs(this.zt - this.z) < .0015) this.z = this.zt; this.sel.clear(); this.selB = null; this.aim = null; this.card = []; return; }
     this.z += (this.zt - this.z) * Math.min(1, dt * 7); if (Math.abs(this.zt - this.z) < .0015) this.z = this.zt;
     if (!this.on) this.focus.lerp(A.set(me.pos.x, 0, me.pos.z), Math.min(1, dt * 12));
     for (const u of this.sel) if (!u.alive || u.team !== g.myTeam) this.sel.delete(u);
@@ -473,7 +477,7 @@ export class Command {
   // ------------------------------------------------------------ what the crew cannot see
   /** From above, enemy bodies show only inside the crew's sight, enemy buildings only once found, and ground nobody has walked is dark. */
   veil(on: boolean, dt: number) {
-    const g = this.g;
+    const g = this.g; if (this.caster) on = false;
     if (!on) { if (this.hid) { this.hid = false; for (const b of g.buildings) { b.obj.visible = true; if (b.holo) b.holo.visible = true; } if (this.fogMesh) this.fogMesh.visible = false; } return; }
     const fresh = !this.hid; this.hid = true; const fog = g.fog;
     for (const u of g.units) if (isEnemy(u.team, g.myTeam)) u.obj.visible = fog.sees(u.pos.x, u.pos.z);

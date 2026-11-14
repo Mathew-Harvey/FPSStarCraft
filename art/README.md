@@ -31,10 +31,11 @@ Rules:
 
 ## How the page gets them
 
-- `npm run build` writes three pages. `dist/index.html` carries every file inside it as base64 so it opens from disk; the tests and
-  tools open this one. `dist/fragment.html` (the published page) and `dist/play.html` (the same as a whole document) carry none: the
-  build copies the files to `dist/art/` and the page fetches them at start with a progress bar (`src/boot.ts`), keeps them in the
-  browser's Cache Storage, and builds the code-made body for any kind whose file does not come.
+- `npm run build` writes three pages, all the same: `dist/index.html` (served by the match server), `dist/fragment.html` (the
+  published page) and `dist/play.html` (for the browser tests, which serve `dist/` from a local server, see `test/page.mjs`). None
+  carries the art: the build copies the files to `dist/art/`, and the page fetches the art of the factions in each match with a
+  progress bar (`src/artfiles.ts`, `src/artgate.ts`), keeps it in the browser's Cache Storage, and builds the code-made body for any
+  kind whose file does not come. `?art=all` fetches everything at start. A page opened from disk gets no art.
 - In `dist/art/` a model is named `<kind>.wasm`, not `.bin`: the artifact service only serves standard web media types and answers
   `.bin` with 415. The bytes are the deflated model, not WebAssembly.
 - `INLINE=1 npm run build` puts the art inside every page (no `dist/art/`).

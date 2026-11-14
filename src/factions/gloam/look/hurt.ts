@@ -38,14 +38,17 @@ export function hurtLook(g: Game, dt: number) {
       h.k = k; const d = Math.max(0, (k - .08) / .92);
       for (const { m, base } of h.mats) (m.uniforms.uColor.value as THREE.Color).copy(base).lerp(DEAD, d * .85).multiplyScalar(1 - d * .4);
     }
-    // sap: below half health, a lime puff from somewhere on the growth, every 1.4 s at half health down to every .3 s near death
-    if (k > .5) {
+    // sap: below 60% health, a lime puff from the growth's crown, every 1.4 s at 60% down to every .3 s near death. Seen from
+    // high up (the command view) the puffs grow with the distance and glow, so they still read as specks of light.
+    if (k > .4) {
       h.sapT -= dt;
       if (h.sapT <= 0) {
-        h.sapT = 1.4 - (k - .5) * 2.2; h.n++;
+        h.sapT = 1.4 - (k - .4) * 1.83; h.n++;
         const a = h.n * 2.399, r = Math.max(b.hx, b.hz) * (.35 + .25 * ((h.n * .618) % 1));
-        P.set(b.pos.x + Math.cos(a) * r, (b.h || 4) * (.35 + .4 * ((h.n * .382) % 1)), b.pos.z + Math.sin(a) * r);
-        g.puff(P, 4 + Math.round(k * 4), .7 + k * .7, M.gS, .35, .8, 1.6);
+        P.set(b.pos.x + Math.cos(a) * r * .6, (b.h || 4) * (.85 + .2 * ((h.n * .382) % 1)) + .3, b.pos.z + Math.sin(a) * r * .6); // from its crown, where a puff is not lost inside the growth
+        const far = Math.max(1, Math.min(2.6, g.cam.position.distanceTo(P) / 24));
+        g.puff(P, 4 + Math.round(k * 4), (.7 + k * .7) * far, far > 1.4 ? M.gGlow : M.gS, .35, .8, far > 1.4 ? 2.4 : 1.6);
+        if (far > 1.4) h.sapT *= .6;
       }
     }
   }

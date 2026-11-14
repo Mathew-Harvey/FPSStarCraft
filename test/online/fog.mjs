@@ -14,7 +14,11 @@ try {
   const early = A.got.slice(n0).filter(m => m.t === 's'), earlyV = V.snaps();
   check(early.length > 20, `Ada is getting snapshots (${early.length})`);
   check(early.every(s => !s.u.some(r => r[2] === 1) && !s.b.some(r => r[2] === 1 && !r[13])), 'at the start, looking away, Ada is sent no Veyl body and no Veyl building in sight');
-  check(earlyV.every(s => !s.u.some(r => r[2] === 0) && !s.b.some(r => r[2] === 0)), 'and Vex is sent nothing of Ironhold');
+  // Vex's own body looks 110 m, so on a slow start an Ironhold body that has walked out toward the middle can be in his sight; anything else
+  // of Ironhold he is sent is a leak
+  const vexSees = (s, r) => s.u.some(o => o[2] === 1 && Math.hypot(o[3] - r[3], o[4] - r[4]) <= (o[10] ? LOOK : SIGHT)) || s.b.some(b => b[2] === 1 && Math.hypot(b[3] - r[3], b[4] - r[4]) <= SIGHT + 8);
+  const leak = earlyV.flatMap(s => [...s.u, ...s.b.filter(b => !b[13])].filter(r => r[2] === 0 && !vexSees(s, r)).map(r => `${r.slice(0, 5)} at ${s.time} s`));
+  check(!leak.length, `and Vex is sent nothing of Ironhold out of his side's sight (${leak.length ? leak.slice(0, 3).join('; ') : earlyV.filter(s => s.u.some(r => r[2] === 0)).length + ' snapshots had an Ironhold body in sight'})`);
   check(early.every(s => s.vo === undefined && !s.v) && earlyV.every(s => s.ore === undefined && !s.d), 'neither side is sent the other side\'s purse or plan');
   // Vex's own buildings say where the far base is. Ada walks over there with her body, looking at it.
   const vs = V.last('s'), stone = vs.b.find(r => r[2] === 1), me0 = A.last('s').u.find(r => r[0] === bA.unit);

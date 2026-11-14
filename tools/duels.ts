@@ -8,7 +8,7 @@
 import { noHud, noPipe } from '../server/shim';
 import { Game } from '../src/game';
 import { initHeadless } from '../src/gfx';
-import { DIFFS, UNIT, MAP, UPGRADES, setMap, setSides, isWorker, fac, type Kind } from '../src/data';
+import { DIFFS, UNIT, MAP, UPGRADES, CLEAVE, setMap, setSides, isWorker, fac, type Kind } from '../src/data';
 import { costOf } from '../src/core/econ';
 import { readFileSync } from 'node:fs';
 
@@ -31,12 +31,13 @@ initHeadless();
 const o = JSON.parse(process.argv[2] || '{}');
 // set: trial numbers, e.g. {"snapper":{"hp":60}}; vhp / vdmg: the Veyl bot multipliers (Game.vBoost).
 for (const k in o.set || {}) Object.assign((UNIT as any)[k], o.set[k]);
+if (o.cleaveK !== undefined) CLEAVE.k = o.cleaveK; if (o.cleave !== undefined) CLEAVE.n = o.cleave;
 const runs = o.runs ?? 20, budget = o.budget ?? 1200;
 const kinds = (Object.keys(UNIT) as Kind[]).filter(k => { const u = UNIT[k] as any; return u.cost + (u.flux || 0) > 0 && u.time > 0 && !isWorker(k) && !u.ward && !/\(/.test(u.name) && !SUPPORT.has(k); });
 const only = o.only ? String(o.only).split(',') : null;
 const pairs: [Kind, Kind][] = [];
 if (only) { const vs = o.vs ? String(o.vs).split(',') : null; for (const a of only as Kind[]) for (const b of kinds) if (!vs || vs.includes(b)) if (!(vs && only.includes(b) && only.indexOf(b) < only.indexOf(a))) pairs.push([a, b]); } else for (const a of kinds) for (const b of kinds) if (a <= b) pairs.push([a, b]);
-const mine = pairs.filter((_, i) => i % (o.of ?? 1) === (o.shard ?? 0));
+const mine = pairs.filter((_, i) => i % (o.of ?? 1) === (o.shard ?? 0)).slice(o.skip ?? 0);   // skip: resume a shard after its first n pairs
 
 for (const [ak, bk] of mine) {
   const ha = canHit(ak, bk), hb = canHit(bk, ak); if (!ha && !hb) continue;

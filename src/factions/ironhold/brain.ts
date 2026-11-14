@@ -64,6 +64,8 @@ const ANSWERS: Partial<Record<Kind, Partial<Record<SeenTag | 'swarm', number>>>>
   flakkite: { air: .9 }, linesman: { air: .3, melee: .2 }, gadfly: { soft: .05, huge: .1 }, claimbarge: { plated: .1, huge: .1 },
   patch: { soft: .05, melee: .05 },
 };
+/** The least share of the army any kind the Quartermaster can make is given, so every kind turns up in a long match. */
+const FLOOR = .06;
 const WHERE: Partial<Record<Kind, BKind>> = { linesman: 'bunkhouse', breacher: 'bunkhouse', patch: 'bunkhouse', sapper: 'bunkhouse', longshot: 'bunkhouse', dustbike: 'machineshop', piledriver: 'machineshop', gantry: 'foundry', hopper: 'hangar', flakkite: 'hangar', gadfly: 'hangar', surveyor: 'hangar', claimbarge: 'hangar' };
 const LINES: Partial<Record<BKind, string>> = {
   pumpjack: 'Pump Jack on the vent. Flux is extra, like everything else.', assay: 'Assay Office going up. Bigger guns for the foot soldiers, eventually.', machineshop: 'Machine Shop going in out back. Bikes first, big guns later.',
@@ -173,7 +175,7 @@ export function quartermaster(D: Director, dt: number, S: Side = D) {
   const want = (k: Kind) => {
     let w = (mix[k] || 0) / wsum + answer(k); if (k === 'surveyor' && (mem(S).hidT || needEye)) w = Math.max(w, needEye ? .6 : .06);
     if (k === 'hopper' && army < 10) w = 0; if (k === 'claimbarge' && army < 14) w = 0; if (w > 0 && !have[k] && army >= 8) w = Math.max(w, k === 'claimbarge' ? .25 : .15);
-    if (w > 0) w = Math.max(w, .03); if (capped(S, k)) w = 0; return w;
+    if (w > 0) w = Math.max(w, FLOOR); if (capped(S, k)) w = 0; return w;
   };
   const hosts = [...bunkUp, ...shopUp, ...fdyUp, ...hangUp].filter(b => b.queue.length < (hasTwin(b) ? 3 : 2) && !mem(b).crawl);
   const optsOf = (b: Building) => (TRAINS[b.kind] || []).filter(k => !g.gated(T, k) && !bldRule(b.kind).trains?.(g, b, k) && (!UNIT_NEEDS[k] || g.ownB(UNIT_NEEDS[k]!, true, T).length));

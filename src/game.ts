@@ -1,6 +1,6 @@
 // The simulation and the player: entities, combat, effects, the first-person bodies,
 // and jumping between them. Strategy (economy AI, raids, squad plans) lives in director.ts.
-import { DEATHS } from './net-look';
+import { DEATHS, playFxLook } from './net-look';
 import * as THREE from 'three';
 import { Pipeline, ViewPipe, V3, M, G, R, mk, setLayer, L_FX, L_SELF, holoOK, holoBad, ringMat, tracerMat, makeSky, heldMaterial, makeCone, CONEU, SHARED } from './gfx';
 import * as MD from './models';
@@ -376,6 +376,8 @@ export class Game {
   feed(who: string, msg: string, cls = '', team = -1) { if (this.evq) { this.evq.push(['fd', who, msg, cls, this.feedTo, team]); return; } if (team >= 0 && team !== this.myTeam) return; this.hud.feed(who, msg, cls); if (!this.noRender) babble(who, msg.length); }
 
   // ------------------------------------------------------------ effects
+  /** A hit's own look, for show only (src/net-look.ts defineFxLook): drawn here, or sent to every screen that can see it. */
+  look(key: string, ...n: number[]) { if (this.evq) { this.evq.push(['lk', key, ...n.map(r1)]); return; } if (!this.noRender) playFxLook(this, key, n); }
   tracer(a: THREE.Vector3, b: THREE.Vector3, mat: THREE.Material = tracerMat, w = .07) {
     if (this.evq) { this.evq.push(['tr', r1(a.x), r1(a.y), r1(a.z), r1(b.x), r1(b.y), r1(b.z), mat === tracerMat ? 0 : 1, w]); return; }
     if (this.net && !this.applying) this.net.cmd('tr', r1(a.x), r1(a.y), r1(a.z), r1(b.x), r1(b.y), r1(b.z), mat === tracerMat ? 0 : 1, w);

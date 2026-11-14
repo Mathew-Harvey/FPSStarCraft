@@ -122,6 +122,7 @@ const dmgOf = (b: Unit | Building) => b.maxHp - b.hp;
   const [nx, nz] = ring(cap, 2, 28), nd = spawnAt(g, 'needler', H, nx, nz), dummy = spawnAt(g, 'linesman' as Kind, O, nx + 7, nz); dummy.maxHp = dummy.hp = 5000; dummy.speed = 0;
   run(g, 3); check(dmgOf(dummy) === 0 || isDug(nd), 'Needler: does not fire standing up');
   if (!isDug(nd)) useAbility(g, nd, 'dig'); run(g, 4); check(isDug(nd) && dmgOf(dummy) > 0, `Needler: fires dug in (${dmgOf(dummy).toFixed(0)} damage in 4 s)`);
+  { const seen = new Set<string>(); for (let i = 0; i < 60; i++) { g.update(1 / 30); for (const e of g.evq!) if (e[0] === 'lk') seen.add(e[1]); g.evq!.length = 0; } check(seen.has('gfire'), 'Needler: its spines go to every screen as a look (lk gfire)'); }
   dummy.alive = false;
   // Blister dug in as a mine.
   nd.alive = false; sh.alive = false; const [bx, bz] = ring(cap, 4, 70), bl = spawnAt(g, 'blister', H, bx, bz); useAbility(g, bl, 'dig'); check(isDug(bl), 'Blister: digs in');

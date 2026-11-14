@@ -35,6 +35,8 @@ function who(g: Game, name: string, kind: Kind, team: number, x: number, z: numb
 }
 const ring = (g: Game, kind: Kind, team: number, cx: number, cz: number, r: number, n: number) => { for (let i = 0; i < n; i++) { const a = i / n * 6.283; put(g, kind, team, cx + Math.cos(a) * r, cz + Math.sin(a) * r, cx, cz); } };
 const crack = (): [number, number] => roadPt(ROAD.len * .52, 34);
+/** The island south of the Needle's Eye road on the large map (map 20). */
+const ISLE: [number, number] = [91, -103];
 const toPlate = (x: number, y: number, z: number): P3 => [x + 50, y + 30, z - 100];
 const bld = (g: Game, k: BKind, team: number, x: number, z: number) => g.addBuilding(k, team, x, z, true);
 const gone = (g: Game, u: Unit) => { u.alive = false; g.scene.remove(u.obj); };
@@ -58,6 +60,36 @@ const black = (): ReturnType<Panel['shot']> => ({ cam: [0, 30, 0], look: [0, 0, 
 const eye = (): [number, number] => roadPt(MAP.arch || 68, 0);
 
 export const CUTS: Record<string, Cut> = {
+  // ---- full-depth scenes: each one shows the new bodies and buildings of the job it opens
+  ironyard: { id: 'ironyard', title: 'New kit', sides: [0, 1], map: 0, dusk: .5, panels: [
+    { shot: () => ({ cam: [-14, 4, 18], look: [-4, 3, 4], to: [-12, 3.6, 16], fov: 46 }), stage: g => { bld(g, 'machineshop', 0, -6, 2); put(g, 'dustbike', 0, -2, 9, -14, 18); put(g, 'dustbike', 0, 0, 10, -14, 18); who(g, 'Aggie', 'rigger', 0, -8, 9, -14, 18); },
+      cap: 'Head office has sent the yard a Machine Shop and four crates of parts. The parts run on Flux, the blue gas from the vents.', say: [['Aggie', 'Pump Jack on the vent, Riggers carry the gas, the Shop builds bikes. Same as ore, but it smells worse.']] },
+    { shot: () => ({ cam: [10, 2.4, 14], look: [4, 2, 6], fov: 40 }), stage: g => { put(g, 'piledriver', 0, 4, 5, 10, 14); who(g, 'Pim', 'linesman', 0, 7, 9, 10, 14); }, say: [['Pim', 'This one is called a Pile Driver. It bolts itself to the ground and shoots over the hill.'], ['Moss', 'Ten ore says Pim drives it into the canteen.']] },
+  ] },
+  chord: { id: 'chord', title: 'Two voices, one body', sides: [2, 1], map: 3, dusk: .25, panels: [
+    { shot: g => { const [x, z] = crack(); return { cam: [x + 9, 3, z + 9], look: [x + 1, 2.4, z + 1], to: [x + 8, 2.6, z + 8], fov: 44 }; }, stage: g => { const [x, z] = crack(); put(g, 'choirmaster', 1, x, z + 1.4, x + 9, z + 9); put(g, 'choirmaster', 1, x + 1.6, z - .4, x + 9, z + 9); who(g, 'Held Fifth', 'warden', 1, x - 5, z - 3, x + 9, z + 9); },
+      cap: 'Two Choirmasters stand at the crack and sing the same note.', say: [['Held Fifth', 'THEY WILL NOT BE TWO AGAIN AFTER THIS. THEY BOTH ASKED TO DO IT.']] },
+    { shot: g => { const [x, z] = crack(); return { cam: [x + 7, 2.8, z + 7], look: [x + 1, 2.6, z + .6], fov: 42 }; }, sfx: 'built', stage: g => { const [x, z] = crack(); for (const u of [...placed]) if (u.kind === 'choirmaster') gone(g, u); put(g, 'chord', 1, x + .8, z + .5, x + 7, z + 7); gary(g, x + 5, z - 2, x + 7, z + 7); },
+      cap: 'Ten seconds later one body stands where the two stood. The Chorus calls it a Chord.', say: [['Held Fifth', 'GARY WANTS TO KNOW IF IT HURTS. IT DOES NOT. IT IS VERY LOUD INSIDE.']] },
+  ] },
+  skychoir: { id: 'skychoir', title: 'The Skyloft', sides: [0, 1], map: 20, dusk: .5, panels: [
+    { shot: () => ({ cam: [ISLE[0] + 26, 14, ISLE[1] + 22], look: [ISLE[0], 3, ISLE[1]], to: [ISLE[0] + 22, 12, ISLE[1] + 18], fov: 46 }), stage: g => { bld(g, 'pumpjack', 0, ISLE[0], ISLE[1]); bld(g, 'watchpost', 0, ISLE[0] + 6, ISLE[1] + 4); put(g, 'gadfly', 0, ISLE[0] - 3, ISLE[1] + 3, ISLE[0] + 26, ISLE[1] + 22); put(g, 'gadfly', 0, ISLE[0] + 3, ISLE[1] - 2, ISLE[0] + 26, ISLE[1] + 22); },
+      cap: 'The Charter has put a Pump Jack and a Watchpost on the island south of the road. Nothing on the ground can walk there.', say: [['Quartermaster', '(Charter channel) No road to it means no Veyl claim to it. I checked.']] },
+    { shot: () => ({ cam: [VHOME.x - 18, 5, VHOME.z + 16], look: [VHOME.x - 6, 4, VHOME.z + 4], fov: 46 }), stage: g => { bld(g, 'skyloft', 1, VHOME.x - 6, VHOME.z + 4); put(g, 'swift', 1, VHOME.x - 10, VHOME.z + 8, VHOME.x - 18, VHOME.z + 16); put(g, 'ferry', 1, VHOME.x - 3, VHOME.z + 10, VHOME.x - 18, VHOME.z + 16); put(g, 'omen', 1, VHOME.x - 8, VHOME.z + 12, VHOME.x - 18, VHOME.z + 16); who(g, 'Held Fifth', 'warden', 1, VHOME.x - 12, VHOME.z + 4, VHOME.x - 18, VHOME.z + 16); },
+      cap: 'Held Fifth wakes the Skyloft. The Chorus has not used it in two hundred years.', say: [['Held Fifth', 'WE STOPPED FLYING WHEN THE GLASS WAS THICK ENOUGH. IT IS NOT THICK ENOUGH NOW.']] },
+  ] },
+  elder: { id: 'elder', title: 'An older Cap', sides: [1, 2], map: 3, dusk: .4, panels: [
+    { shot: () => ({ cam: [VHOME.x - 16, 6, VHOME.z + 18], look: [VHOME.x, 5, VHOME.z], to: [VHOME.x - 14, 5, VHOME.z + 16], fov: 48 }), stage: g => { put(g, 'keeper', 2, VHOME.x - 6, VHOME.z + 8, VHOME.x - 16, VHOME.z + 18); put(g, 'grazer', 2, VHOME.x - 3, VHOME.z + 9, VHOME.x - 16, VHOME.z + 18); },
+      cap: 'Moss has learned how the Gloam grows. A Mother Cap that eats enough ore grows into an Elder Cap, and an Elder Cap grows things a Mother Cap cannot.', say: [['Moss', 'I named it the Elder Cap. Nobody else was going to.']] },
+    { shot: () => ({ cam: [VHOME.x - 9, 2.2, VHOME.z + 12], look: [VHOME.x - 4, 1.6, VHOME.z + 6], fov: 42 }), stage: g => { bld(g, 'rotden', 2, VHOME.x + 4, VHOME.z + 10); put(g, 'smother', 2, VHOME.x - 4, VHOME.z + 6, VHOME.x - 9, VHOME.z + 12); put(g, 'seeder', 2, VHOME.x - 1, VHOME.z + 7, VHOME.x - 9, VHOME.z + 12); },
+      say: [['The Gloam', 'THE SMOTHER BREATHES ON AN ENEMY AND THE ENEMY FIGHTS FOR US. KEEP AWAY FROM HEAVY MACHINERY.'], ['Moss', 'Twelve seconds of it. Then they go back to hating you.']] },
+  ] },
+  threevoices: { id: 'threevoices', title: 'Three voices', sides: [0, 1], map: 0, dusk: .7, panels: [
+    { shot: () => ({ cam: [12, 3.6, 18], look: [2, 2.6, 6], to: [10, 3.2, 16], fov: 46 }), stage: g => { who(g, 'Aggie', 'rigger', 0, 0, 6, 12, 18); who(g, 'Held Fifth', 'warden', 1, 5, 3, 12, 18); who(g, 'Moss', 'mulcher', 2, -4, 2, 12, 18); },
+      cap: 'For the first time the yard, the Chorus and the Gloam stand in one place and nobody shoots.', say: [['Aggie', 'One rule. Nobody shoots anybody on this side of the fence.'], ['Held Fifth', 'AGREED.'], ['The Gloam', 'AGREED. WEAR YOUR HELMET.']] },
+    { shot: () => ({ cam: [26, 8, 30], look: [4, 4, 4], fov: 50 }), stage: g => { put(g, 'reedwalker', 1, 10, -2, 26, 30); put(g, 'gantry', 0, -2, 12, 26, 30); put(g, 'hooksail', 2, -8, 8, 26, 30); },
+      cap: 'Each side has brought the biggest thing it owns: a Gantry from the yard, a Reedwalker from the Chorus, a Hooksail from the Gloam.', say: [['Moss', 'I\'ve put my money on the Charter, so we\'re sure to win.']] },
+  ] },
   arrival: { id: 'arrival', title: 'Arrival', sides: [0, 1], map: 0, dusk: .05, panels: [
     { shot: () => ({ cam: [60, 46, 70], look: [0, 4, 0], to: [44, 30, 52], fov: 50 }), cap: 'Tithe. Claim 4471-T. The Charter shuttle drops you off and leaves before your boots touch the ground.' },
     { shot: () => ({ cam: [9, 3, 12], look: [0, 6, 0], to: [8, 2.6, 10], fov: 46 }), bal: -11000, stamp: 'NOTED', sfx: 'card',

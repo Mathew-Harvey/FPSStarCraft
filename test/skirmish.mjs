@@ -52,6 +52,10 @@ try {
   const q = await b.newPage({ viewport: { width: 1600, height: 900 } }); q.setDefaultTimeout(300000);
   q.on('pageerror', e => { console.log('[pageerror]', e.message.slice(0, 400)); fail.push('page error'); });
   await q.goto(page); await q.waitForFunction('window.__ore && __ore.game');
+  // The screen flash fades on the menu: a first frame stamped before the page's clock started gave a negative step, and the flash grew to about 46.
+  await q.waitForTimeout(1500);
+  const fl = await q.evaluate(() => ({ flash: __ore.pipe.flash, time: __ore.pipe.time, shake: __ore.game.shake }));
+  check(fl.flash <= 1 && fl.shake <= 2 && fl.time >= 0, `on the menu the screen flash and shake are not stuck high (flash ${fl.flash.toFixed(2)}, shake ${fl.shake.toFixed(2)}, clock ${fl.time.toFixed(1)})`);
   // Every kind of all three factions has a picture, and none is washed out: a picture drawn after the menu had run once came out white.
   const pics = await q.evaluate(async () => { __ore.setFree(true); __ore.pickMap(0); __ore.pickSide(2); __ore.startVeyl(); __ore.quit(); __ore.portraits(['snapper', 'keeper']);
     const U = __ore.reg.UNIT, P = __ore.hud.portraits, ks = Object.keys(U).filter(k => U[k].team >= 0 && U[k].team <= 2), c = document.createElement('canvas'); c.width = c.height = 32; const x = c.getContext('2d');
@@ -85,6 +89,12 @@ try {
     const labs = [...document.querySelectorAll('#anchors .lab')].filter(e => !e.hidden && /Workers/i.test(e.textContent)).map(e => e.getBoundingClientRect());
     return { shown: labs.length, hit: labs.filter(r => !(r.right <= clock.left || clock.right <= r.left || r.bottom <= clock.top || clock.bottom <= r.top)).length }; });
   check(cv.shown > 0 && cv.hit === 0, `in the command view the Workers label of a Mother Cap under the clock does not cover it (${cv.shown} shown, ${cv.hit} on the clock)`);
-  if (SHOTS) await q.screenshot({ path: `${SHOTS}/hud-gloam-cmd-1600.jpg`, type: 'jpeg', quality: 85 });
+  // In the command view, with the Mother Cap's long card up, the crew list (YOU, the body, kills and ore) sits clear of the card and the picked panel.
+  for (const [w, h] of [[1600, 900], [1280, 720]]) { await q.setViewportSize({ width: w, height: h }); await q.evaluate(() => run(6));
+    const r = await q.evaluate(() => { const A = e => e && !e.hidden && e.getClientRects().length ? e.getBoundingClientRect() : null, crew = A(document.getElementById('crew'));
+      const others = [document.getElementById('ccard'), document.getElementById('cpan')].map(A).filter(Boolean);
+      return { crew: !!crew, n: others.length, hit: crew ? others.filter(o => !(crew.right <= o.left || o.right <= crew.left || crew.bottom <= o.top || o.bottom <= crew.top)).length : 0 }; });
+    check(r.crew && r.n >= 2 && r.hit === 0, `at ${w}x${h} in the command view the crew list does not overlap the command card or the picked panel (${r.n} panels, ${r.hit} overlapped)`);
+    if (SHOTS) await q.screenshot({ path: `${SHOTS}/hud-gloam-cmd-${w}.jpg`, type: 'jpeg', quality: 85 }); }
 } finally { await b.close(); }
 console.log(fail.length ? `\n${fail.length} FAILED` : '\nall skirmish checks passed'); process.exit(fail.length ? 1 : 0);

@@ -80,6 +80,8 @@ function framing(kind: Kind, obj: THREE.Object3D): { y: number; dist: number } {
   return { y: top - span * .45, dist: span / (2 * Math.tan(15 * Math.PI / 180)) * 1.05 + w * .25 };
 }
 function portraits(redo = false, only?: Kind[]) {
+  // Called as each match starts: no screen flash carries over from the menu or the match before.
+  if (redo) pipe.flash = 0;
   const todo = only || (Object.keys(UNIT) as Kind[]).filter(k => { const f = UNIT[k].team ?? 0; return f >= 0 && f <= 2 && (!hud.portraits[k] || (!portraitArt.has(f) && artHas([f]))); });
   if (!todo.length) return;
   const scene = new THREE.Scene(); scene.add(makeSky());
@@ -93,7 +95,7 @@ function portraits(redo = false, only?: Kind[]) {
   const back = sharedSwap(SHARED0);
   // Always the near model: a 236 pixel picture is small enough that the detail switch would pick the far one (a pale shape).
   const lodWas = LOD.force; LOD.force = 0;
-  // and no screen flash or static: the pipeline's flash is a whole-screen whiten, and on the menu it sits far above 1.
+  // and no screen flash or static: the pipeline's flash is a whole-screen whiten, and a blast on the menu's backdrop can set it.
   const pv = { flash: pipe.flash, static: pipe.static, sat: pipe.sat }; pipe.flash = 0; pipe.static = 0; pipe.sat = 1;
   for (const kind of todo) {
     // A kind that is another kind set up differently (the Gantry braced as flak) wears that kind's figure.
@@ -529,7 +531,9 @@ let last = performance.now(), freeShown = false;
 /** Tests that only care about the rules hold the picture still: no game on this page draws until they let go. */
 let still = false;
 function frame(now: number) {
-  const dt = (now - last) / 1000; last = now; watchFrame(game, dt); if (still) { game.noRender = true; if (game2) game2.noRender = true; }
+  // The first frame's time stamp can be earlier than the moment this script set `last` (a long boot), which made dt about -18 s:
+  // the screen flash and shake then grew instead of fading (to about 46) and whitened the first frames of a match.
+  const dt = Math.max(0, (now - last) / 1000); last = now; watchFrame(game, dt); if (still) { game.noRender = true; if (game2) game2.noRender = true; }
   // Without mouse capture, holding the cursor near a screen edge turns the view.
   pad.frame(); if (touchOn) document.body.classList.toggle('playing', live());
   if (freeMouse && !touchOn && moved && live() && !game.tab) { const ex = curX < .1 ? (curX - .1) / .1 : curX > .9 ? (curX - .9) / .1 : 0; game.mdx += ex * 900 * dt; }

@@ -6,7 +6,7 @@ import { V3, R, M, tracerMat } from '../../gfx';
 import { sfx } from '../../audio';
 import type { Game } from '../../game';
 import { TMP } from '../../game';
-import { UNIT, BLD, Unit, Building, BKind, Kind, UPGRADES, UNIT_NEEDS, fac } from '../../data';
+import { UNIT, BLD, Unit, Building, BKind, Kind, UPGRADES, fac } from '../../data';
 import { defineBuildings, defineFaction, bldRule, type BldAction } from '../../core/registry';
 import { addStatus } from '../../core/status';
 import { isHidden, seenBy } from '../../core/sight';
@@ -15,7 +15,6 @@ import { load, unload, usedOf } from '../../core/cargo';
 import { roomFor, flyBuilding } from '../../core/air';
 import { refund, costOf } from '../../core/econ';
 import { TUNE, mem, nearest, within, dist, mulOf } from './kit';
-import { storyTree } from './story-tree';   // STORY STAND-IN: see story-tree.ts
 import { HOSTS, ADDONS, LAB, CRAWLERS, I_UPGRADES, I_NEEDS, type IBKind, type IKind } from './numbers';
 
 const isHost = (k: string) => HOSTS.includes(k as IBKind);
@@ -64,7 +63,7 @@ function hatchTwin(g: Game, b: Building, dt: number) {
     g.puff(TMP.copy(u.pos).setY(1), 4, .8, M.dust); if (g.vol(b.pos) > .2) sfx.blip(); g.dir.trained(u);
   }
 }
-const trainsHere = (_g: Game, b: Building, k: Kind) => LAB.includes(k as any) && !hasLab(b) && !storyTree() ? `The ${UNIT[k].name} needs a Lab Bay on this ${BLD[b.kind].name}.` : '';
+const trainsHere = (_g: Game, b: Building, k: Kind) => LAB.includes(k as any) && !hasLab(b) ? `The ${UNIT[k].name} needs a Lab Bay on this ${BLD[b.kind].name}.` : '';
 
 // ---------------------------------------------------------------- crawling
 /** Packs a building onto skids and sends it crawling to a spot: its add-on stays behind, training stops, it settles where there is room. */
@@ -179,10 +178,10 @@ function each(g: Game, b: Building, dt: number) {
 /** Lab Bay research needs a Lab Bay bolted to a building of that kind; some levels need a building standing as well. */
 function gate(g: Game, team: number, what: string): string {
   // A unit that needs a building beyond the one it trains at (the Patch, Longshot, Claim Barge), and a building that needs another first.
-  const nb = (storyTree() ? UNIT_NEEDS[what as IKind] : I_NEEDS[what as IKind]) as BKind | undefined; if (nb) return g.ownB(nb, true, team).length ? '' : BLD[nb].name;
+  const nb = I_NEEDS[what as IKind] as BKind | undefined; if (nb) return g.ownB(nb, true, team).length ? '' : BLD[nb].name;
   if (BLD[what as BKind]?.needs) { const m = g.missing(what as BKind, team); return m.length ? BLD[m[0]].name : ''; }
   const u = I_UPGRADES.find(x => x.key === what); if (!u) return '';
-  if (u.lab && !storyTree() && !g.ownB(u.at, true, team).some(hasLab)) return `Lab Bay on ${an(BLD[u.at].name)}`;
+  if (u.lab && !g.ownB(u.at, true, team).some(hasLab)) return `Lab Bay on ${an(BLD[u.at].name)}`;
   for (const r of u.req || []) if (!g.ownB(r, true, team).length) return BLD[r].name;
   return '';
 }

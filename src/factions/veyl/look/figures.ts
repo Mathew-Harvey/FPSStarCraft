@@ -606,19 +606,19 @@ export const VM: Record<string, Record<string, ArmVM[]>> = {
   },
   // the open left hand and the baton in the right; 'cast' throws both up as the note is sung
   choirmaster: {
-    hands: [{ g: 'armL', at: L_(-.44, -.62, .05), dir: L_(.2, .4, -1), roll: .3, s: .5 }, { g: 'armR', at: L_(.44, -.6, .05), dir: L_(-.2, .5, -1), roll: -.3, s: .5 }],
+    hands: [{ g: 'armL', at: L_(-.36, -.55, .05), dir: L_(.2, .55, -1), roll: .3, s: .5 }, { g: 'armR', at: L_(.36, -.55, .05), dir: L_(-.2, .6, -1), roll: -.3, s: .5 }],
     cast: [{ g: 'armL', at: L_(-.44, -.5, 0), dir: L_(-.1, 1.1, -1), roll: .2, s: .5 }, { g: 'armR', at: L_(.44, -.5, 0), dir: L_(.1, 1.2, -1), roll: -.2, s: .5 }],
   },
   // four arms: the near pair as the Choirmaster's, the other voice's pair further out and lower, all moving as one
   chord: {
-    hands: [{ g: 'armL', at: L_(-.34, -.6, .05), dir: L_(.2, .45, -1), roll: .3, s: .45 }, { g: 'armR', at: L_(.34, -.6, .05), dir: L_(-.2, .45, -1), roll: -.3, s: .45 },
-      { g: 'armLB', at: L_(-.6, -.62, .05), dir: L_(.05, .6, -1), roll: .5, s: .45 }, { g: 'armRB', at: L_(.6, -.62, .05), dir: L_(-.05, .6, -1), roll: -.5, s: .45 }],
+    hands: [{ g: 'armL', at: L_(-.3, -.52, .05), dir: L_(.2, .6, -1), roll: .3, s: .45 }, { g: 'armR', at: L_(.3, -.52, .05), dir: L_(-.2, .6, -1), roll: -.3, s: .45 },
+      { g: 'armLB', at: L_(-.46, -.56, .05), dir: L_(.15, .7, -1), roll: .5, s: .45 }, { g: 'armRB', at: L_(.46, -.56, .05), dir: L_(-.15, .7, -1), roll: -.5, s: .45 }],
     cast: [{ g: 'armL', at: L_(-.34, -.5, 0), dir: L_(-.05, 1.1, -1), roll: .2, s: .45 }, { g: 'armR', at: L_(.34, -.5, 0), dir: L_(.05, 1.1, -1), roll: -.2, s: .45 },
       { g: 'armLB', at: L_(-.6, -.56, 0), dir: L_(-.15, .9, -1), roll: .4, s: .45 }, { g: 'armRB', at: L_(.6, -.56, 0), dir: L_(.15, .9, -1), roll: -.4, s: .45 }],
   },
   // the two clapper fists, low and heavy; 'ringshell' throws them up and out as the shell goes up
   bell: {
-    hands: [{ g: 'armL', at: L_(-.5, -.66, .05), dir: L_(.25, .3, -1), roll: .2, s: .45 }, { g: 'armR', at: L_(.5, -.66, .05), dir: L_(-.25, .3, -1), roll: -.2, s: .45 }],
+    hands: [{ g: 'armL', at: L_(-.4, -.62, .05), dir: L_(.25, .35, -1), roll: .2, s: .45 }, { g: 'armR', at: L_(.4, -.62, .05), dir: L_(-.25, .35, -1), roll: -.2, s: .45 }],
     ringshell: [{ g: 'armL', at: L_(-.5, -.55, 0), dir: L_(-.5, 1, -.6), roll: .2, s: .45 }, { g: 'armR', at: L_(.5, -.55, 0), dir: L_(.5, 1, -.6), roll: -.2, s: .45 }],
   },
   // both hands under the orb, held low in the middle; 'toll' heaves it out ahead
@@ -627,21 +627,21 @@ export const VM: Record<string, Record<string, ArmVM[]>> = {
     toll: [{ g: 'armL', at: L_(-.42, -.55, 0), dir: L_(.25, .1, -1), roll: .2, s: .5 }, { g: 'armR', at: L_(.42, -.55, 0), dir: L_(-.25, .1, -1), roll: -.2, s: .5 }, { g: 'orb', at: L_(0, -.6, -.75), dir: L_(0, 0, -1), s: .5 }],
   },
   // from the lantern: the two front reed legs going down past either side of the view to the ground far below
-  reedwalker: { legs: [{ g: 'legL', at: L_(-.75, -.2, -.1), dir: L_(-.15, -1.3, -1), s: .3 }, { g: 'legR', at: L_(.75, -.2, -.1), dir: L_(.15, -1.3, -1), s: .3 }] },
+  reedwalker: { legs: [{ g: 'legL', at: L_(-0.42, -0.42, -0.1), dir: L_(-0.2, -0.7, -1), s: 0.22 }, { g: 'legR', at: L_(0.42, -0.42, -0.1), dir: L_(0.2, -0.7, -1), s: 0.22 }] },
   // the glass wings beating at the edges of the view
-  listener: { wings: [{ g: 'wingL', at: L_(-.4, -.3, 0), dir: L_(-1, .15, -.5), s: .45 }, { g: 'wingR', at: L_(.4, -.3, 0), dir: L_(1, .15, -.5), s: .45 }] },
-  swift: { wings: [{ g: 'wingL', at: L_(-.3, -.42, 0), dir: L_(-1, -.05, -.25), s: .55 }, { g: 'wingR', at: L_(.3, -.42, 0), dir: L_(1, -.05, -.25), s: .55 }] },
-  prism: { sails: [{ g: 'wingL', at: L_(-.45, -.3, 0), dir: L_(-1, -.35, -.4), s: .4 }, { g: 'wingR', at: L_(.45, -.3, 0), dir: L_(1, -.35, -.4), s: .4 }] },
+  listener: { wings: [{ g: 'wingL', at: L_(-0.3, -0.42, 0), dir: L_(-0.6, -0.1, -1), s: 0.45 }, { g: 'wingR', at: L_(0.3, -0.42, 0), dir: L_(0.6, -0.1, -1), s: 0.45 }] },
+  swift: { wings: [{ g: 'wingL', at: L_(-0.26, -0.5, 0), dir: L_(-0.7, -0.15, -1), s: 0.55 }, { g: 'wingR', at: L_(0.26, -0.5, 0), dir: L_(0.7, -0.15, -1), s: 0.55 }] },
+  prism: { sails: [{ g: 'wingL', at: L_(-0.3, -0.45, 0), dir: L_(-0.6, -0.3, -1), s: 0.4 }, { g: 'wingR', at: L_(0.3, -0.45, 0), dir: L_(0.6, -0.3, -1), s: 0.4 }] },
   // the front pair of leaves, hanging down either side of the prow
-  ferry: { leaves: [{ g: 'leaf0', at: L_(-.6, -.25, -.1), dir: L_(-.5, -1, -.4), s: .45 }, { g: 'leaf1', at: L_(.6, -.25, -.1), dir: L_(.5, -1, -.4), s: .45 }] },
+  ferry: { leaves: [{ g: 'leaf0', at: L_(-0.3, -0.38, -0.1), dir: L_(-0.3, -0.7, -1), s: 0.45 }, { g: 'leaf1', at: L_(0.3, -0.38, -0.1), dir: L_(0.3, -0.7, -1), s: 0.45 }] },
   // the dark stone held between both hands; 'still' lets it drop
   omen: {
     hands: [{ g: 'armL', at: L_(-.4, -.6, .05), dir: L_(.35, .2, -1), roll: .2, s: .55 }, { g: 'armR', at: L_(.4, -.6, .05), dir: L_(-.35, .2, -1), roll: -.2, s: .55 }, { g: 'orb', at: L_(0, -.48, -.45), dir: L_(0, 0, -1), s: .6 }],
     still: [{ g: 'armL', at: L_(-.4, -.6, .05), dir: L_(.3, -.1, -1), roll: .2, s: .55 }, { g: 'armR', at: L_(.4, -.6, .05), dir: L_(-.3, -.1, -1), roll: -.2, s: .55 }, { g: 'orb', at: L_(0, -.85, -.6), dir: L_(0, 0, -1), s: .6 }],
   },
   // from the figurehead: the two broad fins standing off either side of the view
-  lyre: { fins: [{ g: 'wingL', at: L_(-.6, -.35, 0), dir: L_(-1, -.2, -.3), s: .3 }, { g: 'wingR', at: L_(.6, -.35, 0), dir: L_(1, -.2, -.3), s: .3 }] },
-  shard: { fins: [{ g: 'wingL', at: L_(-.2, -.3, 0), dir: L_(-1, -.1, -.3), s: .7 }, { g: 'wingR', at: L_(.2, -.3, 0), dir: L_(1, -.1, -.3), s: .7 }] },
+  lyre: { fins: [{ g: 'wingL', at: L_(-0.35, -0.5, 0), dir: L_(-0.6, -0.2, -1), s: 0.3 }, { g: 'wingR', at: L_(0.35, -0.5, 0), dir: L_(0.6, -0.2, -1), s: 0.3 }] },
+  shard: { fins: [{ g: 'wingL', at: L_(-0.22, -0.36, 0), dir: L_(-0.45, -0.2, -1), s: 1.4 }, { g: 'wingR', at: L_(0.22, -0.36, 0), dir: L_(0.45, -0.2, -1), s: 1.4 }] },
   // the great raised hands, far apart; 'holdtime' brings the right one up flat ahead
   cantus: {
     hands: [{ g: 'armL', at: L_(-.6, -.62, .05), dir: L_(.1, .7, -1), roll: .3, s: .3 }, { g: 'armR', at: L_(.6, -.62, .05), dir: L_(-.1, .7, -1), roll: -.3, s: .3 }],

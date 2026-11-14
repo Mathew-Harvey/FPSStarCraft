@@ -194,7 +194,7 @@ try {
   await p.close(); p = await open();
   await p.evaluate(() => { const R = __ore.reg, g = __ore.game;
     R.defineAbilities('longshot', [{ key: 'flare', name: 'Test Flare', hotkey: 'E', energy: 25, cd: 10, cast: 0, range: 30, target: 'point', blurb: 'test only', effect: (g, u, t) => { window.flared = (window.flared || []).concat([[u.id, t.x, t.z]]); } }]);
-    R.defineAbilities('linesman', [{ key: 'brace', name: 'Test Brace', hotkey: 'C', energy: 0, cd: 8, cast: 0, range: 0, target: 'self', effect: (g, u) => { window.braced = (window.braced || []).concat([u.id]); } }]);
+    R.defineAbilities('linesman', [{ key: 'brace', name: 'Test Brace', hotkey: 'C', energy: 0, cd: 8, cast: 0, range: 0, target: 'self', autocast: true, ai: () => null, effect: (g, u) => { window.braced = (window.braced || []).concat([u.id]); } }]);
     R.defineBuildings({ headframe: { actions: (g, b) => [{ key: 'horn', name: 'Test Horn', hotkey: 'N', cost: [30, 0], blurb: 'test only', ok: () => window.hornBlock || '', run: () => { window.horned = (window.horned || 0) + 1; } }] } });
     for (let i = 0; i < 2; i++) { const u = g.spawn('longshot', 0, 4 + i * 2, 18); u.maxEnergy = 100; u.energy = 30 - i * 20; }
     step(2); });
@@ -209,6 +209,19 @@ try {
   check(/^Needs 25 energy/.test(r), `with no picked body able to pay, the button says how much energy it needs ("${r}")`);
   r = await p.evaluate(() => { const g = __ore.game, C = g.cmd, hf = g.ownB('headframe')[0]; C.sel.clear(); C.selB = hf; C.menu = ''; C.aim = null; step(1); const b = C.card.find(x => x.id === 'ba:horn'); const o0 = g.purse[0]; key(b.key); const ok = { n: window.horned || 0, paid: o0 - g.purse[0] }; window.hornBlock = 'Not now.'; step(1); const b2 = C.card.find(x => x.id === 'ba:horn'); key(b2.key); window.hornBlock = ''; return { label: b.label, ...ok, off: b2.off, n2: window.horned || 0 }; });
   check(r.n === 1 && r.paid === 30 && r.off === 'Not now' && r.n2 === 1, `a building's own commands are on its card, paid for, and greyed with their reason ("${r.label}", then "${r.off}")`);
+  // Autocast: a right click on the ability's button switches casting by itself off for every picked body of that kind, and back on.
+  r = await p.evaluate(() => { const g = __ore.game, C = g.cmd, ls = g.own('linesman').filter(u => !u.pilot).slice(0, 3); C.selB = null; pickAll(ls);
+    const rc = () => { const e = document.querySelector('#cmdUI [data-cb="ab:linesman:brace"]'), q = e.getBoundingClientRect(), [x, y] = __ore.hud.toHud(q.left + q.width / 2, q.top + q.height / 2); C.cx = x; C.cy = y; click(2); step(1); return C.card.find(x => x.id === 'ab:linesman:brace').sub; };
+    const sub0 = C.card.find(x => x.id === 'ab:linesman:brace').sub, sub1 = rc(), off = ls.every(u => u.autoOff?.brace), sub2 = rc(), on = ls.every(u => !u.autoOff?.brace);
+    return { sub0, sub1, sub2, off, on, moved: ls.some(u => u.order?.type === 'move') }; });
+  check(r.off && r.on && /by itself/.test(r.sub0) && r.sub1 !== r.sub0 && r.sub2 === r.sub0, `a right click on an ability button switches casting by itself off for the picked bodies and back on ("${r.sub0}" / "${r.sub1}")`);
+  // Get in and Unload all, with Ironhold's real carrier, the Hopper.
+  r = await p.evaluate(() => { const g = __ore.game, C = g.cmd, hf = g.ownB('headframe')[0], h = g.spawn('hopper', 0, hf.pos.x + 12, hf.pos.z + 4), ls = g.own('linesman').filter(u => !u.pilot && !u.inside).slice(0, 2);
+    for (const [i, u] of ls.entries()) u.pos.set(h.pos.x - 5, 0, h.pos.z + i * 1.5); g.dir.auto = false; pickAll(ls); const gb = C.card.find(x => x.id === 'board');
+    key(gb.key); const lit = C.aim?.k === 'board'; look(h.pos.x, h.pos.z); aim(h.pos.x, h.pos.z, 1.2); click(0); step(150);
+    const inside = ls.filter(u => u.inside === h).length; C.sel.clear(); pickAll([h]); const ub = C.card.find(x => x.id === 'unload'); key(ub.key); step(2);
+    const out = ls.filter(u => !u.inside && u.alive).length; return { gb: gb && gb.label, ub: ub && ub.label, lit, inside, out, room: h.cargo?.length ?? 0 }; });
+  check(r.lit && r.inside === 2 && r.out === 2 && r.room === 0, `"${r.gb}" sends the picked bodies into a Hopper and "${r.ub}" lets them all out (${r.inside} got in, ${r.out} out)`);
   r = await p.evaluate(() => { const g = __ore.game, C = g.cmd, u = g.own('linesman')[0]; C.selB = null; pickAll([u]); u.status = [{ k: 'slow', t: 5 }, { k: 'shielded', t: 5 }]; look(u.pos.x, u.pos.z); step(2); const t = [...document.querySelectorAll('#anchors .st')].filter(e => !e.hidden).map(e => e.textContent); u.status = []; return t; });
   check(r.includes('Slowed +1'), `a body under a status shows it over its head in plain words (${r.join(', ')})`);
   await p.evaluate(() => { const u = __ore.game.own('linesman')[0]; u.status = [{ k: 'slow', t: 5 }]; step(2); });

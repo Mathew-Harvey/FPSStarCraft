@@ -12,13 +12,17 @@ const fail = []; const check = (ok, what) => { console.log((ok ? 'PASS ' : 'FAIL
 const b = await chromium.launch({ args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist', '--enable-webgl', '--disable-dev-shm-usage', '--js-flags=--expose-gc'] });
 try {
   const shotIn = async (p, n) => { if (SHOTS) { await p.evaluate(() => { for (const d of document.querySelectorAll('#feed div')) d.style.animation = 'none'; }); await p.screenshot({ path: `${SHOTS}/${n}.jpg`, type: 'jpeg', quality: 88 }); } };
-  // Software drawing in a headless browser grows its memory with every frame drawn, so the test runs in fresh pages, and every fourth step
-  // collects the garbage by hand: the native memory behind dropped objects is only freed by a collection, and the JavaScript heap is too quiet
-  // to start one, so a page climbed past 10 GB and was killed ("Target crashed") inside the full run.
+  // The test runs in fresh pages, and every fourth step collects the garbage by hand, to keep each page's memory low.
   const open = async () => {
   const p = await b.newPage({ viewport: { width: 1280, height: 720 } }); p.setDefaultTimeout(300000);
   p.on('pageerror', e => { console.log('[pageerror]', e.message.slice(0, 400)); fail.push('page error'); });
   await p.goto(page); await p.waitForFunction('window.__ore && __ore.game');
+  // At most one picture per turn of the page. A test call that steps and draws many frames in one go never lets the browser show one,
+  // and the browser keeps every one of them until it does: the page climbed from 1 GB to 4 to 8 GB inside a section and was killed
+  // ("Target crashed"). The game itself draws once per animation frame, so this is the test's own load, not a leak in the game.
+  // A frame skipped this way is drawn as soon as the call ends, with the latest view, before any screenshot is taken.
+  await p.evaluate(() => { const P = __ore.pipe, real = P.draw.bind(P); let busy = false, late = null;
+    P.draw = (...a) => { if (busy) { late = a; return; } busy = true; real(...a); setTimeout(() => { busy = false; if (late) { const l = late; late = null; P.draw(...l); } }, 0); }; });
   await p.evaluate(() => {
     __ore.setFree(true); __ore.pickMap(0); document.querySelectorAll('#diff button')[0].click(); __ore.setRaid(true); __ore.start(); __ore.hold(true);
     const g = __ore.game; g.introT = 0; g.hourFix = 13; g.wxFix = 'clear'; g.truce = true; g.dir.raidIn = 9999; g.dir.auto = false; g.ore = 2000;

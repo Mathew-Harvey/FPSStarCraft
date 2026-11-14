@@ -7,7 +7,7 @@ import { initHeadless } from '../src/gfx';
 import { BLD, DIFFS, FACTION, ROAD, SIDE, STORY, TRAINS, UNIT, fac, roadPt, setMap, setSides, setTeamGame } from '../src/data';
 import type { BKind, Kind } from '../src/data';
 import { fieldsOn } from '../src/factions/veyl/fields';
-import { MISSIONS, missionSides, charterTeam, Mission } from '../src/campaign';
+import { MISSIONS, STORY_JOBS, missionSides, charterTeam, fromOldSave, Mission } from '../src/campaign';
 
 initHeadless();
 const mins = +(process.argv[2] || 3), only = process.argv.slice(3).map(Number);
@@ -78,5 +78,9 @@ for (const name of ['Common Ground', 'Three Voices']) { const m = job(name); con
   const allies = [...new Set(g.buildings.filter(b => b.alive && b.team !== mine && b.team !== SIDE.out).map(b => b.team))];
   check(mine === 0 && allies.length === (name === 'Three Voices' ? 2 : 1) && g.buildings.some(b => b.alive && b.team === SIDE.out) && STORY.charter === SIDE.out, `${name}: the player at the yard, ${allies.length} bot ${allies.length > 1 ? 'allies' : 'ally'}, Charter Security across the map`);
   check(!g.human[allies[0]], `${name}: the ally is a bot`); }
+// ---- old saves land on the same next job
+{ const at = (n: string) => MISSIONS.findIndex(m => m.name === n);
+  check(fromOldSave(13, 3) === at('Brood') && fromOldSave(17, 3) === at('Open Hands') && fromOldSave(19, 3) === at('Rooted') && fromOldSave(28, 3) === STORY_JOBS, 'a save from the 28-job list moves to the same next job');
+  check(fromOldSave(8, 2) === at('Wrong Body') && fromOldSave(3, 2) === at('Night Shift'), 'a save from the 24-job list moves to the same next job'); }
 console.log(fails.length ? `\n${fails.length} failed` : '\nall passed');
 process.exit(fails.length ? 1 : 0);

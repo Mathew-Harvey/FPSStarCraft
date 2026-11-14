@@ -3,7 +3,7 @@
 // Jobs where the player is at the outpost end of the map run on a hidden local host (see split.ts); the job's script runs there.
 import type { Game } from './game';
 import type { BKind, Kind, Building, Unit } from './data';
-import { SIDE, FACTION, MAP, ROAD, VHOME, STORY, UNIT, BLD, roadPt, foeOf, fac } from './data';
+import { SIDE, FACTION, MAP, ROAD, VHOME, STORY, UNIT, BLD, roadPt, foeOf, fac, isWorker } from './data';
 import { abilitiesOf } from './core/ability';
 import { addStatus } from './core/status';
 import { isEnemy, type TeamPlan } from './core/sides';
@@ -118,6 +118,14 @@ function farSung(g: Game, s: Record<string, number>, at?: [number, number]) {
 const digIn = (g: Game, u: Unit) => { if (!setDug(g, u, true)) hide(u); };
 
 /** In a team job, the bot ally playing a faction (0 Ironhold, 1 Veyl, 2 Gloam), or -1 if there is none. */
+/** Player fighters (not workers, not mines or turrets) within `r` of a spot. */
+const fightersNear = (g: Game, [x, z]: [number, number], r: number) => g.units.filter(u => u.alive && u.team === me(g) && !isWorker(u.kind) && !UNIT[u.kind]?.ward && near(u, x, z, r)).length;
+/** A call for help from an ally under attack `key`: the player has `wait` seconds from the call to get three fighters to the ally's
+ *  base. If they come, `s[key + 'h']` is set; if not, the ally gives up its start and the job is lost (`s.alone`). */
+const answer = (g: Game, s: Record<string, number>, dt: number, key: string, ally: number, wait: number) => {
+  if (!s[key] || s[key + 'h'] || ally < 0) return; s[key + 'c'] = (s[key + 'c'] || 0) + dt;
+  if (fightersNear(g, homeOf(g, ally), 30) >= 3) s[key + 'h'] = 1; else if (s[key + 'c'] > wait) { s.alone = 1; s.lose = 1; }
+};
 const allyTeam = (g: Game, f: number) => { for (let t = 0; t < 24; t++) if (t !== me(g) && fac(t) === f && !isEnemy(t, me(g)) && g.buildings.some(b => b.team === t)) return t; return -1; };
 
 const QM = 'Quartermaster', AG = 'Aggie', MO = 'Moss', PIM = 'Pim', H5 = 'Held Fifth', PB = 'Phrasebook 3', AL = 'Abbot-Lyle', GL = 'The Gloam';
@@ -1058,10 +1066,10 @@ const ACT4: Mission[] = [
   job(36, 4, {
     name: 'Common Ground', side: 0, foe: 0, map: 6, diff: 1, dusk: DUSK, charter: 'out', team: { n: 4, groups: [[0, 1], [2]], facs: [0, 1, 0, -1] },
     teaches: 'Fighting beside a bot ally on a four-start map: covering the ally\'s base, a shared enemy, two bases on the command view',
-    brief: 'Crossing. Aggie\'s yard and Held Fifth\'s Chorus hold two starts next to each other on the crossroads, and Charter Security holds the start across from you. The Chorus is a bot ally: it builds and fights on its own, you cannot give it orders, and you see everything it sees. Charter Security goes for the Chorus first, because it is the smaller. Take fighters to the Choir Stone when the Watcher calls, then break the Charter Headframes together. If the Chorus loses every Choir Stone, the job is lost.',
+    brief: 'Crossing. Aggie\'s yard and Held Fifth\'s Chorus hold two starts next to each other on the crossroads, and Charter Security holds the start across from you. The Chorus is a bot ally: it builds and fights on its own, you cannot give it orders, and you see everything it sees. Charter Security goes for the Chorus first, because it is the smaller. When the Watcher calls, you have two minutes to get three fighters to the Choir Stone, or the Chorus gives up its start and leaves. Then break the Charter Headframes together. If the Chorus leaves or loses every Choir Stone, the job is lost.',
     allow: IRON_ALL, units: IRON_UNITS, raids: false, auto: false,
     objectives: [
-      { text: g => g.ms.a1 ? `See off the Charter attack on the Chorus (${left(g, 'a1')} left)` : 'Wait for the Charter to move', done: g => g.ms.a1 === 1 && !left(g, 'a1') },
+      { text: g => !g.ms.a1 ? 'Wait for the Charter to move' : !g.ms.a1h ? `Get three fighters to the Choir Stone (${Math.max(0, Math.ceil(120 - (g.ms.a1c || 0)))} s)` : `See off the Charter attack on the Chorus (${left(g, 'a1')} left)`, done: g => g.ms.a1 === 1 && !!g.ms.a1h && !left(g, 'a1') },
       { text: g => `Break the Charter Headframes (${hq(g, SIDE.out).length} standing)`, done: g => !hq(g, SIDE.out).length },
     ],
     setup: g => { hush(g, SIDE.out, 600); },
@@ -1070,20 +1078,21 @@ const ACT4: Mission[] = [
       once(g, s, 'l1', s.t0 > 3, AG, 'Never thought I\'d share a fence with a Choir Stone. Don\'t shoot the glass people. They\'re ours today.');
       once(g, s, 'l2', s.t0 > 12, H5, 'WE ARE NEXT TO YOU. WE WILL SING WHERE WE ARE. COME IF WE CALL.', 'al');
       if (!s.a1 && s.t0 > 240 && ally >= 0) { s.a1 = 1; send(g, SIDE.out, ['breacher', 'breacher', 'linesman', 'linesman', 'linesman', 'linesman', 'patch', 'longshot', 'dustbike', 'dustbike'], 'a1', homeOf(g, ally)); say(g, 'Watcher', 'GREY BOOTS ON THE ROAD TO THE CHORUS. MANY OF THEM. WE CANNOT HOLD THEM ALONE.', 'al'); }
-      once(g, s, 'l3', s.a1 === 1 && !left(g, 'a1'), H5, 'THANK YOU. NOW WE GO TO THEM. TOGETHER.', 'al');
-      if (s.a1 && !left(g, 'a1') && !s.go) { s.go = 1; hush(g, SIDE.out, g.time + 30); }
+      answer(g, s, dt, 'a1', ally, 120);
+      once(g, s, 'l3', s.a1 === 1 && !!s.a1h && !left(g, 'a1'), H5, 'THANK YOU. NOW WE GO TO THEM. TOGETHER.', 'al');
+      if (s.a1 && s.a1h && !left(g, 'a1') && !s.go) { s.go = 1; hush(g, SIDE.out, g.time + 30); }
       // After the first attack the Charter hits the yard and the Chorus in turn, every four minutes.
       if (s.a1 && s.t0 > (s.next || 480)) { s.next = s.t0 + 240; s.n = (s.n || 0) + 1; const at = s.n % 2 && ally >= 0 ? homeOf(g, ally) : homeOf(g, me(g)); send(g, SIDE.out, ([] as Kind[]).concat(...Array(1 + s.n).fill(['breacher', 'linesman', 'linesman', 'longshot'])), 'w', at); }
       if (ally < 0 || !hq(g, ally).length) { s.allyDown = 1; s.lose = 1; }
     },
     target: g => hq(g, SIDE.out)[0] || null,
     outro: 'The Charter base on the crossroads is down. The yard and the Chorus stood on the same side of a fight, and nobody shot the wrong one.',
-    fail: g => g.ms.allyDown ? 'The Chorus lost its last Choir Stone. The yard is on its own.' : 'The yard fell.',
+    fail: g => g.ms.alone ? 'Nobody from the yard came to the Choir Stone. The Chorus left the crossroads.' : g.ms.allyDown ? 'The Chorus lost its last Choir Stone. The yard is on its own.' : 'The yard fell.',
   }),
   job(37, 4, {
     name: 'Three Voices', side: 0, foe: 0, map: 7, diff: 2, dusk: NIGHT, charter: 'out', team: { n: 8, groups: [[0, 1, 7], [4]], facs: [0, 1, -1, -1, 0, -1, -1, 2] }, clockLabel: 'Order lands in',
     teaches: 'Three sides against one on an eight-start map, two bot allies, attacks on each base in turn, the clock', cutIn: ['threevoices'],
-    brief: 'Wheel. The yard, the Chorus and the Gloam hold three starts next to each other: the Chorus on your left, the Gloam on your right. Charter Security holds the start across the hub with enough kit for three crews, and it will hit each of you in turn. Both allies are bots. Go where the Watcher or Moss sends you, keep both allies standing, and break the Charter Headframes before the order lands in forty minutes.',
+    brief: 'Wheel. The yard, the Chorus and the Gloam hold three starts next to each other: the Chorus on your left, the Gloam on your right. Charter Security holds the start across the hub with enough kit for three crews, and it will hit each of you in turn. Both allies are bots. When the Watcher or Moss calls, you have two and a half minutes to get three fighters to that base, or that ally gives up its start and leaves. Keep both allies standing, and break the Charter Headframes before the order lands in forty minutes.',
     allow: IRON_ALL, units: IRON_UNITS, raids: false, auto: false,
     objectives: [
       { text: g => `Hold off the Charter attack on each base (${Math.min(3, g.ms.held || 0)}/3)`, done: g => (g.ms.held || 0) >= 3 },
@@ -1099,14 +1108,15 @@ const ACT4: Mission[] = [
       const plan: [number, number, string, string][] = [[240, veyl, 'Watcher', 'GREY BOOTS ON THE ROAD TO THE CHORUS. COME.'], [540, gloam, MO, 'They\'re coming for the Cap. Get over here, I\'ve got money on us.'], [840, me(g), AG, 'They\'re coming up our road. Everyone back to the yard.']];
       plan.forEach(([at, t, who, line], i) => {
         const k = 'b' + i; if (!s[k] && s.t0 > at && t >= 0) { s[k] = 1; send(g, SIDE.out, ([] as Kind[]).concat(...Array(3 + i).fill(['breacher', 'linesman', 'linesman', 'longshot'])), k, homeOf(g, t)); say(g, who, line, 'al'); }
-        if (s[k] === 1 && !left(g, k)) { s[k] = 2; s.held = (s.held || 0) + 1; }
+        if (t !== me(g)) answer(g, s, dt, k, t, 150); else s[k + 'h'] = 1;
+        if (s[k] === 1 && s[k + 'h'] && !left(g, k)) { s[k] = 2; s.held = (s.held || 0) + 1; }
       });
       if ((s.held || 0) >= 3 && !s.go) { s.go = 1; hush(g, SIDE.out, g.time + 30); say(g, H5, 'THEY HAVE NOTHING LEFT ON THE ROAD. NOW WE GO TO THEM.', 'al'); }
       if (veyl < 0 || gloam < 0 || !hq(g, veyl).length || !hq(g, gloam).length) { s.allyDown = 1; s.lose = 1; }
     },
     target: g => hq(g, SIDE.out)[0] || null,
     outro: 'The Charter base on the Wheel is gone. Three sides that spent nine hundred years fighting each other took it down in one night.',
-    fail: g => g.ms.allyDown ? 'One of your allies lost its last base. The other two could not hold the Wheel alone.' : g.ms.clock !== undefined && g.ms.clock <= 1 ? 'The order landed.' : 'The yard fell.',
+    fail: g => g.ms.alone ? 'Nobody from the yard came when an ally called. That ally left the Wheel, and the other two could not hold it.' : g.ms.allyDown ? 'One of your allies lost its last base. The other two could not hold the Wheel alone.' : g.ms.clock !== undefined && g.ms.clock <= 1 ? 'The order landed.' : 'The yard fell.',
   }),
   job(38, 4, {
     name: 'Fourteen Twenty', side: 0, foe: 0, map: 20, diff: 2, dusk: .62, charter: 'home', out: true, noHq: false, teaches: 'Everything, against the clock',
@@ -1197,9 +1207,17 @@ export const MISSIONS: Mission[] = [...ACT1, ...ACT2, ...ACT3, ...ACT4, ...SIDES
 for (const m of MISSIONS) { const t = m.tick; m.tick = (g, s, dt) => { t?.(g, s, dt); if (Math.floor(g.time * 2) !== Math.floor((g.time - dt) * 2)) guide(g); }; }
 for (const m of MISSIONS) m.objectives = m.objectives.map((o, i) => ({ text: o.text, done: (g: Game) => { const k = '_o' + i; if (g.ms[k]) return true; const d = !!o.done(g); if (d && g.time > 2) g.ms[k] = 1; return d; } }));
 export const STORY_JOBS = ACT1.length + ACT2.length + ACT3.length + ACT4.length;
-/** Saves from before the full-depth Act 1 (`st: 2`) count jobs on the old list of 24. Act 1 went from eight jobs to twelve, so the old count
- *  is moved to the same next job on the new list; the new jobs before it open as if done, and can be played from the job list. */
-export const fromOldSave = (camp: number) => camp < 8 ? [0, 1, 3, 4, 5, 6, 10, 11][camp] : camp + 4;
+/** Saves count the jobs done as an index into the job list. A save from before the full-depth Act 1 (`st: 2`) counts on the old list of 24;
+ *  one from before the full-depth Veyl and Gloam arcs (`st: 3`) on the list of 28. Each is moved to the same next job on the new list, by name;
+ *  the new jobs before it open as if done, and can be played from the job list. */
+const LIST3 = ['First Shift', 'Payroll', 'Gas Money', 'Tools of the Trade', 'Night Shift', 'Core Sample', 'Heavy Metal', 'Ground Rules', 'Lamps', 'Air Freight', 'Off the Books', 'Ore Else',
+  'Wrong Body', 'Brood', 'Salt Road', 'Old Friends', 'Hold the Note', 'Open Hands', 'The Last Verse', 'Rooted', 'Two to a Bud', 'The Garden', 'What It Remembers', 'Spore Season',
+  'Old Opening', 'Needle\'s Eye Road', 'Rig Breakers', 'Fourteen Twenty'];
+export const fromOldSave = (camp: number, st = 3) => {
+  const c3 = st === 2 ? (camp < 8 ? [0, 1, 3, 4, 5, 6, 10, 11][camp] : camp + 4) : camp;
+  if (c3 >= LIST3.length) return STORY_JOBS;
+  const i = MISSIONS.findIndex(m => m.name === LIST3[c3]); return i < 0 ? 0 : i;
+};
 export const ACTS = [
   { n: 1, name: 'Dig', side: 'Ironhold Charter' }, { n: 2, name: 'Sing', side: 'Veyl Chorus' }, { n: 3, name: 'Grow', side: 'The Gloam' }, { n: 4, name: 'Or Else', side: 'All three' },
 ];

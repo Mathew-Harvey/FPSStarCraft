@@ -51,6 +51,12 @@ class Play {
   }
   /** Records the order the objectives were ticked in. */
   note() { const g = this.g; this.m.objectives.forEach((o, i) => { if (!this.ticked.includes(i) && g.ms['_o' + i]) this.ticked.push(i); }); }
+  /** Answers an ally's call: puts four of the player's fighters at the base a Charter column is marching on (fights are not simulated). */
+  help() {
+    const g = this.g; if (!this.may('help')) return; const r = g.units.find(u => u.alive && u.team === SIDE.out && u.order.type === 'raid'); if (!r) return;
+    const o = r.order as { x: number; z: number }, h = this.hq(); if (h && Math.hypot(o.x - h.pos.x, o.z - h.pos.z) < 40) return;
+    g.units.filter(u => u.alive && u.team === this.me && u.kind === 'linesman').slice(0, 4).forEach((u, i) => { u.pos.x = o.x + 4 + i; u.pos.z = o.z + 4; });
+  }
   cash(n: number) { this.g.purse[this.me] = (this.g.purse[this.me] || 0) + n; this.g.fluxPurse[this.me] = (this.g.fluxPurse[this.me] || 0) + n; }
   /** Whether this run may do a thing; a refused thing is noted, not logged as a failure. */
   may(what: string) { return !this.ban.has(what); }
@@ -199,8 +205,8 @@ const SCRIPTS: Record<string, (p: Play) => void> = {
   'Old Opening': p => { const g = p.g; p.build('flaktower'); p.build('hangar'); p.train('flakkite', 1); p.defend(700, () => { p.kill(u => !!u.air); return p.done(2); }); p.raze('headframe'); p.run(5); },
   'Needle\'s Eye Road': p => { const g = p.g; p.jump('warden'); p.run(2); p.defend(500, () => (g.ms.done || 0) >= 3); p.prop('Needle\'s Eye', q => q.y0 === 0); p.run(6); if (g.props.some(q => q.alive && q.name === 'Needle\'s Eye' && q.y0 > 0)) { p.log.push('the arch top stayed up after its legs were shot out'); p.prop('Needle\'s Eye'); } p.run(5); },
   'Rig Breakers': p => { p.prop('Deep Charge rig'); p.run(5); },
-  'Common Ground': p => { const g = p.g; p.build('bunkhouse'); p.train('linesman', 6); p.run(400, () => { p.kill(u => u.order.type === 'raid' && (p.may('help') || Math.hypot(u.pos.x, u.pos.z) < 40)); return p.done(0); }, true); p.run(2); for (const b of g.buildings) if (b.alive && b.team === SIDE.out) g.damage(b, 1e7, null); p.defend(10, () => g.endT > 0); },
-  'Three Voices': p => { const g = p.g; p.build('bunkhouse'); p.train('linesman', 6); p.run(1000, () => { p.kill(u => u.order.type === 'raid' && (p.may('help') || Math.hypot(u.pos.x, u.pos.z) < 40)); return p.done(0); }, true); p.run(2); for (const b of g.buildings) if (b.alive && b.team === SIDE.out) g.damage(b, 1e7, null); p.defend(10, () => g.endT > 0); },
+  'Common Ground': p => { const g = p.g; p.build('bunkhouse'); p.train('linesman', 6); p.run(400, () => { p.help(); p.kill(u => u.order.type === 'raid' && (p.may('help') || Math.hypot(u.pos.x, u.pos.z) < 40)); return p.done(0); }, true); p.run(2); for (const b of g.buildings) if (b.alive && b.team === SIDE.out) g.damage(b, 1e7, null); p.defend(10, () => g.endT > 0); },
+  'Three Voices': p => { const g = p.g; p.build('bunkhouse'); p.train('linesman', 6); p.run(1000, () => { p.help(); p.kill(u => u.order.type === 'raid' && (p.may('help') || Math.hypot(u.pos.x, u.pos.z) < 40)); return p.done(0); }, true); p.run(2); for (const b of g.buildings) if (b.alive && b.team === SIDE.out) g.damage(b, 1e7, null); p.defend(10, () => g.endT > 0); },
   'Fourteen Twenty': p => { const g = p.g, h = (g as any)._first; if (h) g.damage(h, 1e7, null); p.run(5); },
   'Moss\'s Book': p => { p.raze('choir'); p.run(5); },
   'Discord': p => { p.raze('choir'); p.run(5); },
@@ -262,7 +268,7 @@ if (!quick) MISSIONS.forEach((m, i) => {
   const t = TEACH[m.name]; if (!t || (only.length && !only.includes(i + 1))) return;
   const label = `${m.tag} ${m.name}`;
   try {
-    const p = new Play(m); for (const b of t.ban) p.ban.add(b); p.g.dir.side(p.me).auto = false; p.run(1); SCRIPTS[m.name](p);   // the side's own builder stays off, or it would build the refused thing p.run(6, () => p.g.phase === 'over');
+    const p = new Play(m); for (const b of t.ban) p.ban.add(b); p.g.dir.side(p.me).auto = false; p.run(1); SCRIPTS[m.name](p); p.run(6, () => p.g.phase === 'over');   // the side's own builder stays off, or it would build the refused thing
     check(result(p) !== 'won', `${label}: cannot be won without ${t.ban.join(', ')} (${result(p)})`);
   } catch (e: any) { check(false, `${label}: must-use run ran without throwing (${String(e && e.stack || e).split('\n').slice(0, 4).join(' / ')})`); }
   try {

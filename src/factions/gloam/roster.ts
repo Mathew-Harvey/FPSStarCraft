@@ -94,7 +94,7 @@ function aiRanged(g: Game, u: Unit, dt: number, o: Rng) {
     const d = reach(g, u, t); u.yaw = Math.atan2(t.pos.x - u.pos.x, t.pos.z - u.pos.z);
     if (d > o.range) g.moveTo(u, t.pos.x, t.pos.z, dt);
     else if (o.kite && isUnit(t) && d < o.kite) { const ax = u.pos.x - t.pos.x, az = u.pos.z - t.pos.z, l = Math.hypot(ax, az) || 1; g.moveTo(u, u.pos.x + ax / l * 4, u.pos.z + az / l * 4, dt, .2, .95); u.yaw = Math.atan2(-ax, -az); }
-    if (d <= o.range && u.cd <= 0) { u.cd = o.cd * (.95 + Math.random() * .1); spitAt(g, u, t, o.dmg(g, u), o.mat, o.y); o.onHit?.(g, u, t); act(u, HIT_ACT[u.kind]); sfx.throw(); }
+    if (d <= o.range && u.cd <= 0) { u.cd = o.cd * (.95 + Math.random() * .1); spitAt(g, u, t, o.dmg(g, u), o.mat, o.y); o.onHit?.(g, u, t); act(u, HIT_ACT[u.kind]); sfx.spit(g.vol(u.pos)); }
     return;
   }
   g.vIdle(u, dt, raiding(u) ? 5 : 1.5, u.order.type !== 'guard' ? 1 : .6);
@@ -121,7 +121,7 @@ function aiKeeper(g: Game, u: Unit, dt: number) {
   const home = homeCap(g, u), K = G2.keeper; if (u.order.type === 'follow') { aiRanged(g, u, dt, { range: K.range, cd: K.cd, dmg: (g, u) => K.spit * gMul(g, u.team, 'keeper') }); return; }
   if (u.think <= 0) { u.think = .4; u.target = home ? nearestFoeAt(g, u.team, home.pos.x, home.pos.z, 16 + home.hx) : g.acquire(u, 12, 0); if (u.target && reach(g, u, u.target) > 26) u.target = null; }
   const t = u.target;
-  if (t && t.alive) { const d = reach(g, u, t); u.yaw = Math.atan2(t.pos.x - u.pos.x, t.pos.z - u.pos.z); if (d > K.range) g.moveTo(u, t.pos.x, t.pos.z, dt); else if (u.cd <= 0) { u.cd = K.cd; spitAt(g, u, t, K.spit * gMul(g, u.team, 'keeper'), spitMat, 1.6); sfx.throw(); } return; }
+  if (t && t.alive) { const d = reach(g, u, t); u.yaw = Math.atan2(t.pos.x - u.pos.x, t.pos.z - u.pos.z); if (d > K.range) g.moveTo(u, t.pos.x, t.pos.z, dt); else if (u.cd <= 0) { u.cd = K.cd; spitAt(g, u, t, K.spit * gMul(g, u.team, 'keeper'), spitMat, 1.6); sfx.spit(g.vol(u.pos)); } return; }
   if (home) { const a = (u.id % 6) * 1.05, r = Math.max(home.hx, home.hz) + 2.5; g.moveTo(u, home.pos.x + Math.cos(a) * r, home.pos.z + Math.sin(a) * r, dt, 1.2, .7); }
 }
 /** Shellback: spits from 13 m. Hurt and out of the fight, it digs in to knit (once Dig In is bought) and comes up healed or when a foe steps close. */
@@ -223,7 +223,7 @@ export function dropPup(g: Game, u: Unit, t: Unit | Building | { pos: THREE.Vect
   p.order = { type: 'amove', x, z }; if ('alive' in t) p.target = t as Unit | Building;
   g.tracer(V3(u.pos.x, (u.alt || 0) + 1, u.pos.z), V3(x, .4, z), bileMat, .1); g.look('gdrop', u.pos.x, (u.alt || 0) + 1, u.pos.z, x, 0, z); g.puff(TMP.set(x, .3, z), 3, .6, M.gS, .4);
   if ('alive' in t && (t as Unit).alive) g.damage(t as Unit | Building, S.land * gMul(g, u.team, 'sower'), u);
-  u.swing = 1; if (g.vol(u.pos) > .1) sfx.throw();
+  u.swing = 1; if (g.vol(u.pos) > .1) sfx.spit(g.vol(u.pos));
 }
 /** Hooksail: follows the swarm's fliers or its fight, out of reach; its abilities do the work. */
 function aiHooksail(g: Game, u: Unit, dt: number) {
@@ -281,7 +281,7 @@ function driveSpit(dmgK: string, base: number, cd: number, range: number, mat: T
     const me = g.me!; if (commonKeys(g, me, P, dir, look)) return; if (isDug(me) && me.kind !== 'needler' && !CRAWL.has(me)) return;
     if (me.kind === 'needler') { if (g.lmb && g.fireCd <= 0) { if (!isDug(me)) { if (P.has('Mouse0')) { sfx.deny(); g.feed('Needler', 'I fire only from under the ground. Press Ctrl to dig in.', 'al'); } return; } g.fireCd = G2.needler.cd; g.recoil = 1; g.shake = Math.max(g.shake, .2); const n = spineLine(g, me, g.yaw, g.upOf(me.team).gspines ? G2.needler.deep : G2.needler.len, me); if (n) { g.hud.hitmark(n > 1); sfx.hit(); } } return; }
     if (g.lmb && g.fireCd <= 0) {
-      g.fireCd = cd; g.recoil = 1; g.kick += .015; me.swing = 1; sfx.throw();
+      g.fireCd = cd; g.recoil = 1; g.kick += .015; me.swing = 1; sfx.spit(1);
       const hit = g.ray(eye, dir, range, -1, me), end = V3().copy(eye).addScaledVector(dir, hit ? hit.dist : range), tgt = hit && (hit.unit && isEnemy(hit.unit.team, me.team) ? hit.unit : hit.b && isEnemy(hit.b.team, me.team) ? hit.b : null);
       g.tracer(V3(eye.x + dir.x * .8, eye.y - .3, eye.z + dir.z * .8), end, mat, .1);
       if (tgt) { const dmg = base * gMul(g, me.team, dmgK) * (hit!.head ? 1.6 : 1); g.damage(tgt, dmg, me, !!hit!.head); g.hud.hitmark(!!hit!.head); sfx.hit(); if (me.kind === 'bloater' && isUnit(tgt)) ACID.set(tgt.id, G2.bloater.acid.t); }
@@ -316,7 +316,7 @@ function puffTick(g: Game, b: Building, dt: number) {
   const P = G2.puffball; b.cd -= dt; if (b.cd > 0) return;
   let t: Unit | null = null, bd = P.range + b.hx; for (const o of g.units) { if (!o.alive || !isEnemy(o.team, b.team) || !o.air || o.inside) continue; const d = Math.hypot(o.pos.x - b.pos.x, o.pos.z - b.pos.z); if (d < bd) { bd = d; t = o; } }
   if (!t) { b.cd = .3; return; } b.cd = P.cd;
-  g.tracer(V3(b.pos.x, b.h * .8, b.pos.z), V3(t.pos.x, UNIT[t.kind].bodyY + (t.alt || 0), t.pos.z), acidMat, .14); g.damage(t, P.dmg * gMul(g, b.team, 'quillback'), b); if (g.vol(b.pos) > .2) sfx.throw();
+  g.tracer(V3(b.pos.x, b.h * .8, b.pos.z), V3(t.pos.x, UNIT[t.kind].bodyY + (t.alt || 0), t.pos.z), acidMat, .14); g.damage(t, P.dmg * gMul(g, b.team, 'quillback'), b); if (g.vol(b.pos) > .2) sfx.spit(g.vol(b.pos));
 }
 
 // ---------------------------------------------------------------- registering

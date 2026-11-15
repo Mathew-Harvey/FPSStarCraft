@@ -10,11 +10,28 @@ is hand-edited.
 | Impact Sounds | Kenney (kenney.nl), recorded foley | CC0 1.0 | [Boyquotes/kenney-impact-sounds-for-godot](https://github.com/Boyquotes/kenney-impact-sounds-for-godot) `999dd16` | footsteps, punches, metal and plate hits, glass, mining, bell |
 | Sci-Fi Sounds | Kenney (kenney.nl) | CC0 1.0 | [Boyquotes/kenney-sci-fi-sounds-for-godot](https://github.com/Boyquotes/kenney-sci-fi-sounds-for-godot) `c094967` | explosions, Veyl bolts and beams, force fields |
 | RPG Audio | Kenney (kenney.nl), recorded foley | CC0 1.0 | [Boyquotes/kenney-rpg-audio-for-godot](https://github.com/Boyquotes/kenney-rpg-audio-for-godot) `22eb79b` | blade slices, cloth |
-| SFX Kit | Wyzowl | CC0 1.0 | [wyzowl/sfx-kit](https://github.com/wyzowl/sfx-kit) `92780e7` | gun body knocks, drum, boom, latches, locks, switches, keys, coin pour, whooshes |
+| SFX Kit | Wyzowl | CC0 1.0 | [wyzowl/sfx-kit](https://github.com/wyzowl/sfx-kit) `92780e7` | gun body knocks, drum, boom, latches, locks, switches, keys, coin pour, whooshes; soft interface clicks, ratchets, shutters, sliders, glass touches, shimmers, tones, risers, pops, shape changes, radio and digital |
+| Interface Sounds | Kenney (kenney.nl) | CC0 1.0 | [Calinou/kenney-interface-sounds](https://github.com/Calinou/kenney-interface-sounds) `4596a49` | interface glass, bong, pluck and drop taps |
+| CC0-SFX collection | gathered by EternityForest; each folder below is CC0 at its source | CC0 1.0 | [EternityForest/Free-SFX](https://github.com/EternityForest/Free-SFX) `f2fe533` | see the next table |
 | Firearm Sound Library (PPSh sample) | Still North Media | CC0 1.0 | [PanderMusubi/sound-effects-library-weapons](https://github.com/PanderMusubi/sound-effects-library-weapons) `e58b20e` | the gunshot cracks |
+
+From the CC0-SFX collection:
+
+| Folder | Original | Used for |
+| --- | --- | --- |
+| `rubberduck/Mud`, `rubberduck/WaterSplashSlime`, `rubberduck/WoodMetal`, `rubberduck/Bang` | rubberduck's CC0 sound packs on OpenGameArt (for example [40 CC0 water splash slime SFX](https://opengameart.org/content/40-cc0-water-splash-slime-sfx)) | Gloam squelches, slime, bubbles and splashes, the bubbling bed near the Bloom; Ironhold hammers, slam, spring, tool rummage; the flare launch |
+| `Freesound/Animals` | taman21, "slimy bugs crawling" (freesound 508165, CC0) | the Gloam flier's buzz |
+| `Owlish/Sound Effects Pack` | Owlish, "Sound effects pack" (OpenGameArt, CC0) | night crickets |
+| `Freesound/Foley` | splicesound, "hand digging dirt leaves crunch" (freesound 260130, CC0) | digging in |
+| `JaggedStone/Magic Spell SFX` | JaggedStone (OpenGameArt, CC0) | the Prism's Burn Bright |
+
+Made here, not recorded (ours, CC0 like the rest): `veylhum`, the Veyl flier's hum, two soft sine voices a fifth apart
+beating slowly against detuned twins (`synth_veylhum` in `tools/sfx/make.py`).
 
 Kenney's packs are CC0 at the source (kenney.nl); the repositories above are straight ports of the packs
 and carry the same CC0 licence file. Each repository's `LICENSE` is the CC0 1.0 legal code.
+
+A take marked loop (engines, beds) is cut so its last 0.4 s crossfades into its start.
 
 Looked at and not used: Meta Open Sound's Oculus Audio Pack (CC BY 4.0, would need credit in the game),
 and Soft Sounds (CC0, but made with a generative model whose terms we did not want to depend on).

@@ -60,7 +60,7 @@ function hatchTwin(g: Game, b: Building, dt: number) {
   for (let i = Math.min(n, b.queue.length) - 1; i >= 0; i--) {
     const q = b.queue[i]; if (q.t > 0) continue; b.queue.splice(i, 1);
     const side = !!bldRule(b.kind).sideDoor && !b.rot, u = g.spawn(q.kind, b.team, b.pos.x + (side ? b.hx + 1.2 : R(-1, 3)), b.pos.z + (side ? R(-.5, .5) : b.hz + 1.2));
-    g.puff(TMP.copy(u.pos).setY(1), 4, .8, M.dust); if (g.vol(b.pos) > .2) sfx.blip(); g.dir.trained(u);
+    g.puff(TMP.copy(u.pos).setY(1), 4, .8, M.dust); if (g.vol(b.pos) > .2) sfx.trained(); g.dir.trained(u);
   }
 }
 const trainsHere = (_g: Game, b: Building, k: Kind) => LAB.includes(k as any) && !hasLab(b) ? `The ${UNIT[k].name} needs a Lab Bay on this ${BLD[b.kind].name}.` : '';
@@ -76,7 +76,7 @@ function tickCrawl(g: Game, b: Building, dt: number) {
   const c = mem(b).crawl; if (!c) return; c.t += dt;
   if (!flyBuilding(b, c.x, c.z, dt, TUNE.crawl)) { if (Math.random() < dt * 3) g.puff(TMP.set(b.pos.x + R(-b.hx, b.hx), .2, b.pos.z + R(-b.hz, b.hz)), 1, .7, M.dust, .4, .6); return; }
   // There: settle if there is room, else edge out in a ring until there is.
-  if (roomFor(g, b, b.pos.x, b.pos.z)) { mem(b).crawl = null; sfx.clang(); const near = freeHostAddon(g, b); if (near) link(b, near); return; }
+  if (roomFor(g, b, b.pos.x, b.pos.z)) { mem(b).crawl = null; sfx.clang(g.vol(b.pos)); const near = freeHostAddon(g, b); if (near) link(b, near); return; }
   const a = c.t * 1.7, r = 3 + c.t * .4; c.x = b.pos.x + Math.cos(a) * r; c.z = b.pos.z + Math.sin(a) * r;
 }
 /** A left-behind add-on at the spot a crawling host just settled on gets bolted back on. */
@@ -100,7 +100,7 @@ const refit = (to: IBKind, hotkey: string): BldAction => ({
 function tickRefit(g: Game, b: Building, dt: number) {
   const f = mem(b).form; if (!f) return; f.t -= dt; if (Math.random() < dt * 2) g.debris(TMP.set(b.pos.x + R(-b.hx, b.hx), b.h, b.pos.z + R(-b.hz, b.hz)), 1, .08, M.spark, 3);
   if (f.t > 0) return; mem(b).form = null; g.rebuild(b, f.to); if (f.to === 'surveyrig') { mem(b).energy = TUNE.rig.start; }
-  sfx.built(); g.feed('Quartermaster', f.to === 'surveyrig' ? 'Survey Rig is up. Scans and Haul Drones on request, billed by the minute.' : 'Bastion Head is up. Thicker walls and a gun on the roof.', '', b.team);
+  sfx.built(g.vol(b.pos)); g.feed('Quartermaster', f.to === 'surveyrig' ? 'Survey Rig is up. Scans and Haul Drones on request, billed by the minute.' : 'Bastion Head is up. Thicker walls and a gun on the roof.', '', b.team);
 }
 const energyOf = (b: Building) => mem(b).energy ?? 0;
 /** A Survey Rig's scan: every body in the circle can be seen and shot for a while, unseen or not. */
@@ -146,7 +146,7 @@ defineBuildings({
   surveyrig: { hq: true, mends: true, hatch: hatchTwin, actions: () => [...rigActions(), crawlAction], note: b => `Energy ${Math.floor(energyOf(b))} of ${TUNE.rig.max}${b.queue.length ? ` · ${b.queue.length} queued` : ''}` },
   bastion: { hq: true, mends: true, hatch: hatchTwin, actions: () => [crawlAction], tick(g, b, dt) {
     b.cd -= dt; if (b.cd > 0) return; const t = nearest(g, { pos: b.pos, team: b.team }, TUNE.bastion.range + b.hx, o => !o.air && seenBy(g, b.team, o)); if (!t) { b.cd = .3; return; }
-    b.cd = TUNE.bastion.cd; const a = V3(b.pos.x, b.h + 1, b.pos.z), e = V3(t.pos.x, UNIT[t.kind].bodyY, t.pos.z); g.tracer(a, e, tracerMat, .16); if (g.vol(b.pos) > .05) sfx.cannon(); g.damage(t, TUNE.bastion.dmg * g.gunMul(b.team), b); g.burst(e, TUNE.bastion.dmg * .3, 2, null, t);
+    b.cd = TUNE.bastion.cd; const a = V3(b.pos.x, b.h + 1, b.pos.z), e = V3(t.pos.x, UNIT[t.kind].bodyY, t.pos.z); g.tracer(a, e, tracerMat, .16); if (g.vol(b.pos) > .05) sfx.cannon(g.vol(b.pos)); g.damage(t, TUNE.bastion.dmg * g.gunMul(b.team), b); g.burst(e, TUNE.bastion.dmg * .3, 2, null, t);
   } },
   twinbay: { added(g, b) { if (!hostOf(b)) { const h = freeHost(g, b.team, b.kind, b.pos.x, b.pos.z, 2); if (h) link(h, b); } }, spot(g, team, x, z) { const h = freeHost(g, team, 'twinbay', x, z); return h ? nearSpot(h, 'twinbay', x, z) : null; } },
   labbay: { added(g, b) { if (!hostOf(b)) { const h = freeHost(g, b.team, b.kind, b.pos.x, b.pos.z, 2); if (h) link(h, b); } }, spot(g, team, x, z) { const h = freeHost(g, team, 'labbay', x, z); return h ? nearSpot(h, 'labbay', x, z) : null; }, note: b => hostOf(b) ? `Bolted to the ${BLD[hostOf(b)!.kind].name}` : 'Not bolted to anything' },

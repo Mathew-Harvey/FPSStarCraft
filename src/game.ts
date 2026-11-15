@@ -4,7 +4,8 @@ import { DEATHS, playFxLook } from './net-look';
 import * as THREE from 'three';
 import { Pipeline, ViewPipe, V3, M, G, R, mk, setLayer, L_FX, L_SELF, holoOK, holoBad, ringMat, tracerMat, makeSky, heldMaterial, makeCone, CONEU, SHARED } from './gfx';
 import * as MD from './models';
-import { sfx, drillSound, setMood, babble } from './audio';
+import { sfx, drillSound, setMood, babble, heardAt } from './audio';
+import { tickSound } from './sound-abilities';
 import type { Hud } from './hud';
 import { Fog, SIGHT } from './fog';
 import * as T from './terrain';
@@ -248,7 +249,7 @@ export class Game {
     const a = bldRule(b.kind).actions?.(this, b).find(x => x.key === key); if (!a || !b.alive) return false;
     const why = a.ok?.(this, b) || (a.cost && !canPay(this, b.team, a.cost) ? `Short of ${shortOf(this, b.team, a.cost)}.` : '');
     if (why) { if (manual) { sfx.deny(); this.feed(FACTION[b.team].voice, why, 'al', b.team); } return false; }
-    if (a.cost) pay(this, b.team, a.cost); a.run(this, b, aim); if (manual) sfx.blip(); return true;
+    if (a.cost) pay(this, b.team, a.cost); a.run(this, b, aim); if (manual) sfx.queue(); return true;
   }
   /** Takes an order off a building's training queue and gives the price back. Online the client asks ('cq') and the server does it. */
   /** Sends bodies to get into a carrier of their side (a transport or a building with room); they walk there and climb in. */
@@ -376,7 +377,7 @@ export class Game {
     const o = u.order; if (o.waitT && o.waitT > 0) { o.waitT -= dt; return false; } if (o.path && o.path.length) { if (this.moveTo(u, o.path[0][0], o.path[0][1], dt, 6, mul)) o.path.shift(); return false; }
     return this.moveTo(u, o.x, o.z, dt, stop, mul);
   }
-  vol(p: THREE.Vector3) { const d = this.me ? p.distanceTo(this.me.pos) : 50; return Math.max(0, 1 - d / 90) ** 2; }
+  vol(p: THREE.Vector3) { heardAt(p.x, p.z); const d = this.me ? p.distanceTo(this.me.pos) : 50; return Math.max(0, 1 - d / 90) ** 2; }
   /** A line in the message feed. `team` keeps a side's own talk (its brain, its hints, its chatter) to the players on that side. */
   feed(who: string, msg: string, cls = '', team = -1) { if (this.evq) { this.evq.push(['fd', who, msg, cls, this.feedTo, team]); return; } if (team >= 0 && team !== this.myTeam) return; this.hud.feed(who, msg, cls); if (!this.noRender) babble(who, msg.length); }
 
@@ -645,10 +646,10 @@ export class Game {
     if (this.phase === 'play') {
       this.cmd.update(dtReal, P);
       const tabNow = this.keys.has('Tab') && !!this.me?.alive && this.staticT <= 0 && !this.cmd.on;
-      if (tabNow && !this.tab) { this.tabSel = 0; this.refreshTab(); sfx.blip(); drillSound(false, false); }
+      if (tabNow && !this.tab) { this.tabSel = 0; this.refreshTab(); sfx.open(); drillSound(false, false); }
       if (!tabNow && this.tab) { const e = this.tabList[this.tabSel]; if (e && e.unit.alive) this.possess(e.unit); }
       this.tab = tabNow;
-      if (this.tab) { for (let i = 0; i < this.tabList.length; i++) if (P.has('Digit' + (i + 1))) { this.tabSel = i; sfx.blip(); } if (this.wheel) { this.tabSel = (this.tabSel + (this.wheel > 0 ? 1 : this.tabList.length - 1)) % Math.max(1, this.tabList.length); sfx.blip(); } }
+      if (this.tab) { for (let i = 0; i < this.tabList.length; i++) if (P.has('Digit' + (i + 1))) { this.tabSel = i; sfx.tick(); } if (this.wheel) { this.tabSel = (this.tabSel + (this.wheel > 0 ? 1 : this.tabList.length - 1)) % Math.max(1, this.tabList.length); sfx.tick(); } }
       this.hitStop = Math.max(0, this.hitStop - dtReal); this.introT = Math.max(0, this.introT - dtReal);
       if (this.endT > 0) { this.endT -= dtReal; this.shake = Math.max(this.shake, .5 * this.endT / 2.4); if (this.endT <= 0) { this.end(this.endWon); P.clear(); return; } }
       const dt = this.net ? dtReal * this.net.speed /* lobby rules (K) */ : dtReal * (this.endT > 0 ? .22 : this.tab ? .25 : this.hitStop > 0 ? .12 : 1);
@@ -771,7 +772,7 @@ export class Game {
   train(b: Building, k: Kind, manual = false) {
     const st = UNIT[k];
     const pp = this.paper(b.team); if (pp && !isWorker(k) && !pp.units.includes(k)) { if (manual) { sfx.deny(); this.feed(FACTION[b.team].voice, fac(b.team) ? `No ${st.name}s on this job. Later.` : `No ${st.name}s on this job's paperwork. Later.`, 'al'); } return false; }
-    if (this.net) { this.net.cmd('tn', b.id, k); sfx.blip(); return true; }
+    if (this.net) { this.net.cmd('tn', b.id, k); sfx.queue(); return true; }
     const t = b.team, v = FACTION[t].voice, n = unitRule(k).pair ? 2 : 1, bud = !!bldRule(b.kind).buds && !unitRule(k).noBud;
     { const why = bldRule(b.kind).trains?.(this, b, k) || this.silent(b); if (why) { if (manual) { sfx.deny(); this.feed(v, why, 'al', t); } return false; } }
     { const lim = unitRule(k).limit; if (lim !== undefined && this.own(k, t).length + this.buildings.reduce((n, x) => n + (x.alive && x.team === t ? x.queue.filter(q => q.kind === k).length : 0), 0) + n > lim) { if (manual) { sfx.deny(); this.feed(v, lim === 1 ? `Only one ${st.name} at a time.` : `No more than ${lim} ${st.name}s at a time.`, 'al', t); } return false; } }
@@ -780,7 +781,7 @@ export class Game {
     const price = costOf(k); if (!canPay(this, t, price, n)) { if (manual) { sfx.deny(); this.feed(v, this.cash(t) < price[0] * n ? (fac(t) === 2 ? 'The Overgrowth is hungry. Send the Grazers to chew.' : fac(t) ? 'The Chorus is out of ore. Send the Tenders to the seams.' : 'Can\'t. We\'re broke. Go hit a rock.') : `Short of ${shortOf(this, t, price, n)}. Tap a vent.`, 'al', t); } return false; }
     if (this.supplyUsed(t) + st.supply * n > this.supplyCap(t)) { if (manual) { sfx.deny(); this.feed(v, fac(t) === 2 ? 'No room to grow. Root a Spore Sac first.' : fac(t) ? 'No room in the song. Grow a Hush Well first.' : 'No beds. Build a Depot first.', 'al', t); } return false; }
     if (!bud && b.queue.filter(q => !bldRule(b.kind).buds || unitRule(q.kind).noBud).length >= 5) { if (manual) sfx.deny(); return false; }
-    if (bud) b.buds!--; pay(this, t, price, n); for (let i = 0; i < n; i++) b.queue.push({ kind: k, t: st.time }); if (manual) sfx.blip(); return true;
+    if (bud) b.buds!--; pay(this, t, price, n); for (let i = 0; i < n; i++) b.queue.push({ kind: k, t: st.time }); if (manual) sfx.queue(); return true;
   }
   buyUpgrade(key: UpKey, team = this.myTeam, manual = false) {
     const u = UPGRADES.find(x => x.key === key)!; if (this.upOf(team)[key] || (u.team || 0) !== fac(team)) return false;
@@ -789,7 +790,7 @@ export class Game {
     if (!this.ownB(u.at, true, t).some(b => this.rate(b) > 0) || (u.needs && !this.upOf(t)[u.needs])) { if (manual) { sfx.deny(); const at = this.ownB(u.at, true, t)[0]; if (at && !this.rate(at)) this.feed(v, this.silent(at), 'al', t); } return false; }
     { const need = this.gated(t, key); if (need) { if (manual) { sfx.deny(); this.feed(v, `${u.name} needs ${/^[AEIOU]/.test(need) ? 'an' : 'a'} ${need} first.`, 'al', t); } return false; } }
     if (!canPay(this, t, costOf(key))) { if (manual) { sfx.deny(); this.feed(v, `${u.name} is ${u.cost} ore${u.flux ? ` and ${u.flux} Flux` : ''}. ${fac(t) === 2 ? 'Chew some more.' : fac(t) ? 'Hum some more.' : 'Keep digging.'}`, 'al', t); } return false; }
-    pay(this, t, costOf(key)); this.upOf(t)[key] = true; sfx.built();
+    pay(this, t, costOf(key)); this.upOf(t)[key] = true; if (t === this.myTeam) sfx.built();
     // An armour level (percent mode) thickens every body the side already has, by that level's share.
     const plate = u.line === 'arm' && u.lvl && LEVELS.mode === 'percent' ? u.pct ?? LEVELS.pct[u.lvl - 1] : 0; if (key === 'gbloom') this.carpet.deepen(t); if (plate) for (const x of this.own(undefined, t)) { if (!inCat(u.cat, catOf(x.kind))) continue; x.maxHp *= plate; x.hp *= plate; if (fac(t)) { x.maxShield *= plate; x.shield *= plate; } } factionRule(t).bought?.(this, t, key);
     this.feed(v, u.say, '', t); return true;
@@ -828,12 +829,12 @@ export class Game {
   /** First person as a worker: a Rigger's drill, or a Tender's hum. Both mine, build, mend and kick. */
   updateRigger(dt: number, P: Set<string>, eye: THREE.Vector3, dir: THREE.Vector3, look: Hit | null) {
     const me = this.me!, side = me.team, foe = foeOf(side), veyl = fac(side) === 1, gl = fac(side) === 2, list = FACTION[side].builds, voice = FACTION[side].voice, home = BLD[FACTION[side].hq].name, cash = this.cash(side);
-    if (P.has('Digit1')) { this.tool = 1; sfx.blip(); }
-    if (P.has('Digit2')) { if (this.tool === 2) this.buildSel = (this.buildSel + 1) % list.length; this.tool = 2; sfx.blip(); }
+    if (P.has('Digit1')) { this.tool = 1; sfx.tick(); }
+    if (P.has('Digit2')) { if (this.tool === 2) this.buildSel = (this.buildSel + 1) % list.length; this.tool = 2; sfx.tick(); }
     if (this.buildSel >= list.length) this.buildSel = 0;
-    if (this.tool === 2 && this.wheel) { this.buildSel = (this.buildSel + (this.wheel > 0 ? 1 : list.length - 1)) % list.length; sfx.blip(); }
-    if (this.tool === 2 && P.has('KeyR')) { this.buildRot = !this.buildRot; sfx.blip(); }
-    if (this.tool === 2 && P.has('Mouse2')) { this.tool = 1; sfx.blip(); }
+    if (this.tool === 2 && this.wheel) { this.buildSel = (this.buildSel + (this.wheel > 0 ? 1 : list.length - 1)) % list.length; sfx.tick(); }
+    if (this.tool === 2 && P.has('KeyR')) { this.buildRot = !this.buildRot; sfx.tick(); }
+    if (this.tool === 2 && P.has('Mouse2')) { this.tool = 1; sfx.close(); }
     else if (this.tool === 1 && P.has('Mouse2') && this.bashCd <= 0) {
       // Right click: the drill kicks like a jackhammer (a Tender throws one sharp note). Short reach, big shove, and it cracks scenery.
       this.bashCd = 1.1; this.bashT = .25; this.recoil = 1; this.jaw = 1; this.shake = Math.max(this.shake, .4); veyl ? sfx.zap(1) : gl ? sfx.slash(1) : sfx.clang(); sfx.dash(.6); let any = false;
@@ -1134,7 +1135,7 @@ export class Game {
       if (!b.built) {
         // A site gains health as it goes up but keeps the damage it takes, so shooting a half-built site down works.
         b.progress = Math.min(1, b.progress); if (b.progress > b.pdone) { if (!this.net) b.hp = Math.min(b.maxHp, b.hp + b.maxHp * .9 * (b.progress - b.pdone)); b.pdone = b.progress; } b.obj.scale.y = Math.max(.06, b.progress);
-        if (b.progress >= 1) { b.built = true; if (!this.net) b.hp = Math.min(b.maxHp, Math.max(1, b.hp)); b.obj.scale.y = 1; if (b.holo) { this.scene.remove(b.holo); b.holo = null; } if (b.builder) { b.builder.site = null; b.builder.state = 'idle'; b.builder = null; } sfx.built(); this.stats.built++; this.puff(TMP.copy(b.pos).setY(1.5), 8, 1.8, fac(b.team) === 2 ? M.gS : M.dust, .8, 2.5); bldRule(b.kind).done?.(this, b); this.dir.buildingDone(b); }
+        if (b.progress >= 1) { b.built = true; if (!this.net) b.hp = Math.min(b.maxHp, Math.max(1, b.hp)); b.obj.scale.y = 1; if (b.holo) { this.scene.remove(b.holo); b.holo = null; } if (b.builder) { b.builder.site = null; b.builder.state = 'idle'; b.builder = null; } sfx.built(this.vol(b.pos)); this.stats.built++; this.puff(TMP.copy(b.pos).setY(1.5), 8, 1.8, fac(b.team) === 2 ? M.gS : M.dust, .8, 2.5); bldRule(b.kind).done?.(this, b); this.dir.buildingDone(b); }
         else if ((!factionRule(b.team).grows && (b.team === SIDE.home || this.eco)) && this.needsBuilder(b)) this.assignRigger(b);
         continue;
       }
@@ -1142,7 +1143,7 @@ export class Game {
       if (b.hp < b.maxHp * .5 && fac(b.team) === 0) { b.smokeT -= dt; if (b.smokeT <= 0) { const bad = b.hp < b.maxHp * .25; b.smokeT = bad ? .18 : .4; const fire = bad && Math.random() < .5; this.puff(TMP.set(b.pos.x + R(-b.hx, b.hx) * .6, b.h * R(.6, 1), b.pos.z + R(-b.hz, b.hz) * .6), 1, fire ? 1.1 : 1.5, fire ? M.fire : M.smoke, 2.4, .5); } }
       // A Mother Cap ripens every Bud at once; everything else trains one at a time.
       const br = bldRule(b.kind); if (b.air) { /* flying: no training, no tower */ continue; } const rate = this.rate(b); if (br.hatch) { if (rate) br.hatch(this, b, dt * rate); }
-      else if (b.queue.length) { const q = b.queue[0]; q.t -= rate === 1 ? dt : dt * rate; if (q.t <= 0) { b.queue.shift(); const side = !!br.sideDoor && !b.rot; const u = this.spawn(q.kind, b.team, b.pos.x + (side ? b.hx + 1.2 : R(-1, 3)), b.pos.z + (side ? R(-.5, .5) : b.hz + 1.2)); this.puff(TMP.copy(u.pos).setY(1), 4, .8, fac(b.team) ? M.violet : M.dust); if (this.vol(b.pos) > .2) sfx.blip(); this.dir.trained(u); } }
+      else if (b.queue.length) { const q = b.queue[0]; q.t -= rate === 1 ? dt : dt * rate; if (q.t <= 0) { b.queue.shift(); const side = !!br.sideDoor && !b.rot; const u = this.spawn(q.kind, b.team, b.pos.x + (side ? b.hx + 1.2 : R(-1, 3)), b.pos.z + (side ? R(-.5, .5) : b.hz + 1.2)); this.puff(TMP.copy(u.pos).setY(1), 4, .8, fac(b.team) ? M.violet : M.dust); if (this.vol(b.pos) > .2) sfx.trained(); this.dir.trained(u); } }
       if (this.truce || !rate) continue;
       bldRule(b.kind).tick?.(this, b, dt);
     }
@@ -1156,6 +1157,7 @@ export class Game {
     const me = this.me, cam = this.cam, pipe = this.pipe, vm = this.vm; this.drawT = Math.max(0, this.drawT - dt);
     cam.aspect = pipe.w / pipe.h; this.lampDt = dt;
     { const fix = this.duskFix ?? this.story?.dusk, hour = this.hourFix ?? (fix !== undefined ? hourOf(fix) : matchHour(MAP.dusk, this.time)), wx: [string, number] = this.wxFix ? [this.wxFix, 1] : fix !== undefined || this.hourFix !== undefined ? ['clear', 0] : matchWeather(this.wxSalt, this.time, hour); pipe.setSky(hour, wx[0], wx[1]); }
+    tickSound(this, this.phase === 'play' || this.phase === 'cut');
     const build = this.phase !== 'menu' && this.tool === 2 && !!me && isWorker(me.kind) && me.alive && !this.tab && this.staticT <= 0, blist = FACTION[me?.team || 0].builds;
     for (const k in this.ghost) { const on = build && blist[this.buildSel] === k; this.ghost[k].visible = on && this.placeOK; this.ghostBad[k].visible = on && !this.placeOK; if (on) { const g = this.placeOK ? this.ghost[k] : this.ghostBad[k]; g.position.copy(this.placePos); g.rotation.y = this.buildRot ? Math.PI / 2 : 0; } }
     holoOK.opacity = .2 + Math.sin(pipe.time * 3) * .05; warnMat.opacity = .6 + Math.sin(pipe.time * 30) * .3;

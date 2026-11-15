@@ -54,7 +54,7 @@ export function gloamBuilding(g: Game, b: Building, dt: number) {
 /** The nearest enemy on the ground this building can see (a lash cannot reach a flier or a body dug in unseen). */
 function nearestFoe(g: Game, b: Building, r: number) { return nearestFoeAt(g, b.team, b.pos.x, b.pos.z, r, o => !o.air); }
 function lash(g: Game, b: Building, t: Unit, dmg: number, y: number) {
-  const a = V3(b.pos.x, y, b.pos.z), e = V3(t.pos.x, UNIT[t.kind].bodyY, t.pos.z); g.tracer(a, e, spitMat, .14); g.puff(e, 2, .5, M.gS, .6); sfx.slash(g.vol(b.pos) * .7); g.damage(t, dmg, b);
+  const a = V3(b.pos.x, y, b.pos.z), e = V3(t.pos.x, UNIT[t.kind].bodyY, t.pos.z); g.tracer(a, e, spitMat, .14); g.puff(e, 2, .5, M.gS, .6); sfx.spit(g.vol(b.pos) * .7); g.damage(t, dmg, b);
 }
 
 // ---------------------------------------------------------------- the bots
@@ -89,7 +89,7 @@ function aiSnapper(g: Game, u: Unit, dt: number) {
       if (!isB && d > 4 && d < 10 && u.dashCd <= 0) { u.dashT = .35; u.dashCd = G_TUNE.pounce.cd; g.puff(TMP.copy(u.pos).setY(.4), 3, .6, M.gS, .4); sfx.dash(g.vol(u.pos) * .7); }
       let wx = 0, wz = 0; if (!isB && d > 6 && u.dashT <= 0) { const k = Math.sin(g.time * 4.3 + u.id * 2.1) * Math.min(3.5, d * .3), nx = -(t.pos.z - u.pos.z) / d, nz = (t.pos.x - u.pos.x) / d; wx = nx * k; wz = nz * k; }
       g.moveTo(u, t.pos.x + wx, t.pos.z + wz, dt, .4, u.dashT > 0 ? 2.6 : 1);
-    } else { u.yaw = Math.atan2(t.pos.x - u.pos.x, t.pos.z - u.pos.z); if (u.cd <= 0) { u.cd = G_TUNE.biteCd.snapper; u.swing = 1; sfx.slash(g.vol(u.pos) * .6); g.damage(t, (isB ? G_TUNE.bite.gnaw : G_TUNE.bite.snapper) * gMul(g, u.team), u); } }
+    } else { u.yaw = Math.atan2(t.pos.x - u.pos.x, t.pos.z - u.pos.z); if (u.cd <= 0) { u.cd = G_TUNE.biteCd.snapper; u.swing = 1; sfx.bite(g.vol(u.pos) * .6); g.damage(t, (isB ? G_TUNE.bite.gnaw : G_TUNE.bite.snapper) * gMul(g, u.team), u); } }
     return;
   }
   g.vIdle(u, dt, raiding(u) ? 3 : 1.5, u.order.type !== 'guard' ? 1 : .6);
@@ -108,7 +108,7 @@ function aiQuill(g: Game, u: Unit, dt: number) {
       u.cd = 1.05 + R(0, .2); u.swing = 1; u.flashT = .08;
       const from = V3(u.pos.x + Math.sin(u.yaw) * 1.2, 1.7, u.pos.z + Math.cos(u.yaw) * 1.2), ty = isUnit(t) ? UNIT[t.kind].bodyY : Math.min(t.h * .5, 3), v = V3(t.pos.x - from.x, ty - from.y, t.pos.z - from.z).normalize().multiplyScalar(36);
       const dmg = G_TUNE.quill.dmg * gMul(g, u.team, 'quillback') * (g.upOf(u.team).gquill ? 1.15 : 1);
-      if (t.alt) spitAt(g, u, t, dmg, quillMat, 1.7); else g.shoot(from, v, u.team, dmg, false, u); sfx.throw();
+      if (t.alt) spitAt(g, u, t, dmg, quillMat, 1.7); else g.shoot(from, v, u.team, dmg, false, u); sfx.spit(g.vol(u.pos));
     }
     return;
   }
@@ -155,7 +155,7 @@ export function sweep(g: Game, u: Unit, dmg: number, by: Unit | null = u) {
   const fx = Math.sin(u.yaw), fz = Math.cos(u.yaw); let n = 0;
   for (const o of g.units) { if (!o.alive || !isEnemy(o.team, u.team)) continue; const dx = o.pos.x - u.pos.x, dz = o.pos.z - u.pos.z, d = Math.hypot(dx, dz); if (d > 4.2 + UNIT[o.kind].rad || (dx * fx + dz * fz) / (d || 1) < -.1) continue; g.damage(o, dmg, by); if (!g.net && d > .1) { o.kx += dx / d * 8; o.kz += dz / d * 8; } n++; }
   for (const b of g.buildings) { if (!b.alive || !isEnemy(b.team, u.team) || g.distToBox(b, u.pos.x + fx * 2, u.pos.z + fz * 2) > 2.6) continue; g.damage(b, dmg * .8, by); n++; }
-  g.puff(TMP.set(u.pos.x + fx * 2.6, .5, u.pos.z + fz * 2.6), 4, 1.2, M.dust, .6, 1.4); sfx.clang(); if (g.vol(u.pos) > .3) g.shake = Math.max(g.shake, g.vol(u.pos) * .3);
+  g.puff(TMP.set(u.pos.x + fx * 2.6, .5, u.pos.z + fz * 2.6), 4, 1.2, M.dust, .6, 1.4); sfx.clang(g.vol(u.pos)); if (g.vol(u.pos) > .3) g.shake = Math.max(g.shake, g.vol(u.pos) * .3);
   return n;
 }
 /** A Mulcher's charge, a step at a time: anything in the way takes the hit once and gets thrown aside. */
@@ -181,7 +181,7 @@ export function playerGloam(g: Game, dt: number, P: Set<string>, eye: THREE.Vect
   };
   if (me.kind === 'snapper') {
     // Right click: the pounce. A long leap forward that lands with a bite.
-    if (g.vWind > 0) { g.vWind -= dt; if (g.vWind <= 0) { g.jaw = 1; sfx.slash(1); if (bite(3, 20 * gMul(g, me.team), 10)) g.hud.damage(V3(me.pos.x, 1.6, me.pos.z), 'POUNCE!', 'ko'); } return; }
+    if (g.vWind > 0) { g.vWind -= dt; if (g.vWind <= 0) { g.jaw = 1; sfx.bite(1); if (bite(3, 20 * gMul(g, me.team), 10)) g.hud.damage(V3(me.pos.x, 1.6, me.pos.z), 'POUNCE!', 'ko'); } return; }
     if (P.has('Mouse2')) { if (g.vCd > 0) sfx.deny(); else { g.vCd = G_TUNE.pounce.cd; g.vWind = .3; g.hopX = dir.x / (Math.hypot(dir.x, dir.z) || 1); g.hopZ = dir.z / (Math.hypot(dir.x, dir.z) || 1); g.hopT = .3; sfx.dash(1); g.puff(TMP.set(me.pos.x, .2, me.pos.z), 3, .5, M.gS, .3, 1); } return; }
     if (g.lmb && g.fireCd <= 0) { g.fireCd = .36; g.jaw = 1; me.swing = 1; sfx.slash(.8); bite(2.8, 12 * gMul(g, me.team), 8); }
     return;
@@ -194,8 +194,8 @@ export function playerGloam(g: Game, dt: number, P: Set<string>, eye: THREE.Vect
       if (tgt) { g.damage(tgt, hit!.head ? dmg * 1.8 : dmg, me, !!hit!.head); g.hud.hitmark(!!hit!.head); sfx.hit(); g.puff(end, 2, .4, M.gS, .5); } else g.impact(eye, d, hit, end, 8);
     };
     // Right click: a fan of quills. Five at once, wide.
-    if (P.has('Mouse2')) { if (g.vCd > 0) sfx.deny(); else { g.vCd = G_TUNE.quill.fanCd; g.recoil = 1; g.kick += .03; for (let i = 0; i < G_TUNE.quill.fan; i++) spit(.09, 10 * gMul(g, me.team, 'quillback')); sfx.throw(); sfx.scatter(); } return; }
-    if (g.lmb && g.fireCd <= 0) { g.fireCd = G_TUNE.quill.cd; g.recoil = 1; g.kick += .012; me.swing = 1; spit(.006, 14 * gMul(g, me.team, 'quillback') * (g.upOf(me.team).gquill ? 1.15 : 1)); sfx.throw(); }
+    if (P.has('Mouse2')) { if (g.vCd > 0) sfx.deny(); else { g.vCd = G_TUNE.quill.fanCd; g.recoil = 1; g.kick += .03; for (let i = 0; i < G_TUNE.quill.fan; i++) spit(.09, 10 * gMul(g, me.team, 'quillback')); sfx.spit(1); sfx.scatter(); } return; }
+    if (g.lmb && g.fireCd <= 0) { g.fireCd = G_TUNE.quill.cd; g.recoil = 1; g.kick += .012; me.swing = 1; spit(.006, 14 * gMul(g, me.team, 'quillback') * (g.upOf(me.team).gquill ? 1.15 : 1)); sfx.spit(1); }
     return;
   }
   if (me.kind === 'blister') {
@@ -234,7 +234,7 @@ export { isWorker };
 defineFaction(2, { ai: aiGloam, drive: (g, dt, P, eye, dir) => playerGloam(g, dt, P, eye, dir), each: gloamBuilding, grows: true });
 const capHatch = {
   // A Mother Cap ripens every Bud at once; everything else trains one at a time.
-  hatch(g: Game, b: Building, dt: number) { for (let i = b.queue.length - 1; i >= 0; i--) { const q = b.queue[i]; q.t -= dt; if (q.t > 0) continue; b.queue.splice(i, 1); const a = R(0, 6.283), u = g.spawn(q.kind, b.team, b.pos.x + Math.cos(a) * (b.hx + 1.2), b.pos.z + Math.sin(a) * (b.hz + 1.2)); g.puff(TMP.copy(u.pos).setY(1), 4, .8, M.gS); if (g.vol(b.pos) > .2) sfx.blip(); g.dir.trained(u); } }, done(_g: Game, b: Building) { b.buds = 1; } };
+  hatch(g: Game, b: Building, dt: number) { for (let i = b.queue.length - 1; i >= 0; i--) { const q = b.queue[i]; q.t -= dt; if (q.t > 0) continue; b.queue.splice(i, 1); const a = R(0, 6.283), u = g.spawn(q.kind, b.team, b.pos.x + Math.cos(a) * (b.hx + 1.2), b.pos.z + Math.sin(a) * (b.hz + 1.2)); g.puff(TMP.copy(u.pos).setY(1), 4, .8, M.gS); if (g.vol(b.pos) > .2) sfx.hatch(); g.dir.trained(u); } }, done(_g: Game, b: Building) { b.buds = 1; } };
 defineBuildings({ mothercap: capHatch, eldercap: { ...capHatch, hq: true, counts: ['mothercap'] }, ancientcap: { ...capHatch, hq: true, counts: ['mothercap', 'eldercap'] }, tallspire: { counts: ['wingspire'] } });
 defineUnits({ snapper: { pair: true }, mulcher: { skipRespawn: true, stride: 6 }, grazer: { task: () => 'Chewing ore' } });
 const capBuds = { buds: true, added(_g: Game, b: Building, built: boolean) { if (b.buds === undefined) { b.buds = built ? G_TUNE.buds : 0; b.budT = 0; } }, note: (b: Building) => `${b.buds || 0} Bud${b.buds === 1 ? '' : 's'} ripe${b.queue.length ? ` · ${b.queue.length} ripening` : ''}` };

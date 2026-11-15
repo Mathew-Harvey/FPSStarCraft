@@ -122,13 +122,13 @@ export class Director implements Side {
   // ------------------------------------------------------------ orders from the player
   playerOrders(P: Set<string>, eye: THREE.Vector3, dir: THREE.Vector3, lookDist: number) {
     const g = this.g, net = g.net, p = this.side(g.myTeam).plan;
-    if (P.has('KeyG')) { if (net) net.cmd('or', 'G'); else this.order('G'); sfx.blip(); }
+    if (P.has('KeyG')) { if (net) net.cmd('or', 'G'); else this.order('G'); sfx.order(); }
     if (P.has('KeyV')) { if (net) net.cmd('or', 'V'); else this.order('V'); }
-    if (P.has('KeyH')) { if (net) { net.cmd('or', 'S'); sfx.blip(); } else this.order('S'); }
+    if (P.has('KeyH')) { if (net) { net.cmd('or', 'S'); sfx.order(); } else this.order('S'); }
     if (P.has('Mouse1')) { const q = V3(); if (g.groundPoint(q, 160) || (lookDist > 0 && q.copy(eye).addScaledVector(dir, lookDist).setY(0))) { g.hud.ping(q); if (net) net.cmd('or', 'M', Math.round(q.x), Math.round(q.z)); else this.order('M', q.x, q.z); } }
     if (p && p.phase === 'ask') {
       const k = P.has('KeyX') ? 'X' : P.has('KeyZ') ? 'Z' : P.has('KeyC') && p.book < 2 ? 'C' : '';
-      if (k) { if (k === 'C') P.delete('KeyC'); g.obj.answered = true; if (net) { net.cmd('or', k); sfx.blip(); } else this.order(k); }
+      if (k) { if (k === 'C') P.delete('KeyC'); g.obj.answered = true; if (net) { net.cmd('or', k); sfx.order(); } else this.order(k); }
     }
   }
   /** An order from the command view, for the bodies named. `k` is 'm' go there and fight whatever is on the way, 'a' attack one enemy body or
@@ -176,7 +176,7 @@ export class Director implements Side {
       if (squad.length) { for (const u of squad) u.order = { type: 'amove', x: x + R(-2.5, 2.5), z: z + R(-2.5, 2.5) }; if (s.plan?.phase !== 'go') { s.plan = null; s.callout = null; s.nextPlan = g.time + 60; } this.say(who, v ? VG(s.team, 'We go where you point. Singing.', 'Where you point, we swarm.') : 'Moving. Shooting anything purple on the way.', ''); sfx.callout(); } else sfx.deny();
     }
     else if (p && p.phase === 'ask') {
-      if (k === 'X') { s.plan = null; s.callout = null; s.nextPlan = g.time + 40; this.say(who, v ? VG(s.team, 'We hold the note. Call when you want us.', 'We wait in the Bloom. Call us.') : 'Holding. Wake us when you\'re ready.', ''); sfx.blip(); }
+      if (k === 'X') { s.plan = null; s.callout = null; s.nextPlan = g.time + 40; this.say(who, v ? VG(s.team, 'We hold the note. Call when you want us.', 'We wait in the Bloom. Call us.') : 'Holding. Wake us when you\'re ready.', ''); sfx.order(); }
       else if (k === 'Z') this.accept(true, s);
       else if (k === 'C' && p.book < 2) { p.book = 1 - p.book; p.label = this.books(s)[p.book].label; this.accept(true, s); }
     }
@@ -185,7 +185,7 @@ export class Director implements Side {
     const p = s.plan!; p.phase = 'count'; p.t = byPlayer ? 5 : 12; s.callout = null; if (byPlayer && !this.g.net) this.g.obj.answered = true;
     if (fac(s.team) === 2) this.say('Swarm Lead', byPlayer ? (p.book === 1 ? 'The ridge. Low and quiet.' : 'Gather. Swarm.') : 'No word. The hunger decides.', '');
     else if (fac(s.team)) this.say('Chorus Lead', byPlayer ? (p.book === 1 ? 'The ridge, then. Quietly.' : 'We sing. Gather.') : 'No word. We go anyway.', '');
-    else this.say('Alpha', byPlayer ? (p.book === 1 ? 'Back door it is. Sneaky. I like it.' : 'That\'s the spirit. Moving out.') : 'No answer. Taking that as a yes.', ''); sfx.blip();
+    else this.say('Alpha', byPlayer ? (p.book === 1 ? 'Back door it is. Sneaky. I like it.' : 'That\'s the spirit. Moving out.') : 'No answer. Taking that as a yes.', ''); sfx.order();
   }
 
   /** True if a building here would stand between the Headframe and a seam the Riggers walk to. */

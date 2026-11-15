@@ -5,6 +5,7 @@ import './arms';      // what a driven Veyl body can claim online
 import { showSilent } from './show';   // stream F's silent look, wired to the song-field rules
 import { V3, R, M } from '../../gfx';
 import { sfx } from '../../audio';
+import { lowNote } from '../../sound-abilities';
 import type { Game } from '../../game';
 import { TMP, r1, beamMat } from '../../game';
 import { UNIT, BLD, Unit, Building, isUnit, foeOf, fac, SIDE, CLEAVE, isFoe, type BKind } from '../../data';
@@ -28,7 +29,7 @@ export function updateVeyl(g: Game, dt: number, P: Set<string>, eye: THREE.Vecto
   else driveNew(g, dt, new Set([...P].filter(k => !k.startsWith('Mouse'))), eye, dir, look);   // their R, C, V and Z keys and the key tips; the mouse stays theirs
   if (me.kind === 'warden') {
     // Right click: the Low Note. Every Veyl in earshot gets its shield back.
-    if (P.has('Mouse2')) { if (g.vCd <= 0) { g.vCd = 20; g.net?.cmd('vs'); sfx.charge(1); sfx.boom(.3); g.shake = Math.max(g.shake, .5); g.warn(me.pos.x, me.pos.z, 16, .5); g.hud.damage(V3(me.pos.x, 4.6, me.pos.z), 'LOW NOTE', 'shield'); } else sfx.deny(); }
+    if (P.has('Mouse2')) { if (g.vCd <= 0) { g.vCd = 20; g.net?.cmd('vs'); lowNote(1); g.shake = Math.max(g.shake, .5); g.warn(me.pos.x, me.pos.z, 16, .5); g.hud.damage(V3(me.pos.x, 4.6, me.pos.z), 'LOW NOTE', 'shield'); } else sfx.deny(); }
     if (g.vWind > 0) {
       g.vWind -= dt; if (g.vWind > 0) return;
       g.fireCd = 1.5; g.recoil = 1; g.shake = Math.min(1, g.shake + .6); const c = V3(g.vX, 0, g.vZ);

@@ -46,7 +46,8 @@ for (const seed0 of o.seeds || [1]) {
   g.noRender = true; g.evq = []; g.phase = 'play'; (g as any).introT = 0;
   for (const u of g.units) u.pilot = 0;
   for (const u of g.units) { u.pos.x += (Math.random() - .5) * 4; u.pos.z += (Math.random() - .5) * 4; } g.dir.qmT = Math.random(); g.dir.vs.qmT = Math.random();
-  const player = mode !== 'bot', drive = mode === 'lead' || mode === 'rush';
+  const player = mode !== 'bot', drive = mode === 'lead' || mode === 'rush' || mode === 'harass' || mode === 'snipe';
+  let tk = 0;
   g.human = g.human.map((_, t) => player && t === H); g.me = null;
   let dealt = 0, deaths = 0, ledSum = 0, ledN = 0, last: any = null, stuck = 0, strafe = 0, px = 0, pz = 0;
   const was = Game.prototype.damage; (g as any).damage = function (t: any, amt: number, from: any, ...r: any[]) { const h0 = t.hp + (t.shield || 0); const res = (was as any).call(this, t, amt, from, ...r); if (from && from === g.me && t.team !== H) dealt += Math.max(0, h0 - (t.hp + (t.shield || 0))); return res; };
@@ -56,7 +57,13 @@ for (const seed0 of o.seeds || [1]) {
     return by.sort((a, b) => (a.kind === lead ? 0 : 1) - (b.kind === lead ? 0 : 1) || Math.hypot(a.pos.x - f.pos.x, a.pos.z - f.pos.z) - Math.hypot(b.pos.x - f.pos.x, b.pos.z - f.pos.z))[0]; };
   const step = () => {
     g.keys.clear(); g.lmb = false; (g as any).rmb = false; if ((g as any).phase === 'card') (g as any).phase = 'play';
-    const s = g.dir.side(H); if (player && s?.plan && s.plan.phase === 'ask') g.dir.order('Z');
+    const s = g.dir.side(H); if (player && s?.plan && s.plan.phase === 'ask') g.dir.order(mode === 'turtle' ? 'X' : 'Z');
+    // Cheese orders from above (stream L, cheese search), every 3 s: allin sends every fighter at the far base the moment it is out (fight
+    // on the way); hqsnipe sends every fighter at the far base's main building and nothing else; turtle never says yes to a push and keeps
+    // every fighter home, to see whether a side can sit out the clock and win on points.
+    if (++tk % 90 === 0 && (mode === 'allin' || mode === 'hqsnipe' || mode === 'turtle')) { const f = hq(), ids = g.army(H).filter(u => !u.pilot && u !== g.me).map(u => u.id);
+      const home = g.buildings.find(b => b.alive && b.team === H && b.kind === FACTION[H].hq);
+      if (mode === 'allin' && f) g.dir.command(H, ids, 'm', f.pos.x, f.pos.z); else if (mode === 'hqsnipe' && f) g.dir.command(H, ids, 'a', 0, 0, f.id); else if (mode === 'turtle' && home) g.dir.command(H, ids, 'm', home.pos.x + (f ? Math.sign(f.pos.x - home.pos.x) * 14 : 0), home.pos.z + (f ? Math.sign(f.pos.z - home.pos.z) * 14 : 0)); }
     if (!drive || (g as any).staticT > 0) return;   // the driven body just died: the game hands the player a new one when the static clears
     // Only fighters are driven: with none out yet (or after the driven one dies and the game drops the player into a worker) the worker goes
     // back to its job and the script waits for the next fighter.
@@ -64,10 +71,19 @@ for (const seed0 of o.seeds || [1]) {
     if (!m || !m.alive || m.team !== H || !isFighter(m)) { const u = pick(); if (u) { g.possess(u, true); m = g.me; } else { if (m && m.alive) { m.state = 'idle'; } g.me = null; return; } }
     if (!m || !isFighter(m)) return;
     last = m; ledSum += g.ledCount(); ledN++;
-    const foes = g.units.filter(u => u.alive && u.team === O && !(u as any).dug && !(u as any).cloak), dist = (a: any) => Math.hypot(a.pos.x - m!.pos.x, a.pos.z - m!.pos.z);
+    const foes = g.units.filter(u => u.alive && u.team === O && !(u as any).dug && !(u as any).cloak && !(u as any).inside && (mode !== 'harass' || !isFighter(u) || Math.hypot(u.pos.x - m!.pos.x, u.pos.z - m!.pos.z) < 10)), dist = (a: any) => Math.hypot(a.pos.x - m!.pos.x, a.pos.z - m!.pos.z);
     const near = foes.map(u => [dist(u), u] as const).sort((a, b) => a[0] - b[0])[0];
     let T: any = null, ty = 1.2, goal: any = null;
+    // snipe: stand off at long range (the first-person guns reach 150 m; bot guns 10-45 m) and shoot whatever is nearest, units first, then
+    // buildings; back away while any enemy fighter is within 45 m.
+    if (mode === 'snipe') { const f = hq(); const all = [...foes, ...g.buildings.filter(b => b.alive && b.team === O)].map(x => [dist(x), x] as const).filter(a => a[0] < (o.reach ?? 110)).sort((a, b) => a[0] - b[0]);
+      const tgt = all.find(a => 'pilot' in a[1]) || all[0], close = foes.some(u => isFighter(u) && dist(u) < 45);
+      if (tgt) { T = tgt[1]; ty = 'pilot' in T ? T.pos.y + (T.alt || 0) + UNIT[T.kind].bodyY : T.pos.y + BLD[T.kind].h * .4; const dx = T.pos.x - m.pos.x, dz = T.pos.z - m.pos.z, d = Math.hypot(dx, dz);
+        g.yaw = Math.atan2(dx, dz); g.pitch = Math.atan2(ty - (m.pos.y + ((m as any).alt || 0) + UNIT[m.kind].eye), d); g.lmb = true; g.pressed.add('Mouse0'); if (close) g.keys.add('KeyS'); else if (d > (o.reach ?? 110) - 20) g.keys.add('KeyW'); }
+      else if (f) { const dx = f.pos.x - m.pos.x, dz = f.pos.z - m.pos.z; g.yaw = Math.atan2(dx, dz); g.pitch = 0; g.keys.add('KeyW'); }
+      px = m.pos.x; pz = m.pos.z; return; }
     if (near && near[0] < 34) { T = near[1]; ty = T.pos.y + (T.alt || 0) + UNIT[T.kind].bodyY; }
+    else if (mode === 'harass') goal = hq();   // harass: only workers (and fighters right on top of it), walk to their base otherwise
     else if (mode === 'rush') { const b = g.buildings.filter(x => x.alive && x.team === O).map(x => [dist(x), x] as const).sort((a, b) => a[0] - b[0])[0]; const f = hq();
       if (b && b[0] < 34) { T = b[1]; ty = T.pos.y + BLD[T.kind].h * .4; } else goal = f; }
     else { // lead: stay with the crew, a few metres behind the fighter nearest the far base

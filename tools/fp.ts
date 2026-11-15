@@ -17,11 +17,12 @@ import { DIFFS, FACTION, UNIT, BLD, setMap, setSides } from '../src/data';
 import { isFighter } from '../src/data';
 import { unitRule } from '../src/core/registry';
 import { clearMatch } from '../src/core/sides';
+import { LEAD } from '../src/command';
 
 const NAMES = ['Ironhold', 'Veyl', 'Gloam'];
 if (process.argv[2] === 'sum') {
   const rows = readFileSync(process.argv[3], 'utf8').trim().split('\n').filter(Boolean).map(l => JSON.parse(l));
-  for (const mode of ['bot', 'cmd', 'lead', 'rush']) {
+  for (const mode of [...new Set(rows.map(r => r.mode))] as string[]) {
     const rs = rows.filter(r => r.mode === mode); if (!rs.length) continue;
     const w = rs.filter(r => r.win === 0).length, by6 = rs.filter(r => r.win === 0 && r.min <= 6).length;
     const per = NAMES.map((n, f) => { const x = rs.filter(r => r.me === f); return `${n} ${x.filter(r => r.win === 0).length}/${x.length}`; }).join(', ');
@@ -36,7 +37,8 @@ function avg(a: number[]) { return a.reduce((x, y) => x + y, 0) / Math.max(1, a.
 function med(a: number[]) { const s = a.slice().sort((x, y) => x - y); return s.length ? s[s.length >> 1] : 0; }
 
 initHeadless();
-const o = JSON.parse(process.argv[2] || '{}'), mode: string = o.mode || 'lead', mins = o.mins ?? (mode === 'rush' ? 8 : 40);
+const o = JSON.parse(process.argv[2] || '{}'); if (o.LEAD) Object.assign(LEAD, o.LEAD);   // e.g. {"LEAD":{"dmg":1,"guard":1}} drives with the crew bonus off
+const mode: string = o.mode || 'lead', mins = o.mins ?? (mode === 'rush' ? 8 : 40);
 for (const seed0 of o.seeds || [1]) {
   let seed = seed0; Math.random = () => { seed = (seed * 16807) % 2147483647; return (seed - 1) / 2147483646; };
   const map = o.map ?? 0; setMap(map); const [H, O] = setSides(o.me ?? 0, o.foe ?? 1);
@@ -81,7 +83,7 @@ for (const seed0 of o.seeds || [1]) {
     if (o.debug && i % 300 === 0) { const m = g.me, f = hq(); console.error(Math.round(g.time), m?.kind, m && f ? Math.round(Math.hypot(m.pos.x - f.pos.x, m.pos.z - f.pos.z)) : -1, Math.round(dealt), m?.alive); } }
   const win = g.winners.length ? (g.winners.includes(H) ? 0 : 1) : g.phase === 'over' ? (g.won ? 0 : 1) : -1;
   if (o.debug) console.error("end", g.phase, g.won, g.hqs(H).length, g.hqs(O).length, g.units.filter(u => u.alive && u.team === H).length);
-  console.log(JSON.stringify({ mode, me: o.me ?? 0, foe: o.foe ?? 1, map, seed: seed0, win, min: Math.round(g.time / 6) / 10, points: g.byPoints,
+  console.log(JSON.stringify({ mode: o.tag || mode, me: o.me ?? 0, foe: o.foe ?? 1, map, seed: seed0, win, min: Math.round(g.time / 6) / 10, points: g.byPoints,
     ...(drive ? { dealt: Math.round(dealt), deaths, led: +(ledSum / Math.max(1, ledN)).toFixed(2) } : {}), secs: Math.round((Date.now() - t0) / 1000) }));
   g.dispose?.(); clearMatch();
 }

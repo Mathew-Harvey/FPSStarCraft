@@ -12,10 +12,10 @@ import { useAbility } from '../../core/ability';
 import { seenFoe, spent, shareOf, capped, hunt } from '../../core/brainkit';
 import { weights, pickKind, type SeenMix } from './mix';
 import { V_TRAINS, V_NEEDS, FIELD, type VKind, type VBKind } from './numbers';
-
-/** Stream L round 4 trial switch, see the army mix below. */
-export const VEYL_LATE = { on: 0, army: 6, gap: .03 };
 import { fieldsOf, inField, quicken, energyOf, unfolded } from './fields';
+
+/** Stream L round 4: the slow Flux bodies (Mute, Choirmaster, Warden) hold their price back, see the army mix below. Off: 0. */
+export const VEYL_LATE = { on: 1, army: 6, gap: .03 };
 
 /** The Veyl's own build plans on top of the shared doctrines: which tech path they lean on. */
 export type VPlan = 'ground' | 'air' | 'tech';

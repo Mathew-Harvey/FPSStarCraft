@@ -135,20 +135,24 @@ export class Director implements Side {
    *  building, 'o' work an ore seam, 'b' build or mend one of your own buildings, 'r' go back to the squad or back to work. Bodies ordered this
    *  way are left alone by the side's own brain until they are handed back, or until a squad order from first person takes them. */
   command(team: number, ids: number[], k: string, x = 0, z = 0, tid = 0) {
-    const g = this.g, want = new Set(ids.slice(0, 80)), us = g.units.filter(u => u.alive && u.team === team && !u.pilot && want.has(u.id)); if (!us.length) return 0;
+    const g = this.g, want = new Set(ids.slice(0, 80)), us = g.units.filter(u => u.alive && !u.inside && u.team === team && !u.pilot && want.has(u.id)); if (!us.length) return 0;
+    // A body out scouting that is given an order from above stops scouting.
+    for (const u of us) if (u.order.type === 'scout') u.order = { type: 'guard', x: u.pos.x, z: u.pos.z };
+    // A worker given a job from above drops a Flux run to a vent (the Flux in its pack is lost).
+    const off = (u: Unit) => { if (u.vent) { u.vent = null; u.fluxing = 0; if (u.rig.pack && !u.carrying) u.rig.pack.visible = false; } };
     const fighters = us.filter(u => !isWorker(u.kind)), workers = us.filter(u => isWorker(u.kind));
     // Bodies sent to one spot stand in a block round it rather than all pushing for the same square metre.
     const spots = (n: number, gap: number) => { const cols = Math.max(1, Math.ceil(Math.sqrt(n))), out: number[][] = []; for (let i = 0; i < n; i++) out.push([x + ((i % cols) - (cols - 1) / 2) * gap, z + (Math.floor(i / cols) - (Math.ceil(n / cols) - 1) / 2) * gap]); return out; };
-    const walk = (u: Unit, px: number, pz: number) => { if (u.site) { u.site.builder = null; u.site = null; } u.node = null; u.pref = null; u.windX = px; u.windZ = pz; u.state = 'walk'; };
+    const walk = (u: Unit, px: number, pz: number) => { off(u); if (u.site) { u.site.builder = null; u.site = null; } u.node = null; u.pref = null; u.windX = px; u.windZ = pz; u.state = 'walk'; };
     const go = (list: Unit[], tgt: Unit | Building | null) => { const sp = spots(list.length, 2.4); list.forEach((u, i) => { u.order = { type: 'amove', x: sp[i][0], z: sp[i][1], mine: true, prey: tgt || undefined }; u.target = tgt; u.leashed = false; }); };
     if (k === 'r') { for (const u of fighters) this.enlist(u); for (const u of workers) { u.pref = null; u.node = null; if (u.site) { u.site.builder = null; u.site = null; } u.state = u.carrying > 0 ? 'toHQ' : 'idle'; } return us.length; }
     if (k === 'a') { const t = g.units.find(o => o.alive && o.id === tid && isEnemy(o.team, team)) || g.buildings.find(o => o.alive && o.id === tid && isEnemy(o.team, team)) || null; if (!t) return 0; x = t.pos.x; z = t.pos.z; go(fighters, t); return fighters.length; }
-    if (k === 'o') { const n = g.ores[tid]; if (!n || n.amount <= 0) return 0; x = n.pos.x; z = n.pos.z; for (const u of workers) { if (u.site) { u.site.builder = null; u.site = null; } u.pref = n; u.node = n; u.state = u.carrying > 0 ? 'toHQ' : 'toOre'; } if (fighters.length) { z += 5; go(fighters, null); } return us.length; }
+    if (k === 'o') { const n = g.ores[tid]; if (!n || n.amount <= 0) return 0; x = n.pos.x; z = n.pos.z; for (const u of workers) { off(u); if (u.site) { u.site.builder = null; u.site = null; } u.pref = n; u.node = n; u.state = u.carrying > 0 ? 'toHQ' : 'toOre'; } if (fighters.length) { z += 5; go(fighters, null); } return us.length; }
     if (k === 'b') {
       const b = g.buildings.find(o => o.alive && o.id === tid && o.team === team); if (!b) return 0; x = b.pos.x; z = b.pos.z + b.hz + 4;
       // One worker to a building, the way the crew does it on its own: the nearest of the ones picked takes it.
       const w = workers.slice().sort((p, q) => Math.hypot(p.pos.x - b.pos.x, p.pos.z - b.pos.z) - Math.hypot(q.pos.x - b.pos.x, q.pos.z - b.pos.z))[0];
-      if (w && (!b.built || b.hp < b.maxHp)) { if (b.builder && b.builder !== w) b.builder.site = null; if (w.site && w.site !== b) w.site.builder = null; w.site = b; b.builder = w; w.state = 'idle'; }
+      if (w && (!b.built || b.hp < b.maxHp)) { off(w); if (b.builder && b.builder !== w) b.builder.site = null; if (w.site && w.site !== b) w.site.builder = null; w.site = b; b.builder = w; w.state = 'idle'; }
       if (fighters.length) go(fighters, null); return (w ? 1 : 0) + fighters.length;
     }
     if (k !== 'm') return 0;

@@ -12,6 +12,7 @@ import * as AB from './core/ability';
 import { abilityOf, whyNot } from './core/ability';
 import { roomOf } from './core/cargo';
 import { isEnemy } from './core/sides';
+import { seenBy } from './core/sight';
 import { bldRule } from './core/registry';
 import { costOf, canPay } from './core/econ';
 import { V3, L_FX, fogSheetMaterial } from './gfx';
@@ -45,8 +46,8 @@ export class Command {
   box: [number, number, number, number] | null = null;
   /** Half the height of ground the view shows, the camera's tilt, and how much the air between is thinned out for the picture. */
   h = ZOOM.h0; pitch = .9; fogK = 1;
-  /** Enemy buildings this side has laid eyes on. One raised later on ground already walked over stays hidden until somebody looks again. */
-  known = new WeakSet<Building>();
+  /** An enemy building this side has laid eyes on, read from the scouting records. One raised later on ground already walked over stays hidden until somebody looks again. */
+  known(b: Building) { const g = this.g, I = g.intel; return I.seen[I.ix(g.myTeam)].has(b.id) || g.fog.sees(b.pos.x, b.pos.z); }
   /** Set by the HUD: turns a cursor spot on the full map into a spot on the ground. */
   mapPt: ((x: number, y: number) => [number, number] | null) | null = null;
   /** No way up for this screen: the second half of a split screen has no mouse to point with. */
@@ -105,7 +106,6 @@ export class Command {
     if (!this.on) this.focus.lerp(A.set(me.pos.x, 0, me.pos.z), Math.min(1, dt * 12));
     for (const u of this.sel) if (!u.alive || u.team !== g.myTeam) this.sel.delete(u);
     if (this.selB && !this.selB.alive) this.selB = null;
-    for (const b of g.buildings) if (isEnemy(b.team, g.myTeam) && !this.known.has(b) && g.fog.sees(b.pos.x, b.pos.z)) this.known.add(b);
     this.watchNew(); this.runQueues(dt); this.landPending(dt);
     if (!this.sel.size && !this.selB) { this.aim = null; this.menu = ''; }
     const w = g.wheel, free = me.alive && g.staticT <= 0 && !g.tab && g.introT <= 0 && !this.locked;
@@ -135,7 +135,7 @@ export class Command {
       let px = 0, pz = 0; if (K.has('KeyA') || K.has('ArrowLeft') || this.cx <= 1) px--; if (K.has('KeyD') || K.has('ArrowRight') || this.cx >= W - 1) px++; if (K.has('KeyW') || K.has('ArrowUp') || this.cy <= 1) pz--; if (K.has('KeyS') || K.has('ArrowDown') || this.cy >= H - 1) pz++;
       if (px || pz) { const sp = this.h * 1.9 * dt; this.focus.x += px * sp; this.focus.z += pz * sp; }
     }
-    { const ox = MAP.out[0] / 2, oz = MAP.out[1] / 2, dx = this.focus.x - ox, dz = this.focus.z - oz, d = Math.hypot(dx, dz), lim = 205 * (MAP.k || 1); if (d > lim) { this.focus.x = ox + dx / d * lim; this.focus.z = oz + dz / d * lim; } }
+    { const [ox, oz] = MAP.mid!, dx = this.focus.x - ox, dz = this.focus.z - oz, d = Math.hypot(dx, dz), lim = MAP.rad! * 1.025; if (d > lim) { this.focus.x = ox + dx / d * lim; this.focus.z = oz + dz / d * lim; } }
     // the wheel
     if (w < 0) {
       if (this.map) { const p = this.mapPt?.(this.cx, this.cy); if (p) this.focus.set(p[0], 0, p[1]); this.zt = this.back >= ZOOM.near && this.back <= ZOOM.far ? this.back : .6; this.cx = W / 2; this.cy = H / 2; sfx.blip(); }
@@ -190,17 +190,17 @@ export class Command {
     const hud = this.g.hud, cam = this.g.cam, nx = sx / hud.W * 2 - 1, ny = 1 - sy / hud.H * 2; A.set(nx, ny, -1).unproject(cam); B.set(nx, ny, 1).unproject(cam).sub(A);
     if (B.y > -1e-6) return false; out.copy(A).addScaledVector(B, -A.y / B.y); out.y = 0; return true;
   }
-  mine(u: Unit) { const g = this.g; return u.alive && u.team === g.myTeam && (!u.pilot || (!!g.net && u.pilot === g.net.id)) && (u !== g.me || !g.net); }
+  mine(u: Unit) { const g = this.g; return u.alive && !u.inside && u.team === g.myTeam && (!u.pilot || (!!g.net && u.pilot === g.net.id)) && (u !== g.me || !g.net); }
   /** The body nearest the cursor, of the player's side or of the enemy's that can be seen. */
   private unitAt(own: boolean): Unit | null {
     const g = this.g, s = [0, 0], pxm = g.hud.H / (2 * this.h); let best: Unit | null = null, bd = 1e9;
     for (const u of g.units) {
-      if (own ? !this.mine(u) : (!u.alive || !isEnemy(u.team, g.myTeam) || !g.fog.sees(u.pos.x, u.pos.z))) continue; const st = UNIT[u.kind];
+      if (own ? !this.mine(u) : (!u.alive || u.inside || !isEnemy(u.team, g.myTeam) || !g.fog.sees(u.pos.x, u.pos.z) || !seenBy(g, g.myTeam, u))) continue; const st = UNIT[u.kind];
       if (!this.screen(u.pos.x, st.bodyY, u.pos.z, s)) continue; const d = Math.hypot(s[0] - this.cx, s[1] - this.cy), r = Math.max(20, st.rad * pxm * 1.5 + 6); if (d < r && d < bd) { bd = d; best = u; }
     }
     return best;
   }
-  private buildingAt(p: THREE.Vector3, own: boolean): Building | null { const g = this.g; for (const b of g.buildings) if (b.alive && (own ? b.team === g.myTeam : isEnemy(b.team, g.myTeam)) && (own || this.known.has(b)) && Math.abs(p.x - b.pos.x) < b.hx + 1.2 && Math.abs(p.z - b.pos.z) < b.hz + 1.2) return b; return null; }
+  private buildingAt(p: THREE.Vector3, own: boolean): Building | null { const g = this.g; for (const b of g.buildings) if (b.alive && (own ? b.team === g.myTeam : isEnemy(b.team, g.myTeam) && this.known(b)) && Math.abs(p.x - b.pos.x) < b.hx + 1.2 && Math.abs(p.z - b.pos.z) < b.hz + 1.2) return b; return null; }
   private pickAt(add: boolean, all = false) {
     const g = this.g, u = this.unitAt(true); this.aim = null; this.menu = '';
     if (u) {
@@ -480,8 +480,9 @@ export class Command {
     const g = this.g; if (this.caster) on = false;
     if (!on) { if (this.hid) { this.hid = false; for (const b of g.buildings) { b.obj.visible = true; if (b.holo) b.holo.visible = true; } if (this.fogMesh) this.fogMesh.visible = false; } return; }
     const fresh = !this.hid; this.hid = true; const fog = g.fog;
-    for (const u of g.units) if (isEnemy(u.team, g.myTeam)) u.obj.visible = fog.sees(u.pos.x, u.pos.z);
-    for (const b of g.buildings) if (isEnemy(b.team, g.myTeam)) { const v = this.known.has(b); b.obj.visible = v; if (b.holo) b.holo.visible = v; }
+    // Bodies a transport holds, and hidden ones nobody has detected, were already left out this frame (see Game.render): this only takes more away.
+    for (const u of g.units) if (u.obj.visible && isEnemy(u.team, g.myTeam)) u.obj.visible = fog.sees(u.pos.x, u.pos.z);
+    for (const b of g.buildings) if (isEnemy(b.team, g.myTeam)) { const v = this.known(b); b.obj.visible = v; if (b.holo) b.holo.visible = v; }
     const n = fog.n;
     if (!this.fogMesh || !this.fogTex || this.fogTex.image.width !== n) {
       if (this.fogMesh) g.scene.remove(this.fogMesh);

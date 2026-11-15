@@ -94,8 +94,8 @@ export class Intel {
 
   /** Sends one body to look: down a road nobody has walked yet, or round the enemy base once it is known. Returns the body, or null if nobody can go. */
   send(T: number, lead: Unit | null): Unit | null {
-    const g = this.g, i = this.ix(T), free = g.units.filter(u => u.alive && u.team === T && u !== lead && u !== g.me && !u.pilot && u.order.type !== 'scout' && u.kind !== 'gantry' && u.kind !== 'warden' && u.kind !== 'mulcher');
-    const idle = free.filter(u => isFighter(u) && u.order.type === 'guard' && !u.target), hands = free.filter(u => isWorker(u.kind) && !u.site);
+    const g = this.g, i = this.ix(T), free = g.units.filter(u => u.alive && u.team === T && u !== lead && u !== g.me && !u.pilot && u.order.type !== 'scout' && !u.order.mine && u.kind !== 'gantry' && u.kind !== 'warden' && u.kind !== 'mulcher');
+    const idle = free.filter(u => isFighter(u) && u.order.type === 'guard' && !u.target), hands = free.filter(u => isWorker(u.kind) && !u.site && !u.pref && u.state !== 'walk' && u.state !== 'hold');
     const u = idle.sort((a, b) => UNIT[b.kind].speed - UNIT[a.kind].speed)[0] || hands.sort((a, b) => a.carrying - b.carrying)[0]; if (!u) return null;
     const known = this.known(T), [hx, hz] = homeXZ(T);
     if (known.length) { const cx = known.reduce((a, b) => a + b.pos.x, 0) / known.length, cz = known.reduce((a, b) => a + b.pos.z, 0) / known.length; u.order = { type: 'scout', x: hx, z: hz, path: this.ring(cx, cz, u.pos.x, u.pos.z), back: true, loop: true }; }

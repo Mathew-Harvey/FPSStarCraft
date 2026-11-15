@@ -19,6 +19,7 @@ import { unitRule } from '../src/core/registry';
 import { clearMatch } from '../src/core/sides';
 import { LEAD } from '../src/command';
 import { HUNT } from '../src/game';
+import { VEYL_EARLY } from '../src/factions/veyl/conductor';
 
 const NAMES = ['Ironhold', 'Veyl', 'Gloam'];
 if (process.argv[2] === 'sum') {
@@ -38,7 +39,7 @@ function avg(a: number[]) { return a.reduce((x, y) => x + y, 0) / Math.max(1, a.
 function med(a: number[]) { const s = a.slice().sort((x, y) => x - y); return s.length ? s[s.length >> 1] : 0; }
 
 initHeadless();
-const o = JSON.parse(process.argv[2] || '{}'); if (o.LEAD) Object.assign(LEAD, o.LEAD); if (o.HUNT) Object.assign(HUNT, o.HUNT);   // e.g. {"LEAD":{"dmg":1,"guard":1}} drives with the crew bonus off
+const o = JSON.parse(process.argv[2] || '{}'); if (o.LEAD) Object.assign(LEAD, o.LEAD); if (o.HUNT) Object.assign(HUNT, o.HUNT); if (o.VE) Object.assign(VEYL_EARLY, o.VE); for (const k in o.set || {}) Object.assign((UNIT as any)[k] ?? (BLD as any)[k], o.set[k]);   // e.g. {"LEAD":{"dmg":1,"guard":1}} drives with the crew bonus off
 const mode: string = o.mode || 'lead', mins = o.mins ?? (mode === 'rush' ? 8 : 40);
 for (const seed0 of o.seeds || [1]) {
   let seed = seed0; Math.random = () => { seed = (seed * 16807) % 2147483647; return (seed - 1) / 2147483646; };

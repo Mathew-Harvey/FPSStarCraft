@@ -150,3 +150,42 @@ The full lists are in [breakpoints.md](breakpoints.md): 192 of 291 pairs that ki
 - Knell on a set Piledriver: 2 hits, 3 if softer, both ways.
 
 Not counted: healing and shield regrowth between hits (a slow attacker can need one more), damage over time, splash and the first-person aim bonus.
+
+## Cheese pass (2026-11-15, asked by Mat)
+
+Mat's ask: find the cheese strategies and fix them so real play wins. Tool: `tools/fp.ts`, a headless scripted player (one side runs itself as a
+player's side on auto, while the script drives one body in first person with perfect aim through the real controls and gives orders from
+above). Every cheese was played on all nine pairings, maps 0-2, two seeds (54 matches), 15 minutes, and compared with the same player doing
+nothing special (`cmd`: 10 of 54 won by minute 15, none by minute 6). Rows: /mnt/project-files/full-depth/L/cheese/.
+
+| Cheese | What the script does | Before | After |
+|---|---|---|---|
+| Long-range sniping | drives an Ironhold rifle, stands 110 m off, shoots whatever is nearest, backs away from fighters | 19 of 54; Ironhold 18 of 18, no body lost | 11 of 54; Ironhold 5 of 18 |
+| Same, standing off at 50 m | | (Ironhold 14 of 18 at 65 m) | Ironhold 12 of 18, no better than plain fighting in first person (13 of 18) |
+| Snapper all-in | every fighter sent at the far base the moment it is out | 9 of 54, 7 by minute 6: Gloam v Veyl 6 of 6, the Choir Stone down at 3:20 | **not fixed** (see below) |
+| Main-building snipe | every fighter told to hit the main building and nothing else | 8 of 54, 5 by minute 6 (all Gloam v Veyl) | not fixed, same cause |
+| Worker harass | a driven body that only shoots workers | 16 of 54 | 17 of 54 |
+| Driven rush | a driven body runs at the far base from its first second | 33 of 54, 1 by minute 6 | 29 of 54, 3 by minute 6 |
+| Points turtle | never pushes, keeps the army home, hopes to win on points at 40 | 7 of 54 on points, 47 lost | not changed: not a cheese |
+
+(The After column was measured with an early version of the Veyl guard on, which is now off; it touches only matches with a Veyl side.)
+
+The fixes:
+
+1. **Driven gun reach** (`REACH` in ironhold/rules.ts). The aimed guns hit for full damage out to 150 m and the Autocannon to 140 m, while
+   bot guns reach 10 to 44 m, so a player could stand where nothing could answer. Now full damage to 28 m (Linesman), 22 (Patch), 50
+   (Longshot), 30 (Autocannon), falling to none at 45, 40, 80 and 50. The Veyl and Gloam driven guns already stop at 70 m and could not do this.
+2. **Bots answer a far shooter** (`HUNT` in game.ts). A player's shot from more than 22 m off sends the bot fighters within 60 m of what
+   was hit after the shooter (once every 2 s a side). Bot-only matches never meet it, so bot tables do not move.
+3. **Crew bonus softened** (`LEAD` in command.ts, Mat's pick): 1.15 / .92, was 1.25 / .85. A scripted driver beside the army beat the bot
+   30 of 36 at 40 minutes with the old bonus, 24 of 36 with the new one; 19 of 36 with none, and 20 of 36 from the command view only.
+
+**Not fixed: the early Snapper all-in against the Veyl.** About twelve Snappers sent at 1:50 kill every Tender and the Choir Stone by 3:30,
+because the Veyl bot has spent every coin on Tenders and has no Cantor yet. Four ways of making the Veyl bot guard its opening were tried
+(`VEYL_EARLY` in veyl/conductor.ts, shipped off): each stopped the all-in (0 of 6 to 1 of 9) but cost the Veyl the ordinary bot match
+against the Gloam, which opens with the same Snapper flood: Veyl v Gloam 37 to 35 with the guard off, 20 to 52, 17 to 55 and 8 to 64 with it
+on (72 matches each). Slower Snappers (build time 10 s, or 35 ore a pair) did not stop it either. This is the same problem as Finding 3: the
+Gloam win with an early Snapper flood, so the fix belongs with round 4 (a slower Snapper rush with a stronger Gloam mid-game, stream D).
+
+Also seen: a driven body with perfect aim is far stronger than its bot, which real players are not; the Gloam bot's Snappers come out two at
+a time and run at a driven Linesman pair after pair (Ironhold v Gloam driven rush: 2 of 6 over by minute 5 on map 0).

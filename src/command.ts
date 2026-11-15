@@ -20,7 +20,9 @@ import { sfx, drillSound } from './audio';
 
 /** Leading in person. Fighters the game is driving, within `reach` metres of a body one of their own side's players is driving, deal `dmg`
  *  times their damage and take `guard` times what hits them. Set both to 1 to switch it off. */
-export const LEAD = { reach: 30, dmg: 1.25, guard: .85 };
+// Stream L cheese pass, Mat's pick 2026-11-15 (softened): 1.25 / .85 let a scripted driver beside the army win 83% against a bot (command view only 56%,
+// no bonus 53%); 1.15 / .92 gives 67%.
+export const LEAD = { reach: 30, dmg: 1.15, guard: .92 };
 /** The zoom: 0 is first person, `lift` and above is the command view, `map` and above is the whole map. */
 export const ZOOM = { lift: .12, map: .9, step: .1, near: .2, far: .8, /** how tall a slice of ground the view shows at its nearest and furthest, in metres */ h0: 13, h1: 105, fov: 22 };
 

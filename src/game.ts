@@ -71,6 +71,8 @@ interface Proj { obj: THREE.Object3D; pos: THREE.Vector3; vel: THREE.Vector3; te
 const figureOf = (kind: Kind) => { try { return MD.unit(kind); } catch { return plainBody(kind); } };
 export const r1 = (v: number) => Math.round(v * 10) / 10;
 
+/** Stream L cheese pass: how bots answer a player shooting from afar (see damage). minD: only past this distance; r: fighters this near what was hit go. */
+export const HUNT = { minD: 22, r: 60 };
 export class Game {
   scene = new THREE.Scene();
   cam = new THREE.PerspectiveCamera(68, 1, .06, 4000);
@@ -454,11 +456,16 @@ export class Game {
     // With two economies, a worker under attack calls its side's guards over: a lone raider in the seams should not be free money.
     if (u && this.eco && isWorker(u.kind) && !u.pilot && from && isUnit(from) && from.team !== u.team && u.state !== 'flee') { const dx = u.pos.x - from.pos.x, dz = u.pos.z - from.pos.z, l = Math.hypot(dx, dz) || 1; if (u.site) { u.site.builder = null; u.site = null; } u.windX = u.pos.x + dx / l * 22; u.windZ = u.pos.z + dz / l * 22; u.state = 'flee'; u.timer = 4; }
     if (u && this.eco && isWorker(u.kind) && from && isUnit(from) && from.team !== u.team) for (const c of this.units) if (c.alive && c.team === u.team && !c.pilot && !c.target && c.order.type === 'guard' && isFighter(c) && c.pos.distanceTo(u.pos) < 45 && canHit(c, from)) c.target = from;
+    // A bot side answers a player who shoots it from out of its reach (stream L, cheese pass): a driven Linesman standing off at 50-65 m took
+    // bases apart while the guards stood and watched. Fighters near what was hit go after the shooter, at most once every 2 s a side.
+    if (from && isUnit(from) && (from === this.me || from.pilot) && !this.human[t.team] && isEnemy(t.team, from.team) && this.time > (this.huntT[t.team] ?? 0)) {
+      const d0 = Math.hypot(t.pos.x - from.pos.x, t.pos.z - from.pos.z); if (d0 > HUNT.minD) { this.huntT[t.team] = this.time + 2;
+        for (const c of this.units) if (c.alive && c.team === t.team && !c.pilot && isFighter(c) && !c.inside && Math.hypot(c.pos.x - t.pos.x, c.pos.z - t.pos.z) < HUNT.r && canHit(c, from)) { c.target = from; c.order = { type: 'amove', x: from.pos.x, z: from.pos.z }; c.leashed = false; } } }
     if (!u && from && (this.eco || t.team === SIDE.home)) { const home = t.team === SIDE.home; if (this.time > (home ? this.alertT : this.vAlertT)) { if (home) this.alertT = this.time + 20; else this.vAlertT = this.time + 20; const f = fac(t.team); this.feed(f === 2 ? 'Rootwatch' : f ? 'Watcher' : 'Lookout', f === 0 ? `They're chewing on the ${BLD[(t as Building).kind].name}! Get back here.` : f === 2 ? `The ${BLD[(t as Building).kind].name} is bleeding sap. Something is chewing it.` : `The ${BLD[(t as Building).kind].name} is cracking. Come and sing it whole.`, 'al', t.team); if (f === 0 && t.team === this.myTeam) sfx.alarm(); } }
     if (!u && t.hp > 0) { const b = t as Building, st = b.hp < b.maxHp * .33 ? 2 : b.hp < b.maxHp * .66 ? 1 : 0; if (b.built && st > b.stage) this.crack(b, st); }
     if (t.hp <= 0) u ? this.killUnit(u, from) : this.killBuilding(t as Building);
   }
-  quiet = false; vAlertT = 0;
+  quiet = false; vAlertT = 0; huntT: Record<number, number> = {};
   /** True for a body the game is driving that has one of its own side's players on the ground within reach. */
   led(u: Unit) { if (u.pilot || u === this.me && !this.cmd.on) return false; for (const l of this.leads) if (l !== u && l.team === u.team && Math.abs(l.pos.x - u.pos.x) < LEAD.reach && Math.hypot(l.pos.x - u.pos.x, l.pos.z - u.pos.z) < LEAD.reach) return true; return false; }
   /** How many of the player's fighters are close enough to get the bonus right now. */

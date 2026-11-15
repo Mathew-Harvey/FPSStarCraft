@@ -156,6 +156,8 @@ export interface FactionRules {
   classic?(D: Director, dt: number): void;
   /** Timed hints at the start of a match: seconds, who says it, the line. */
   hints?: [number, string, string][];
+  /** A last say on whether a mustered squad may push (the body count is already met). Absent: it may. */
+  pushOK?(D: Director, S: Side, idle: Unit[]): boolean;
   /** The squad's three playbooks (a push down the road, a flank, and all in). */
   books?: { name: string; steps: string[]; go: string; label: string }[];
   /** Idle chatter, given the faction at the other end. */

@@ -14,6 +14,11 @@ import { weights, pickKind, type SeenMix } from './mix';
 import { V_TRAINS, V_NEEDS, FIELD, type VKind, type VBKind } from './numbers';
 import { fieldsOf, inField, quicken, energyOf, unfolded } from './fields';
 
+/** Stream L round 4: the slow Flux bodies (Mute, Choirmaster, Warden) hold their price back, see the army mix below. Off: 0. */
+export const VEYL_LATE = { on: 1, army: 6, gap: .03 };
+/** Stream L cheese pass: an early swarm of small bodies counts by bodies too, and holds the Tender line (see the swarm rule below). Off: 0. */
+export const VEYL_EARLY = { on: 0, bodies: 2, near: 70, tenders: 8, guardT: 150, guard: 0, guardG: 2 };
+
 /** The Veyl's own build plans on top of the shared doctrines: which tech path they lean on. */
 export type VPlan = 'ground' | 'air' | 'tech';
 interface VS extends Side { vplan?: VPlan; drop?: { ferry: Unit; phase: 'load' | 'fly' | 'home'; t: number; x: number; z: number } | null; dropT?: number; seenCloak?: number; wellT?: number; stoneT?: number }
@@ -149,11 +154,23 @@ export function conductor(D: Director, dt: number, V0: Side = D.vs) {
   // An early rush at the door: no new buildings or songs until it is beaten, every coin into Cantors, and the Pits quickened.
   // A swarm on its way (more beds of enemy ground fighters than ours, early on): Cantors before anything else, and the Pits quickened.
   // Cantors beat Snappers well at equal cost. (Holding the Tender line back for them lost more matches than it saved: the ore comes from Tenders.)
-  const foeBeds = foes.filter(o => !o.air).reduce((n, o) => n + UNIT[o.kind].supply, 0), swarm = now < 420 && foeBeds >= Math.max(3, N * 1.2);
+  // VEYL_EARLY (stream L, cheese pass): a Gloam all-in of early Snappers (half a bed each) at about 1:50 never counted as a swarm by beds,
+  // the Tenders kept every coin, and the Choir Stone fell at 3:30 with not one Cantor made (12 of 12 such matches). Counting bodies too, and
+  // holding the Tender line at 8 while the army is outnumbered by such a swarm, lets the Pits answer it.
+  const foeNear0 = () => foes.filter(o => !o.air && Math.hypot(o.pos.x - HX, o.pos.z - HZ) < VEYL_EARLY.near).length;
+  const foeBeds = foes.filter(o => !o.air).reduce((n, o) => n + UNIT[o.kind].supply, 0), swarm = now < 420 && (foeBeds >= Math.max(3, N * 1.2) || (!!VEYL_EARLY.on && foeNear0() >= Math.max(VEYL_EARLY.bodies, army.length * 1.5)));
+  // ...and an early guard: until 2:30, with the first Brood Pit up, a Cantor (two against the Gloam, whose Snappers can be at the door by
+  // 1:50) is paid for first: Tenders and new buildings wait while the ore is short of its price. (Holding the Tenders at 8 instead, and
+  // counting every enemy fighter on the map rather than those at the door, lost Veyl v Gloam 17 to 55 in the bot table.)
+  const guard = !!VEYL_EARLY.on && now < VEYL_EARLY.guardT && pits.length > 0 && army.length < (fac(foe) === 2 ? VEYL_EARLY.guardG : VEYL_EARLY.guard);
+  const foeNear = foes.filter(o => !o.air && Math.hypot(o.pos.x - HX, o.pos.z - HZ) < VEYL_EARLY.near).length;
+  const swamped = !!VEYL_EARLY.on && now < 420 && foeNear >= VEYL_EARLY.bodies && army.length < foeNear;
   const rushed = now < 720 && foes.filter(o => !o.air && Math.hypot(o.pos.x - HX, o.pos.z - HZ) < 45).length >= Math.max(3, army.length);
-  if (!rushed || !pits.length) step();
-  // (whatever the army mix and its cap say: a rush at the door is answered first)
-  if (rushed || swarm) for (const p of up('broodpit')) { quicken(g, p, T); if (p.queue.length < 2 && g.rate(p) > 0 && canPay(g, T, costOf('cantor')) && free >= 2 && g.train(p, 'cantor')) paid('cantor'); }
+  // (whatever the army mix and its cap say: a rush at the door is answered first; in the guard, the Cantor is paid for before any building)
+  const answer = () => { for (const p of up('broodpit')) { quicken(g, p, T); if (p.queue.length < 2 && g.rate(p) > 0 && canPay(g, T, costOf('cantor')) && free >= 2 && g.train(p, 'cantor')) paid('cantor'); } };
+  if (guard) answer();
+  if ((!rushed && !swamped && !(guard && ore() < costOf('cantor')[0])) || !pits.length) step();
+  if (rushed || swarm || swamped) answer();
 
   // ---- songs: the levels first, then what the army is using
   const L = (keys: UpKey[], keep = 0) => { for (const k of keys) if (learn(k, keep)) return true; return false; };
@@ -184,7 +201,7 @@ export function conductor(D: Director, dt: number, V0: Side = D.vs) {
   // the enemy already fields a crowd before seven minutes (a swarm, a rush): fewer Tenders for now, more Cantors
   const early = now < 420 && foes.filter(o => !o.air).length >= Math.max(6, army.length * 2);
   const wantTend = early ? Math.min(9, 12 + DOC.crew) : 12 + DOC.crew + 7 * (hqs.length - 1) + tapsUp.length * 3;
-  if (tend.length < wantTend && free > 0 && canPay(g, T, costOf('tender')) && !(opening && ore() < saving + costOf('tender')[0] && tend.length >= 8) && (pits.length || tend.length < 6)) {
+  if (tend.length < wantTend && !(swamped && tend.length >= VEYL_EARLY.tenders) && !(guard && ore() < costOf('cantor')[0] + costOf('tender')[0]) && free > 0 && canPay(g, T, costOf('tender')) && !(opening && ore() < saving + costOf('tender')[0] && tend.length >= 8) && (pits.length || tend.length < 6)) {
     const crew = (h: Building) => tend.filter(u => !u.vent && g.nearHQ((u.node || u).pos.x, (u.node || u).pos.z, T) === h).length + h.queue.filter(q => q.kind === 'tender').length;
     const h = hqs.filter(b => !b.queue.length && crew(b) < (b === home ? 12 + DOC.crew : 7)).sort((a, b) => crew(a) - crew(b))[0] || (tend.length < wantTend ? hqs.find(b => !b.queue.length) : undefined); if (h) g.train(h, 'tender');
   }
@@ -200,20 +217,28 @@ export function conductor(D: Director, dt: number, V0: Side = D.vs) {
   if (!seen.detectors && !foeDetects) extra.mute = (extra.mute ?? 0) + 1.5;
   if ((seen.tags.unseen > 0 || cloakSeen) && !count('listener')) extra.listener = 20;
   const W = weights(mix, canMake, extra);
+  const isCapped = (k: VKind) => capped(V, k), isCappedV = isCapped;
   const RANK: Partial<Record<BKind, number>> = { skyloft: 0, kiln: 1, reedgate: 2, choir: 3, broodpit: 4 };
   // the share of ore a building may spend this second, so the Tender line and the next building are never starved for long
   const keep = opening ? saving : saving > 0 && army.length >= 6 + Math.max(0, DOC.tech) ? Math.min(saving, army.length >= 8 ? 400 : 150) : 0;
   // a deeper building short of the price of the body it wants holds that much back from the Brood Pits, once there is an army to stand on
   let hold: [number, number] = [0, 0];
-  const tryTrain = (b: Building, k: Kind) => { const nb = V_NEEDS[k as VKind]; if (nb && !has(nb)) return false; const c = costOf(k), deep = (RANK[b.kind] ?? 5) <= 2;
+  // VEYL_LATE (stream L round 4, off by default): the slow Flux bodies (Mute, Choirmaster, Warden) lost every coin of Flux to the Kiln and
+  // the Skyloft, which pick first, so a Mute came in 2% of long matches with a Quiet House up in 89%. With it on, the one furthest under
+  // its share holds its price back from every other building, deep ones too, until it is trained.
+  let late: Kind | null = null;
+  if (VEYL_LATE.on && army.length >= VEYL_LATE.army) { const sum = Object.values(W).reduce((a, b) => a + (b ?? 0), 0) || 1; let bd = VEYL_LATE.gap;
+    for (const k of ['mute', 'choirmaster', 'warden'] as VKind[]) { if (!W[k] || isCappedV(k)) continue; const d = W[k]! / sum - shareMix(k); if (d > bd) { bd = d; late = k; } }
+    if (late) { const c = costOf(late); hold = [Math.min(c[0], 300), c[1]]; } }
+  const tryTrain = (b: Building, k: Kind) => { const nb = V_NEEDS[k as VKind]; if (nb && !has(nb)) return false; const c = costOf(k), deep = (RANK[b.kind] ?? 5) <= 2 && !(late && k !== late);
+    if (late && k === late) { if (!canPay(g, T, [c[0] + keep, c[1]])) return false; if (UNIT[k].supply > free || !g.train(b, k)) return false; paid(k); late = null; hold = [0, 0]; return true; }
     // the hold only counts against what this body costs: a Cantor (no Flux) is never kept waiting for Flux a Kiln is saving
     if (!canPay(g, T, [c[0] + keep + (deep ? 0 : hold[0]), c[1] + (deep || !c[1] ? 0 : hold[1])])) { if (deep && army.length >= 5 && !hold[0]) hold = [Math.min(c[0], 300), Math.min(c[1], 250)]; return false; }
     if (UNIT[k].supply > free) return false; if (!g.train(b, k)) return false; paid(k); return true; };
-  const isCapped = (k: VKind) => capped(V, k);
   // the deeper buildings pick first, so a Kiln or Skyloft is not left idle while every coin goes into Cantors
   for (const b of g.ownB(undefined, true, T).sort((a, c) => (RANK[a.kind] ?? 5) - (RANK[c.kind] ?? 5))) {
     if (b.queue.length >= 2 || !V_TRAINS[b.kind as VBKind] || g.rate(b) <= 0) continue; const list = V_TRAINS[b.kind as VBKind]!.filter(k => k !== 'tender');
-    const k = pickKind(list, W, shareMix, isCapped); if (k && tryTrain(b, k)) continue;
+    const k = late && list.includes(late as VKind) ? late as VKind : pickKind(list, W, shareMix, isCapped); if (k && tryTrain(b, k)) continue;
     // short of Flux for what it wanted: a Brood Pit puts a Cantor out instead, while Cantors are under the cap. (Holding the price of the
     // wanted body back from the Pits instead kept Cantors near a fifth of the army, and the Veyl won 34 of 72 matches against 47.)
     // Ore piling up with no Flux to spend it on: Cantors up to a third of the spend past 900 ore, and past the cap altogether past 1500

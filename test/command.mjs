@@ -69,7 +69,7 @@ try {
   r = await p.evaluate(() => { const g = __ore.game, me = g.me, hit = () => { const a = g.spawn('linesman', 0, me.pos.x + 4, me.pos.z), f = g.spawn('choirmaster', 1, me.pos.x + 8, me.pos.z); step(1); const h0 = f.hp + f.shield; g.damage(f, 10, a); const out = h0 - f.hp - f.shield; const b0 = a.hp; g.damage(a, 10, f); const inn = b0 - a.hp; for (const u of [a, f]) { u.alive = false; g.scene.remove(u.obj); } return [out, inn]; };
     const up = hit(); key('KeyN'); step(20); const down = hit(); const n = g.ledCount(); return { up, down, on: g.cmd.on, n, sub: document.getElementById('whoSub').textContent }; });
   check(Math.abs(r.up[0] - 10) < .01 && Math.abs(r.up[1] - 10) < .01, `crew fight at face value while the player is in the command view (${r.up})`);
-  check(!r.on && Math.abs(r.down[0] - 12.5) < .01 && Math.abs(r.down[1] - 8.5) < .01, `crew beside a body the player is driving deal 25% more and take 15% less (${r.down})`);
+  check(!r.on && Math.abs(r.down[0] - 11.5) < .01 && Math.abs(r.down[1] - 9.2) < .01, `crew beside a body the player is driving deal 15% more and take 8% less (LEAD, Mat 2026-11-15) (${r.down})`);
 
   // ---- what the crew cannot see
   r = await p.evaluate(() => { const g = __ore.game, far = g.spawn('lancer', 1, 150, 0), near = g.spawn('lancer', 1, g.me.pos.x + 12, g.me.pos.z + 6); far.order = { type: 'guard', x: 150, z: 0 }; near.order = { type: 'guard', x: near.pos.x, z: near.pos.z }; g.fog.update(g, 1, true); step(2); const fp = far.obj.visible; key('KeyN'); step(30); g.fog.update(g, 1, true); step(2);

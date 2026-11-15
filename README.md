@@ -230,14 +230,16 @@ The scout order, the scout report and the pause screen list work on every map si
 
 ## Campaign
 
-The campaign is a story in four acts and 24 jobs, plus three side jobs. You play Rigger Nineteen, a new hire on the moon Tithe. Act 1 (Dig) plays the Ironhold Charter, Act 2 (Sing) the Veyl, Act 3 (Grow) the Gloam, and Act 4 (Or Else) one job for each side against Charter Security, the company's own troops in grey. Every job teaches part of one side, and cut scenes between jobs are drawn as comic panels in the game's own renderer. Finishing Act 1 unlocks multiplayer. Progress and the ore you bank across the campaign are saved in the browser.
+The campaign is a story in four acts and 42 jobs, plus three side jobs. You play Rigger Nineteen, a new hire on the moon Tithe. Act 1 (Dig) plays the Ironhold Charter, Act 2 (Sing) the Veyl, Act 3 (Grow) the Gloam, and Act 4 (Or Else) each side against Charter Security, the company's own troops in grey, ending with two team jobs and a last job against the clock. Every job teaches part of the game, and cut scenes between jobs are drawn as comic panels in the game's own renderer. Finishing Act 1 unlocks multiplayer. Progress and the ore you bank across the campaign are saved in the browser.
 
-| Act | Jobs | Plays | Maps |
+| Act | Jobs | Plays | What it teaches |
 | --- | --- | --- | --- |
-| 1. Dig | 1 to 8 | Ironhold, against the Veyl | Needle's Eye, Switchback, Glass Flats |
-| 2. Sing | 9 to 15 | the Veyl, against the Gloam and Aggie's crew | The Crack, Glass Flats, Needle's Eye |
-| 3. Grow | 16 to 20 | the Gloam, against the Veyl and Charter Security | The Crack, Needle's Eye, First Stone, Drill Site |
-| 4. Or Else | 21 to 24 | each side in turn, against Charter Security | Switchback, Needle's Eye, Drill Site |
+| 1. Dig | 1 to 14 | Ironhold, against the Veyl | The yard, Flux, add-ons, a second base, high ground, siege, mines, detectors, fliers, the command view and its orders, the crew bonus, scouting a hidden map |
+| 2. Sing | 15 to 26 | the Veyl, against the Gloam and Aggie's crew | Song fields, Far Singing, casters and energy, unseen bodies, the Chord, fliers and the Ferry, scouting and punishing a second base |
+| 3. Grow | 27 to 36 | the Gloam, against the Veyl and Charter Security | Buds and the Bloom, digging in, ripening, Rot Mind, Drifters, tunnels, scouting and out-growing a side that digs in |
+| 4. Or Else | 37 to 42 | each side in turn, then team jobs with bot allies | Anti-air, mirror matches, two and three sides against one |
+
+Three jobs (Lost Property, Second Cap, Behind the Wall) are played on the Vast map, where nobody is told where the enemy is. Each pins the bot side to one build plan (early rush, second base early, dig in), so the player learns to send scouts (H), read what they saw on the pause screen and answer that plan.
 
 Three maps exist only for the story: The Crack (Switchback after the canyon floor split), First Stone (the oldest Veyl site, behind old glass walls) and Drill Site (the Charter's drill tower and Deep Charge rigs on the Glass Flats at night). Jobs played from the outpost end run on the same hidden local host as a Veyl or Gloam skirmish, with the job's script running there. A ticked objective stays ticked, so losing a building later does not undo it; timed holds keep their own clocks.
 

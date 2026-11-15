@@ -222,7 +222,7 @@ export class Director implements Side {
       const f = fac(s.team), home = s === this, foe = foeOf(s.team);
       if (!g.human[s.team]) s.auto = true; if (s.callout) s.callout.t -= dt;
       // On a hidden map a side nobody plays picks its build plan for the match. A scout can read it off what gets built.
-      if (MAP.hid && !s.docSet && now > 1) { s.docSet = true; if (!g.human[s.team] && !g.mission) { s.doc = DOCTRINES[g.docFix ?? Math.floor(Math.random() * DOCTRINES.length)]; s.nextPlan += s.doc.first; } }
+      if (MAP.hid && !s.docSet && now > 1) { s.docSet = true; if (!g.human[s.team] && (!g.mission || g.mission.plan !== undefined)) { s.doc = DOCTRINES[g.mission?.plan ?? g.docFix ?? Math.floor(Math.random() * DOCTRINES.length)]; s.nextPlan += s.doc.first; } }
       const hints = factionRule(s.team).hints || [];
       if (!g.mission || !home) while (s.hintI < hints.length && now >= hints[s.hintI][0]) { const h = hints[s.hintI++]; this.say(h[1], this.hint(s, s.hintI - 1, h[2]), 'in', s.team); }
       factionRule(s.team).brain?.(this, dt, s);

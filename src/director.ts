@@ -283,7 +283,7 @@ export class Director implements Side {
     if (!s.plan && now > s.nextPlan && (foes.length || (s === this && g.mission && this.targetFor(0))) && !s.raidLive && !(s === this && this.warned) && !enemyPush) {
       // Every push that dies on their doorstep makes the next muster bigger, so the side stops feeding the enemy six at a time. A swarm musters bigger: its bodies are cheap.
       const need = Math.max(3, Math.round((g.eco && !g.army(foeOf(s.team)).length ? 7 : (last ? 5 : 6) + 2 * Math.min(s.fails, 3)) * (f === 2 ? 1.7 : 1)) + docOf(s).need);   // nobody left to stop us but the towers: a fair-sized push, without the caution
-      if (idle.length >= need) {
+      if (idle.length >= need && (factionRule(s.team).pushOK?.(this, s, idle) ?? true)) {
         const book = last ? 2 : s.lastFailed || s.pushes % 2 === 1 ? 1 : 0; s.plan = { phase: 'ask', t: 10, target: null, book, label: B[book].label };
         const lastHQ = BLD[FACTION[foe].hq].name, text = f === 2
           ? (book === 2 ? `One ${lastHQ} left and ${idle.length} of us hungry. <b>Everything with legs, both roads. Now?</b>` : book === 1 ? `The road ${s.lastFailed ? 'bit back' : 'is watched'}. ${idle.length} of us circle over the <b>${MAP.flankName}</b> and come at their backs. <b>Shall we swarm?</b>` : `${idle.length} of us are restless in the Bloom. We run down the road in twenty. <b>Shall we swarm?</b>`)

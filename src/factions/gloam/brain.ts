@@ -141,6 +141,8 @@ function expansion(D: Director, T: number): { site: number[] | null; bare: numbe
 
 defineFaction(2, {
   brain: (D, dt, S) => overgrowth(D, dt, S), hints: GHINTS, books: GBOOKS,
+  // BROOD_MID.pushK (off at 0): a squad goes only when worth pushK times the foe army last seen, not on body count alone.
+  pushOK: (D, S, idle) => !BROOD_MID.on || !BROOD_MID.pushK || idle.reduce((a, u) => a + worthOf(u.kind as Kind), 0) >= BROOD_MID.pushK * seenFoe(D.g, S).worth,
   chatter: () => GCHATTER, lines: kind => kind === 'kill' ? GKILL : GDOWN,
   trained(D, u) {
     if (u.kind === 'snapper' && !D.flags.gsn) { D.flags.gsn = true; D.say('Snapper', 'Two of us, fresh from the Bud. Look at me and press F. Click bites, right click pounces.', 'in', u.team); sfx.callout(); }
@@ -161,5 +163,5 @@ defineFaction(2, {
  *  k: the Garden waits for this many fighters worth k times the foe army seen; fatAfter: Fat Buds waits for this many Quillbacks; crew:
  *  more Grazers once the Garden stands; save: 0 takes the Garden without saving the Buds for it; towers: at most this many Stinger
  *  Stalks (-1: as before; every building eats a Grazer); strict: 1 never lets a kind over the spend cap be grown once the Garden
- *  stands (the Buds wait instead). */
-export const BROOD_MID = { on: 0, army: 10, k: 1.5, fatAfter: 2, crew: 4, save: 1, towers: -1, strict: 0 };
+ *  stands (the Buds wait instead); pushK: a squad pushes only when worth pushK times the foe army seen (0: body count only). */
+export const BROOD_MID = { on: 0, army: 10, k: 1.5, fatAfter: 2, crew: 4, save: 1, towers: -1, strict: 0, pushK: 0 };

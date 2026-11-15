@@ -46,11 +46,11 @@ export function broodWants(D: Director, S: Side): Partial<Record<Kind, number>> 
  * The next fighter the Brood wants, the one furthest under its wanted share, skipping kinds over the spend cap and (against a foe with
  * nothing that hits the air) a second flier of a kind: an unanswerable swarm is no match. `skip` leaves out kinds grown elsewhere.
  */
-export function broodPick(D: Director, S: Side, skip?: Set<string>): Kind | null {
+export function broodPick(D: Director, S: Side, skip?: Set<string>, strict = false): Kind | null {
   const g = D.g, T = S.team, want = broodWants(D, S), air = foeAnswers(g, T).air;
   // With only two or three kinds up, every one can be over the cap at once; then the cap cannot hold, and the kind furthest under its
   // share still comes next (a bare Snapper while a Quillback is wanted kept the swarm 70% Snapper at minute 20).
-  for (const cap of [true, false]) {
+  for (const cap of strict ? [true] : [true, false]) {
     let best: Kind | null = null, bd = -Infinity;
     for (const k of Object.keys(want) as Kind[]) {
       if (skip?.has(k) || (cap && capped(S, k))) continue;

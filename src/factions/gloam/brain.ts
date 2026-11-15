@@ -119,6 +119,8 @@ export function overgrowth(D: Director, dt: number, V: Side = D.vs) {
       if (grazers.length + count(capsUp, 'grazer') < want && free > 0) k = 'grazer';
       else if (!warrenUp) break;
       else if ((k = firstOf(D, T))) { /* the first of each new body */ }
+      /* strict (BROOD_MID): once the Garden stands the cap always holds, and with every kind standing over it the Buds wait */
+      else if (BROOD_MID.on && BROOD_MID.strict && gardenUp) { k = broodPick(D, V, new Set(['mulcher']), true); if (!k) break; }
       else k = broodPick(D, V, new Set(['mulcher'])) || 'snapper';   /* the mix (brood-mix.ts): what answers what was seen, no kind over the cap */
       const n = k === 'snapper' ? 2 : 1, c = costOf(k);
       if (!canPay(g, T, [c[0] * n + (k === 'grazer' ? 0 : Math.max(saving ? hold : 0, want2 < 0 ? -want2 : g.time > 600 && Math.floor(g.time / 30) % 2 === 0 ? want2 : 0)), c[1] * n]) || !g.train(cap, k)) break;
@@ -158,5 +160,6 @@ defineFaction(2, {
 /** Round 4 trial (stream L, 2026-11-14): tech once the swarm holds the first push. on: 1 switches it on (tools/review.ts spec key). army and
  *  k: the Garden waits for this many fighters worth k times the foe army seen; fatAfter: Fat Buds waits for this many Quillbacks; crew:
  *  more Grazers once the Garden stands; save: 0 takes the Garden without saving the Buds for it; towers: at most this many Stinger
- *  Stalks (-1: as before; every building eats a Grazer). */
-export const BROOD_MID = { on: 0, army: 10, k: 1.5, fatAfter: 2, crew: 4, save: 1, towers: -1 };
+ *  Stalks (-1: as before; every building eats a Grazer); strict: 1 never lets a kind over the spend cap be grown once the Garden
+ *  stands (the Buds wait instead). */
+export const BROOD_MID = { on: 0, army: 10, k: 1.5, fatAfter: 2, crew: 4, save: 1, towers: -1, strict: 0 };

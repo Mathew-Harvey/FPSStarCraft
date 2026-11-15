@@ -12,6 +12,9 @@ import { useAbility } from '../../core/ability';
 import { seenFoe, spent, shareOf, capped, hunt } from '../../core/brainkit';
 import { weights, pickKind, type SeenMix } from './mix';
 import { V_TRAINS, V_NEEDS, FIELD, type VKind, type VBKind } from './numbers';
+
+/** Stream L round 4 trial switch, see the army mix below. */
+export const VEYL_LATE = { on: 0, army: 6, gap: .03 };
 import { fieldsOf, inField, quicken, energyOf, unfolded } from './fields';
 
 /** The Veyl's own build plans on top of the shared doctrines: which tech path they lean on. */
@@ -200,20 +203,28 @@ export function conductor(D: Director, dt: number, V0: Side = D.vs) {
   if (!seen.detectors && !foeDetects) extra.mute = (extra.mute ?? 0) + 1.5;
   if ((seen.tags.unseen > 0 || cloakSeen) && !count('listener')) extra.listener = 20;
   const W = weights(mix, canMake, extra);
+  const isCapped = (k: VKind) => capped(V, k), isCappedV = isCapped;
   const RANK: Partial<Record<BKind, number>> = { skyloft: 0, kiln: 1, reedgate: 2, choir: 3, broodpit: 4 };
   // the share of ore a building may spend this second, so the Tender line and the next building are never starved for long
   const keep = opening ? saving : saving > 0 && army.length >= 6 + Math.max(0, DOC.tech) ? Math.min(saving, army.length >= 8 ? 400 : 150) : 0;
   // a deeper building short of the price of the body it wants holds that much back from the Brood Pits, once there is an army to stand on
   let hold: [number, number] = [0, 0];
-  const tryTrain = (b: Building, k: Kind) => { const nb = V_NEEDS[k as VKind]; if (nb && !has(nb)) return false; const c = costOf(k), deep = (RANK[b.kind] ?? 5) <= 2;
+  // VEYL_LATE (stream L round 4, off by default): the slow Flux bodies (Mute, Choirmaster, Warden) lost every coin of Flux to the Kiln and
+  // the Skyloft, which pick first, so a Mute came in 2% of long matches with a Quiet House up in 89%. With it on, the one furthest under
+  // its share holds its price back from every other building, deep ones too, until it is trained.
+  let late: Kind | null = null;
+  if (VEYL_LATE.on && army.length >= VEYL_LATE.army) { const sum = Object.values(W).reduce((a, b) => a + (b ?? 0), 0) || 1; let bd = VEYL_LATE.gap;
+    for (const k of ['mute', 'choirmaster', 'warden'] as VKind[]) { if (!W[k] || isCappedV(k)) continue; const d = W[k]! / sum - shareMix(k); if (d > bd) { bd = d; late = k; } }
+    if (late) { const c = costOf(late); hold = [Math.min(c[0], 300), c[1]]; } }
+  const tryTrain = (b: Building, k: Kind) => { const nb = V_NEEDS[k as VKind]; if (nb && !has(nb)) return false; const c = costOf(k), deep = (RANK[b.kind] ?? 5) <= 2 && !(late && k !== late);
+    if (late && k === late) { if (!canPay(g, T, [c[0] + keep, c[1]])) return false; if (UNIT[k].supply > free || !g.train(b, k)) return false; paid(k); late = null; hold = [0, 0]; return true; }
     // the hold only counts against what this body costs: a Cantor (no Flux) is never kept waiting for Flux a Kiln is saving
     if (!canPay(g, T, [c[0] + keep + (deep ? 0 : hold[0]), c[1] + (deep || !c[1] ? 0 : hold[1])])) { if (deep && army.length >= 5 && !hold[0]) hold = [Math.min(c[0], 300), Math.min(c[1], 250)]; return false; }
     if (UNIT[k].supply > free) return false; if (!g.train(b, k)) return false; paid(k); return true; };
-  const isCapped = (k: VKind) => capped(V, k);
   // the deeper buildings pick first, so a Kiln or Skyloft is not left idle while every coin goes into Cantors
   for (const b of g.ownB(undefined, true, T).sort((a, c) => (RANK[a.kind] ?? 5) - (RANK[c.kind] ?? 5))) {
     if (b.queue.length >= 2 || !V_TRAINS[b.kind as VBKind] || g.rate(b) <= 0) continue; const list = V_TRAINS[b.kind as VBKind]!.filter(k => k !== 'tender');
-    const k = pickKind(list, W, shareMix, isCapped); if (k && tryTrain(b, k)) continue;
+    const k = late && list.includes(late as VKind) ? late as VKind : pickKind(list, W, shareMix, isCapped); if (k && tryTrain(b, k)) continue;
     // short of Flux for what it wanted: a Brood Pit puts a Cantor out instead, while Cantors are under the cap. (Holding the price of the
     // wanted body back from the Pits instead kept Cantors near a fifth of the army, and the Veyl won 34 of 72 matches against 47.)
     // Ore piling up with no Flux to spend it on: Cantors up to a third of the spend past 900 ore, and past the cap altogether past 1500

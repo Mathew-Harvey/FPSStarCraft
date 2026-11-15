@@ -107,7 +107,7 @@ The command view is for giving orders. First person is where fights are won. The
 - **Leading in person.** Fighters the game is driving, within 30 m of a body one of their own side's players is driving, deal 25% more damage and take 15% less. A player in the command view leads nobody.
 - **The match does not wait.** Time runs at full speed (the `Tab` jump picker still slows it). The body you left carries on as ordinary crew offline, and stands where it is online.
 - **Some jobs stay on the ground.** Staking out a new building needs a worker body or the Quartermaster. Hand drilling and hand welding are first person only.
-- **You see what your crew sees.** From above, enemy bodies show only inside your crew's sight, enemy buildings only once somebody has laid eyes on them, and ground nobody has walked is dark.
+- **You see what your crew sees.** From above, enemy bodies show only inside your crew's sight, enemy buildings only once somebody has laid eyes on them, and ground nobody has walked is dark. Enemy buildings come from the same scouting records as the small map (`src/scout.ts`), so on a Vast map the full map is framed round your own base until one of yours finds theirs, then it slides over to hold both.
 - Bodies ordered from above are left alone by the squad's own plans until you press `R` (back to the squad), or give a squad order from first person (`V`, middle click).
 
 | In the command view | |
@@ -120,12 +120,13 @@ The command view is for giving orders. First person is where fights are won. The
 | `F` | Jump into the picked body |
 | `R` | Hand the picked bodies back to the squad, or the workers back to their own choice of seam |
 | `Space` | Centre on your body |
+| `H` | Send a scout (skirmish and multiplayer). A scout given an order from above stops scouting |
 | `N` | Back to the body you left |
 | `M` | Map. On the map, click to look there and right click to send the picked bodies |
 
 Not done yet: touch screens and the second player's controller have no way into the command view, and buildings cannot be staked out from above.
 
-`node test/command.mjs` checks the zoom, picking, every order, the bonus, what is hidden, and the same orders through a split screen match.
+`node test/command.mjs` checks the zoom, picking, every order, the bonus, what is hidden, a Vast map with the other base hidden, and the same orders through a split screen match.
 
 ## Design
 

@@ -157,7 +157,7 @@ export const CUTS: Record<string, Cut> = {
     { shot: () => ({ cam: [5, 2, 9.5], look: [1, 1.4, 5], fov: 36 }), stage: g => { who(g, 'Aggie', 'rigger', 0, 1, 5, 5, 9.5); }, say: [['Aggie', 'What\'s Clause 9?'], ['Quartermaster', 'It is the one after Clause 8.']] },
   ] },
   lastverse: { id: 'lastverse', title: 'The last verse', sides: [2, 1], map: 23, dusk: .3, panels: [
-    { shot: g => { const [x, z] = crack(); return { cam: [x + 30, 12, z + 30], look: [x, 3, z], to: [x + 24, 9, z + 24], fov: 48 }; }, stage: g => { const [x, z] = crack(); for (const k of [-30, 0, 30]) { const c = roadPt(ROAD.len * .52 + k, 34 + (k ? -14 : 16)); bld(g, 'choir', 1, c[0], c[1]); } ring(g, 'warden', 1, x, z, 12, 3); }, cap: 'Three Choir Stones round the crack. The crack was closing. Then you walked out from between them.' },
+    { shot: g => { const [x, z] = crack(); return { cam: [x + 30, 12, z + 30], look: [x, 3, z], to: [x + 24, 9, z + 24], fov: 48 }; }, stage: g => { const [x, z] = crack(); for (const k of [-30, 0, 30]) { const c = roadPt(ROAD.len * .52 + k, 34 + (k ? -14 : 16)); bld(g, 'choir', 1, c[0], c[1]); } ring(g, 'warden', 1, x, z, 12, 3); }, cap: 'The three Choir Stones were closing the crack when you walked out from between them.' },
     { shot: g => { const [x, z] = crack(); return { cam: [x + 8, 3, z + 8], look: [x, 3.5, z], fov: 40 }; }, stage: g => { const [x, z] = crack(); who(g, 'Held Fifth', 'warden', 1, x + 1.5, z + 1.5, x + 8, z + 8); }, say: [['Held Fifth', 'I HAVE HELD THIS NOTE FOR TWO HUNDRED YEARS. FOUR HELD IT BEFORE ME, EACH UNTIL THEY DIED. I WANTED TO PUT IT DOWN.'], ['Phrasebook 3', '[PAID VERSION] TONE: VERY TIRED. [THE PAID VERSION INCLUDES TONE.]']] },
     { shot: g => { const [x, z] = crack(); return { cam: [x + 2.2, .9, z + 2.2], look: [x, .7, z], fov: 70 }; }, shake: .5, sfx: 'slash', stage: g => { const [x, z] = crack(); who(g, 'Held Fifth', 'warden', 1, x - 7, z - 6, x + 3, z + 3); put(g, 'snapper', 2, x + .6, z + .6, x + 3, z + 3); }, cap: 'With one voice gone, the glass stops closing. The Gloam comes up through the gap and takes the Stone nearest you. Your body goes down with the Stone.' },
   ] },
@@ -168,7 +168,7 @@ export const CUTS: Record<string, Cut> = {
   ] },
   beforeglass: { id: 'beforeglass', title: 'Before the glass', sides: [1, 2], map: 24, dusk: .1, panels: [
     { shot: () => ({ cam: [-14, 6, 24], look: [-40, 9, -4], to: [-18, 5, 20], fov: 50 }), cap: 'At the First Stone, the Gloam shows you what it remembers.' },
-    { shot: () => ({ cam: [30, 10, 30], look: [0, 3, 0], fov: 52 }), sat: .3, stage: g => { clear(g); for (let i = 0; i < 16; i++) put(g, i % 5 ? 'snapper' : 'quillback', 2, (i % 4) * 5 - 8, Math.floor(i / 4) * 5 - 8, 30, 30); }, cap: 'Open sky. Spores going up. This was the Gloam\'s season.' },
+    { shot: () => ({ cam: [30, 10, 30], look: [0, 3, 0], fov: 52 }), sat: .3, stage: g => { clear(g); for (let i = 0; i < 16; i++) put(g, i % 5 ? 'snapper' : 'quillback', 2, (i % 4) * 5 - 8, Math.floor(i / 4) * 5 - 8, 30, 30); }, cap: 'The Gloam remembers open sky, and its spores going up into it every season.' },
     { shot: () => ({ cam: [18, 26, 26], look: [0, 0, 0], fov: 54 }), sat: .3, stage: g => { ring(g, 'warden', 1, 0, 0, 16, 6); }, say: [['The Gloam', 'THEN THE SINGERS CAME DOWN. THEY SANG THE GROUND SHUT ON TOP OF US.']] },
     { shot: () => ({ cam: [-14, 6, 24], look: [-40, 9, -4], fov: 44 }), say: [['Moss', 'So the Gloam was here first. Then the Veyl. Then us.'], ['Moss', 'The Charter got here last, and it\'s the one sending the bill.']] },
   ] },

@@ -219,7 +219,7 @@ const ACT1: Mission[] = [
       if (s.probe === 1) { s.t -= dt; if (s.t <= 0 && !s.sent) { s.sent = 1; g.dir.wave(['cantor', 'cantor', 'cantor']); for (const u of g.units) if (u.team === 1 && u.order.type === 'raid') { u.hp *= .6; u.shield *= .5; } say(g, PIM, 'Three Veyl on the road. They sing before they shoot. Don\'t wait for the song to finish.', 'al'); } if (s.sent && !raiders(g)) s.probe = 2; else if (s.sent && !g.soldiers().length) { for (const [x, z] of [[6, 12], [9, 13]]) g.spawn('linesman', 0, x, z); say(g, QM, 'Two more rifles. This is coming out of your pay. Tab into one.', 'al'); } }
       once(g, s, 'l4', s.probe === 2, MO, 'You didn\'t freeze. I owe you a drink. Write it down before I forget.');
     },
-    outro: 'You dug, you jumped, and you shot at a stranger. Moss owes you a drink. The work gets bigger from here.',
+    outro: 'You drilled ore, jumped into a rifle and shot three strangers. Moss owes you a drink and has not written it down.',
   }),
   job(2, 1, {
     name: 'Payroll', side: 0, foe: 1, map: 0, diff: 0, dusk: DAY, teaches: 'The build menu, the Bunkhouse, the Depot, Watchposts, raid warnings, grenades, the crew bonus for standing with your squad',
@@ -237,7 +237,7 @@ const ACT1: Mission[] = [
       once(g, s, 'l2', !!s.go && (s.t ?? 20) < 12, AG, `Stand on the road with your rifles when it lands. Crew within ${LEAD.reach} metres of the body you are in hit ${pct(LEAD.dmg)}% harder and take ${pct(LEAD.guard)}% less.`);
       if (!s.go && (s.best >= 4 || g.time > 300)) { s.go = 1; s.t = 20; say(g, PIM, 'They know we\'re hiring. First raid in twenty seconds. The one in front is Gary. Try not to hit Gary.', 'al'); }
       if (!s.go) return;
-      if (s.live) { if (!raiders(g)) { s.live = 0; s.cleared = (s.cleared || 0) + 1; s.t = 45; if (s.cleared === 1) say(g, MO, 'That one was on the house. A Watchpost by the road would earn its keep.'); else if (s.cleared === 2) say(g, PIM, 'Fifteen seconds after this one, they come back with more. Gary looks upset.', 'al'); } return; }
+      if (s.live) { if (!raiders(g)) { s.live = 0; s.cleared = (s.cleared || 0) + 1; s.t = 45; if (s.cleared === 1) say(g, MO, 'That one was on the house. Put a Watchpost by the road. It shoots, and it doesn\'t ask for pay.'); else if (s.cleared === 2) say(g, PIM, 'Fifteen seconds after this one, they come back with more. Gary looks upset.', 'al'); } return; }
       if ((s.cleared || 0) >= 3) return;
       s.t -= dt; if (s.t <= 0) { const n = s.cleared || 0; s.live = 1; g.dir.wave(n === 0 ? ['cantor', 'cantor', 'cantor'] : n === 1 ? ['cantor', 'cantor', 'cantor', 'lancer', 'lancer'] : ['cantor', 'cantor', 'cantor', 'cantor', 'lancer', 'lancer', 'lancer'], n === 2); }
     },
@@ -284,7 +284,7 @@ const ACT1: Mission[] = [
       s.t0 = (s.t0 || 0) + dt; s.br = Math.max(s.br || 0, own(g, 'breacher')); s.pat = Math.max(s.pat || 0, own(g, 'patch'));
       once(g, s, 'l1', has(g, 'labbay'), QM, 'Lab Bay bolted on. Fifty ore and twenty-five Flux for a shed with test benches in it. Noted.');
       once(g, s, 'l2', own(g, 'breacher') > 0, AG, 'Shield goes in front. Patch goes behind the shield. You go where I tell you.');
-      once(g, s, 'l3', s.t0 > 70, MO, 'The Reed Gate is where their reinforcements come from. The yard has never broken it. I\'ve got money on you.');
+      once(g, s, 'l3', s.t0 > 70, MO, 'The Reed Gate is where their reinforcements come from. The yard has never broken it. Four to one you don\'t either.');
       once(g, s, 'l4', !g.gate(), PIM, 'Gate\'s down! Gary is going to be furious.');
     },
     target: g => g.gate(),
@@ -392,7 +392,7 @@ const ACT1: Mission[] = [
   }),
   job(9, 1, {
     name: 'Lamps', side: 0, foe: 1, map: 0, diff: 1, dusk: NIGHT, teaches: 'Unseen bodies and detectors: the Flak Tower and the Spotlight',
-    brief: 'Riggers on the north field are being cut down at night and nobody sees by what. The Veyl have bodies you cannot see. Nobody can aim at an unseen body until a detector is near it: a Flak Tower sees unseen bodies within 11 metres, and the Spotlight research at the Assay Office lets every Watchpost do the same. Light up the north field and kill what comes for the Riggers.',
+    brief: 'Riggers on the north field are being cut down at night, and nobody has seen who does it. The Veyl have bodies you cannot see. Nobody can aim at an unseen body until a detector is near it: a Flak Tower sees unseen bodies within 11 metres, and the Spotlight research at the Assay Office lets every Watchpost do the same. Light up the north field and kill what comes for the Riggers.',
     allow: [...IRON_T1, 'machineshop', 'twinbay', 'labbay', 'assay', 'flaktower'], units: ['linesman', 'dustbike', 'breacher', 'patch', 'sapper'], raids: false, auto: false,
     objectives: [
       { text: () => 'Put a detector on the north field: a Flak Tower, or a Watchpost with Spotlight', done: g => g.ms.lit === 1 },
@@ -593,7 +593,7 @@ const ACT2: Mission[] = [
       if (!s.wave && nU(g, 'tender') >= 8) { s.wave = 1; send(g, SIDE.home, ['snapper', 'snapper', 'snapper', 'snapper', 'snapper', 'snapper'], 'w'); say(g, H5, 'THE GLOAM SMELLS THE STONE GETTING WELL. TENDERS CAN FIGHT. HIT AND STEP BACK. YOUR SHIELD GROWS BACK IF NOTHING HITS IT.', 'al'); }
       if (s.wave === 1 && !left(g, 'w')) s.wave = 2;
     },
-    outro: 'The Choir Stone is whole again and the Chorus has hands. Most of them are yours.',
+    outro: 'The Choir Stone is whole again and eight Tenders are working it. You woke most of them.',
   }),
   job(16, 2, {
     name: 'Brood', side: 1, foe: 2, map: 3, diff: 0, dusk: DAY, teaches: 'The Brood Pit inside a song field, Cantors and Rush, the Siphon Bell and Flux, the Ward Pylon and the Thorn Spire',
@@ -690,7 +690,7 @@ const ACT2: Mission[] = [
     },
     tick: (g, s, dt) => {
       s.t0 = (s.t0 || 0) + dt; s.mutes = Math.max(s.mutes || 0, nU(g, 'mute'));
-      once(g, s, 'l1', s.t0 > 3, H5, 'THEY DIG GAS OUT OF OUR VENTS TO PAY FOR THE NEXT FIGHT. TAKE THE VENTS BACK. QUIETLY.');
+      once(g, s, 'l1', s.t0 > 3, H5, 'THEY DIG GAS OUT OF OUR VENTS TO PAY FOR THE NEXT FIGHT. TAKE THE VENTS BACK. DO NOT LET THEM SEE YOU DO IT.');
       once(g, s, 'l2', nU(g, 'mute') > 0, H5, 'A MUTE MAKES NO SOUND AND NOBODY SEES IT. A FLAK TOWER, A SURVEYOR OR A SPOTLIT WATCHPOST CAN.');
       once(g, s, 'l3', standing(g, 'jacks') < 3, PIM, '(on the yard channel) Pump Jack two just fell over. Nobody was near it. Aggie, nobody was near it.', 'al');
       once(g, s, 'l4', standing(g, 'jacks') < 2, QM, '(on the yard channel) Put a Surveyor up. Charge it to the Veyl.', 'al');
@@ -719,7 +719,7 @@ const ACT2: Mission[] = [
     },
     tick: (g, s, dt) => {
       s.t0 = (s.t0 || 0) + dt; s.bells = Math.max(s.bells || 0, nU(g, 'bell'));
-      once(g, s, 'l1', s.t0 > 3, H5, 'SOMETHING IS UNDER THE CAUSEWAY. WE CAN FEEL IT BREATHING. WE CANNOT SEE IT.');
+      once(g, s, 'l1', s.t0 > 3, H5, 'THE GLOAM HAS DUG IN UNDER THE CAUSEWAY. WE CAN FEEL IT BREATHING. WE CANNOT SEE IT.');
       once(g, s, 'l2', nU(g, 'listener') > 0, H5, 'THE LISTENER HEARS THE ONES UNDER THE GROUND. FLY IT IN FRONT. WHAT IT HEARS, EVERYONE CAN SHOOT.');
       once(g, s, 'l3', nU(g, 'bell') > 0, H5, 'A BELL RINGS ONCE AND THE GROUND IN FRONT OF IT BREAKS. IT IS SLOW. KEEP IT BEHIND THE LANCERS.');
       once(g, s, 'l4', s.t0 > 200, MO, '(very quietly, from under the glass) ...left a bit... left a bit...', '');
@@ -949,7 +949,7 @@ const ACT3: Mission[] = [
       once(g, s, 'l3', s.t0 > 40, MO, 'Those aren\'t Aggie\'s lot. Their boots are too clean.');
       once(g, s, 'l4', nB(g, 'ventbladder') > 0, MO, 'The gas comes up into the bladder and the Grazers drink it. Don\'t ask me how it gets out again.');
     },
-    outro: 'No survey team made it home. Charter Security is not Aggie\'s crew. It answers to head office, and head office wants the glass.',
+    outro: 'No survey team made it home. Charter Security answers to head office, not to Aggie, and head office wants the glass.',
     fail: 'The survey finished. Charter Security knows where the Bloom is now.',
   }),
   job(29, 3, {
@@ -993,7 +993,7 @@ const ACT3: Mission[] = [
       once(g, s, 'l2', dugOnRoad(g) > 0, GL, 'UNDER THE ROAD IT IS WARM AND DARK. WE CAN WAIT A LONG TIME.');
       // The column leaves the yard once six are dug in, or at the eighth minute either way. With a Surveyor over it, a dug-in body shows up.
       if (!s.col && (dugOnRoad(g) >= 6 || s.t0 > 480)) { s.col = 1; send(g, SIDE.home, ['breacher', 'breacher', 'linesman', 'linesman', 'linesman', 'linesman', 'patch', 'longshot', 'longshot', 'surveyor', 'dustbike', 'dustbike'], 'col'); say(g, QM, '(Charter Security channel) Column, proceed to the biological liability and remove it. Surveyor, look down.', 'al'); }
-      once(g, s, 'l3', !!s.col && !g.units.some(u => u.alive && u.team === them(g) && u.kind === 'surveyor'), MO, 'Their eye in the sky is down. Now they can\'t see us coming up out of the road.');
+      once(g, s, 'l3', !!s.col && !g.units.some(u => u.alive && u.team === them(g) && u.kind === 'surveyor'), MO, 'Their Surveyor is down. Now they can\'t see us coming up out of the road.');
       if (s.col && left(g, 'col') && s.t0 > (s.next || s.t0 + 240)) { s.next = s.t0 + 240; send(g, SIDE.home, ['breacher', 'linesman', 'linesman', 'linesman', 'patch', 'surveyor'], 'col'); }
     },
     outro: 'The column went into the ground on the road and did not come out. The Charter will send a bigger one with more Surveyors.',
@@ -1045,7 +1045,7 @@ const ACT3: Mission[] = [
       once(g, s, 'l2', propDown(g, 'Glass wall') >= 3, GL, 'THE WALLS ARE OLD. THEY WERE SUNG OVER US. WE REMEMBER THE SINGING.');
       once(g, s, 'l3', !!s.stone, GL, 'THIS IS WHAT HAPPENED BEFORE THE GLASS.');
     },
-    outro: 'At the First Stone the Gloam showed you what happened nine hundred years ago. It was on the surface first.',
+    outro: 'At the First Stone the Gloam showed you what happened nine hundred years ago. The Gloam lived on the surface before the Veyl came.',
     cutOut: ['beforeglass'],
   }),
   job(33, 3, {
@@ -1126,7 +1126,7 @@ const ACT3: Mission[] = [
       once(g, s, 'l3', onLedge(g) > 0, H5, 'THE GLOAM IS ON THE LEDGE. IT CAME UP OUT OF THE ROCK. THAT IS NOT FAIR.', 'al');
       if (s.t0 > (s.next || 420)) { s.next = s.t0 + 180; s.n = (s.n || 0) + 1; send(g, SIDE.home, ([] as Kind[]).concat(...Array(1 + s.n).fill(['cantor', 'cantor', 'lancer', 'lancer'])), 'w'); }
     },
-    outro: 'The ledge is Gloam now. From up there the crack looks small.',
+    outro: 'The ledge is Gloam now. The Chorus was watching the ramp the whole time, and six bodies came up through the rock behind it.',
   }),
   job(36, 3, {
     name: 'Spore Season', side: 2, foe: 0, map: 25, diff: 2, dusk: NIGHT, charter: 'home', teaches: 'Everything Gloam on a large map, the Tall Spire, Sowers and Hooksails',
@@ -1147,7 +1147,7 @@ const ACT3: Mission[] = [
       // Charter Security pushes at the Bloom every four minutes from the eighth.
       if (s.t0 > (s.next || 480)) { s.next = s.t0 + 240; s.n = (s.n || 0) + 1; send(g, SIDE.home, ([] as Kind[]).concat(...Array(1 + s.n).fill(['linesman', 'linesman', 'breacher', 'longshot', 'dustbike'])), 'w'); }
     },
-    outro: 'The Bloom has open sky. Under the drill site you found what Clause 9 is: a bomb under the glass, big enough to crack the basin open.',
+    outro: 'The Bloom has open sky. Under the drill site there is a bomb big enough to crack the basin open. Clause 9 is the order to set it off.',
     cutOut: ['clause9'],
   }),
 ];
@@ -1275,7 +1275,7 @@ const ACT4: Mission[] = [
       if (veyl < 0 || gloam < 0 || !hq(g, veyl).length || !hq(g, gloam).length) { s.allyDown = 1; s.lose = 1; }
     },
     target: g => hq(g, SIDE.out)[0] || null,
-    outro: 'The Charter base on the Wheel is gone. Three sides that spent nine hundred years fighting each other took it down in one night.',
+    outro: 'The Charter base on the Wheel is gone. The yard, the Chorus and the Gloam broke it together. Moss never did work out the odds.',
     fail: g => g.ms.alone ? 'Nobody from the yard came when an ally called. That ally left the Wheel, and the other two could not hold it.' : g.ms.allyDown ? 'One of your allies lost its last base. The other two could not hold the Wheel alone.' : g.ms.clock !== undefined && g.ms.clock <= 1 ? 'The order landed.' : 'The yard fell.',
   }),
   job(42, 4, {
@@ -1318,11 +1318,11 @@ const SIDES: Mission[] = [
     tick: (g, s, dt) => { s.t0 = (s.t0 || 0) + dt; once(g, s, 'l1', s.t0 > 3, H5, 'THEY SING THE SAME SONG AS US, TOO SOON. STOP THEM.'); },
     outro: 'The other Chorus has stopped singing. The yard is still above the glass.' },
   { name: 'Rot', tag: 'Side job', act: 0, opens: 35, side: 2, foe: 2, out: true, map: 3, diff: 1, dusk: .4, teaches: 'Gloam against Gloam',
-    brief: 'An older, sour patch of Gloam doesn\'t want to share the sky. Squash every one of its Mother Caps.',
+    brief: 'An older patch of Gloam is rooting on the same ore fields and biting your Grazers. Squash every one of its Mother Caps.',
     allow: GLOAM_ALL, units: GLOAM_UNITS, raids: false, auto: true,
     objectives: [{ text: g => `Squash the old Mother Caps (${hq(g, them(g)).length} left)`, done: g => !hq(g, them(g)).length }],
     tick: (g, s, dt) => { s.t0 = (s.t0 || 0) + dt; once(g, s, 'l1', s.t0 > 3, MO, 'This lot has been down there longer than we have. They smell like old socks.'); },
-    outro: 'The sour patch is mulch. The Bloom on this side is yours.' },
+    outro: 'The old patch is mulch, and its ore fields are yours.' },
 ];
 
 // ---------------------------------------------------------------- field guide

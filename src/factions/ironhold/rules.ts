@@ -21,6 +21,11 @@ import './show';        // stream E's figures and effects, wired to these rules
 import './arms';
 
 export const GUNS: Record<string, Weapon> = { linesman: { name: 'Rifle', mag: 24, cd: .12, reload: 1.5 }, breacher: { name: 'Scattergun', mag: 6, cd: .78, reload: 2.1 }, gantry: { name: 'Autocannon', mag: 12, cd: .36, reload: 2.4 }, longshot: { name: 'Long Rifle', mag: 5, cd: 1.15, reload: 2.4 }, patch: { name: 'Rivet Pistol', mag: 14, cd: .2, reload: 1.3 } };
+/** How far a driven gun hits for full damage, and where its shot is spent (stream L, cheese pass). The aimed guns reached 150 m and the
+ *  Autocannon 140 m while bot guns reach 10 to 44 m, so a player could stand off and shoot a base to pieces from where nothing could
+ *  answer: a driven Linesman won 18 of 18 against bots by doing just that. Full damage out to the first number, none past the second. */
+export const REACH: Record<string, [number, number]> = { linesman: [28, 45], patch: [22, 40], longshot: [50, 80], gantry: [30, 50] };
+export const reachK = (kind: string, dist: number) => { const r = REACH[kind]; return !r || dist <= r[0] ? 1 : dist >= r[1] ? 0 : 1 - (dist - r[0]) / (r[1] - r[0]); };
 /** Tuning for the aimed, single-bullet guns. */
 export const SHOT: Record<string, Shot> = {
   linesman: { vm: 'rifle', body: 7, head: 15, bld: 4, sp: .011, adsK: .75, zoom: 24, sens: .45, kick: .007 },
@@ -68,10 +73,11 @@ export function updateGun(g: Game, dt: number, P: Set<string>, eye: THREE.Vector
       if (hit && ((hit.unit && isOwn(hit.unit.team, me.team)) || (hit.b && isOwn(hit.b.team, me.team) && hit.dist < 3))) hit = g.ray(eye, d, 150, foeOf(me.team), me);
       const dist = hit ? hit.dist : 150, end = V3().copy(eye).addScaledVector(d, dist);
       // The Long Rifle goes through: up to two more bodies behind the first, each for a little less.
-      if (long && hit?.unit && isFoe(hit.unit.team, me.team)) { let from = hit.unit, at = dist, n = 1, fall = .7; for (let i = 0; i < 2; i++) { const h2 = g.ray(V3().copy(eye).addScaledVector(d, at + .4), d, 60, foeOf(me.team), from); if (!h2?.unit || !isFoe(h2.unit.team, me.team)) break; g.damage(h2.unit, S.body * mul * fall, me); at += .4 + h2.dist; from = h2.unit; fall *= .7; n++; } if (n > 1) { end.copy(eye).addScaledVector(d, at); g.hud.streak(n > 2 ? 'TRIPLE THREAD!' : 'THREADED!'); sfx.crit(); } }
+      if (long && hit?.unit && isFoe(hit.unit.team, me.team)) { let from = hit.unit, at = dist, n = 1, fall = .7; for (let i = 0; i < 2; i++) { const h2 = g.ray(V3().copy(eye).addScaledVector(d, at + .4), d, 60, foeOf(me.team), from); if (!h2?.unit || !isFoe(h2.unit.team, me.team)) break; g.damage(h2.unit, S.body * mul * fall * reachK(me.kind, at + h2.dist), me); at += .4 + h2.dist; from = h2.unit; fall *= .7; n++; } if (n > 1) { end.copy(eye).addScaledVector(d, at); g.hud.streak(n > 2 ? 'TRIPLE THREAD!' : 'THREADED!'); sfx.crit(); } }
       g.tracer(muzzle, end, tracerMat, long ? .14 : .07);
-      if (hit?.unit && isFoe(hit.unit.team, me.team)) { g.fx.aim(end, d); g.damage(hit.unit, (hit.head ? S.head : S.body) * mul, me, !!hit.head); hit.head ? sfx.crit() : sfx.hit(); g.hud.hitmark(!!hit.head); }
-      else if (hit?.b && isFoe(hit.b.team, me.team)) { g.damage(hit.b, S.bld * mul, me); g.hud.hitmark(false); g.fx.surface(end, d, g.surfOf(hit.b)); }
+      const rk = reachK(me.kind, dist);
+      if (hit?.unit && isFoe(hit.unit.team, me.team) && rk > 0) { g.fx.aim(end, d); g.damage(hit.unit, (hit.head ? S.head : S.body) * mul * rk, me, !!hit.head); hit.head ? sfx.crit() : sfx.hit(); g.hud.hitmark(!!hit.head); }
+      else if (hit?.b && isFoe(hit.b.team, me.team) && rk > 0) { g.damage(hit.b, S.bld * mul * rk, me); g.hud.hitmark(false); g.fx.surface(end, d, g.surfOf(hit.b)); }
       else g.impact(eye, d, hit, end, S.bld * mul);
       const f = g.bits.find(x => x.t <= 0); if (f) { f.m.material = M.spark; f.m.position.copy(muzzle).addScaledVector(dir, -.5); f.v.set(-Math.cos(g.yaw) * 2.5 + R(-.5, .5), 2.5, Math.sin(g.yaw) * 2.5 + R(-.5, .5)); f.m.scale.set(.03, .03, .07); f.spin = 20; f.t = .8; f.m.visible = true; }
     }
@@ -96,7 +102,8 @@ export function updateCannon(g: Game, dt: number, P: Set<string>, eye: THREE.Vec
     let dist = hit ? hit.dist : 140; if (!hit && d.y < 0) dist = Math.min(dist, -eye.y / d.y);
     const end = V3().copy(eye).addScaledVector(d, dist); g.tracer(muzzle, end, tracerMat, .16);
     const tgt = hit && (hit.unit && isFoe(hit.unit.team, me.team) ? hit.unit : hit.b && isFoe(hit.b.team, me.team) ? hit.b : null);
-    if (tgt) { g.fx.aim(end, d); g.damage(tgt, (hit!.head ? 34 : 22) * mul, me, !!hit!.head); g.hud.hitmark(!!hit!.head); hit!.head ? sfx.crit() : sfx.hit(); }
+    const rk = reachK(me.kind, dist);
+    if (tgt && rk > 0) { g.fx.aim(end, d); g.damage(tgt, (hit!.head ? 34 : 22) * mul * rk, me, !!hit!.head); g.hud.hitmark(!!hit!.head); hit!.head ? sfx.crit() : sfx.hit(); }
     if (hit?.prop) g.damageProp(hit.prop, 22 * mul, me, end);
     if (dist < 139) g.burst(end, 14 * mul, 3.2, me, tgt);
   }

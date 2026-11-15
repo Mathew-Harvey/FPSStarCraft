@@ -16,6 +16,8 @@ import { fieldsOf, inField, quicken, energyOf, unfolded } from './fields';
 
 /** Stream L round 4: the slow Flux bodies (Mute, Choirmaster, Warden) hold their price back, see the army mix below. Off: 0. */
 export const VEYL_LATE = { on: 1, army: 6, gap: .03 };
+/** Stream L cheese pass: an early swarm of small bodies counts by bodies too, and holds the Tender line (see the swarm rule below). Off: 0. */
+export const VEYL_EARLY = { on: 1, bodies: 2, tenders: 8, guardT: 150, guard: 1, guardG: 2 };
 
 /** The Veyl's own build plans on top of the shared doctrines: which tech path they lean on. */
 export type VPlan = 'ground' | 'air' | 'tech';
@@ -152,11 +154,19 @@ export function conductor(D: Director, dt: number, V0: Side = D.vs) {
   // An early rush at the door: no new buildings or songs until it is beaten, every coin into Cantors, and the Pits quickened.
   // A swarm on its way (more beds of enemy ground fighters than ours, early on): Cantors before anything else, and the Pits quickened.
   // Cantors beat Snappers well at equal cost. (Holding the Tender line back for them lost more matches than it saved: the ore comes from Tenders.)
-  const foeBeds = foes.filter(o => !o.air).reduce((n, o) => n + UNIT[o.kind].supply, 0), swarm = now < 420 && foeBeds >= Math.max(3, N * 1.2);
+  // VEYL_EARLY (stream L, cheese pass): a Gloam all-in of early Snappers (half a bed each) at about 1:50 never counted as a swarm by beds,
+  // the Tenders kept every coin, and the Choir Stone fell at 3:30 with not one Cantor made (12 of 12 such matches). Counting bodies too, and
+  // holding the Tender line at 8 while the army is outnumbered by such a swarm, lets the Pits answer it.
+  const foeGround = foes.filter(o => !o.air).length;
+  const foeBeds = foes.filter(o => !o.air).reduce((n, o) => n + UNIT[o.kind].supply, 0), swarm = now < 420 && (foeBeds >= Math.max(3, N * 1.2) || (!!VEYL_EARLY.on && foeGround >= Math.max(VEYL_EARLY.bodies, army.length * 1.5)));
+  // ...and an early guard: until 2:30, with the first Brood Pit up, a Cantor (two against the Gloam, whose Snappers can be at the door by
+  // 1:50) comes before the ninth Tender and before any new building.
+  const guard = !!VEYL_EARLY.on && now < VEYL_EARLY.guardT && pits.length > 0 && army.length < (fac(foe) === 2 ? VEYL_EARLY.guardG : VEYL_EARLY.guard);
+  const swamped = guard || (!!VEYL_EARLY.on && now < 420 && foeGround >= VEYL_EARLY.bodies && army.length < foeGround);
   const rushed = now < 720 && foes.filter(o => !o.air && Math.hypot(o.pos.x - HX, o.pos.z - HZ) < 45).length >= Math.max(3, army.length);
-  if (!rushed || !pits.length) step();
+  if ((!rushed && !swamped) || !pits.length) step();
   // (whatever the army mix and its cap say: a rush at the door is answered first)
-  if (rushed || swarm) for (const p of up('broodpit')) { quicken(g, p, T); if (p.queue.length < 2 && g.rate(p) > 0 && canPay(g, T, costOf('cantor')) && free >= 2 && g.train(p, 'cantor')) paid('cantor'); }
+  if (rushed || swarm || swamped) for (const p of up('broodpit')) { quicken(g, p, T); if (p.queue.length < 2 && g.rate(p) > 0 && canPay(g, T, costOf('cantor')) && free >= 2 && g.train(p, 'cantor')) paid('cantor'); }
 
   // ---- songs: the levels first, then what the army is using
   const L = (keys: UpKey[], keep = 0) => { for (const k of keys) if (learn(k, keep)) return true; return false; };
@@ -187,7 +197,7 @@ export function conductor(D: Director, dt: number, V0: Side = D.vs) {
   // the enemy already fields a crowd before seven minutes (a swarm, a rush): fewer Tenders for now, more Cantors
   const early = now < 420 && foes.filter(o => !o.air).length >= Math.max(6, army.length * 2);
   const wantTend = early ? Math.min(9, 12 + DOC.crew) : 12 + DOC.crew + 7 * (hqs.length - 1) + tapsUp.length * 3;
-  if (tend.length < wantTend && free > 0 && canPay(g, T, costOf('tender')) && !(opening && ore() < saving + costOf('tender')[0] && tend.length >= 8) && (pits.length || tend.length < 6)) {
+  if (tend.length < wantTend && !(swamped && tend.length >= VEYL_EARLY.tenders) && free > 0 && canPay(g, T, costOf('tender')) && !(opening && ore() < saving + costOf('tender')[0] && tend.length >= 8) && (pits.length || tend.length < 6)) {
     const crew = (h: Building) => tend.filter(u => !u.vent && g.nearHQ((u.node || u).pos.x, (u.node || u).pos.z, T) === h).length + h.queue.filter(q => q.kind === 'tender').length;
     const h = hqs.filter(b => !b.queue.length && crew(b) < (b === home ? 12 + DOC.crew : 7)).sort((a, b) => crew(a) - crew(b))[0] || (tend.length < wantTend ? hqs.find(b => !b.queue.length) : undefined); if (h) g.train(h, 'tender');
   }

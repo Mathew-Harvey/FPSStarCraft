@@ -4,7 +4,7 @@
 import { artBin } from './artfiles';
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
-import { G, M, R, rnd, reseed, mk, beam, setLayer, L_FX, L_VM, holoLine, V3, toonMaterial } from './gfx';
+import { G, M, R, rnd, reseed, mk, beam, setLayer, L_FX, L_VM, holoLine, V3, toonMaterial, offDice, T } from './gfx';
 import type { Prop } from './data';
 import { MAP, OUTPOST, ROAD, NORTH_PATH, SIDE, roadPt, veylPt } from './data';
 import { NEW, grp, put, can, nv } from './units';
@@ -644,7 +644,11 @@ export function buildWorld(scene: THREE.Scene, props: Prop[], anim: ((t: number)
   for (const [ax, az, bx, bz] of (MAP.roads || []).slice(1)) { const l = Math.hypot(bx - ax, bz - az), ux = (bx - ax) / l, uz = (bz - az) / l; for (let rs = 16; rs < l - 10; rs += 16) { const o = rs % 32 ? 4.6 : -4.6; marker(ax + ux * rs - uz * o, az + uz * rs + ux * o); } }
   // Veyl ground: glowing veins and crystal growths around the outpost. When the Gloam hold it: moss streaks and fungus.
   const GL = SIDE.out === 2;
-  for (let i = 0; i < 26; i++) { const a = R(0, 6.3), d = R(8, 34), x = OUTPOST.x + 2 * ROAD.dx + Math.cos(a) * d, z = OUTPOST.z + 2 * ROAD.dz + Math.sin(a) * d, l = R(3, 9), ra = a + R(-.6, .6); mk(G.box, GL ? M.gGlow : M.teal, [x, .03, z], [l, .04, .16], [0, -ra, 0], w); if (i % 2) mk(G.box, GL ? M.gGlow : M.teal, [x + Math.cos(ra) * l * .5, .03, z + Math.sin(ra) * l * .5], [l * .5, .04, .12], [0, -ra + .9, 0], w); }
+  // Each vein is a crack in the ground that glows from inside: a dark split with a bright thread down it, wandering and tapering, some
+  // with a branch. The flat bars these replaced are still made, at no size, so the world's dice roll as they always did (offDice in gfx.ts).
+  const veins: number[][] = [];
+  for (let i = 0; i < 26; i++) { const a = R(0, 6.3), d = R(8, 34), x = OUTPOST.x + 2 * ROAD.dx + Math.cos(a) * d, z = OUTPOST.z + 2 * ROAD.dz + Math.sin(a) * d, l = R(3, 9), ra = a + R(-.6, .6); mk(G.box, GL ? M.gGlow : M.teal, [x, .03, z], [l, .04, .16], [0, -ra, 0], w).scale.setScalar(0); if (i % 2) mk(G.box, GL ? M.gGlow : M.teal, [x + Math.cos(ra) * l * .5, .03, z + Math.sin(ra) * l * .5], [l * .5, .04, .12], [0, -ra + .9, 0], w).scale.setScalar(0); veins.push([x, z, l, ra, i % 2]); }
+  for (const m of offDice(() => groundVeins(veins, GL ? M.gGlow : M.teal))) w.add(m);
   for (let i = 0; i < MAP.crystals; i++) { const a = R(0, 6.3), far = i >= 22, d = far ? R(40, 150) : R(18, 38), x = OUTPOST.x + 2 * ROAD.dx + Math.cos(a) * d, z = OUTPOST.z + 2 * ROAD.dz + Math.sin(a) * d, re = roadPt(ROAD.len + 6); if (segDist(x, z, ROAD.x, ROAD.z, re[0], re[1]) < 6 || (far && isClear(x, z, 2))) continue; const n = 2 + Math.floor(R(0, 3));
     prop('crystal', GL ? 'Fungus clump' : 'Crystal growth', x, z, 1, 3.4, 120, { solid: i % 4 === 0 }, g => { for (let k = 0; k < n; k++) { const h = R(1.2, 4.5), px = x + R(-.8, .8), pz = z + R(-.8, .8), rx = R(-.5, .5), ry = R(0, 3), rz = R(-.5, .5);
       if (GL) { const s = h / 3; mk(tube([[0, 0, 0], [rx * .3, 1.4, rz * .3], [rx * .6, 2.6, rz * .6]], [.22, .17, .14], 7), M.gB, [px, 0, pz], [s, s, s], 0, g); mk(lathe(spl([[.05, .5], [1.0, .32], [1.15, .05], [.9, -.08], [.2, -.05]], 7), 14), k % 3 ? M.gC : M.gCb, [px + rx * .6 * s, 2.55 * s, pz + rz * .6 * s], [s, s, s], [rx * .4, ry, rz * .4], g); }
@@ -752,3 +756,38 @@ function storySet(set: 'crack' | 'stone' | 'drill', prop: PropFn, w: THREE.Group
   }
 }
 export { V3 };
+
+/** Glowing cracks in the ground (the Veyl outpost's veins): for each [x, z, length, angle, branch] a wandering split, dark at the edges
+ *  with a bright thread down the middle, thinning to nothing at both ends. Two merged meshes, kept out of the world's merge pass. */
+let crackMat: THREE.Material | null = null;
+function groundVeins(list: number[][], glow: THREE.Material): THREE.Mesh[] {
+  const crack: THREE.BufferGeometry[] = [], core: THREE.BufferGeometry[] = [];
+  // a flat ribbon along a path, `w` wide at its fattest, laid just above the ground
+  const ribbon = (pts: number[][], w: number, y: number) => {
+    const pos: number[] = [], uv: number[] = [], n = pts.length;
+    for (let k = 0; k < n; k++) {
+      const [ax, az] = pts[Math.max(0, k - 1)], [bx, bz] = pts[Math.min(n - 1, k + 1)], tl = Math.hypot(bx - ax, bz - az) || 1, nx = -(bz - az) / tl, nz = (bx - ax) / tl;
+      const f = k / (n - 1), hw = w * Math.pow(Math.sin(Math.PI * Math.min(1, .08 + f * .92)), .7) * .5 + .004, [px, pz] = pts[k], gy = groundH(px, pz) + y;
+      pos.push(px + nx * hw, gy, pz + nz * hw, px - nx * hw, gy, pz - nz * hw); uv.push(f, 0, f, 1);
+    }
+    const idx: number[] = []; for (let k = 0; k < n - 1; k++) { const a = k * 2; idx.push(a, a + 2, a + 1, a + 1, a + 2, a + 3); }
+    const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2)); g.setIndex(idx);
+    const nrm = new Float32Array(pos.length); for (let k = 1; k < nrm.length; k += 3) nrm[k] = 1; g.setAttribute('normal', new THREE.BufferAttribute(nrm, 3)); return g.toNonIndexed();
+  };
+  // a path that wanders off a straight line, in steps of about 0.7 m
+  const path = (x: number, z: number, a: number, len: number, wob: number) => {
+    const n = Math.max(4, Math.round(len / .7)), out: number[][] = []; let off = 0, ang = a;
+    for (let k = 0; k <= n; k++) { out.push([x, z]); ang = a + (Math.random() - .5) * wob; off = (Math.random() - .5) * wob * .3; x += Math.cos(ang) * len / n - Math.sin(a) * off; z += Math.sin(ang) * len / n + Math.cos(a) * off; }
+    return out;
+  };
+  const vein = (pts: number[][], w: number) => { crack.push(ribbon(pts, w * 3.2, .035)); core.push(ribbon(pts, w, .05)); };
+  for (const [x, z, l, ra, branch] of list) {
+    const sx = x - Math.cos(ra) * l / 2, sz = z - Math.sin(ra) * l / 2, main = path(sx, sz, ra, l, .9); vein(main, .17);
+    // a branch off the main crack, the way the old pair of bars sat, and now and then a short twig
+    if (branch) { const at = main[Math.round(main.length * .55)]; vein(path(at[0], at[1], ra - .9, l * .5, 1.1), .11); }
+    if (Math.random() < .6) { const at = main[Math.round(main.length * (.25 + Math.random() * .5))], s = Math.random() < .5 ? 1 : -1; vein(path(at[0], at[1], ra + s * (.7 + Math.random() * .5), l * (.18 + Math.random() * .2), 1.3), .07); }
+  }
+  const dark = new THREE.Mesh(mergeGeometries(crack), crackMat || (crackMat = T(null, { color: '#2b1f2e' }))), lit = new THREE.Mesh(mergeGeometries(core), glow);
+  for (const m of [dark, lit]) { m.userData.dyn = true; m.receiveShadow = true; m.frustumCulled = false; m.renderOrder = 1; }
+  return [dark, lit];
+}

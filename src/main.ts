@@ -3,6 +3,7 @@ import { TER, MADE } from './terrain';
 import { openMaker } from './mapmaker';
 import { usePlan, planMap } from './mapcode';
 import * as THREE from 'three';
+import { emblem } from './emblems';
 import { Pipeline, ViewPipe, V3, makeSky, TX, M, SHARED, offDice } from './gfx';
 import { LOD } from './meshes';
 import { plainBody } from './core/plain';
@@ -13,7 +14,7 @@ import { Game } from './game';
 import { Hud } from './hud';
 import { initAudio, setVolume, setMusic, audioSeat, hush, soundsReady, sfx } from './audio';
 import { LocalMatch, SplitMode } from './split';
-import { MAPS, UNIT, BLD, UPGRADES, TRAINS, UNIT_NEEDS, DIFFS, Kind, BKind, mapCode, validMap, rollMap, baseOf, sizeOf, MAP, FACTION, SIDE, STORY, setSides, setSidesCode, setTeamGame, sidesCode, fac, isWorker } from './data';
+import { MAPS, UNIT, BLD, UPGRADES, TRAINS, UNIT_NEEDS, DIFFS, Kind, BKind, mapCode, validMap, rollMap, baseOf, sizeOf, MAP, FACTION, SIDE, STORY, setSides, setSidesCode, setTeamGame, sidesCode, fac, foeOf, isWorker } from './data';
 import { MISSIONS, STORY_JOBS, ACTS, missionSides, charterTeam, fromOldSave, Mission } from './campaign';
 import { CUTS, CutPlayer } from './cutscene';
 import { Net, Lobby } from './net';
@@ -547,6 +548,24 @@ $('makerBtn').addEventListener('click', () => openMaker(playMade));
 // A made map's code after #map= in the address loads it, once the page is up.
 queueMicrotask(() => { const hm = location.hash.match(/map=(M[\w-]+)/); const P = hm ? usePlan(hm[1]) : null; if (P) { mapI = planMap(P) % 100; mode = 'skirm'; showMap(); showMode(); showMade(); fresh(); } });
 mapBtns.forEach((b, i) => b.addEventListener('click', () => pickMap(+(b.dataset.b ?? i)))); sizeBtns.forEach(b => b.addEventListener('click', () => pickSize(+(b.dataset.s || 0)))); showMap();
+// The skirmish card: both sides' badges, the map about to be played and the crew you start with. It is redrawn while the menu is up,
+// so it follows every pick (the world behind the menu is rebuilt for the map and sides picked, and the card reads that world).
+const mcMap = ($('mcMap') as HTMLCanvasElement).getContext('2d')!; let mcKey = '';
+const matchCard = () => {
+  if (mode !== 'skirm' || $('menu').hidden || !game || !game.buildings.length) return;
+  // Playing the Veyl or the Gloam, you hold the far end (sidesWanted): the world behind the menu is built that way round already.
+  const you = teamPlan() ? game.myTeam : sideI === 0 ? SIDE.home : SIDE.out, me = fac(you), foes = [...new Set(game.buildings.filter(b => b.team !== you && b.kind === FACTION[b.team].hq && !isFriend(b.team, you)).map(b => fac(b.team)))], foe = foes.length ? foes[0] : fac(foeOf(you));
+  const many = startsHere() > 2 && teamI > 0, key = [me, foe, MAP.name, mapI, game.props.length, game.buildings.length, diffI, raidOn(), many, Object.keys(hud.icons).length, Object.keys(hud.portraits).length].join('|'); if (key === mcKey) return; mcKey = key;
+  const side = (f: number, you: boolean) => `${emblem(f)}<b>${FACTION[f].name}</b><small>${you ? 'You' : raidOn() ? 'They only raid' : many ? 'and the rest' : 'Them'}</small>`;
+  $('mcYou').innerHTML = side(me, true); $('mcYou').className = 'mc-side you'; $('mcFoe').innerHTML = side(foe, false); $('mcFoe').className = 'mc-side';
+  $('mcTag').textContent = `${MAP.name} · ${['Medium', 'Small', 'Large', 'Vast'][sizeOf(mapI)] || ''}`;
+  $('mcLine').textContent = `${DIFFS[diffI].name}: ${DIFFS[diffI].blurb.toLowerCase()}. ${MAP.hid ? 'Their base is somewhere out there: send a scout to find it.' : 'Both bases are on the survey sheet from the start.'}`;
+  hud.preview(game, mcMap, you);
+  const crew = (Object.keys(UNIT) as Kind[]).filter(k => (UNIT[k].team ?? 0) === me && hud.portraits[k]);
+  const pick = [...crew.filter(k => isWorker(k)).slice(0, 1), ...crew.filter(k => !isWorker(k))].slice(0, 5);
+  $('mcCrew').innerHTML = pick.map(k => `<figure><img src="${hud.portraits[k]}" alt=""><figcaption>${UNIT[k].name}</figcaption></figure>`).join('');
+};
+setInterval(() => { try { matchCard(); } catch (e) { console.warn('match card', e); } }, 450);
 const sensEl = $('sens') as HTMLInputElement, volEl = $('vol') as HTMLInputElement; sensEl.value = String(sens); volEl.value = String(vol);
 sensEl.addEventListener('input', () => { sens = +sensEl.value; game.sens = sens; pad.sens = sens; save(); });
 volEl.addEventListener('input', () => { vol = +volEl.value; setVolume(vol); save(); });

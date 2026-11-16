@@ -5,6 +5,7 @@ import * as THREE from 'three';
 import type { Game } from './game';
 import { UNIT, BLD, FACTION, SIDE, fac, foeOf, atHome, homeXZ, Kind, Unit, Building, MAP, MAPS, OUTPOST, VHOME, ROAD, NORTH_PATH, roadPt, isWorker, OVERTIME } from './data';
 import { keyName, abilityWords } from './card';
+import { emblem } from './emblems';
 import { abilitiesOf, whyNot } from './core/ability';
 import { isFriend, multi, enemiesOf } from './core/sides';
 const capW = (t: string) => t.charAt(0).toUpperCase() + t.slice(1);
@@ -84,6 +85,7 @@ export class Hud {
   private pingText = 'Squad moving here';
   titleCard(kind: string, name: string, quip: string) { const e = this.$('tcard'); if (!name) { e.hidden = true; return; } this.$('tcName').textContent = name; this.$('tcQuip').textContent = quip; this.$('tcSide').textContent = (UNIT[kind as Kind]?.team || 0) === 2 ? 'The Gloam · a mouth of the swarm' : UNIT[kind as Kind]?.team ? 'Veyl Chorus · a voice you borrow' : 'Ironhold Charter · now under your control'; const src = this.portraits[kind]; if (src) (this.$('tcImg') as HTMLImageElement).src = src; e.hidden = false; }
   showEnd(g: Game) {
+    this.$('endTip').hidden = true;
     this.$('endTitle').textContent = g.won ? (g.story ? 'Job done' : 'Paid in full') : 'Shift over'; this.$('endTitle').className = 'logo sm' + (g.won ? '' : ' bad');
     this.$('endLine').textContent = g.won && g.story ? g.story.outro : !g.won && g.story?.fail ? (typeof g.story.fail === 'function' ? g.story.fail(g) : g.story.fail) : g.won ? (fac(foeOf(g.myTeam)) === 0 ? 'The other crew\'s last Headframe is scrap. The Charter only needed one of you.' : fac(foeOf(g.myTeam)) === 2 ? 'Every Mother Cap is mulch and the green carpet is drying out. The Charter thanks you with a smaller invoice.' : 'Every Choir Stone is gravel. The Charter thanks you with a smaller invoice.') : g.story && fac(g.myTeam) === 1 ? 'Your last Choir Stone is gravel. The job is lost.' : g.story && fac(g.myTeam) === 2 ? 'Your last Mother Cap is mulch. The job is lost.' : 'The Headframe is scrap. The Charter will be billing your next of kin.';
     if (g.story) { /* a story job keeps its own closing line, whichever side the player was on */ }
@@ -102,8 +104,11 @@ export class Hud {
       const vwhy: Record<string, string> = { watchpost: 'Most of the Chorus fell to Watchposts. Lancers out-range a crowd of Cantors on a tower: send them first, or go round by the ridge.', headframe: 'Most of the Chorus fell beside a Headframe. Its rivet gun is slow: bring enough voices to finish it in one march.', longshot: 'Longshots picked the Chorus apart. Cantors close the distance fast; send them in first and keep the Lancers behind.', gantry: 'A Gantry broke the Chorus. Lancers wear it down from range, and a Warden walks straight through it.', breacher: 'Breachers held the line. Lancers shoot over the shields, and a Warden\'s slam ignores them.' };
       const gwhy: Record<string, string> = { watchpost: 'Most of the swarm fell to Watchposts. Blisters break a tower cheaply: send three at once.', headframe: 'Most of the swarm fell beside a Headframe. Bring Quillbacks to work it down from range.', breacher: 'Breachers held the line. Quillbacks shoot over the shields, and a Mulcher charge knocks them aside.', gantry: 'A Gantry stomped the swarm. Spread out, and send Blisters into it.', linesman: 'Linesmen shot the swarm down on the way in. Pounce from behind cover, and grow Thick Hide early.' };
       const tip = fac(g.myTeam) === 2 ? (top && gwhy[top[0]]) || 'More mouths win. Keep every Mother Cap ripening Buds, root a second Cap early, and swarm when the Swarm Lead asks.' : fac(g.myTeam) ? (top && vwhy[top[0]]) || 'A mixed Chorus beats any one answer. Grow a second Brood Pit early, learn Keener Edges, and march when the Chorus Lead asks.' : top && why[top[0]];
-      if (tip) this.$('endLine').textContent += ' ' + tip;
+      // The lesson goes on a note of its own, beside a picture of what did the damage.
+      if (tip) { this.$('endTipText').textContent = tip; const src = top && this.portraits[top[0]]; const im = this.$('endTipImg') as HTMLImageElement; im.hidden = !src; if (src) im.src = src; this.$('endTip').hidden = false; }
     }
+    if (g.won) this.$('endTip').hidden = true;
+    try { this.endCard(g); } catch (e) { console.warn('end card', e); }
     const m = Math.floor(g.time / 60), s = Math.floor(g.time % 60);
     this.$('endStats').innerHTML = [[`${m}:${String(s).padStart(2, '0')}`, 'Shift length'], [Math.floor(!atHome(g.myTeam) ? g.stats.minedV : g.stats.mined), fac(g.myTeam) === 2 ? 'Ore chewed' : fac(g.myTeam) ? 'Ore hummed' : 'Ore dug'], [g.stats.built, 'Buildings up'], [g.stats.kills, !atHome(g.myTeam) ? (fac(g.myTeam) === 2 ? 'Gloam lost' : fac(g.myTeam) ? 'Voices lost' : 'Crew lost') : fac(SIDE.out) === 2 ? 'Gloam squashed' : fac(SIDE.out) ? 'Veyl dropped' : 'Rivals dropped'], [g.stats.lost, !atHome(g.myTeam) ? (fac(g.myTeam) ? 'Crew broken' : 'Rivals dropped') : 'Crew lost']].map(([a, b]) => `<div><b>${a}</b><span>${b}</span></div>`).join('');
     this.$('end').hidden = false; this.show(false);
@@ -126,6 +131,8 @@ export class Hud {
     { const list = !cv && !tab ? abilitiesOf(me.kind) : []; this.vis('abil', list.length > 0);
       if (list.length) this.set('abil', list.map(a => { const w = whyNot(g, me, a.key, { x: me.pos.x, z: me.pos.z }), why = w === 'energy' || w === 'cooldown' || w === 'busy' || w === 'cannot act' ? abilityWords(w, a, me) : '', cd = me.abCd?.[a.key] ?? 0;
         return `<div class="${why ? 'off' : ''}"><span class="k">${keyName(a.hotkey)}</span><b>${a.name}</b><small>${why || [a.energy ? a.energy + ' energy' : '', a.cd ? a.cd + ' s' : ''].filter(Boolean).join(' · ') || 'Ready'}</small>${cd > 0 && a.cd ? `<i style="width:${(100 - cd / a.cd * 100).toFixed(0)}%"></i>` : ''}</div>`; }).join(''), true); }
+    if (g.won) this.$('endTip').hidden = true;
+    try { this.endCard(g); } catch (e) { console.warn('end card', e); }
     const m = Math.floor(g.time / 60), s = Math.floor(g.time % 60); { const ot = g.overtime(); this.set('clock', `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}` + (ot > 0 ? `<small>Overtime · buildings take +${Math.round(ot * 100)}%</small>` : ''), true); this.cls('clock', 'clock d out' + (ot > 0 ? ' ot' : '')); }
     const D = g.dir, S = D.side(side), pb = S.playbook, ph = pb.idx;
     // The squad's playbook means nothing until there is a squad: in the first minutes (and all of Job 1) it was a strip of jargon over the tutorial.
@@ -281,6 +288,43 @@ export class Hud {
     if (this.root.hidden) return null; const R = this.root.getBoundingClientRect(), cx = R.left + x * this.scale, cy = R.top + y * this.scale;
     for (const e of this.root.querySelectorAll<HTMLElement>('#cmdUI [data-cb]')) { const r = e.getBoundingClientRect(); if (r.width && cx >= r.left && cx <= r.right && cy >= r.top && cy <= r.bottom) return e.dataset.cb || null; }
     return null;
+  }
+  /** The end screen's card: both badges with the loser's stamped, the whole map as it ended, and what was still standing on your side. */
+  private endCard(g: Game) {
+    const you = g.myTeam, me = fac(you), foeT = enemiesOf(you)[0] ?? foeOf(you), foe = fac(foeT), won = g.won;
+    const side = (f: number, mine: boolean) => { const lost = mine ? !won : won; return `${emblem(f)}<i class="stamp${lost ? '' : ' ok'}">${lost ? (mine ? 'Scrapped' : 'Broken') : g.byPoints ? 'On points' : 'Paid'}</i><b>${FACTION[f].name}</b><small>${mine ? 'You' : 'Them'}</small>`; };
+    this.$('ecYou').innerHTML = side(me, true); this.$('ecYou').className = 'mc-side you' + (won ? '' : ' lost');
+    this.$('ecFoe').innerHTML = side(foe, false); this.$('ecFoe').className = 'mc-side' + (won ? ' lost' : '');
+    const m = Math.floor(g.time / 60); this.$('ecTag').textContent = `${MAP.name} · ${m} min`;
+    this.preview(g, (this.$('ecMap') as HTMLCanvasElement).getContext('2d')!, you, true);
+    const count = new Map<string, number>(); for (const u of g.units) if (u.alive && u.team === you) count.set(u.kind, (count.get(u.kind) || 0) + 1);
+    const kinds = [...count].filter(([k]) => this.portraits[k]).sort((a, b) => (isWorker(a[0] as Kind) ? 1 : 0) - (isWorker(b[0] as Kind) ? 1 : 0) || b[1] - a[1]).slice(0, 5);
+    this.$('ecCrewL').textContent = kinds.length ? 'Standing at the whistle' : 'Nobody left standing';
+    this.$('ecCrew').innerHTML = kinds.map(([k, n]) => `<figure><img src="${this.portraits[k]}" alt=""><figcaption>${UNIT[k as Kind].name} <i>x${n}</i></figcaption></figure>`).join('');
+  }
+  /** The menu's picture of the map about to be played: the survey sheet with every base, ore field and building on it, as the full map
+   *  draws them. On a hidden map only your own end is drawn, framed as the full map frames it before the other base is found. */
+  preview(g: Game, c: CanvasRenderingContext2D, you = g.myTeam, all = false) {
+    const q = 4; c.setTransform(q, 0, 0, q, 0, 0);
+    const hid = !!MAP.hid && !all, [mhx, mhz] = homeXZ(you), reach = Math.hypot(VHOME.x, VHOME.z) + 45;
+    const pts = hid ? [[mhx - reach * 1.45, mhz - reach], [mhx + reach * 1.45, mhz + reach]] : [[0, 0], [OUTPOST.x, OUTPOST.z], ...NORTH_PATH, ...(MAP.sites || [])], bx0 = Math.min(...pts.map(p => p[0])) - 26, bx1 = Math.max(...pts.map(p => p[0])) + 26, bz0 = Math.min(...pts.map(p => p[1])) - 22, bz1 = Math.max(...pts.map(p => p[1])) + 22;
+    const S = 260, span = Math.max(bx1 - bx0, (bz1 - bz0) / .69), x0 = (bx0 + bx1) / 2 - span / 2, z0 = (bz0 + bz1) / 2 - span * .345, k = S / span, X = (x: number) => (x - x0) * k, Z = (z: number) => (z - z0) * k;
+    const near = (x: number, z: number) => !hid || Math.hypot(x - mhx, z - mhz) < 95;
+    { const roads = hid ? MAP.roads || [] : [[...roadPt(4), ...roadPt(ROAD.len + 6)]], key = ['p', MAP.name, x0.toFixed(1), z0.toFixed(1), k.toFixed(4), g.props.length].join('|');
+      let sh = this.sheets[2]; if (!sh || sh.key !== key) sh = this.sheets[2] = { key, cv: drawSheet({ S, H: 180, q, X, Z, k, props: g.props, roads, big: true, title: MAP.name, sub: '', blank: false }) };
+      c.drawImage(sh.cv, 0, 0, S, 180); }
+    drawGround(c, X, Z, k, g.myTeam, near);
+    if (hid) { c.fillStyle = 'rgba(33,22,20,.82)'; c.beginPath(); c.rect(0, 0, S, 180); c.arc(X(mhx), Z(mhz), 95 * k, 0, 7, true); c.fill('evenodd'); }
+    for (const o of g.ores) { if (o.amount <= 0 || !near(o.pos.x, o.pos.z)) continue; const ox = X(o.pos.x), oz = Z(o.pos.z), r = 2.4; c.fillStyle = '#b8f58c'; c.strokeStyle = '#0e0d14'; c.lineWidth = .6; c.beginPath(); c.moveTo(ox, oz - r); c.lineTo(ox + r * .8, oz); c.lineTo(ox, oz + r); c.lineTo(ox - r * .8, oz); c.closePath(); c.fill(); c.stroke(); }
+    const IC = this.icons, foeCol = ['#35e0c8', '#35e0c8', '#c58bff'];
+    for (const b of g.buildings) {
+      if (!b.alive || !near(b.pos.x, b.pos.z)) continue; const mine = b.team === you, col = mine ? '#ffc21a' : isFriend(b.team, you) ? FRIEND : foeCol[fac(b.team)];
+      const im = IC['b:' + b.kind] as any, size = Math.max(14, (im ? im.half * 2 : Math.max(b.hx, b.hz) * 2.4) * k * 2.4), r = size / 2, x = X(b.pos.x), y = Z(b.pos.z);
+      c.save(); c.translate(x, y); c.rotate(-b.obj.rotation.y); c.fillStyle = col; c.strokeStyle = '#0e0d14'; c.lineWidth = .5; c.globalAlpha = .92; c.fillRect(-r * .8, -r * .8, r * 1.6, r * 1.6); c.globalAlpha = 1; c.strokeRect(-r * .8, -r * .8, r * 1.6, r * 1.6); if (im) c.drawImage(im, -r, -r, size, size); c.restore();
+    }
+    sheetFurniture(c, S, 180, k, MAP.name, (hid ? 'Their end is not on the sheet yet' : 'Charter survey') + ' · grid 50 m');
+    const name = (x: number, z: number, t: string, col: string) => { c.font = `700 6.4px ${this.face || (this.face = getComputedStyle(this.root).fontFamily || 'sans-serif')}`; c.textAlign = 'center'; c.lineJoin = 'round'; c.lineWidth = 2; c.strokeStyle = '#0e0d14'; c.strokeText(t, X(x), Z(z)); c.fillStyle = col; c.fillText(t, X(x), Z(z)); };
+    for (const b of g.buildings) { if (!b.alive || b.kind !== FACTION[b.team].hq || !near(b.pos.x, b.pos.z)) continue; const mine = b.team === you; name(b.pos.x, b.pos.z - b.hz - 5 / k, mine ? (all ? 'YOU' : 'YOU START HERE') : isFriend(b.team, you) ? 'ALLY' : all ? 'THEM' : 'THEY START HERE', mine ? '#ffc21a' : isFriend(b.team, you) ? FRIEND : foeCol[fac(b.team)]); }
   }
   private drawMap(g: Game, c: CanvasRenderingContext2D, big: boolean) {
     const q = big ? 4 : 2; c.setTransform(q, 0, 0, q, 0, 0);

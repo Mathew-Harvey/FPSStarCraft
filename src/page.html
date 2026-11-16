@@ -85,6 +85,7 @@
         </div>
       </div>
       <div class="panel" id="pSkirm" hidden>
+        <div class="skl">
         <div class="row">
           <button class="go" id="start">Clock in</button>
           <div class="diff" id="diff" role="group" aria-label="Difficulty">
@@ -132,6 +133,13 @@
           </div>
         </div>
         <p class="small only-keys">Split screen puts two players on this machine, on the map and shift picked above. Co-op shares whichever side is picked above. In versus, player one is Ironhold and player two leads the side Ironhold is up against, and both sides dig, build and train. Player one keeps the keyboard and mouse. Player two uses a controller, or the right-hand side of the keyboard if there is none.</p>
+        </div>
+        <aside class="matchcard" id="matchCard" aria-label="This match">
+          <div class="mc-vs"><div class="mc-side" id="mcYou"></div><b class="mc-v">vs</b><div class="mc-side" id="mcFoe"></div></div>
+          <div class="mc-map"><canvas id="mcMap" width="1040" height="720"></canvas><span class="mc-tag" id="mcTag"></span></div>
+          <p class="mc-line" id="mcLine"></p>
+          <div class="mc-crew"><span>Your crew</span><div id="mcCrew"></div></div>
+        </aside>
       </div>
       <div class="panel" id="pOpts" hidden>
         <div class="opts">
@@ -266,11 +274,19 @@
   </div>
 
   <div class="screen dim" id="end" hidden>
-    <div class="box">
-      <h2 class="logo sm" id="endTitle">Shift over</h2>
-      <p class="tagline" id="endLine"></p>
-      <div class="stats" id="endStats"></div>
-      <div class="row"><button class="go" id="again">Another shift</button><button type="button" class="mini-btn" id="toMenu">Back to the menu</button></div>
+    <div class="box endbox">
+      <div class="endl">
+        <h2 class="logo sm" id="endTitle">Shift over</h2>
+        <p class="tagline" id="endLine"></p>
+        <div class="stats" id="endStats"></div>
+        <div class="endtip" id="endTip" hidden><img id="endTipImg" alt=""><p><b id="endTipHead">Foreman's note</b><span id="endTipText"></span></p></div>
+        <div class="row"><button class="go" id="again">Another shift</button><button type="button" class="mini-btn" id="toMenu">Back to the menu</button></div>
+      </div>
+      <aside class="matchcard endcard" id="endCard" aria-label="How the match ended">
+        <div class="mc-vs"><div class="mc-side" id="ecYou"></div><b class="mc-v">vs</b><div class="mc-side" id="ecFoe"></div></div>
+        <div class="mc-map"><canvas id="ecMap" width="1040" height="720"></canvas><span class="mc-tag" id="ecTag"></span></div>
+        <div class="mc-crew"><span id="ecCrewL">Standing at the whistle</span><div id="ecCrew"></div></div>
+      </aside>
     </div>
   </div>
 </div>

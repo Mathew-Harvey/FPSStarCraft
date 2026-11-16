@@ -529,35 +529,19 @@ body.touch .only-keys,body.touch #freeNote{display:none!important}
 .mc-crew figcaption i{font-style:normal;color:var(--yel)}
 @media (max-width:1180px){.endbox{grid-template-columns:1fr}.endcard{transform:none;max-width:520px}}
 
-/* ---- Front end (menu overhaul): a title of three panels, one per side; Home with four plates over your side's hero; every other screen
-   with one bar of tabs along the top. The side you pick sets --acc and the hero (body[data-side], set in main.ts showSide). */
-body{--acc:var(--yel);--heroMe:var(--hero0)}
-body[data-side="1"]{--acc:var(--teal);--heroMe:var(--hero1)}
-body[data-side="2"]{--acc:var(--ore);--heroMe:var(--hero2)}
+/* ---- Front end (menu overhaul): Home opens the game, four plates over one of the three sides' heroes (random per load); every other
+   screen has one bar of tabs along the top. The side you pick sets --acc (body[data-side], set in main.ts showSide). */
+body{--acc:var(--yel)}
+body[data-side="1"]{--acc:var(--teal)}
+body[data-side="2"]{--acc:var(--ore)}
 .screen.front{display:block;padding:0;background:none;overflow:hidden}
 .ftitle,.fhome,.finner{position:absolute;inset:0}
 .front .logo{text-shadow:4px 4px 0 var(--ink),-3px -3px 0 var(--ink),3px -3px 0 var(--ink),-3px 3px 0 var(--ink),9px 9px 0 var(--acc)}
 .front .go{background:var(--acc)}
 .front .go.alt{background:var(--paper);box-shadow:7px 7px 0 var(--acc)}
 .go.sm{font-size:22px;padding:3px 18px 6px;border-width:4px;box-shadow:4px 4px 0 var(--paper)}
-/* title */
-.tri{position:absolute;inset:0;background:var(--ink)}
-.tp{position:absolute;top:0;bottom:0;width:40%;border:0;padding:0;margin:0;cursor:pointer;background-color:#1b1724;background-size:cover;background-position:78% 40%;color:var(--paper);transition:filter .15s}
-.tp0{left:0;background-image:var(--hero0);clip-path:polygon(0 0,100% 0,75% 100%,0 100%)}
-.tp1{left:30%;background-image:var(--hero1);clip-path:polygon(25% 0,100% 0,75% 100%,0 100%)}
-.tp2{left:60%;background-image:var(--hero2);clip-path:polygon(25% 0,100% 0,100% 100%,0 100%)}
-.tp:hover,.tp:focus-visible{filter:brightness(1.18) saturate(1.1);outline:none}
-.tp b,.tp small{position:absolute;text-transform:uppercase;-webkit-text-stroke:.16em var(--ink);paint-order:stroke fill;text-shadow:.07em .09em 0 var(--ink)}
-.tp b{bottom:calc(12% + 22px);font-family:var(--display);font-weight:400;font-size:clamp(34px,4.6vw,64px);line-height:1}
-.tp small{bottom:12%;font-family:var(--cond);font-weight:700;font-size:clamp(12px,1.2vw,17px);letter-spacing:.12em}
-.tp0 b,.tp0 small{left:7%}.tp1 b,.tp1 small{left:24%}.tp2 b,.tp2 small{left:30%}
-.tp0 b{color:var(--yel)}.tp1 b{color:var(--teal)}.tp2 b{color:var(--ore)}
-.seams{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
-.ftitle .logo{position:absolute;left:0;right:0;top:5%;text-align:center;font-size:clamp(64px,11vw,170px);transform:rotate(-3deg);pointer-events:none}
-.ask{position:absolute;left:0;right:0;bottom:3.5%;margin:0;text-align:center;font-family:var(--display);font-size:clamp(20px,2.4vw,36px);text-transform:uppercase;-webkit-text-stroke:.16em var(--ink);paint-order:stroke fill;text-shadow:.07em .09em 0 var(--ink);pointer-events:none}
-.ask span{font-family:var(--cond);font-weight:700;font-size:.5em;letter-spacing:.1em;color:var(--muted);margin-left:.6em}
 /* home */
-.fhero{position:absolute;inset:0;background:#1b1724 var(--heroMe) 72% center/cover}
+.fhero{position:absolute;inset:0;background:#1b1724 var(--hero0) 72% center/cover}
 .fhome::before{content:"";position:absolute;inset:0;background:linear-gradient(90deg,rgba(14,13,20,.92) 0,rgba(14,13,20,.5) 34%,rgba(14,13,20,0) 58%),linear-gradient(0deg,rgba(14,13,20,.85) 0,rgba(14,13,20,0) 24%);pointer-events:none;z-index:1}
 .fhome>*:not(.fhero){z-index:2}
 .fhome .logo{position:absolute;left:max(28px,4vw);top:5vh;font-size:clamp(56px,8vw,128px)}

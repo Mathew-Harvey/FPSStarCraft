@@ -65,21 +65,10 @@
   <div id="turnNote">Turn your phone sideways to play</div>
 
   <div class="cut" id="cut" hidden><div class="cframe"><div class="ctitle d"></div><div class="ccap"></div><div class="ctags"></div><div class="cbubs"></div><div class="cbal" hidden></div><div class="cstamp" hidden></div><div class="cfoot c"><span class="cnum"></span> · Click or Space: next panel · <button type="button" class="cskip c">Esc: skip</button></div></div></div>
-  <div class="screen front" id="menu" data-front="title">
-    <!-- Opening screen: one comic panel per side. Picking one sets your side (and the hero and colour of every screen after); any key keeps the last. -->
-    <div class="ftitle" id="fTitle">
-      <div class="tri">
-        <button type="button" class="tp tp0" data-side="0"><b>Dig</b><small>Ironhold Charter</small></button>
-        <button type="button" class="tp tp1" data-side="1"><b>Sing</b><small>Veyl Chorus</small></button>
-        <button type="button" class="tp tp2" data-side="2"><b>Grow</b><small>The Gloam</small></button>
-        <svg class="seams" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true"><path d="M40 -2 L30 102 M70 -2 L60 102" stroke="#0e0d14" stroke-width="12" vector-effect="non-scaling-stroke" fill="none"/></svg>
-      </div>
-      <h1 class="logo">Ore Else</h1>
-      <p class="ask">Who are you tonight? <span id="askKeep"></span></p>
-    </div>
-    <!-- Home: four plates, the next job and a quick match on the board, your side's hero behind. -->
-    <div class="fhome" id="fHome" hidden>
-      <div class="fhero"></div>
+  <div class="screen front" id="menu" data-front="home">
+    <!-- Home, the opening screen: four plates, the next job and a quick match on the board, one of the three sides' heroes behind (picked at random on each load). -->
+    <div class="fhome" id="fHome">
+      <div class="fhero" id="fHero"></div>
       <h1 class="logo">Ore Else</h1>
       <nav class="plates" aria-label="Main menu">
         <button type="button" class="plate" data-to="camp">Campaign<small id="plCamp"></small></button>

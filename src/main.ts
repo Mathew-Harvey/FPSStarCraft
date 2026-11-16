@@ -177,7 +177,8 @@ function portraits(redo = false, only?: Kind[]) {
 portraits(); hud2.portraits = hud.portraits; hud2.icons = hud.icons;
 pipe.w = 0; resize();
 // Multiplayer is open from the first launch: friends who want to play together should not have to finish the story first.
-let front: 'title' | 'home' | 'in' = 'title';   // which part of the front end shows: the side-picking title, Home, or the tabbed screens
+let front: 'home' | 'in' = 'home';   // which part of the front end shows: Home (the opening screen) or the tabbed screens
+const heroPick = crypto.getRandomValues(new Uint8Array(1))[0] % 3;   // Home's background: one of the three sides' heroes, new on each load (crypto, so the game dice are untouched)
 const SIDE_LONG = ['Ironhold Charter', 'Veyl Chorus', 'The Gloam'], HERO = ['Gantry', 'Warden', 'Mulcher'];
 let camp = 0, sideDone = 0, mpOpen = true, mode = 'camp', jobI = 0, pname = '', srv = '';
 /** Story jobs after which an old save that still had multiplayer locked opens it: the end of Act 1. */
@@ -469,8 +470,8 @@ $('skipCamp').addEventListener('click', () => { camp = STORY_JOBS; mpOpen = true
 const onText = (id: string) => (($(id).querySelector('button.on')?.firstChild?.textContent) || '').trim();
 function showFront() {
   const menu = $('menu'); menu.dataset.front = front;
-  $('fTitle').hidden = front !== 'title'; $('fHome').hidden = front !== 'home'; $('fInner').hidden = front !== 'in';
-  $('askKeep').textContent = `or any key keeps ${SIDE_LONG[sideI]}`; $('htName').textContent = HERO[sideI]; $('htSide').textContent = SIDE_LONG[sideI];
+  $('fHome').hidden = front !== 'home'; $('fInner').hidden = front !== 'in';
+  $('fHero').style.backgroundImage = `var(--hero${heroPick})`; $('htName').textContent = HERO[heroPick]; $('htSide').textContent = SIDE_LONG[heroPick];
   $('pbName').textContent = pname || 'Rigger';
   ($('pbSides').querySelectorAll('button') as NodeListOf<HTMLButtonElement>).forEach((b, i) => { if (!b.firstElementChild) b.innerHTML = emblem(i); const on = i === sideI; b.classList.toggle('on', on); b.setAttribute('aria-pressed', String(on)); });
   if (front !== 'home') return;
@@ -485,9 +486,6 @@ function showFront() {
 }
 const goFront = (f: typeof front) => { front = f; showFront(); if (f === 'in') ($('modes').querySelector('button.on') as HTMLElement | null)?.focus({ preventScroll: true }); };
 const goIn = (m: string) => { const b = modeBtns.find(x => x.dataset.m === m); if (b) b.click(); goFront('in'); };
-const pickSideFront = (i: number) => { if (i !== sideI) sideBtns[i].click(); goFront('home'); };
-document.querySelectorAll<HTMLButtonElement>('#fTitle .tp').forEach(b => b.addEventListener('click', e => { e.stopPropagation(); pickSideFront(+(b.dataset.side || 0)); }));
-$('fTitle').addEventListener('click', () => goFront('home'));
 $('pbSides').querySelectorAll<HTMLButtonElement>('button').forEach((b, i) => b.addEventListener('click', () => { if (i !== sideI) sideBtns[i].click(); showFront(); }));
 document.querySelectorAll<HTMLButtonElement>('#fHome .plate').forEach(b => b.addEventListener('click', () => goIn(b.dataset.to || 'camp')));
 $('bcGo').addEventListener('click', () => { jobI = Math.min(camp, STORY_JOBS - 1); goIn('camp'); showJobs(); const w = want(); if (game.mapI !== w.map || game.mission !== w.m) fresh(); });
@@ -496,8 +494,7 @@ $('fBack').addEventListener('click', () => goFront('home')); $('fLogo').addEvent
 addEventListener('keydown', e => {
   if ($('menu').hidden || cutP.on || rebinding || e.ctrlKey || e.metaKey || e.altKey) return;
   const t = e.target as HTMLElement; if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT')) return;
-  if (front === 'title' && !['Tab', 'Shift', 'Control', 'Alt', 'Meta'].includes(e.key)) { e.preventDefault(); goFront('home'); }
-  else if (front === 'in' && e.code === 'Escape') { e.preventDefault(); goFront('home'); }
+  if (front === 'in' && e.code === 'Escape') { e.preventDefault(); goFront('home'); }
 });
 // ---- multiplayer lobby
 const mName = $('mName') as HTMLInputElement, mServer = $('mServer') as HTMLInputElement, mCode = $('mCode') as HTMLInputElement;

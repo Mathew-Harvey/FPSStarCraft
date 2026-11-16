@@ -70,18 +70,7 @@ export function buildTerrain(prop: PropFn, w: THREE.Group, anim: ((t: number) =>
       const wall = new THREE.BufferGeometry(); wall.setAttribute('position', new THREE.Float32BufferAttribute(side, 3)); wall.setAttribute('uv', new THREE.Float32BufferAttribute(new Float32Array(side.length / 3 * 2), 2)); wall.computeVertexNormals(); cliff.push(wall);
     }
   }
-  // Flux vents: a ring of broken rock round a glowing throat, steam rising off it.
-  const puffs: THREE.Mesh[] = [];
-  for (const [x, z] of TER.vents) { const y = groundH(x, z);
-    for (let i = 0; i < 7; i++) { const a = i / 7 * 6.2832 + D(-.2, .2), d = 1.5 + D(0, .4), s = D(.45, .75); add(stone, rocks(i), [x + Math.cos(a) * d, y + s * .2, z + Math.sin(a) * d], [s * 1.3, s * .9, s * 1.1], [D(-.3, .3), D(0, 6), D(-.3, .3)]); }
-    // From above the throat has to read as a hole in burnt ground with Flux light in it, not a black coin: a ragged scorch, a small dark throat,
-    // the light in Flux violet (the colour of the Flux counter and of the map's vent mark) and cracks of it running out under the rim stones.
-    { const sh = new THREE.Shape(), n = 16; for (let j = 0; j < n; j++) { const a = j / n * 6.2832, d = 2.5 * (.74 + .3 * Math.abs(Math.sin(j * 2.7 + x * .31 + z * .17))); j ? sh.lineTo(Math.cos(a) * d, Math.sin(a) * d) : sh.moveTo(Math.cos(a) * d, Math.sin(a) * d); } sh.closePath(); add(burn, new THREE.ShapeGeometry(sh), [x, y + .03, z], [1, 1, 1], [-Math.PI / 2, 0, 0]); }
-    add(dark, G.disc, [x, y + .045, z], [1, 1, 1], [-Math.PI / 2, 0, 0]); add(flux, G.disc, [x, y + .06, z], [.5, .5, 1], [-Math.PI / 2, 0, 0]);
-    for (let i = 0; i < 6; i++) { const a = i / 6 * 6.2832 + Math.sin(x + i * 1.9) * .35, len = 1 + .7 * Math.abs(Math.sin(z * .7 + i * 2.3)), r = .55 + len / 2; add(flux, G.box, [x + Math.cos(a) * r, y + .05, z + Math.sin(a) * r], [len, .03, .09], [0, -a, 0]); }
-    for (let i = 0; i < 4; i++) { const a = D(0, 6.28); add(flux, shard(.08, .6, 5, .3), [x + Math.cos(a) * .5, y + .15, z + Math.sin(a) * .5], [1, D(.7, 1.3), 1], [D(-.5, .5), D(0, 3), D(-.5, .5)]); }
-    for (let i = 0; i < 3; i++) { const p = mk(G.sph, M.dust, [x, y + 1, z], [.6, .6, .6], 0, w); p.userData = { x, z, y, k: i / 3 + D(0, .2) }; puffs.push(p); } }
-  if (puffs.length) anim.push(t => { for (const p of puffs) { const u = p.userData, k = (t * .22 + u.k) % 1, s = .45 + k * 1.3; p.position.set(u.x + Math.sin(t * .7 + u.k * 9) * k * .8, u.y + .6 + k * 5, u.z + Math.cos(t * .5 + u.k * 7) * k * .6); p.scale.setScalar(k < .85 ? s : s * (1 - (k - .85) / .15)); } });
+  // Flux vents are drawn by src/ventart.ts, one figure a vent, laid by the economy (src/core/econ.ts layVents).
 
   // Painted ground on a made map: a ragged flat patch of sand, scorch, loose stone or old paving, laid in the order it was painted.
   const paint: THREE.BufferGeometry[][] = [[], [], [], []];
@@ -104,6 +93,14 @@ export function buildTerrain(prop: PropFn, w: THREE.Group, anim: ((t: number) =>
       // built at ground level: a prop is lifted onto whatever ground it stands on
       for (let k = 0; k < 3; k++) { const a = k * 2.094 + .3; beam([x + Math.cos(a) * 1.3, 0, z + Math.sin(a) * 1.3], [x + Math.cos(a) * .35, 8.4, z + Math.sin(a) * .35], .1, M.steelD, g); }
       for (const hy of [2, 4.2, 6.3]) { const r = 1.3 - hy / 8.4 * .95; for (let k = 0; k < 3; k++) { const a0 = k * 2.094 + .3, a1 = a0 + 2.094; beam([x + Math.cos(a0) * r, hy, z + Math.sin(a0) * r], [x + Math.cos(a1) * r, hy, z + Math.sin(a1) * r], .06, M.rust, g); } }
+      // cross braces up each face, a railed deck under the lamp, a hood over it, a dish, a ladder, guy wires to pegs and the Charter's notice
+      { const lv = [0, 2, 4.2, 6.3, 8.4], R = (hy: number) => 1.3 - hy / 8.4 * .95; for (let j = 0; j < 4; j++) for (let k = 0; k < 3; k++) { const a0 = k * 2.094 + .3, a1 = a0 + 2.094, flip = (j + k) % 2, y0 = lv[j], y1 = lv[j + 1], r0 = R(flip ? y1 : y0), r1 = R(flip ? y0 : y1); beam([x + Math.cos(a0) * r0, flip ? y1 : y0, z + Math.sin(a0) * r0], [x + Math.cos(a1) * r1, flip ? y0 : y1, z + Math.sin(a1) * r1], .035, M.steelD, g); } }
+      mk(G.cyl8, M.rust, [x, 8.42, z], [1.7, .1, 1.7], 0, g); mk(G.torus, M.hazard, [x, 9.05, z], [1.7, 1.7, 1.2], [Math.PI / 2, 0, 0], g); for (let k = 0; k < 6; k++) { const a = k * 1.047; beam([x + Math.cos(a) * .82, 8.45, z + Math.sin(a) * .82], [x + Math.cos(a) * .82, 9.05, z + Math.sin(a) * .82], .03, M.steelD, g); }
+      mk(G.cone6, M.rust, [x, 10.05, z], [1.5, .45, 1.5], 0, g); for (let k = 0; k < 3; k++) { const a = k * 2.094 + 1.3; beam([x + Math.cos(a) * .5, 8.85, z + Math.sin(a) * .5], [x + Math.cos(a) * .6, 9.9, z + Math.sin(a) * .6], .03, M.steelD, g); }
+      { const a = i * 1.9 + .8; mk(G.hemi, M.steel, [x + Math.cos(a) * .75, 7.1, z + Math.sin(a) * .75], [1.1, .4, 1.1], [0, -a, -1.25], g); beam([x + Math.cos(a) * .3, 7.1, z + Math.sin(a) * .3], [x + Math.cos(a) * .95, 7.1, z + Math.sin(a) * .95], .04, M.steelD, g); }
+      for (let k = 0; k < 3; k++) { const a = k * 2.094 + 1.35, px = x + Math.cos(a) * 3.4, pz = z + Math.sin(a) * 3.4; beam([x + Math.cos(a) * .5, 8.3, z + Math.sin(a) * .5], [px, .15, pz], .018, M.steelD, g); mk(G.box, M.concrete, [px, .12, pz], [.4, .26, .4], [0, a, 0], g); }
+      { const a = .3 + 1.047, lx = x + Math.cos(a) * .78, lz = z + Math.sin(a) * .78; for (const s of [-.16, .16]) beam([lx - Math.sin(a) * s, .4, lz + Math.cos(a) * s], [x + Math.cos(a) * .3 - Math.sin(a) * s, 8.4, z + Math.sin(a) * .3 + Math.cos(a) * s], .025, M.steelD, g); for (let r = 0; r < 12; r++) { const f = (r + .5) / 12, cx = lx + (x + Math.cos(a) * .3 - lx) * f, cz = lz + (z + Math.sin(a) * .3 - lz) * f, cy = .4 + 8 * f; beam([cx - Math.sin(a) * .16, cy, cz + Math.cos(a) * .16], [cx + Math.sin(a) * .16, cy, cz - Math.cos(a) * .16], .02, M.steelD, g); } }
+      { const a = i * 1.9 + 3.6, sx = x + Math.cos(a) * 1.75, sz = z + Math.sin(a) * 1.75; beam([sx, .3, sz], [sx, 1.7, sz], .04, M.steelD, g); mk(G.box, M.sign, [sx, 1.75, sz], [1.15, .72, .06], [0, -a + Math.PI / 2, 0], g); }
       mk(G.box, M.concrete, [x, .2, z], [3, .4, 3], [0, i, 0], g); mk(G.cyl, M.steelD, [x, 8.6, z], [.7, .5, .7], 0, g); });
     mk(G.torusF, M.hazard, [x, y + .05, z], [BEACON.REACH, BEACON.REACH, .4], [Math.PI / 2, 0, 0], w);
     const lamp = mk(G.sph, M.steelD, [x, y + 9.25, z], [.55, .55, .55], 0, w), cone = mk(G.cone, M.sign, [x, y + 9.25, z], [.5, 2.4, .5], [Math.PI / 2, 0, 0], w); cone.visible = false;

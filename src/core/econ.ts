@@ -6,6 +6,7 @@ import type { Unit, Building, Kind, BKind, UpKey } from '../data';
 import { UNIT, BLD, UPGRADES, MAP, SIDE, VHOME, FACTION, swapEnd } from '../data';
 import { bldRule } from './registry';
 import { ventFigure } from '../ventart';
+import { h as groundH } from '../terrain';
 
 /** A price: ore, then Flux. */
 export type Cost = [number, number];
@@ -76,7 +77,7 @@ export function layVents(g: Game) {
   // A rock or crystal standing on a vent would keep a tap off it for good, and props were only kept clear round the yard: on Needle's Eye
   // a crystal sat on one of the far base's two home vents, so the far end could never tap it (stream L). Clear any solid prop off a vent.
   for (const [x, z] of ventSpots(g)) for (const p of g.spires.slice()) if (Math.abs(p.x - x) < p.r + 3.2 && Math.abs(p.z - z) < p.r + 3.2) g.clearProp(p);
-  for (const [x, z] of ventSpots(g)) { const v: Vent = { id: g.vents.length + 1 /* per game, so a replay names the same vents (K) */, pos: new THREE.Vector3(x, 0, z), amount: ECON.vent, max: ECON.vent, tap: null, obj: null as any }; v.obj = ventFigure(x, z, g.anim, () => v.amount / v.max); v.obj.position.set(x, 0, z); g.scene.add(v.obj); g.vents.push(v); }
+  for (const [x, z] of ventSpots(g)) { const v: Vent = { id: g.vents.length + 1 /* per game, so a replay names the same vents (K) */, pos: new THREE.Vector3(x, 0, z), amount: ECON.vent, max: ECON.vent, tap: null, obj: null as any }; v.obj = ventFigure(x, z, g.anim, () => v.amount / v.max); v.obj.position.set(x, groundH(x, z), z); g.scene.add(v.obj); g.vents.push(v); }
 }
 /** The vent under a spot, if any (for placing a tap). */
 export function ventAt(g: Game, x: number, z: number, r = 2.5) { return g.vents.find(v => Math.hypot(v.pos.x - x, v.pos.z - z) < r) || null; }

@@ -1,6 +1,6 @@
 // A Flux vent as it stands in the world: a burnt patch of ground, a ring of broken rock round a dark throat, Flux light in the throat and in
 // cracks running out under the stones, and a plume of gas that thins as the vent runs dry. It is one picture turned a different way for each
-// vent, so it costs three meshes a vent and three puffs of gas. Show only: no rule reads it, and it throws no dice (every wobble is a fixed sum).
+// vent, so it costs three meshes a vent and four puffs of gas. Show only: no rule reads it, and it throws no dice (every wobble is a fixed sum).
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { M, G, mk } from './gfx';
@@ -34,9 +34,9 @@ export function ventFigure(x: number, z: number, anim: ((t: number) => void)[], 
   const rock = mk(P.rock, M.rockB, 0, 0, 0, g); rock.castShadow = rock.receiveShadow = true;
   mk(P.burn, M.scorch, 0, 0, 0, g);
   const light = mk(P.flux, M.violet, 0, 0, 0, g);
-  const puffs: THREE.Mesh[] = []; for (let i = 0; i < 3; i++) { const p = mk(G.cloud, M.indigoL, [0, 1, 0], [.5, .5, .5], [i * 2.1, i * 1.3, 0], g); p.castShadow = false; p.userData.k = i / 3; puffs.push(p); }
+  const puffs: THREE.Mesh[] = []; for (let i = 0; i < 4; i++) { const p = mk(G.cloud, M.smoke, [0, 1, 0], [.5, .5, .5], [i * 2.1, i * 1.3, 0], g); p.castShadow = false; p.userData.k = i / 4; puffs.push(p); }
   const ph = x * .37 + z * .19;
   anim.push(t => { const full = Math.max(0, Math.min(1, left())), on = full > 0; light.visible = on;
-    for (const p of puffs) { const k = (t * .2 + p.userData.k + ph) % 1, s = (.4 + k * 1.25) * (.55 + .45 * full); p.visible = on; p.position.set(Math.sin(t * .7 + p.userData.k * 9 + ph) * k * .7, .5 + k * (2.6 + 2.6 * full), Math.cos(t * .5 + p.userData.k * 7) * k * .5); p.scale.setScalar(k < .7 ? s : s * (1 - (k - .7) / .3)); p.rotation.y = t * .4 + p.userData.k * 5; } });
+    for (const p of puffs) { const k = (t * .2 + p.userData.k + ph) % 1, s = (.3 + k * .75) * (.55 + .45 * full); p.visible = on; p.position.set(Math.sin(t * .7 + p.userData.k * 9 + ph) * k * .7, .5 + k * (2.6 + 2.6 * full), Math.cos(t * .5 + p.userData.k * 7) * k * .5); p.scale.setScalar(k < .7 ? s : s * (1 - (k - .7) / .3)); p.rotation.y = t * .4 + p.userData.k * 5; } });
   return g;
 }

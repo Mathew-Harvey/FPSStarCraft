@@ -29,9 +29,9 @@ SOUNDS = {
   # guns: a real submachine gun recording, cut into single shots, with synthesised weight under it in code
   'crack_0': ('arms', P, 1.140, .050, 9000, 0), 'crack_1': ('arms', P, 1.290, .050, 9000, 0), 'crack_2': ('arms', P, 1.440, .050, 9000, 0),
   'crack_tail': ('arms', P, 1.640, .55, 7000, 0),
-  'knock_hard': ('kit', 'impacts/impact-heavy-hard.wav', 0, .30, 6000, 0),
-  'knock_deep': ('kit', 'impacts/impact-deep-hard.wav', 0, .75, 5000, 0),
-  'drum': ('kit', 'cinematic-hits/cinematic-drum-big.wav', 0, 1.3, 6000, 0),
+  'knock_hard': ('free', 'rubberduck/BreakingFalling/bfh1_hit_08.opus', 0, .35, 6000, 0),     # a real knock, no ringing pitch
+  'knock_deep': ('free', 'rubberduck/SFX100/hit_03.opus', 0, .45, 5000, 0),
+  'drum': ('free', 'Thimras/cannon_fire.opus', 0, 1.6, 2500, 0),
   'act_light': ('kit', 'mechanical/mechanical-shutter-light.wav', 0, None, 8000, 0),
   'act_heavy': ('kit', 'mechanical/mechanical-shutter-heavy.wav', 0, None, 7000, 0),
   'slide': ('kit', 'mechanical/mechanical-slider-light.wav', .2, None, 7000, 0),
@@ -42,8 +42,8 @@ SOUNDS = {
   'lock': ('kit', 'mechanical/mechanical-lock-heavy.wav', 0, None, 7000, 0),
   'dry': ('kit', 'mechanical/mechanical-switch-light.wav', 0, None, 7000, 0),
   # bodies being hit, metal, glass
-  **{f'punch_{i}': ('impact', f'impact_punch_medium_00{i}.ogg', 0, .35, 5000, 0) for i in range(3)},
-  **{f'punch_heavy_{i}': ('impact', f'impact_punch_heavy_00{i}.ogg', 0, .5, 5000, 0) for i in range(2)},
+  **{f'punch_{i}': ('forge', f'punch_{i}', 0, None, 0, 0) for i in range(3)},          # forge.py: real slams, a thump, a wet slap
+  **{f'punch_heavy_{i}': ('forge', f'punch_heavy_{i}', 0, None, 0, 0) for i in range(2)},
   **{f'metal_{i}': ('impact', f'impact_metal_heavy_00{i}.ogg', 0, None, 7000, 0) for i in range(3)},
   **{f'plate_{i}': ('impact', f'impact_plate_heavy_00{i}.ogg', 0, .45, 6000, 0) for i in range(2)},
   **{f'glass_{i}': ('impact', f'impact_glass_medium_00{i}.ogg', 0, .45, 8000, 0) for i in range(2)},
@@ -52,7 +52,7 @@ SOUNDS = {
   # explosions
   **{f'crunch_{i}': ('scifi', f'explosion_crunch_00{i}.ogg', 0, None, 6000, 0) for i in range(3)},
   'rumble': ('scifi', 'low_frequency_explosion_000.ogg', 0, 1.6, 3000, 0),
-  'boom': ('kit', 'booms-and-bass/boom-hit-strong.wav', 0, 1.3, 4000, 0),
+  'boom': ('free', 'Superpowers/western-fps-2d/explosion-2.opus', 0, 1.3, 3000, 0),
   # the Veyl: crystal energy
   **{f'zap_{i}': ('scifi', f'laser_small_00{i}.ogg', 0, None, 7000, 0) for i in range(3)},
   'beam': ('scifi', 'laser_large_000.ogg', 0, None, 6000, 0),
@@ -60,7 +60,7 @@ SOUNDS = {
   'slice_0': ('rpg', 'knife_slice.ogg', .15, None, 5000, 0), 'slice_1': ('rpg', 'knife_slice_2.ogg', 0, None, 5000, 0),
   # moving
   **{f'step_{i}': ('impact', f'footstep_snow_00{i}.ogg', 0, None, 6500, 0) for i in range(5)},
-  **{f'stomp_{i}': ('impact', f'impact_soft_heavy_00{i}.ogg', 0, .45, 3000, 0) for i in range(2)},
+  'stomp_0': ('free', 'rubberduck/BreakingFalling/bfh1_hit_07.opus', 0, .45, 3000, 0), 'stomp_1': ('free', 'rubberduck/SFX100V2/sfx100v2_hit_01.opus', 0, .45, 3000, 0),
   'cloth_0': ('rpg', 'cloth_1.ogg', 0, None, 7000, 0), 'cloth_1': ('rpg', 'cloth_3.ogg', 0, None, 7000, 0),
   'whoosh': ('kit', 'whooshes/whoosh-fast-soft.wav', 0, None, 7000, 0),
   'swish': ('kit', 'swishes-and-zips/swish-medium.wav', 0, None, 7000, 0),
@@ -77,7 +77,7 @@ SOUNDS = {
   'off': ('kit', 'interface/click-toggle-off-firm.wav', 0, None, 6000, 0),
   'knock': ('kit', 'foley/foley-wood-touch.wav', 0, None, 6000, 0),
   'card': ('kit', 'foley/foley-card-touch.wav', 0, None, 7000, 0),
-  'thud_soft': ('kit', 'impacts/impact-heavy-soft.wav', 0, None, 4000, 0),
+  'thud_soft_0': ('free', 'rubberduck/BreakingFalling/bfh1_hit_06.opus', 0, .5, 4000, 0), 'thud_soft_1': ('free', 'rubberduck/SFX100V2/sfx100v2_hit_02.opus', 0, .45, 4000, 0),
   # ---- 2026-11 ASMR pass: every ability, interface action, flier and weather gets its own material ----
   # the Gloam: wet, soft, alive. Recorded mud and slime (rubberduck, OpenGameArt CC0), digging (splicesound, freesound CC0)
   **{f'squelch_{i}': ('free', f'rubberduck/Mud/mud_{n}.opus', 0, None, 5000, 0) for i, n in enumerate(['03', '04', '08', '13', '18', '25'])},
@@ -139,6 +139,8 @@ SOUNDS = {
   # night and the Bloom
   'crickets': ('free', 'Owlish/Sound Effects Pack/Ambience/night-crickets-ambience-on-rural-property.opus', 10, 6.4, 6000, 0, 'loop'),
   'swamp': ('free', 'rubberduck/WaterSplashSlime/loop_bubbles_02.opus', 0, 6.4, 3000, 0, 'loop'),
+  # guns, cannons, blasts and the Veyl shot, built in forge.py from PPSh, rubberduck Bang, Thimras and Superpowers takes
+  **{n: ('forge', n, 0, None, 0, 0) for n in ['gun_rifle_0', 'gun_rifle_1', 'gun_rifle_2', 'gun_rifle_3', 'gun_pistol_0', 'gun_pistol_1', 'gun_pistol_2', 'gun_sniper_0', 'gun_sniper_1', 'gun_scatter_0', 'gun_scatter_1', 'gun_heavy_0', 'gun_heavy_1', 'gun_heavy_2', 'gun_cannon_0', 'gun_cannon_1', 'gun_cannon_2', 'blast_big_0', 'blast_big_1', 'blast_big_2', 'blast_small_0', 'blast_small_1', 'veyl_shot_0', 'veyl_shot_1', 'veyl_shot_2']},
 }
 
 def fetch(cache):
@@ -162,6 +164,8 @@ def synth_veylhum(path, sr=48000, secs=4.4):
   x = x * (1 + .15 * np.sin(2 * np.pi * .5 * t)) / 1.4
   with wave.open(path, 'wb') as w: w.setnchannels(1); w.setsampwidth(2); w.setframerate(sr); w.writeframes((np.clip(x, -1, 1) * 30000).astype(np.int16).tobytes())
 SYNTH = {'veylhum': synth_veylhum}
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from forge import forge, RECIPES   # guns, cannons and blasts layered from the recordings above (tools/sfx/forge.py)
 
 def seam(path, xf):
   """Makes a take loop: its last `xf` seconds fade out over its first `xf`, which fade in (equal power), and the tail is dropped."""
@@ -179,6 +183,7 @@ def main():
     if f.endswith('.webm'): os.remove(os.path.join(dst, f))
   for name, (repo, f, start, dur, lp, gain, *opt) in SOUNDS.items():
     if repo == 'synth': src = os.path.join(cache, f + '.src.wav'); SYNTH[f](src)
+    elif repo == 'forge': src = os.path.join(cache, f + '.src.wav'); forge(f, src, dirs)
     else: src = os.path.join(dirs[repo], f)
     loop = 'loop' in opt; XF = .4
     if loop: dur = dur + XF

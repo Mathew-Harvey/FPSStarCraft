@@ -19,7 +19,9 @@ From the CC0-SFX collection:
 
 | Folder | Original | Used for |
 | --- | --- | --- |
-| `rubberduck/Mud`, `rubberduck/WaterSplashSlime`, `rubberduck/WoodMetal`, `rubberduck/Bang` | rubberduck's CC0 sound packs on OpenGameArt (for example [40 CC0 water splash slime SFX](https://opengameart.org/content/40-cc0-water-splash-slime-sfx)) | Gloam squelches, slime, bubbles and splashes, the bubbling bed near the Bloom; Ironhold hammers, slam, spring, tool rummage; the flare launch |
+| `rubberduck/Mud`, `rubberduck/WaterSplashSlime`, `rubberduck/WoodMetal`, `rubberduck/Bang`, `rubberduck/BreakingFalling`, `rubberduck/SFX100`, `rubberduck/SFX100V2` | rubberduck's CC0 sound packs on OpenGameArt (for example [40 CC0 water splash slime SFX](https://opengameart.org/content/40-cc0-water-splash-slime-sfx)) | Gloam squelches, slime, bubbles and splashes, the bubbling bed near the Bloom; Ironhold hammers, slam, spring, tool rummage; the flare launch; the body of every gun shot, cannon body, punches and thuds |
+| `Thimras/cannon_fire` | Thimras, CC0 (in the CC0-SFX collection) | cannons and the long gun's deep layer |
+| `Superpowers/western-fps-2d`, `Superpowers/top-down-shooter` explosions | Sparklin Labs [Superpowers asset packs](https://github.com/sparklinlabs/superpowers-asset-packs), CC0 | blasts and booms |
 | `Freesound/Animals` | taman21, "slimy bugs crawling" (freesound 508165, CC0) | the Gloam flier's buzz |
 | `Owlish/Sound Effects Pack` | Owlish, "Sound effects pack" (OpenGameArt, CC0) | night crickets |
 | `Freesound/Foley` | splicesound, "hand digging dirt leaves crunch" (freesound 260130, CC0) | digging in |
@@ -43,3 +45,5 @@ Mono, 48 kHz, Opus in WebM. A high pass at 35 Hz (rumble and DC offset out), a 3
 "thock" not a "clack"), leading silence cut so the transient is on the frame it is played, a short fade
 at the end, peaks at -1 dBFS. The game sets the mix and layers synthesised sub weight under the samples
 (`src/audio.ts`).
+
+**Guns, cannons, blasts and punches** (`gun_*`, `blast_*`, `veyl_shot_*`, `punch_*`) are built in `tools/sfx/forge.py`: the PPSh crack, a rubberduck body, a pitchless noise thump, wall slaps and a darkening open-air tail, layered and seeded so every build is the same. The parts are CC0, so the takes are too.

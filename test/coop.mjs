@@ -4,7 +4,7 @@ import { spawn } from 'node:child_process';
 import { createRequire } from 'node:module';
 const require = createRequire(import.meta.url); const { chromium } = require('playwright');
 const PORT = 8137, URL = `http://localhost:${PORT}/`, SHOTS = process.env.SHOTS || '';
-const srv = spawn('node', ['dist/server.mjs'], { env: { ...process.env, PORT: String(PORT), ORE_TRUST_HITS: '1', ORE_WIRE_FOG: '0' /* this test checks that both screens agree on the whole world; fog and hit checks are tested in test/online */ }, stdio: ['ignore', 'pipe', 'pipe'] });
+const srv = spawn('node', ['dist/server.mjs'], { env: { ...process.env, PORT: String(PORT), ORE_TRUST_HITS: '1', ORE_TRUCE: '1' /* nobody fires on their own: on a slow runner a raid could break the Headframe before Bo comes back */, ORE_WIRE_FOG: '0' /* this test checks that both screens agree on the whole world; fog and hit checks are tested in test/online */ }, stdio: ['ignore', 'pipe', 'pipe'] });
 let srvLog = ''; srv.stdout.on('data', d => { srvLog += d; }); srv.stderr.on('data', d => { srvLog += d; });
 const fail = []; const check = (ok, what) => { console.log((ok ? 'PASS ' : 'FAIL ') + what); if (!ok) fail.push(what); };
 const sleep = ms => new Promise(r => setTimeout(r, ms));
@@ -72,19 +72,13 @@ try {
   await B.close();
   check(await until(A, () => __ore.game.units.filter(u => u.pilot).length === 1), 'when Bo leaves, his body goes back to the crew and the match carries on');
   // Bo comes back mid-match with the same code and gets a body and the same world
-  // Held, like the first two pages: starting a match turns drawing back on, and a page drawing the whole scene on the software renderer
-  // grew until it crashed.
   const B2 = await open('Bo'); await B2.evaluate(() => { __ore.hold(true); }); await B2.fill('#mCode', code); await B2.click('#mJoinBtn');
-  // Poll every half second, not every frame, so the slow page spends its time catching up with the match.
-  await B2.waitForFunction(() => __ore.game.net && __ore.game.me && __ore.game.units.length > 6, null, { polling: 500 }); await B2.evaluate(() => { __ore.hold(false); __ore.game.noRender = true; }); c = await state(B2);
-  // The first Veyl raid reaches the Headframe at about 100 s, just when Bo comes back, and can kill each Rigger the server hands him before
-  // his slow software-rendered page takes it over. So ask both screens whether they show a body driven by Bo, at any moment.
-  const boId = await B2.evaluate(() => __ore.game.net.id), drivenBy = id => __ore.game.units.some(u => u.alive && u.pilot === id);
-  const back = await until(A, drivenBy, boId, 30000) && await B2.waitForFunction(drivenBy, boId, { timeout: 30000, polling: 250 }).then(() => true, () => false);
-  check(back, 'Bo rejoins the running match with the code and gets a body');
-  // Bodies die in that raid between the two reads, so read both screens a few times until they agree.
-  let same = false; for (let i = 0; i < 12 && !same; i++) { await sleep(1000); a = await state(A); c = await state(B2); same = a.units === c.units && a.bld === c.bld && a.propsAlive === c.propsAlive; }
-  check(same, `the rejoined world matches (${c.units} units, ${c.bld} buildings, ${c.propsAlive} props standing)`);
+  await B2.waitForFunction(() => __ore.game.net && __ore.game.me && __ore.game.units.length > 6); await B2.evaluate(() => { __ore.hold(false); __ore.game.noRender = true; }); c = await state(B2);
+  // Bo's body can be shot out from under him by a raid while this runs, so ask for whichever body he is in now.
+  let back = false; for (let i = 0; i < 40 && !back; i++) { const id = await B2.evaluate(() => { const g = __ore.game; return g.me && g.me.alive ? g.me.id : 0; }); back = !!id && await A.evaluate(id => __ore.game.units.filter(u => u.pilot).length === 2 && !!__ore.game.uById.get(id)?.pilot, id); if (!back) await sleep(400); }
+  check(back, 'Bo rejoins the running match with the code and gets a body'); await sleep(1500);
+  a = await state(A); c = await state(B2);
+  check(a.units === c.units && a.bld === c.bld && a.propsAlive === c.propsAlive, `the rejoined world matches (${c.units} units, ${c.bld} buildings, ${c.propsAlive} props standing)`);
   await b.close();
 } catch (e) { console.log('ERROR', e); fail.push('exception'); }
 srv.kill(); if (srvLog.includes('crashed') || srvLog.includes('bad command')) { console.log(srvLog); fail.push('server errors'); }

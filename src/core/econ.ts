@@ -6,6 +6,7 @@ import type { Unit, Building, Kind, BKind, UpKey } from '../data';
 import { UNIT, BLD, UPGRADES, MAP, SIDE, VHOME, FACTION, swapEnd } from '../data';
 import { bldRule } from './registry';
 import { ventFigure } from '../ventart';
+import { offDice } from '../gfx';
 import { h as groundH } from '../terrain';
 
 /** A price: ore, then Flux. */
@@ -44,6 +45,10 @@ export function shortOf(g: Game, team: number, c: Cost, n = 1) { const o = c[0] 
 
 // ---------------------------------------------------------------- vents
 
+const ventMat = new THREE.MeshBasicMaterial({ color: 0x46e8c8 }), rimMat = new THREE.MeshLambertMaterial({ color: 0x3a3430 });
+/** The stand-in vent this file used to draw (a rim and a mouth), still made and thrown away for each vent: making it draws the same ids
+ *  from Math.random as before, so the seeded bot matches roll the dice they always rolled (see offDice in gfx.ts). */
+function oldVentDice() { const g = new THREE.Group(), rg = new THREE.TorusGeometry(1.5, .45, 6, 14), mg = new THREE.CircleGeometry(1.25, 14), rim = new THREE.Mesh(rg, rimMat), mouth = new THREE.Mesh(mg, ventMat); g.add(rim, mouth); rg.dispose(); mg.dispose(); }
 /** Is a spot open ground: off the scenery, clear of ore and the other vents, and inside the edge of the world. */
 function clear(g: Game, x: number, z: number, taken: number[][]) {
   const [mx, mz] = MAP.mid || [0, 0]; if (Math.hypot(x - mx, z - mz) > (MAP.rad || 1e9) * .9) return false;
@@ -77,7 +82,7 @@ export function layVents(g: Game) {
   // A rock or crystal standing on a vent would keep a tap off it for good, and props were only kept clear round the yard: on Needle's Eye
   // a crystal sat on one of the far base's two home vents, so the far end could never tap it (stream L). Clear any solid prop off a vent.
   for (const [x, z] of ventSpots(g)) for (const p of g.spires.slice()) if (Math.abs(p.x - x) < p.r + 3.2 && Math.abs(p.z - z) < p.r + 3.2) g.clearProp(p);
-  for (const [x, z] of ventSpots(g)) { const v: Vent = { id: g.vents.length + 1 /* per game, so a replay names the same vents (K) */, pos: new THREE.Vector3(x, 0, z), amount: ECON.vent, max: ECON.vent, tap: null, obj: null as any }; v.obj = ventFigure(x, z, g.anim, () => v.amount / v.max); v.obj.position.set(x, groundH(x, z), z); g.scene.add(v.obj); g.vents.push(v); }
+  for (const [x, z] of ventSpots(g)) { const v: Vent = { id: g.vents.length + 1 /* per game, so a replay names the same vents (K) */, pos: new THREE.Vector3(x, 0, z), amount: ECON.vent, max: ECON.vent, tap: null, obj: null as any }; oldVentDice(); v.obj = offDice(() => ventFigure(x, z, g.anim, () => v.amount / v.max)); v.obj.position.set(x, groundH(x, z), z); g.scene.add(v.obj); g.vents.push(v); }
 }
 /** The vent under a spot, if any (for placing a tap). */
 export function ventAt(g: Game, x: number, z: number, r = 2.5) { return g.vents.find(v => Math.hypot(v.pos.x - x, v.pos.z - z) < r) || null; }

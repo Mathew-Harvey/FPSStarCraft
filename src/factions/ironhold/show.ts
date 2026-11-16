@@ -13,7 +13,7 @@ import { isEnemy } from '../../core/sides';
 import { hasStatus } from '../../core/status';
 import { defineBuildingLook, defineUnitLook } from '../../net-look';
 import { plainBody } from '../../core/plain';
-import { heldMaterial, setLayer } from '../../gfx';
+import { heldMaterial, setLayer, offDice } from '../../gfx';
 import { unit as unitModel, type Model } from '../../models';
 import * as E from '../../look-ironhold';
 import { FxKit, cloud, ring, orb } from '../../fx/kit';
@@ -78,7 +78,8 @@ defineUnits(looks);
 // flag, drawn by E.shaftMine in showTick, so it has no body of its own.
 defineUnits({
   gantryflak: {
-    figure: () => unitModel('gantryflak'),
+    // The stand-in block is still made and thrown away, and the figure is made on dice of its own: seeded matches roll as they did before.
+    figure: () => { plainBody('gantryflak'); return offDice(() => unitModel('gantryflak')); },
     pose(_g: Game, u: Unit, _dt: number, _s: number, ease: number) {
       const r = u.rig; if (r.arms) { r.arms.rotation.x += (-1.02 - u.swing * .14 - r.arms.rotation.x) * ease; r.arms.position.z = .05 - u.swing * .12; }
       if (r.head) r.head.rotation.x += (-.3 - r.head.rotation.x) * ease;
@@ -86,7 +87,7 @@ defineUnits({
       return true;
     },
   },
-  shaftmine: { figure: () => { const root = new THREE.Group(), body = new THREE.Group(); body.name = 'body'; root.add(body); return { obj: root, rig: { body, height: .3 } } as Model; } },
+  shaftmine: { figure: () => { plainBody('shaftmine'); return offDice(() => { const root = new THREE.Group(), body = new THREE.Group(); body.name = 'body'; root.add(body); return { obj: root, rig: { body, height: .3 } } as Model; }); } },
 });
 
 // ---------------------------------------------------------------- first person

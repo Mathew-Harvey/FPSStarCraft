@@ -3,7 +3,7 @@ import { TER, MADE } from './terrain';
 import { openMaker } from './mapmaker';
 import { usePlan, planMap } from './mapcode';
 import * as THREE from 'three';
-import { Pipeline, ViewPipe, V3, makeSky, TX, M, SHARED } from './gfx';
+import { Pipeline, ViewPipe, V3, makeSky, TX, M, SHARED, offDice } from './gfx';
 import { LOD } from './meshes';
 import { plainBody } from './core/plain';
 import { LAMP_ON, LAMP_N, NOW, setLight } from './light';
@@ -145,7 +145,7 @@ function portraits(redo = false, only?: Kind[]) {
     scene.remove(m.obj);
   }
   // The map's small pictures: every body and building of the factions whose art is here, seen from straight above (see mapIcons).
-  try { mapIcons(todo); } catch (e) { console.warn('map pictures', e); }
+  try { offDice(() => mapIcons(todo)); } catch (e) { console.warn('map pictures', e); }
   LOD.force = lodWas; Object.assign(pipe, pv); sharedSwap(back); setLight(was.hour, was.wx, was.w); LAMP_N.value = lamps;
   for (const f of [0, 1, 2]) if (artHas([f])) portraitArt.add(f);
   if (redo) resize();

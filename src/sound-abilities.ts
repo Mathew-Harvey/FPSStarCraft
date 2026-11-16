@@ -18,7 +18,7 @@ import { ENV } from './light';
 const { S, sub, swell, bell, chime, far } = kit;
 /** What has played, for tests and the sound check (tools/sfx/match.mjs reads it as window.__sfx). */
 export const soundStats = { casts: {} as Record<string, number>, winds: 0, engines: 0 };
-(globalThis as any).__sfx = soundStats;
+(globalThis as any).__sfx = soundStats;   // tools/sfx/match.mjs also calls __sfx.tick (tickSound) itself, so it can run without drawing
 type R = (v: number) => void;
 // the Veyl scale: D minor pentatonic over three octaves
 const D = 146.83, NOTE = (n: number) => { const st = [0, 3, 5, 7, 10][((n % 5) + 5) % 5] + 12 * Math.floor(n / 5); return D * Math.pow(2, st / 12); };
@@ -180,3 +180,5 @@ export function tickSound(g: Game, playing: boolean) {
   let nb = 1e9; for (const b of g.buildings) if (b.alive && fac(b.team) === 2) nb = Math.min(nb, Math.hypot(b.pos.x - ex, b.pos.z - ez));
   bloom?.set(.12 * Math.max(0, 1 - nb / 30) ** 1.5);
 }
+
+(soundStats as any).tick = tickSound;

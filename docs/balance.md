@@ -203,5 +203,17 @@ Tried first and dropped, since the Gloam bot itself lives off the cheap Snapper 
 but the Veyl then lost 19 to 23 of 24, and Cantor or Lancer bonus damage on living bodies held the Veyl near 7 of 24). The Snapper share and
 the Gloam mid-game stay round 4 work.
 
+**After the fix (2026-11-17, main 14743f4, 108 matches as above):** Ironhold v Veyl 17 to 19, Ironhold v Gloam 16 to 20, Veyl v Gloam 19 to 17.
+Every pairing is inside 16 to 20 of 36. What is still short is variety, not fairness: Snapper 60% (against Ironhold) and 75% (against the
+Veyl) of Gloam army spend, Cantor 45 to 52% of Veyl army spend against the Gloam (the gate says no kind over 35%).
+
+Where Gloam workers die (`tools/review.ts` option `wlog`: every worker death with the nearest foe, its order, and both armies): against
+Ironhold the Gloam's first Snapper push dies at the Headframe, Ironhold's counter-push of about seven walks into the Gloam yard at 3:50 with
+two or three Gloam fighters at home, and the Grazers are eaten with no Gloam fighter in reach (19 to 31 of 30 to 36 raid deaths); the swarm
+then stays near nothing for minutes. Note that `lost.w` also counts every Grazer that roots into a building.
+
+Tried and dropped: a home gun on the Mother Cap like the Headframe's (9 every 0.8 s at 20 m). It fired in half the Gloam matches and moved
+nothing: Ironhold v Gloam 16 to 20 and Veyl v Gloam 19 to 17 again over the same 72 seeds (rows m_cap0 and m_cap9).
+
 Also seen: a driven body with perfect aim is far stronger than its bot, which real players are not; the Gloam bot's Snappers come out two at
 a time and run at a driven Linesman pair after pair (Ironhold v Gloam driven rush: 2 of 6 over by minute 5 on map 0).

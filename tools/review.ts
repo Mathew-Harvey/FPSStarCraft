@@ -6,7 +6,7 @@ import { noHud, noPipe } from '../server/shim';
 import { Game } from '../src/game';
 import { CHOIR_GUN } from '../src/factions/veyl/rules';
 import { initHeadless } from '../src/gfx';
-import { DIFFS, FACTION, UNIT, BLD, setMap, setSides, isFighter, OVERTIME, CHOIR_REACH, CLEAVE } from '../src/data';
+import { DIFFS, FACTION, UNIT, BLD, setMap, setSides, isFighter, foeOf, OVERTIME, CHOIR_REACH, CLEAVE } from '../src/data';
 import { V_TUNE } from '../src/factions/veyl/numbers';
 import { G_TUNE } from '../src/factions/gloam/numbers';
 import { BROOD_BASE } from '../src/factions/gloam/brood-mix';
@@ -59,6 +59,8 @@ while (g.phase !== 'over' && g.time < mins * 60 + 5) {   // + 5 s: a points win 
     for (const u of g.units) if (u.alive && !alive.has(u)) alive.set(u, [u.team, true, u.kind]);
     for (const b of g.buildings) if (b.alive && !alive.has(b)) alive.set(b, [b.team, false, b.kind]);
     for (const [x, [t, isU, k]] of alive) if (!x.alive) { alive.delete(x); if (t !== H && t !== O) continue;
+      if (isU && spec0.wlog && !isFighter(x)) { const foe = g.units.filter(u => u.alive && u.team !== t && u.team < 900 && isFighter(u)).map(u => [Math.hypot(u.pos.x - x.pos.x, u.pos.z - x.pos.z), u] as [number, any]).sort((a, b) => a[0] - b[0])[0], hq = Math.min(...g.hqs(t).map(b => Math.hypot(b.pos.x - x.pos.x, b.pos.z - x.pos.z))), mine = g.army(t).map(u => Math.hypot(u.pos.x - x.pos.x, u.pos.z - x.pos.z)).sort((a, b) => a - b);
+        console.error(JSON.stringify({ wd: Math.round(g.time), t, k, foe: foe ? [foe[1].kind, foe[1].order?.type, Math.round(foe[0])] : null, hq: Math.round(hq), own: [mine.filter(d => d < 30).length, Math.round(mine[0] ?? -1)], army: [mine.length, Math.round(g.army(t).map(u => Math.min(...g.hqs(t).map(b => Math.hypot(b.pos.x - u.pos.x, b.pos.z - u.pos.z)))).sort((a, b) => a - b)[mine.length >> 1] ?? -1)], foes: g.army(foeOf(t)).filter(u => Math.min(...g.hqs(t).map(b => Math.hypot(b.pos.x - u.pos.x, b.pos.z - u.pos.z))) < 50).length, plan: (t === H ? g.dir : g.dir.vs).plan?.phase || '-' })); }   // wlog: every worker death, who was near and where (stream L round 4)
       if (isU) { const w = !isFighter(x); if (w) lost[t].w++; else lost[t].u++; lost[t].ore += UNIT[k].cost || 0; if (firstBlood < 0 && !w) firstBlood = g.time; deathT.push(g.time); }
       else { if (x.built === false && x.hp > 0) continue; lost[t].b++; lost[t].ore += BLD[k].cost || 0; if (firstB < 0) firstB = g.time; bT.push(g.time); } }
   }

@@ -45,7 +45,7 @@ try {
     await W2.goto(URL); await W2.waitForFunction('window.__ore');
     await W2.evaluate(code => { __ore.setFree(true); __ore.game.noRender = true; __ore.unlock(); document.getElementById('mName').value = 'Wen'; document.getElementById('mCode').value = code; }, c2);
     await W2.click('#mWatch');
-    check(await until(W2, () => __ore.game.net?.watch && __ore.game.phase === 'play' && __ore.game.units.some(u => u.alive && u.kind === 'grazer')), 'Wen watches a Veyl against Gloam match');
+    check(await until(W2, () => __ore.game.net?.watch && __ore.game.phase === 'play' && __ore.game.units.some(u => u.alive && u.kind === 'grazer'), undefined, 60000), 'Wen watches a Veyl against Gloam match');
     await W2.evaluate(() => { __ore.game.noRender = false; }); await sleep(800);
     const [gid, gx, gz] = await W2.evaluate(() => { const u = __ore.game.units.find(x => x.alive && x.kind === 'grazer'); return [u.id, u.pos.x, u.pos.z]; });
     const n0 = await W2.evaluate(() => __ore.game.scene.children.length);

@@ -65,184 +65,231 @@
   <div id="turnNote">Turn your phone sideways to play</div>
 
   <div class="cut" id="cut" hidden><div class="cframe"><div class="ctitle d"></div><div class="ccap"></div><div class="ctags"></div><div class="cbubs"></div><div class="cbal" hidden></div><div class="cstamp" hidden></div><div class="cfoot c"><span class="cnum"></span> · Click or Space: next panel · <button type="button" class="cskip c">Esc: skip</button></div></div></div>
-  <div class="screen" id="menu">
-    <div class="box">
+  <div class="screen front" id="menu" data-front="home">
+    <!-- Home, the opening screen: four plates, the next job and a quick match on the board, one of the three sides' heroes behind (picked at random on each load). -->
+    <div class="fhome" id="fHome">
+      <div class="fhero" id="fHero"></div>
       <h1 class="logo">Ore Else</h1>
-      <p class="tagline">Start as one worker with a drill. Build an army that argues with you. Jump into any body you own.</p>
-      <div class="modes" id="modes" role="tablist" aria-label="Game mode">
-        <button type="button" role="tab" data-m="camp">Campaign<small>The story. Four acts, three sides.</small></button>
-        <button type="button" role="tab" data-m="skirm">Skirmish<small>One full match, on either side</small></button>
-        <button type="button" role="tab" data-m="multi" id="multiBtn">Multiplayer<small id="multiNote">Online or one screen</small></button>
-        <button type="button" role="tab" data-m="opts" id="optsBtn">Options<small>Keys, picture, colours</small></button>
-      </div>
-      <div class="panel" id="pCamp">
-        <div class="jobs" id="jobs"></div>
-        <div class="brief">
-          <h3 id="bName"></h3>
-          <p class="teach" id="bTeach"></p>
-          <p id="bText"></p>
-          <div class="row"><button class="go" id="startJob">Clock in</button><button type="button" class="mini-btn" id="skipCamp">Done this before? Unlock everything</button></div>
+      <nav class="plates" aria-label="Main menu">
+        <button type="button" class="plate" data-to="camp">Campaign<small id="plCamp"></small></button>
+        <button type="button" class="plate" data-to="skirm">Skirmish<small>You against the bots</small></button>
+        <button type="button" class="plate" data-to="multi">Multiplayer<small id="plMulti"></small></button>
+        <button type="button" class="plate sm" data-to="opts">Options<small>Keys, picture, sound</small></button>
+      </nav>
+      <aside class="board">
+        <div class="bcard"><h4>Next job <i id="bcAct"></i></h4><div class="bimg" id="bcImg"><b id="bcName"></b></div><p id="bcTeach"></p><button type="button" class="go sm" id="bcGo">Continue</button></div>
+        <div class="bcard"><h4>Quick match <i>your last setup</i></h4><p id="bcQuick"></p><button type="button" class="go sm alt" id="bcQGo">Clock in</button></div>
+      </aside>
+      <div class="herotag"><b id="htName"></b><span id="htSide"></span></div>
+      <div class="pbar"><span class="pb-name" id="pbName"></span><div class="pb-sides" id="pbSides" role="group" aria-label="Your side"><span>Your side</span><button type="button" data-side="0" title="Ironhold"></button><button type="button" data-side="1" title="Veyl"></button><button type="button" data-side="2" title="Gloam"></button></div></div>
+    </div>
+    <!-- Every screen past Home: a bar of tabs along the top, Esc goes back to Home. -->
+    <div class="finner" id="fInner" hidden>
+      <div class="ftop">
+        <button type="button" class="flogo" id="fLogo">Ore Else</button>
+        <div class="modes" id="modes" role="tablist" aria-label="Game mode">
+          <button type="button" role="tab" data-m="camp">Campaign<small>The story. Four acts, three sides.</small></button>
+          <button type="button" role="tab" data-m="skirm">Skirmish<small>One full match, on either side</small></button>
+          <button type="button" role="tab" data-m="multi" id="multiBtn">Multiplayer<small id="multiNote">Online or one screen</small></button>
+          <button type="button" role="tab" data-m="opts" id="optsBtn">Options<small>Keys, picture, colours</small></button>
         </div>
+        <button type="button" class="fback" id="fBack"><span class="k">Esc</span>Home</button>
+      </div>
+      <div class="fbody">
+      <div class="panel" id="pCamp">
+      <div class="jobs" id="jobs"></div>
+      <div class="brief">
+      <h3 id="bName"></h3>
+      <p class="teach" id="bTeach"></p>
+      <p id="bText"></p>
+      <div class="row"><button class="go" id="startJob">Clock in</button><button type="button" class="mini-btn" id="skipCamp">Done this before? Unlock everything</button></div>
+      </div>
       </div>
       <div class="panel" id="pSkirm" hidden>
-        <div class="row">
-          <button class="go" id="start">Clock in</button>
-          <div class="diff" id="diff" role="group" aria-label="Difficulty">
-            <button type="button" data-d="0">Day shift<small>Smaller raids</small></button>
-            <button type="button" data-d="1">Night shift<small>The intended fight</small></button>
-            <button type="button" data-d="2">Double shift<small>Bigger, sooner</small></button>
-          </div>
-        </div>
-        <div class="row">
-          <div class="diff" id="maps" role="group" aria-label="Map">
+        <div class="skl">
+          <section class="fpan">
+            <h4 class="fph">Who is playing</h4>
+            <div class="slot"><span class="slot-b" id="slotYou"></span><div class="slot-r"><div class="slot-w">You</div>
+              <div class="diff" id="sides" role="group" aria-label="Your side">
+              <button type="button">Ironhold<small>Dig, build and hold the yard</small></button>
+              <button type="button">The Veyl<small>Hum ore, grow the Chorus, break the Headframes</small></button>
+              <button type="button">The Gloam<small>Chew ore, ripen the swarm, spread the Bloom</small></button>
+              </div>
+            </div></div>
+            <div class="slot"><span class="slot-b" id="slotFoe"></span><div class="slot-r"><div class="slot-w">Them<small>a bot</small></div>
+              <div class="row">
+                <div class="diff" id="foes" role="group" aria-label="Who holds the outpost">
+                <button type="button">Against the Veyl<small>Crystal choir: shields, blades, beams</small></button>
+                <button type="button">Against the Gloam<small>Fungal swarm: cheap, fast, everywhere</small></button>
+                <button type="button">Against Ironhold<small>Hard hats: rifles, walkers, towers</small></button>
+                <button type="button" id="raid">Raid the Veyl outpost<small>The old match: they only send raids, you build</small></button>
+                </div>
+                <div class="diff" id="diff" role="group" aria-label="Difficulty">
+                <button type="button" data-d="0">Day shift<small>Smaller raids</small></button>
+                <button type="button" data-d="1">Night shift<small>The intended fight</small></button>
+                <button type="button" data-d="2">Double shift<small>Bigger, sooner</small></button>
+                </div>
+              </div>
+            </div></div>
+            <div class="diff" id="teams" role="group" aria-label="Kind of game" hidden></div>
+          </section>
+          <section class="fpan">
+            <h4 class="fph">Map</h4>
+            <div class="diff" id="maps" role="group" aria-label="Map">
             <button type="button">Needle's Eye<small>One road east, one ridge north</small></button>
             <button type="button">Switchback<small>Tight canyon at sunset</small></button>
             <button type="button">Glass Flats<small>Wide open, nowhere to hide</small></button>
             <button type="button" data-b="6">Crossing<small>Four bases round a crossroads, two left empty to take</small></button>
             <button type="button" data-b="7">Wheel<small>Eight bases round a hub, six left empty to take</small></button>
-          </div>
-          <div class="diff" id="maker"><button type="button" id="makerBtn">Map maker<small id="makerNote">Lay out your own map and share it as a code</small></button></div>
-          <div class="diff" id="teams" role="group" aria-label="Kind of game" hidden></div>
-          <div class="diff" id="sizes" role="group" aria-label="Map size">
-            <button type="button" data-s="1">Small<small>Close quarters, three fields</small></button>
-            <button type="button" data-s="0">Medium<small>Four ore fields to take</small></button>
-            <button type="button" data-s="2">Large<small>A long way out, seven fields</small></button>
-            <button type="button" data-s="3">Vast<small>Ten fields. Find them first</small></button>
-          </div>
+            </div>
+            <div class="row">
+              <div class="diff" id="sizes" role="group" aria-label="Map size">
+              <button type="button" data-s="1">Small<small>Close quarters, three fields</small></button>
+              <button type="button" data-s="0">Medium<small>Four ore fields to take</small></button>
+              <button type="button" data-s="2">Large<small>A long way out, seven fields</small></button>
+              <button type="button" data-s="3">Vast<small>Ten fields. Find them first</small></button>
+              </div>
+              <div class="diff" id="maker"><button type="button" id="makerBtn">Map maker<small id="makerNote">Lay out your own map and share it as a code</small></button></div>
+            </div>
+          </section>
+          <details class="fmore"><summary>How the three sides play</summary>
+            <div class="keys">
+            <h3>The three sides</h3>
+            <div><kbd>Ironhold</kbd>Few, expensive, long-armed. Wins by digging faster and mixing a squad: shield in front, rifles in the middle, a Longshot behind. Weak when caught alone or out of ore.</div>
+            <div><kbd>Veyl</kbd>Many, free, close-in. Wins by never letting the crew settle: Blades tie up Breachers, Lances wear down a Gantry, the Deep Voice walks through a shield wall. Weak in the open against a mixed squad, and every lost Stone thins the raids.</div>
+            <div><kbd>Gloam</kbd>Cheap, fast, and always more of them. Every unit ripens from a Bud on a Mother Cap, every building costs a Grazer, and buildings only grow on the Bloom carpet, where the swarm runs faster and heals. Wins by trading badly and winning anyway. Weak to splash, and to anyone who burns the Caps.</div>
+            </div>
+          </details>
         </div>
-        <div class="row">
-          <div class="diff" id="sides" role="group" aria-label="Your side">
-            <button type="button">Ironhold<small>Dig, build and hold the yard</small></button>
-            <button type="button">The Veyl<small>Hum ore, grow the Chorus, break the Headframes</small></button>
-            <button type="button">The Gloam<small>Chew ore, ripen the swarm, spread the Bloom</small></button>
-          </div>
-          <div class="diff" id="foes" role="group" aria-label="Who holds the outpost">
-            <button type="button">Against the Veyl<small>Crystal choir: shields, blades, beams</small></button>
-            <button type="button">Against the Gloam<small>Fungal swarm: cheap, fast, everywhere</small></button>
-            <button type="button">Against Ironhold<small>Hard hats: rifles, walkers, towers</small></button>
-            <button type="button" id="raid">Raid the Veyl outpost<small>The old match: they only send raids, you build</small></button>
-          </div>
-        </div>
-        <div class="row only-keys">
-          <button type="button" class="go alt" id="startSplit">Split screen co-op</button>
-          <button type="button" class="go alt" id="startSplitVs">Split screen versus</button>
-          <div class="diff" id="splitDir" role="group" aria-label="Split screen layout">
-            <button type="button">Side by side<small>Left and right halves</small></button>
-            <button type="button">Stacked<small>Top and bottom halves</small></button>
-          </div>
-        </div>
-        <p class="small only-keys">Split screen puts two players on this machine, on the map and shift picked above. Co-op shares whichever side is picked above. In versus, player one is Ironhold and player two leads the side Ironhold is up against, and both sides dig, build and train. Player one keeps the keyboard and mouse. Player two uses a controller, or the right-hand side of the keyboard if there is none.</p>
+        <aside class="matchcard" id="matchCard" aria-label="This match">
+        <div class="mc-vs mc-face"><i class="mc-h" id="mcHeroL"></i><i class="mc-h r" id="mcHeroR"></i><div class="mc-side" id="mcYou"></div><b class="mc-v">vs</b><div class="mc-side" id="mcFoe"></div></div>
+        <div class="mc-map"><canvas id="mcMap" width="1040" height="720"></canvas><span class="mc-tag" id="mcTag"></span></div>
+        <p class="mc-line" id="mcLine"></p>
+        <div class="mc-crew"><span>Your crew</span><div id="mcCrew"></div></div>
+        <button class="go" id="start">Clock in</button>
+        </aside>
       </div>
       <div class="panel" id="pOpts" hidden>
-        <div class="opts">
-          <label><span id="sensL2">Mouse speed</span> <input type="range" id="sens2" min="0.3" max="2.5" step="0.1" value="1"></label>
-          <label>Volume <input type="range" id="vol2" min="0" max="1" step="0.05" value="0.5"></label>
-          <label><input type="checkbox" id="mus2" checked> Music</label>
-          <label><input type="checkbox" id="cb"> Colour-blind friendly team colours</label>
-          <label><input type="checkbox" id="fpsOn"> Show frame rate</label>
-        </div>
-        <div class="row"><span class="lbl">Touch controls</span><div class="diff" id="touchPick" role="group" aria-label="Touch controls"><button type="button">Auto<small>On for phones and tablets</small></button><button type="button">On<small>Always show them</small></button><button type="button">Off<small>Keyboard and mouse</small></button></div></div>
-        <div class="row"><span class="lbl">Picture</span><div class="diff" id="gfx" role="group" aria-label="Graphics quality"><button type="button">Auto<small>Adjusts to your machine</small></button><button type="button">Low<small>Fastest</small></button><button type="button">Medium<small>Balanced</small></button><button type="button">High<small>Sharpest</small></button></div></div>
-        <p class="teach only-keys">Keys. Click one, then press the key you want. Mouse buttons stay as they are.</p>
-        <div class="binds only-keys" id="keys"></div>
-        <div class="row only-keys"><button type="button" class="mini-btn" id="keysReset">Put the keys back</button></div>
+      <div class="opts">
+      <label><span id="sensL2">Mouse speed</span> <input type="range" id="sens2" min="0.3" max="2.5" step="0.1" value="1"></label>
+      <label>Volume <input type="range" id="vol2" min="0" max="1" step="0.05" value="0.5"></label>
+      <label><input type="checkbox" id="mus2" checked> Music</label>
+      <label><input type="checkbox" id="cb"> Colour-blind friendly team colours</label>
+      <label><input type="checkbox" id="fpsOn"> Show frame rate</label>
+      </div>
+      <div class="row"><span class="lbl">Touch controls</span><div class="diff" id="touchPick" role="group" aria-label="Touch controls"><button type="button">Auto<small>On for phones and tablets</small></button><button type="button">On<small>Always show them</small></button><button type="button">Off<small>Keyboard and mouse</small></button></div></div>
+      <div class="row"><span class="lbl">Picture</span><div class="diff" id="gfx" role="group" aria-label="Graphics quality"><button type="button">Auto<small>Adjusts to your machine</small></button><button type="button">Low<small>Fastest</small></button><button type="button">Medium<small>Balanced</small></button><button type="button">High<small>Sharpest</small></button></div></div>
+      <p class="teach only-keys">Keys. Click one, then press the key you want. Mouse buttons stay as they are.</p>
+      <div class="binds only-keys" id="keys"></div>
+      <div class="row only-keys"><button type="button" class="mini-btn" id="keysReset">Put the keys back</button></div>
+      <details class="fmore only-keys"><summary>Every key, and what it does</summary>
+      <div class="keys only-keys">
+      <h3>Controls</h3>
+      <div><kbd>WASD</kbd>Move, Shift to sprint, Space to dash</div>
+      <div><kbd>Click</kbd>Drill ore, weld, or shoot</div>
+      <div><kbd>RMB</kbd>Aim, raise the Breacher's shield, kick with the Rigger's drill, or fire the Gantry's salvo</div>
+      <div><kbd>C</kbd>Grenade, Gantry stomp or Patch-up</div>
+      <div><kbd>Veyl</kbd>RMB Whirl, Held Note or Low Note. A Tender hums ore with 1 and sings buildings up with 2. G hands the Chorus to the Conductor</div>
+      <div><kbd>2</kbd>Build menu, click to place</div>
+      <div><kbd>E T Y U</kbd>Train or upgrade at a building</div>
+      <div><kbd>Tab</kbd>Hold to jump into another unit</div>
+      <div><kbd>F</kbd>Jump into the unit you are looking at</div>
+      <div><kbd>Q</kbd>Jump back to your last body</div>
+      <div><kbd>Z C X</kbd>Answer the squad when they pitch a plan</div>
+      <div><kbd>V</kbd>Squad follows you, or goes home</div>
+      <div><kbd>MMB</kbd>Middle click sends the squad there</div>
+      <div><kbd>G</kbd>Quartermaster builds for you, on or off</div>
+      <div><kbd>N</kbd>Command view: lift off your body and run the crew from above. Wheel out does the same, wheel all the way in drops you back</div>
+      <div><kbd>M</kbd>The whole map</div>
+      <div><kbd>H</kbd>Send a scout</div>
+      <div><kbd>Fly</kbd>In a flier, Space climbs and Ctrl drops</div>
+      <div><kbd>Ctrl</kbd>In the command view, Ctrl and a number saves a group, the number alone picks it. F1 finds an idle worker, F2 picks every fighter</div>
+      <div><kbd>Esc</kbd>Pause</div>
+      <div><kbd>Pad</kbd>Player two in split screen: sticks move and look, RT fires, LT aims, LB jumps bodies</div>
+      </div>
+      </details>
+      <details class="fmore only-touch"><summary>How the touch controls work</summary>
+      <div class="keys only-touch">
+      <h3>Touch controls</h3>
+      <div><kbd>Left</kbd>Put a thumb down anywhere on the left half to move. Push all the way forward to sprint</div>
+      <div><kbd>Right</kbd>Drag anywhere on the right half to look. Fire and Aim turn the view too while held</div>
+      <div><kbd>Fire</kbd>Drill ore, weld, shoot, or place a building</div>
+      <div><kbd>Aim</kbd>Aim, shield, kick, salvo, or each unit's second move</div>
+      <div><kbd>Build</kbd>Workers open the build menu. Tap a row, then Place</div>
+      <div><kbd>Jump</kbd>Opens the bodies you own. Tap one to jump into it</div>
+      <div><kbd>Buttons</kbd>Training, research and squad answers show up as big buttons in the middle when they are on offer</div>
+      <div><kbd>II</kbd>Pause, with the tech tree</div>
+      </div>
+      </details>
+      <p class="small only-keys">Needs a keyboard and mouse. The Quartermaster runs your economy by default, so you can mine, fight or wander and the base keeps growing.</p>
       </div>
       <div class="panel" id="pMulti" hidden>
-        <div class="brief" id="mLocked">
-          <h3 id="mTitle">Joint operations</h3>
-          <p id="mText"></p>
-        </div>
-        <div class="brief" id="mJoin" hidden>
-          <h3>Joint operations</h3>
-          <p>Two to four players share one Ironhold yard against the Veyl. One of you creates a lobby and reads out the five-letter code.</p>
-          <div class="row form">
-            <label>Your name <input type="text" id="mName" maxlength="14" autocomplete="off" spellcheck="false"></label>
-            <label>Server <input type="text" id="mServer" autocomplete="off" spellcheck="false" placeholder="wss://your-server/ws"></label>
-          </div>
-          <div class="row form">
-            <button class="go" id="mCreate">Create lobby</button>
-            <label>Code <input type="text" id="mCode" maxlength="5" autocomplete="off" spellcheck="false" placeholder="ABCDE" class="code"></label>
-            <button type="button" class="mini-btn big" id="mJoinBtn">Join</button>
-            <button type="button" class="mini-btn" id="mWatch">Watch</button>
-            <button type="button" class="mini-btn" id="mReplays">Replays</button>
-            <button type="button" class="mini-btn" id="mRanked">Ranked</button>
-          </div>
-          <div id="mRankBox" class="rk" hidden></div>
-          <p class="small" id="mErr" role="status"></p>
-        </div>
-        <div class="brief" id="mLobby" hidden>
-          <h3>Lobby <span class="codebig" id="mCodeShow"></span></h3>
-          <p class="teach" id="mHint"></p>
-          <div class="jobs" id="mPlayers"></div>
-          <div class="row">
-            <div class="diff" id="mDiff" role="group" aria-label="Difficulty"><button type="button">Day shift</button><button type="button">Night shift</button><button type="button">Double shift</button></div>
-            <div class="diff" id="mMaps" role="group" aria-label="Map"><button type="button">Needle's Eye</button><button type="button">Switchback</button><button type="button">Glass Flats</button><button type="button" data-b="6">Crossing</button><button type="button" data-b="7">Wheel</button></div><div class="diff"><button type="button" id="mMade" title="Load the map you last played from the map maker">My made map</button></div>
-            <div class="diff" id="mSizes" role="group" aria-label="Map size"><button type="button" data-s="1">Small</button><button type="button" data-s="0">Medium</button><button type="button" data-s="2">Large</button><button type="button" data-s="3">Vast</button></div>
-            <div class="diff" id="mHome" role="group" aria-label="Who holds the yard"><button type="button">Yard: Ironhold</button><button type="button">Yard: Veyl</button><button type="button">Yard: Gloam</button></div>
-            <div class="diff" id="mFoes" role="group" aria-label="Who holds the outpost"><button type="button">The Veyl</button><button type="button">The Gloam</button><button type="button">Ironhold</button></div>
-          </div>
-          <div class="row" id="mTeamRow" hidden>
-            <div class="diff" id="mTeams" role="group" aria-label="Kind of game"></div>
-            <div class="diff" id="mStarts" role="group" aria-label="Your start"></div>
-          </div>
-          <div class="row form" id="mRules">
-            <label>Start ore <select id="mRuleOre"><option value="0">None</option><option value="50">50</option><option value="100">100 (usual)</option><option value="250">250</option><option value="500">500</option><option value="1000">1000</option><option value="2500">2500</option><option value="5000">5000</option></select></label>
-            <label>Start Flux <select id="mRuleFlux"><option value="0">None (usual)</option><option value="50">50</option><option value="100">100</option><option value="250">250</option><option value="500">500</option><option value="1000">1000</option><option value="2000">2000</option></select></label>
-            <label>Game speed <select id="mRuleSpeed"><option value="0.5">Half</option><option value="0.75">Slow</option><option value="1">Normal</option><option value="1.25">Fast</option><option value="1.5">Faster</option><option value="2">Double</option></select></label>
-          </div>
-          <div class="row form">
-            <button class="go" id="mStart">Clock in</button>
-            <button type="button" class="mini-btn big" id="mReady">Ready</button>
-            <button type="button" class="mini-btn" id="mSide">Play as the Veyl</button>
-            <button type="button" class="mini-btn" id="mWatchSide">Watch instead</button>
-            <button type="button" class="mini-btn" id="mLeave">Leave lobby</button>
-          </div>
-          <p class="small" id="mErr2" role="status"></p>
-        </div>
+      <div class="brief" id="mLocked">
+      <h3 id="mTitle">Joint operations</h3>
+      <p id="mText"></p>
       </div>
-      <div class="keys">
-        <h3>The three sides</h3>
-        <div><kbd>Ironhold</kbd>Few, expensive, long-armed. Wins by digging faster and mixing a squad: shield in front, rifles in the middle, a Longshot behind. Weak when caught alone or out of ore.</div>
-        <div><kbd>Veyl</kbd>Many, free, close-in. Wins by never letting the crew settle: Blades tie up Breachers, Lances wear down a Gantry, the Deep Voice walks through a shield wall. Weak in the open against a mixed squad, and every lost Stone thins the raids.</div>
-        <div><kbd>Gloam</kbd>Cheap, fast, and always more of them. Every unit ripens from a Bud on a Mother Cap, every building costs a Grazer, and buildings only grow on the Bloom carpet, where the swarm runs faster and heals. Wins by trading badly and winning anyway. Weak to splash, and to anyone who burns the Caps.</div>
+      <div class="brief" id="mJoin" hidden>
+      <h3>Joint operations</h3>
+      <p>Two to four players share one Ironhold yard against the Veyl. One of you creates a lobby and reads out the five-letter code.</p>
+      <div class="row form">
+      <label>Your name <input type="text" id="mName" maxlength="14" autocomplete="off" spellcheck="false"></label>
+      <label>Server <input type="text" id="mServer" autocomplete="off" spellcheck="false" placeholder="wss://your-server/ws"></label>
       </div>
-      <div class="keys only-touch">
-        <h3>Touch controls</h3>
-        <div><kbd>Left</kbd>Put a thumb down anywhere on the left half to move. Push all the way forward to sprint</div>
-        <div><kbd>Right</kbd>Drag anywhere on the right half to look. Fire and Aim turn the view too while held</div>
-        <div><kbd>Fire</kbd>Drill ore, weld, shoot, or place a building</div>
-        <div><kbd>Aim</kbd>Aim, shield, kick, salvo, or each unit's second move</div>
-        <div><kbd>Build</kbd>Workers open the build menu. Tap a row, then Place</div>
-        <div><kbd>Jump</kbd>Opens the bodies you own. Tap one to jump into it</div>
-        <div><kbd>Buttons</kbd>Training, research and squad answers show up as big buttons in the middle when they are on offer</div>
-        <div><kbd>II</kbd>Pause, with the tech tree</div>
+      <div class="row form">
+      <button class="go" id="mCreate">Create lobby</button>
+      <label>Code <input type="text" id="mCode" maxlength="5" autocomplete="off" spellcheck="false" placeholder="ABCDE" class="code"></label>
+      <button type="button" class="mini-btn big" id="mJoinBtn">Join</button>
+      <button type="button" class="mini-btn" id="mWatch">Watch</button>
+      <button type="button" class="mini-btn" id="mReplays">Replays</button>
+      <button type="button" class="mini-btn" id="mRanked">Ranked</button>
       </div>
-      <div class="keys only-keys">
-        <h3>Controls</h3>
-        <div><kbd>WASD</kbd>Move, Shift to sprint, Space to dash</div>
-        <div><kbd>Click</kbd>Drill ore, weld, or shoot</div>
-        <div><kbd>RMB</kbd>Aim, raise the Breacher's shield, kick with the Rigger's drill, or fire the Gantry's salvo</div>
-        <div><kbd>C</kbd>Grenade, Gantry stomp or Patch-up</div>
-        <div><kbd>Veyl</kbd>RMB Whirl, Held Note or Low Note. A Tender hums ore with 1 and sings buildings up with 2. G hands the Chorus to the Conductor</div>
-        <div><kbd>2</kbd>Build menu, click to place</div>
-        <div><kbd>E T Y U</kbd>Train or upgrade at a building</div>
-        <div><kbd>Tab</kbd>Hold to jump into another unit</div>
-        <div><kbd>F</kbd>Jump into the unit you are looking at</div>
-        <div><kbd>Q</kbd>Jump back to your last body</div>
-        <div><kbd>Z C X</kbd>Answer the squad when they pitch a plan</div>
-        <div><kbd>V</kbd>Squad follows you, or goes home</div>
-        <div><kbd>MMB</kbd>Middle click sends the squad there</div>
-        <div><kbd>G</kbd>Quartermaster builds for you, on or off</div>
-        <div><kbd>N</kbd>Command view: lift off your body and run the crew from above. Wheel out does the same, wheel all the way in drops you back</div>
-        <div><kbd>M</kbd>The whole map</div>
-        <div><kbd>H</kbd>Send a scout</div>
-        <div><kbd>Fly</kbd>In a flier, Space climbs and Ctrl drops</div>
-        <div><kbd>Ctrl</kbd>In the command view, Ctrl and a number saves a group, the number alone picks it. F1 finds an idle worker, F2 picks every fighter</div>
-        <div><kbd>Esc</kbd>Pause</div>
-        <div><kbd>Pad</kbd>Player two in split screen: sticks move and look, RT fires, LT aims, LB jumps bodies</div>
+      <div id="mRankBox" class="rk" hidden></div>
+      <p class="small" id="mErr" role="status"></p>
+      </div>
+      <div class="brief" id="mLobby" hidden>
+      <h3>Lobby <span class="codebig" id="mCodeShow"></span></h3>
+      <p class="teach" id="mHint"></p>
+      <div class="jobs" id="mPlayers"></div>
+      <div class="row">
+      <div class="diff" id="mDiff" role="group" aria-label="Difficulty"><button type="button">Day shift</button><button type="button">Night shift</button><button type="button">Double shift</button></div>
+      <div class="diff" id="mMaps" role="group" aria-label="Map"><button type="button">Needle's Eye</button><button type="button">Switchback</button><button type="button">Glass Flats</button><button type="button" data-b="6">Crossing</button><button type="button" data-b="7">Wheel</button></div><div class="diff"><button type="button" id="mMade" title="Load the map you last played from the map maker">My made map</button></div>
+      <div class="diff" id="mSizes" role="group" aria-label="Map size"><button type="button" data-s="1">Small</button><button type="button" data-s="0">Medium</button><button type="button" data-s="2">Large</button><button type="button" data-s="3">Vast</button></div>
+      <div class="diff" id="mHome" role="group" aria-label="Who holds the yard"><button type="button">Yard: Ironhold</button><button type="button">Yard: Veyl</button><button type="button">Yard: Gloam</button></div>
+      <div class="diff" id="mFoes" role="group" aria-label="Who holds the outpost"><button type="button">The Veyl</button><button type="button">The Gloam</button><button type="button">Ironhold</button></div>
+      </div>
+      <div class="row" id="mTeamRow" hidden>
+      <div class="diff" id="mTeams" role="group" aria-label="Kind of game"></div>
+      <div class="diff" id="mStarts" role="group" aria-label="Your start"></div>
+      </div>
+      <div class="row form" id="mRules">
+      <label>Start ore <select id="mRuleOre"><option value="0">None</option><option value="50">50</option><option value="100">100 (usual)</option><option value="250">250</option><option value="500">500</option><option value="1000">1000</option><option value="2500">2500</option><option value="5000">5000</option></select></label>
+      <label>Start Flux <select id="mRuleFlux"><option value="0">None (usual)</option><option value="50">50</option><option value="100">100</option><option value="250">250</option><option value="500">500</option><option value="1000">1000</option><option value="2000">2000</option></select></label>
+      <label>Game speed <select id="mRuleSpeed"><option value="0.5">Half</option><option value="0.75">Slow</option><option value="1">Normal</option><option value="1.25">Fast</option><option value="1.5">Faster</option><option value="2">Double</option></select></label>
+      </div>
+      <div class="row form">
+      <button class="go" id="mStart">Clock in</button>
+      <button type="button" class="mini-btn big" id="mReady">Ready</button>
+      <button type="button" class="mini-btn" id="mSide">Play as the Veyl</button>
+      <button type="button" class="mini-btn" id="mWatchSide">Watch instead</button>
+      <button type="button" class="mini-btn" id="mLeave">Leave lobby</button>
+      </div>
+      <p class="small" id="mErr2" role="status"></p>
+      </div>
+      <div class="brief only-keys" id="mSame">
+      <h3>Same screen</h3>
+      <p>Two players on this machine. It plays the side, map and shift picked under Skirmish. Co-op shares your side; in versus, player two leads the side you are up against. Player one keeps the keyboard and mouse. Player two uses a controller, or the right-hand side of the keyboard if there is none.</p>
+      <div class="row">
+      <button type="button" class="go alt" id="startSplit">Split screen co-op</button>
+      <button type="button" class="go alt" id="startSplitVs">Split screen versus</button>
+      <div class="diff" id="splitDir" role="group" aria-label="Split screen layout">
+      <button type="button">Side by side<small>Left and right halves</small></button>
+      <button type="button">Stacked<small>Top and bottom halves</small></button>
+      </div>
+      </div>
+      </div>
       </div>
       <p class="small" id="freeNote" hidden>Your browser would not capture the mouse here, so move the cursor to the left or right edge of the screen to turn. Opening the game in its own tab usually fixes it.</p>
-      <p class="small only-keys">Needs a keyboard and mouse. The Quartermaster runs your economy by default, so you can mine, fight or wander and the base keeps growing.</p>
+      </div>
     </div>
   </div>
 
@@ -266,11 +313,19 @@
   </div>
 
   <div class="screen dim" id="end" hidden>
-    <div class="box">
-      <h2 class="logo sm" id="endTitle">Shift over</h2>
-      <p class="tagline" id="endLine"></p>
-      <div class="stats" id="endStats"></div>
-      <div class="row"><button class="go" id="again">Another shift</button><button type="button" class="mini-btn" id="toMenu">Back to the menu</button></div>
+    <div class="box endbox">
+      <div class="endl">
+        <h2 class="logo sm" id="endTitle">Shift over</h2>
+        <p class="tagline" id="endLine"></p>
+        <div class="stats" id="endStats"></div>
+        <div class="endtip" id="endTip" hidden><img id="endTipImg" alt=""><p><b id="endTipHead">Foreman's note</b><span id="endTipText"></span></p></div>
+        <div class="row"><button class="go" id="again">Another shift</button><button type="button" class="mini-btn" id="toMenu">Back to the menu</button></div>
+      </div>
+      <aside class="matchcard endcard" id="endCard" aria-label="How the match ended">
+        <div class="mc-vs"><div class="mc-side" id="ecYou"></div><b class="mc-v">vs</b><div class="mc-side" id="ecFoe"></div></div>
+        <div class="mc-map"><canvas id="ecMap" width="1040" height="720"></canvas><span class="mc-tag" id="ecTag"></span></div>
+        <div class="mc-crew"><span id="ecCrewL">Standing at the whistle</span><div id="ecCrew"></div></div>
+      </aside>
     </div>
   </div>
 </div>

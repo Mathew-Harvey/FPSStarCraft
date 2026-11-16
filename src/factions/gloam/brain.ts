@@ -73,6 +73,10 @@ export function overgrowth(D: Director, dt: number, V: Side = D.vs) {
   if (!warren.length) put('warren', 'A Warren first. The Snappers need somewhere to sleep.');
   else if (wantSac) put('sporesac', 'We are crowded. Rooting a Spore Sac.');
   else if (growing) saving = false;
+  // BROOD_EXP (stream L round 4, off by default): the second Cap comes ahead of the tech steps once it is due, with the Buds holding its price.
+  else if (BROOD_EXP.on && warrenUp && exp.site && caps.length < Math.min(BROOD_EXP.caps, wantCaps + (g.time > BROOD_EXP.t ? 1 : 0)) && g.time > BROOD_EXP.t && army >= BROOD_EXP.army) {
+    hold = BLD.mothercap.cost; const at = capSpot(exp.site);
+    if (cash() >= BLD.mothercap.cost && canRoot && at && g.place('mothercap', at[0], at[1], false, T, null)) D.say('Overgrowth', 'A Grazer has wandered to the far seam to become a Mother Cap. The Bloom will follow it.', '', T); }
   // The Quill Garden before the outnumbered rule, with the Buds holding its price: without this a third of the Brood never grew one
   // against an Ironhold that kept its army bigger, and Snappers were 56-72% of the swarm's army spend (stream L round 3).
   else if (BROOD_EARLY.garden && warrenUp && !garden.length && army >= BROOD_EARLY.garden) { hold = BLD.quillgarden.cost; put('quillgarden', 'A Quill Garden. Spitters, and the first new tricks.'); }
@@ -130,6 +134,11 @@ export function overgrowth(D: Director, dt: number, V: Side = D.vs) {
 }
 /** When the Quill Garden comes ahead of everything else but the Warren and Spore Sacs: at this many fighters (0 keeps the old order). */
 export const BROOD_EARLY = { garden: 0, hold: 0 };
+/** When the second and third Mother Caps come ahead of the tech steps: after t seconds with this many fighters, up to caps Caps (on: 0 keeps
+ *  the old order). Before it the bot took a second Cap in 10 of 72 matches and Snappers were 60-75% of its army spend; with it (and the Cap at
+ *  250 ore) Ironhold v Gloam went 18 to 17, Veyl v Gloam 19 to 17, Snappers 27-33% (stream L round 4, rows L/rush/m_exp4). On alone, at
+ *  400 ore a Cap, the Gloam lost 7 to 29 and 2 to 34. */
+export const BROOD_EXP = { on: 1, t: 240, army: 0, caps: 3 };
 const count = (caps: Building[], k: Kind) => caps.reduce((a, b) => a + b.queue.filter(q => q.kind === k).length, 0);
 /** The next seam worth a Mother Cap (nearest home, nobody there yet, away from the Ironhold), and a new Cap still without a Stinger Stalk. */
 function expansion(D: Director, T: number): { site: number[] | null; bare: number[] | null } {

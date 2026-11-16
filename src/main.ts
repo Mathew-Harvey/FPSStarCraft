@@ -120,10 +120,13 @@ function queueIcons(units: Kind[]) {
   const have = [0, 1, 2].filter(f => artHas([f])).join('');
   if (have !== iconArt) { iconArt = have; for (const k of Object.keys(BLD)) if (!iconQ.includes('b:' + k)) iconQ.push('b:' + k); }
 }
-/** Draws the next few queued map pictures (`all` draws every one left). Each takes two small renders, so a few per quarter second. */
+/** Draws the next queued map pictures (`all` draws every one left). Each takes two small renders. */
 function pumpIcons(all = false) {
-  if (!iconQ.length) return; const now = performance.now(); if (!all && now - iconT < 250) return; iconT = now;
-  const keys = iconQ.splice(0, all ? iconQ.length : 3);
+  // A dozen every three seconds, since each batch resizes the whole screen pipeline down to the picture and back. Never while the page
+  // draws nothing (tests that only check rules): reading pictures back off a software renderer stalled a page that joined a running
+  // match for forty seconds at a time (test/coop.mjs). The pictures are drawn once the page draws again.
+  if (!iconQ.length || (!all && game.noRender && !game2)) return; const now = performance.now(); if (!all && now - iconT < 3000) return; iconT = now;
+  const keys = iconQ.splice(0, all ? iconQ.length : 12);
   try { studio(ICON_PX, () => offDice(() => mapIcons(keys))); } catch (e) { console.warn('map pictures', e); }
   pipe.w = 0; resize();
 }

@@ -114,7 +114,7 @@ function mapIcons(keys: string[]) {
   sheet.dispose(); ground.geometry.dispose();
 }
 let iconArt = '-';
-const iconQ: string[] = []; let iconT = 0;
+const iconQ: string[] = []; let iconT = 0, frameMs = 100;
 function queueIcons(units: Kind[]) {
   for (const k of units) if (!iconQ.includes(k)) iconQ.push(k);
   // Buildings are drawn again whenever a faction's art has arrived since the last time, since a building has no faction written on it.
@@ -123,8 +123,12 @@ function queueIcons(units: Kind[]) {
 }
 /** Draws the next few queued map pictures (`all` draws every one left). Each takes two small renders, so a few per quarter second. */
 function pumpIcons(all = false) {
-  if (!iconQ.length) return; const now = performance.now(); if (!all && now - iconT < 250) return; iconT = now;
-  const keys = iconQ.splice(0, all ? iconQ.length : 3);
+  if (!iconQ.length) return; const now = performance.now(); if (!all && now - iconT < 250) return;
+  // Only when the page has time to spare: it is drawing (a page told not to draw, such as a test, has no map to show) and its frames
+  // are quick. A slow page (joining a big match, or a weak machine) gets one picture every few seconds instead, so it never falls behind.
+  if (!all && (game.noRender || document.hidden || (frameMs > 40 && now - iconT < 4000))) return; iconT = now;
+  if (!all) { const here = new Set<string>([...game.units.map(u => u.kind as string), ...game.buildings.map(b => 'b:' + b.kind)]); iconQ.sort((a, b) => (here.has(b) ? 1 : 0) - (here.has(a) ? 1 : 0)); }
+  const keys = iconQ.splice(0, all ? iconQ.length : frameMs > 40 ? 1 : 2);
   try { studio(ICON_PX, () => offDice(() => mapIcons(keys))); } catch (e) { console.warn('map pictures', e); }
   pipe.w = 0; resize();
 }
@@ -607,7 +611,7 @@ let still = false;
 function frame(now: number) {
   // The first frame's time stamp can be earlier than the moment this script set `last` (a long boot), which made dt about -18 s:
   // the screen flash and shake then grew instead of fading (to about 46) and whitened the first frames of a match.
-  pumpIcons();
+  frameMs += (Math.min(1000, now - last) - frameMs) * .2; pumpIcons();
   const dt = Math.max(0, (now - last) / 1000); last = now; watchFrame(game, dt); if (still) { game.noRender = true; if (game2) game2.noRender = true; }
   // Without mouse capture, holding the cursor near a screen edge turns the view.
   pad.frame(); if (touchOn) document.body.classList.toggle('playing', live());

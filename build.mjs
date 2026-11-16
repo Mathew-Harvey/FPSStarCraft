@@ -55,10 +55,21 @@ import { createServer } from 'node:http';
 
 const INLINE = process.env.INLINE === '1';
 const wrap = (page) => '<!doctype html>\n<html lang="en">\n<head>\n<meta charset="utf-8">\n<meta name="viewport" content="width=device-width,initial-scale=1">\n</head>\n<body>\n' + page + '</body>\n</html>\n';
+// The front end's pictures (assets/menu: one hero render per side, behind the title and Home). Beside the page in dist/art/ like the
+// models, or inside it as data with INLINE=1. The CSS gets them as --hero0, --hero1, --hero2.
+function menuArt(mode) {
+  const names = existsSync('assets/menu') ? readdirSync('assets/menu').filter(f => f.endsWith('.webp')).sort() : [];
+  const vars = names.map(f => {
+    const v = '--' + f.replace(/\.webp$/, '').replace(/-/g, '');
+    if (mode === 'files') { mkdirSync('dist/art', { recursive: true }); writeFileSync('dist/art/menu-' + f, readFileSync('assets/menu/' + f)); return `${v}:url(art/menu-${f})`; }
+    return `${v}:url(data:image/webp;base64,${readFileSync('assets/menu/' + f).toString('base64')})`;
+  });
+  return vars.length ? `:root{${vars.join(';')}}` : '';
+}
 async function page(minify, mode) {
   const out = await build({ entryPoints: ['src/boot.ts'], bundle: true, minify, format: 'iife', target: 'es2020', write: false, legalComments: 'none', plugins: [sfxBank(false), artModules(mode)] });
   const js = out.outputFiles[0].text.replace(/<\/script/g, '<\\/script');
-  const css = readFileSync('src/style.css', 'utf8');
+  const css = readFileSync('src/style.css', 'utf8').replace('/*__MENUART__*/', () => menuArt(mode));
   return readFileSync('src/page.html', 'utf8').replace('/*__CSS__*/', () => css).replace('/*__JS__*/', () => js);
 }
 async function bundle(minify) {

@@ -177,6 +177,8 @@ function portraits(redo = false, only?: Kind[]) {
 portraits(); hud2.portraits = hud.portraits; hud2.icons = hud.icons;
 pipe.w = 0; resize();
 // Multiplayer is open from the first launch: friends who want to play together should not have to finish the story first.
+let front: 'title' | 'home' | 'in' = 'title';   // which part of the front end shows: the side-picking title, Home, or the tabbed screens
+const SIDE_LONG = ['Ironhold Charter', 'Veyl Chorus', 'The Gloam'], HERO = ['Gantry', 'Warden', 'Mulcher'];
 let camp = 0, sideDone = 0, mpOpen = true, mode = 'camp', jobI = 0, pname = '', srv = '';
 /** Story jobs after which an old save that still had multiplayer locked opens it: the end of Act 1. */
 const MP_AFTER = 14;
@@ -306,7 +308,7 @@ $('again').addEventListener('click', () => {
   const st = game.story; if (st && mode !== 'skirm') { const i = MISSIONS.indexOf(st); if (game.won && i < STORY_JOBS - 1) { jobI = i + 1; const nx = MISSIONS[jobI]; playCuts([...(st.cutOut || []), ...(nx.cutIn || [])], () => { fresh(); start(); }); } else if (game.won && i === STORY_JOBS - 1) playCuts(st.cutOut || [], () => { mode = 'camp'; toMenu(); }); else { fresh(); start(); } return; }
   if (split && !game2) { startVeyl(); return; } if (split) { startSplit(splitMode); return; } if (game.net) { toMenu(); return; } fresh(); start(); });
 $('startJob').addEventListener('click', startJob);
-function toMenu() { $('end').hidden = true; $('pause').hidden = true; hud.show(false); if (document.pointerLockElement) document.exitPointerLock(); showMode(); fresh(); $('menu').hidden = false; }
+function toMenu() { front = 'home'; $('end').hidden = true; $('pause').hidden = true; hud.show(false); if (document.pointerLockElement) document.exitPointerLock(); showMode(); fresh(); $('menu').hidden = false; }
 $('toMenu').addEventListener('click', toMenu);
 /** Walks out of a shift that is still running. Online, that means leaving the lobby too, so nobody is left holding an empty body. */
 function quit() { if (net && game.net === net) { net.send({ t: 'leave' }); net.inbox.length = 0; game.net = null; } toMenu(); }
@@ -435,7 +437,7 @@ splitBtns.forEach((b, i) => b.addEventListener('click', () => { splitSide = i ==
 // ---- which side a skirmish plays
 const sideBtns = Array.from($('sides').querySelectorAll('button')) as HTMLButtonElement[];
 const foeBtns = Array.from($('foes').querySelectorAll('button:not(#raid)')) as HTMLButtonElement[], raidBtn = $('raid') as HTMLButtonElement;
-const showSide = () => { sideBtns.forEach((b, i) => { const on = i === sideI; b.classList.toggle('on', on); b.setAttribute('aria-pressed', String(on)); }); foeBtns.forEach((b, i) => { const on = i === foeI && !raidOn(); b.classList.toggle('on', on); b.setAttribute('aria-pressed', String(on)); }); raidBtn.hidden = sideI !== 0 || teamI > 0; raidBtn.classList.toggle('on', raidOn()); raidBtn.setAttribute('aria-pressed', String(raidOn())); $('foes').hidden = false; $('start').textContent = sideI === 2 ? 'Start growing' : sideI ? 'Start singing' : 'Clock in'; $('startSplit').textContent = sideI === 2 ? 'Split screen co-op as the Gloam' : sideI ? 'Split screen co-op as the Veyl' : 'Split screen co-op'; };
+const showSide = () => { sideBtns.forEach((b, i) => { const on = i === sideI; b.classList.toggle('on', on); b.setAttribute('aria-pressed', String(on)); }); foeBtns.forEach((b, i) => { const on = i === foeI && !raidOn(); b.classList.toggle('on', on); b.setAttribute('aria-pressed', String(on)); }); raidBtn.hidden = sideI !== 0 || teamI > 0; raidBtn.classList.toggle('on', raidOn()); raidBtn.setAttribute('aria-pressed', String(raidOn())); $('foes').hidden = false; document.body.dataset.side = String(sideI); $('slotYou').innerHTML = emblem(sideI); $('slotFoe').innerHTML = emblem(raidOn() ? 0 : FOE_FAC[foeI]); ($('mcHeroL') as HTMLElement).style.backgroundImage = `var(--hero${sideI})`; ($('mcHeroR') as HTMLElement).style.backgroundImage = `var(--hero${raidOn() ? 0 : FOE_FAC[foeI]})`; $('start').textContent = sideI === 2 ? 'Start growing' : sideI ? 'Start singing' : 'Clock in'; $('startSplit').textContent = sideI === 2 ? 'Split screen co-op as the Gloam' : sideI ? 'Split screen co-op as the Veyl' : 'Split screen co-op'; };
 sideBtns.forEach((b, i) => b.addEventListener('click', () => { if (i !== sideI) foeI = i ? 2 : 0; sideI = i; showSide(); save(); if (mode === 'skirm' && (sidesCode() !== wantCode() || builtTeam !== teamKey())) fresh(); }));
 foeBtns.forEach((b, i) => b.addEventListener('click', () => { foeI = i; raid = false; showSide(); save(); if (mode === 'skirm' && (sidesCode() !== wantCode() || builtTeam !== teamKey())) fresh(); })); showSide();
 raidBtn.addEventListener('click', () => { raid = true; foeI = 0; showSide(); save(); if (mode === 'skirm' && (sidesCode() !== wantCode() || builtTeam !== teamKey())) fresh(); });
@@ -447,7 +449,7 @@ function showJobs() {
   const actOf = Math.max(1, MISSIONS[Math.min(jobI, STORY_JOBS - 1)].act || 4);
   $('jobs').innerHTML = `<div class="acts">${ACTS.map(a => { const first = MISSIONS.findIndex(m => m.act === a.n), open = jobOpen(first); return `<button type="button" class="act ${a.n === (MISSIONS[jobI].act || actOf) ? 'on' : ''}" data-a="${a.n}" ${open ? '' : 'disabled'}>Act ${a.n}<b>${a.name}</b><small>${a.side}</small></button>`; }).join('')}<button type="button" class="act ${MISSIONS[jobI].act === 0 ? 'on' : ''}" data-a="0">Side<b>Jobs</b><small>Optional</small></button></div>`
     + `<div class="jrow">${MISSIONS.map((m, i) => m.act === (MISSIONS[jobI].act) ? btn(m, i) : '').join('')}</div>`;
-  const m = MISSIONS[jobI]; $('bName').textContent = `${m.tag}: ${m.name}`; $('bTeach').textContent = 'Teaches: ' + m.teaches; $('bText').textContent = touchOn ? touchWords(m.brief) : m.brief;
+  const m = MISSIONS[jobI]; $('pCamp').style.setProperty('--jobHero', `var(--hero${m.side})`); $('bName').textContent = `${m.tag}: ${m.name}`; $('bTeach').textContent = 'Teaches: ' + m.teaches; $('bText').textContent = touchOn ? touchWords(m.brief) : m.brief;
   $('skipCamp').hidden = camp >= STORY_JOBS && mpOpen;
 }
 function showMode() {
@@ -456,12 +458,47 @@ function showMode() {
   $('multiBtn').classList.toggle('locked', !mpOpen); $('multiNote').textContent = mpOpen ? 'Online or one screen' : 'Locked. Finish Act 1.';
   $('mLocked').hidden = mpOpen; $('mJoin').hidden = !mpOpen || !!(net && net.lobby && net.lobby.code); $('mLobby').hidden = !mpOpen || !(net && net.lobby && net.lobby.code);
   $('mTitle').textContent = mpOpen ? 'Joint operations: cleared' : 'Joint operations: locked';
-  $('mText').textContent = mpOpen ? 'You are cleared for multiplayer. Make a lobby and read its code out to your crew, or join one with theirs. Two players on one machine can play split screen from the Skirmish tab.' : 'The Charter does not let strangers share a payroll. Finish Act 1 of the campaign to unlock multiplayer, or use the unlock button on the Campaign tab if you have done them before.';
-  showJobs();
+  $('mText').textContent = mpOpen ? 'You are cleared for multiplayer. Make a lobby and read its code out to your crew, or join one with theirs. Two players on one machine can play split screen from Same screen below.' : 'The Charter does not let strangers share a payroll. Finish Act 1 of the campaign to unlock multiplayer, or use the unlock button on the Campaign tab if you have done them before.';
+  showJobs(); showFront();
 }
 modeBtns.forEach(b => b.addEventListener('click', () => { optsOpen = b.dataset.m === 'opts'; if (optsOpen) { showMode(); return; } mode = (b.dataset.m || 'camp') as typeof mode; save(); showMode(); if (mode !== 'multi') { const w = want(); if (game.mapI !== w.map || game.mission !== w.m) fresh(); } }));
 $('jobs').addEventListener('click', e => { const b = (e.target as HTMLElement).closest('button') as HTMLButtonElement | null; if (!b || b.disabled) return; if (b.dataset.a !== undefined) { const a = +b.dataset.a; const list = MISSIONS.map((m, i) => i).filter(i => MISSIONS[i].act === a && jobOpen(i)); if (list.length) jobI = list[list.length - 1]; } else jobI = +(b.dataset.j || 0); showJobs(); const w = want(); if (game.mapI !== w.map || game.mission !== w.m) fresh(); });
 $('skipCamp').addEventListener('click', () => { camp = STORY_JOBS; mpOpen = true; save(); showMode(); });
+// ---- Front end: the title (three panels, one per side), Home (plates over your side's hero, the next job, a quick match) and the inner screens
+// (one bar of tabs). The tabs and every control inside keep their old ids, so the tests and tools that click them still work.
+const onText = (id: string) => (($(id).querySelector('button.on')?.firstChild?.textContent) || '').trim();
+function showFront() {
+  const menu = $('menu'); menu.dataset.front = front;
+  $('fTitle').hidden = front !== 'title'; $('fHome').hidden = front !== 'home'; $('fInner').hidden = front !== 'in';
+  $('askKeep').textContent = `or any key keeps ${SIDE_LONG[sideI]}`; $('htName').textContent = HERO[sideI]; $('htSide').textContent = SIDE_LONG[sideI];
+  $('pbName').textContent = pname || 'Rigger';
+  ($('pbSides').querySelectorAll('button') as NodeListOf<HTMLButtonElement>).forEach((b, i) => { if (!b.firstElementChild) b.innerHTML = emblem(i); const on = i === sideI; b.classList.toggle('on', on); b.setAttribute('aria-pressed', String(on)); });
+  if (front !== 'home') return;
+  $('plCamp').textContent = camp >= STORY_JOBS ? 'All jobs open' : `Job ${camp + 1} of ${STORY_JOBS}`;
+  $('plMulti').textContent = mpOpen ? 'Online or one screen' : 'After Act 1';
+  const m = MISSIONS[Math.min(camp, STORY_JOBS - 1)], act = ACTS.find(a => a.n === m.act);
+  $('bcAct').textContent = camp >= STORY_JOBS ? 'Campaign done' : act ? `Act ${act.n} · ${act.name}` : 'Side job';
+  $('bcName').textContent = m.name; $('bcTeach').textContent = 'Teaches: ' + m.teaches;
+  $('bcImg').style.setProperty('--jobHero', `var(--hero${m.side})`);
+  $('bcGo').textContent = camp >= STORY_JOBS ? 'Replay' : camp ? 'Continue' : 'Start';
+  $('bcQuick').textContent = `${SIDE_LONG[sideI]} against ${SIDE_LONG[FOE_FAC[foeI]]}, ${onText('maps') || 'Needle\'s Eye'}, ${onText('sizes') || 'Medium'}, ${onText('diff') || DIFFS[diffI].name}.`;
+}
+const goFront = (f: typeof front) => { front = f; showFront(); if (f === 'in') ($('modes').querySelector('button.on') as HTMLElement | null)?.focus({ preventScroll: true }); };
+const goIn = (m: string) => { const b = modeBtns.find(x => x.dataset.m === m); if (b) b.click(); goFront('in'); };
+const pickSideFront = (i: number) => { if (i !== sideI) sideBtns[i].click(); goFront('home'); };
+document.querySelectorAll<HTMLButtonElement>('#fTitle .tp').forEach(b => b.addEventListener('click', e => { e.stopPropagation(); pickSideFront(+(b.dataset.side || 0)); }));
+$('fTitle').addEventListener('click', () => goFront('home'));
+$('pbSides').querySelectorAll<HTMLButtonElement>('button').forEach((b, i) => b.addEventListener('click', () => { if (i !== sideI) sideBtns[i].click(); showFront(); }));
+document.querySelectorAll<HTMLButtonElement>('#fHome .plate').forEach(b => b.addEventListener('click', () => goIn(b.dataset.to || 'camp')));
+$('bcGo').addEventListener('click', () => { jobI = Math.min(camp, STORY_JOBS - 1); goIn('camp'); showJobs(); const w = want(); if (game.mapI !== w.map || game.mission !== w.m) fresh(); });
+$('bcQGo').addEventListener('click', () => { goIn('skirm'); $('start').click(); });
+$('fBack').addEventListener('click', () => goFront('home')); $('fLogo').addEventListener('click', () => goFront('home'));
+addEventListener('keydown', e => {
+  if ($('menu').hidden || cutP.on || rebinding || e.ctrlKey || e.metaKey || e.altKey) return;
+  const t = e.target as HTMLElement; if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT')) return;
+  if (front === 'title' && !['Tab', 'Shift', 'Control', 'Alt', 'Meta'].includes(e.key)) { e.preventDefault(); goFront('home'); }
+  else if (front === 'in' && e.code === 'Escape') { e.preventDefault(); goFront('home'); }
+});
 // ---- multiplayer lobby
 const mName = $('mName') as HTMLInputElement, mServer = $('mServer') as HTMLInputElement, mCode = $('mCode') as HTMLInputElement;
 const defaultServer = () => /^https?:$/.test(location.protocol) && location.host ? (location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/ws' : '';
@@ -644,5 +681,5 @@ function frame(now: number) {
   if (fast > 900 && quality < 1) { quality = Math.min(1, quality / .85); fast = 0; pipe.aa = aaFor(); pipe.ao = aoFor(); pipe.glow = pipe.shafts = glowFor(); LAMP_ON.value = (gfxI as number) !== 1; resize(); }
   requestAnimationFrame(frame);
 }
-(window as any).__ore = { flushIcons: () => pumpIcons(true), MAP: () => MAP, ter: () => TER, models: MD, tx: TX, mats: M, gloamB: GLOAM_BUILDINGS, gloamBloom: bloomPatch, sounds: { ready: soundsReady, sfx }, quit, atlasUsed: MD.atlasUsed, game, start, pipe, hud, hud2, startSplit, startVeyl, pause, resume, touch: pad, setTouch, reg: { defineAbilities, abilitiesOf, useAbility, defineBuildings, UNIT, BLD, isFriend }, padDrive: (p: Gamepad, dt = 1 / 30) => padDrive(game, p, 0, dt), split: () => split, game2: () => game2, setFree: (v: boolean) => { freeMouse = v; }, hold: (v: boolean) => { still = v; if (!v) { game.noRender = false; if (game2) game2.noRender = false; } }, pickMap, pickSize, portraits: (only?: Kind[]) => portraits(true, only), setRaid: (v: boolean) => { raid = v; showSide(); if (mode === 'skirm' && builtTeam !== teamKey()) fresh(); }, pickSide: (s: number, f = 0) => { mode = "skirm"; sideI = s; foeI = s ? s - 1 : f; showSide(); fresh(); }, unlock: () => { camp = STORY_JOBS; mpOpen = true; mode = 'multi'; showMode(); }, net: () => net, pickJob: (i: number) => { mode = 'camp'; camp = Math.max(camp, Math.min(i, STORY_JOBS)); jobI = i; showMode(); fresh(); }, playCuts, cuts: CUTS, cutP, startStory: (i: number) => { mode = 'camp'; jobI = i; camp = Math.max(camp, Math.min(i, STORY_JOBS)); start(); } };
+(window as any).__ore = { flushIcons: () => pumpIcons(true), MAP: () => MAP, ter: () => TER, models: MD, tx: TX, mats: M, gloamB: GLOAM_BUILDINGS, gloamBloom: bloomPatch, sounds: { ready: soundsReady, sfx }, quit, atlasUsed: MD.atlasUsed, game, start, pipe, hud, hud2, startSplit, startVeyl, pause, resume, touch: pad, setTouch, reg: { defineAbilities, abilitiesOf, useAbility, defineBuildings, UNIT, BLD, isFriend }, padDrive: (p: Gamepad, dt = 1 / 30) => padDrive(game, p, 0, dt), split: () => split, game2: () => game2, setFree: (v: boolean) => { freeMouse = v; }, hold: (v: boolean) => { still = v; if (!v) { game.noRender = false; if (game2) game2.noRender = false; } }, pickMap, pickSize, portraits: (only?: Kind[]) => portraits(true, only), setRaid: (v: boolean) => { raid = v; showSide(); if (mode === 'skirm' && builtTeam !== teamKey()) fresh(); }, pickSide: (s: number, f = 0) => { mode = "skirm"; front = 'in'; optsOpen = false; showMode(); sideI = s; foeI = s ? s - 1 : f; showSide(); fresh(); }, unlock: () => { camp = STORY_JOBS; mpOpen = true; mode = 'multi'; front = 'in'; showMode(); }, net: () => net, pickJob: (i: number) => { mode = 'camp'; front = 'in'; camp = Math.max(camp, Math.min(i, STORY_JOBS)); jobI = i; showMode(); fresh(); }, playCuts, cuts: CUTS, cutP, startStory: (i: number) => { mode = 'camp'; front = 'in'; jobI = i; camp = Math.max(camp, Math.min(i, STORY_JOBS)); start(); } };
 requestAnimationFrame(frame);

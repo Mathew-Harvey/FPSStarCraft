@@ -21,6 +21,8 @@ void noHud; void noPipe;   // the shim's stand-ins: importing it is what matters
 
 initHeadless();
 if (process.env.ORE_TRUST_HITS === '1') { WIRE.trustHits = true; console.log('test server: hit claims are not checked (ORE_TRUST_HITS)'); }
+/** Test servers only (ORE_TRUCE=1): nobody fires on their own, so a test's match is not lost to a raid while a slow runner gets to its checks. */
+const TEST_TRUCE = process.env.ORE_TRUCE === '1'; if (TEST_TRUCE) console.log('test server: no side fires on its own (ORE_TRUCE)');
 if (process.env.ORE_WIRE_FOG === '0') { WIRE.fog = false; console.log('test server: every side is sent the whole world (ORE_WIRE_FOG=0)'); }
 const here = dirname(fileURLToPath(import.meta.url));
 /** Which build of the rules this is: a replay names it, so playing one on different rules says so. */
@@ -87,6 +89,7 @@ function begin(l: Lobby) {
   l.gone = {};
   l.carry = 0;
   l.match = new Match({ map: l.map, plan: l.plan || '', diff: l.diff, out: l.out, mt: l.mt || null, rules: l.rules, seed: (Math.random() * 2 ** 32) >>> 0, clock: Date.now() }, [...l.players], say, BUILD);
+  if (TEST_TRUCE) l.match.g.truce = true;
   tell(l);
 }
 /** A player arrives while the match is running: a late start, coming back after a dropped connection, or somebody come to watch. */

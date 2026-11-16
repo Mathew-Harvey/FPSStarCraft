@@ -15,7 +15,7 @@ import type { AbilityDef, Target } from './core/ability';
 import { kit, panOf, loop, setEar, setWind, type Loop } from './audio';
 import { ENV } from './light';
 
-const { S, sub, swell, bell, chime, far } = kit;
+const { S, sub, pure, swell, bell, chime, far } = kit;
 /** What has played, for tests and the sound check (tools/sfx/match.mjs reads it as window.__sfx). */
 export const soundStats = { casts: {} as Record<string, number>, winds: 0, engines: 0 };
 (globalThis as any).__sfx = soundStats;   // tools/sfx/match.mjs also calls __sfx.tick (tickSound) itself, so it can run without drawing
@@ -87,14 +87,14 @@ export const CAST: Record<string, R> = {
   'tuner.hum': v => { veyl.chord(v, [0, 3, 5], 0, .12, 2.2); S('shimmer', .25 * v, { at: .1, rate: .8, lp: far(v) }); },
   'tuner.voice': v => { bell(NOTE(8), 1.2, .1 * v); bell(NOTE(8) * 1.012, 1.2, .08 * v, .03); S('appear', .5 * v, { lp: far(v) }); S('shimmer', .2 * v, { at: .1, lp: far(v) }); },
   'choirmaster.shatter': v => { S('crystal', .8 * v, { rate: 1.1, lp: far(v) }); S('crunch', .3 * v, { rate: 1.6, lp: 4500 }); bell(NOTE(10), .9, .12 * v); bell(NOTE(10) * 1.06, .9, .09 * v, .02); S('glass', .5 * v, { at: .08, rate: 1.2, lp: far(v) }); sub(200, 70, .2, .2 * v); },
-  'choirmaster.drain': v => { S('suck', .4 * v, { rate: .8, lp: far(v) }); sub(NOTE(10), NOTE(5), .9, .07 * v); S('field', .25 * v, { at: .2, rate: .7, lp: far(v) }); },
+  'choirmaster.drain': v => { S('suck', .4 * v, { rate: .8, lp: far(v) }); pure(NOTE(10), NOTE(5), .9, .07 * v); S('field', .25 * v, { at: .2, rate: .7, lp: far(v) }); },
   'choirmaster.join': v => { veyl.chord(v, [0, 2, 4, 5, 7], 0, .14, 2.4); S('shimmer', .3 * v, { at: .3, rate: .7, lp: far(v) }); },
   'knell.toll': v => { S('bellh', .5 * v, { rate: .7, lp: Math.min(far(v), 4500) }); bell(NOTE(-5), 3, .14 * v); bell(NOTE(0), 2.2, .05 * v, .02); sub(55, 50, 1.6, .2 * v); },
   'listener.settle': v => { S('fall', .45 * v, { lp: far(v) }); S('gtouch', .4 * v, { at: .25 }); veyl.ring(v, 3, .25, .9, .12); },
   'ferry.unfold': v => { S('gslide', .35 * v, { rate: .7, lp: far(v) }); S('rise', .25 * v, { lp: far(v) }); veyl.chord(v, [0, 3, 5, 7], .35, .1, 1.8); },
   'ferry.load': v => { S('suck', .35 * v, { lp: far(v) }); veyl.ring(v, 5, .1, .6); veyl.ring(v, 7, .22, .8); },
   'ferry.drop': v => { S('appear', .35 * v, { lp: far(v) }); veyl.ring(v, 7, .05, .6); veyl.ring(v, 5, .17, .8); },
-  'swift.lift': v => { S('rise', .3 * v, { lp: far(v) }); S('field', .3 * v, { rate: 1.2, lp: far(v) }); sub(NOTE(5), NOTE(10), .8, .06 * v); },
+  'swift.lift': v => { S('rise', .3 * v, { lp: far(v) }); S('field', .3 * v, { rate: 1.2, lp: far(v) }); pure(NOTE(5), NOTE(10), .8, .06 * v); },
   'prism.burn': v => { S('magic', .3 * v, { lp: far(v) }); veyl.ring(v, 12, .05, 1); S('field', .25 * v, { at: .1, rate: 1.4, lp: far(v) }); },
   'omen.shrill': v => { S('beam', .5 * v, { rate: 1.3, lp: Math.min(far(v), 5000) }); bell(NOTE(12), .7, .08 * v); S('gtouch', .35 * v, { rate: 1.6 }); },
   'omen.reveal': v => { S('shimmer', .6 * v, { rate: .9, lp: far(v) }); veyl.chord(v, [7, 10, 12], 0, .1, 1.6); veyl.air(v, .1, 1); },

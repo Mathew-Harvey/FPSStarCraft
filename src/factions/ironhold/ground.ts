@@ -24,7 +24,7 @@ defineAbilities('linesman', [{
   key: 'overtime', name: 'Overtime', hotkey: 'T', energy: 0, cd: 1, cast: 0, range: 0, target: 'self',
   blurb: `Lose ${TUNE.overtime.hp} health, fire and run 50% faster for ${TUNE.overtime.t} s.`,
   can: (g, u) => needs('overtime')(g, u) && u.hp > TUNE.overtime.hp + 5 && !boosted(g, u, 'ot'),
-  effect(g, u) { u.hp -= TUNE.overtime.hp; boost(g, u, 'ot', TUNE.overtime.t); g.puff(TMP.set(u.pos.x, 1.4, u.pos.z), 3, .4, M.fire, 1.6, .5); if (g.vol(u.pos) > .2) sfx.dash(.6); if (u === g.me) g.hud.damage(V3(u.pos.x, 2, u.pos.z), 'OVERTIME!', 'crit'); },
+  effect(g, u) { u.hp -= TUNE.overtime.hp; boost(g, u, 'ot', TUNE.overtime.t); g.puff(TMP.set(u.pos.x, 1.4, u.pos.z), 3, .4, M.fire, 1.6, .5); if (u === g.me) g.hud.damage(V3(u.pos.x, 2, u.pos.z), 'OVERTIME!', 'crit'); },
   ai: (g, u) => u.target && isUnit(u.target) && u.hp > u.maxHp * .7 && dist(u, u.target) < 22 ? { x: u.pos.x, z: u.pos.z } : null,
 }]);
 /** How much faster a body fires right now (Overtime). */
@@ -117,7 +117,7 @@ function spout(g: Game, u: Unit, yaw = u.yaw, pitch = 0) {
 defineAbilities('dustbike', [{
   key: 'kick', name: 'Kick Start', hotkey: 'T', energy: 0, cd: TUNE.kick.cd, cast: 0, range: 0, target: 'self',
   blurb: `${TUNE.kick.t} s of ${Math.round((TUNE.kick.pace - 1) * 100)}% more speed.`,
-  effect(g, u) { boost(g, u, 'kick', TUNE.kick.t); g.puff(TMP.set(u.pos.x, .5, u.pos.z), 4, .6, M.dust, .6, 1); if (g.vol(u.pos) > .2) sfx.dash(1); },
+  effect(g, u) { boost(g, u, 'kick', TUNE.kick.t); g.puff(TMP.set(u.pos.x, .5, u.pos.z), 4, .6, M.dust, .6, 1); },
   // A bot bike kicks to catch a soft body running away, or to get out when it is hurt.
   ai: (g, u) => (u.hp < u.maxHp * .35 && g.time - u.lastHit < 1) || (u.target && isUnit(u.target) && dist(u, u.target) > 9 && dist(u, u.target) < 22) ? { x: u.pos.x, z: u.pos.z } : null,
 }]);
@@ -130,19 +130,19 @@ function aiDustbike(g: Game, u: Unit, dt: number) {
 }
 
 // ---------------------------------------------------------------- Pile Driver
-const PILE: Gun = { range: TUNE.pile.range, cd: TUNE.pile.cd, acc: .85, w: .12, hit: (_g, _u, t) => isUnit(t) ? TUNE.pile.dmg : TUNE.pile.dmg * .8, snd: v => { if (v > .05) sfx.cannon(); } };
-const PILESET: Gun = { range: TUNE.pile.max, min: TUNE.pile.min, cd: TUNE.pile.setCd, acc: .95, w: .18, splash: TUNE.pile.splash, hit: (_g, _u, t) => isUnit(t) ? TUNE.pile.setDmg : TUNE.pile.setDmg * 1.2, snd: v => { if (v > .05) { sfx.cannon(); sfx.boom(v * .5); } } };
+const PILE: Gun = { range: TUNE.pile.range, cd: TUNE.pile.cd, acc: .85, w: .12, hit: (_g, _u, t) => isUnit(t) ? TUNE.pile.dmg : TUNE.pile.dmg * .8, snd: v => { if (v > .05) sfx.cannon(v); } };
+const PILESET: Gun = { range: TUNE.pile.max, min: TUNE.pile.min, cd: TUNE.pile.setCd, acc: .95, w: .18, splash: TUNE.pile.splash, hit: (_g, _u, t) => isUnit(t) ? TUNE.pile.setDmg : TUNE.pile.setDmg * 1.2, snd: v => { if (v > .05) { sfx.cannon(v); sfx.boom(v * .5); } } };
 const anchorT = (g: Game, u: Unit) => up(g, u).quickanchor ? TUNE.pile.quick : TUNE.pile.anchor;
 defineAbilities('piledriver', [{
   key: 'anchor', name: 'Anchor', hotkey: 'C', energy: 0, cd: 1, cast: 0, range: 0, target: 'self',
   blurb: `Drives the stakes in over ${TUNE.pile.anchor} s: then it shells ${TUNE.pile.min} to ${TUNE.pile.max} m with splash, and cannot move.`,
-  effect(g, u) { morph(g, u, 'piledriverset', anchorT(g, u)); if (g.vol(u.pos) > .2) sfx.clang(); },
+  effect(g, u) { morph(g, u, 'piledriverset', anchorT(g, u)); },
   ai(g, u) { const o = u.order; const near = nearest(g, u, TUNE.pile.min - 3, x => !x.air && fair(g, u, x)); if (near) return null; const far = nearest(g, u, TUNE.pile.max - 2, x => !x.air && fair(g, u, x)) || g.buildings.find(b => b.alive && isEnemy(u.team, b.team) && g.distToBox(b, u.pos.x, u.pos.z) < TUNE.pile.max - 2); return far && (o.type !== 'follow' || !g.me || dist(u, g.me) > 6) ? { x: u.pos.x, z: u.pos.z } : null; },
 }]);
 defineAbilities('piledriverset', [{
   key: 'lift', name: 'Lift Stakes', hotkey: 'C', energy: 0, cd: 1, cast: 0, range: 0, target: 'self',
   blurb: 'Pulls the stakes up so it can drive again.',
-  effect(g, u) { morph(g, u, 'piledriver', anchorT(g, u)); if (g.vol(u.pos) > .2) sfx.clang(); },
+  effect(g, u) { morph(g, u, 'piledriver', anchorT(g, u)); },
   // Lift when a foe is inside the short limit, or nothing has been in reach for 5 s and the squad has moved on.
   ai(g, u) { const m = mem(u), any = nearest(g, u, TUNE.pile.max + 2, x => !x.air && fair(g, u, x)) || g.buildings.find(b => b.alive && isEnemy(u.team, b.team) && g.distToBox(b, u.pos.x, u.pos.z) < TUNE.pile.max); if (any) m.idleT = g.time; const close = nearest(g, u, TUNE.pile.min - 4, x => !x.air && fair(g, u, x)); return close && !any?.alive || close && g.units.filter(x => x.alive && x.team === u.team && dist(x, u) < 10).length < 2 || (!any && g.time - (m.idleT ?? g.time) > 5) ? { x: u.pos.x, z: u.pos.z } : null; },
 }]);

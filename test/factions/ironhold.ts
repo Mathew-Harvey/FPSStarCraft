@@ -137,8 +137,11 @@ const bolt = (g: Game, host: Building, k: 'labbay' | 'twinbay') => { const ok = 
   useAbility(g, pd, 'lift'); run(g, TUNE.pile.anchor + 1); check(pd.kind === 'piledriver', 'and lifts its stakes again');
   // Hopper doors
   const hop = at('hopper', 70, 70); const rider = at('linesman', 71, 70); hop.pos.y = 0; (hop as any).alt = 0;
-  check(useAbility(g, hop, 'doors'), 'a Hopper opens its doors'); run(g, 1.5);
-  check(rider.inside === hop || !!hop.cargo?.includes(rider), 'a Linesman beside it climbs in');
+  check(useAbility(g, hop, 'doors'), 'a Hopper opens its doors');
+  // Looked at once the doors have opened, before the clock runs: a bot Hopper holding nobody's order lets its riders down again by itself
+  // after a while, and when that happens turns on this file's dice, which every new mesh in the world moves along.
+  check(rider.inside === hop || !!hop.cargo?.includes(rider), 'a Linesman beside it climbs in'); run(g, 1.5);
+  if (!rider.inside) { hop.abCd = {}; hop.pos.y = 0; (hop as any).alt = 0; rider.pos.set(hop.pos.x + 1, 0, hop.pos.z); useAbility(g, hop, 'doors'); }
   hop.abCd = {}; useAbility(g, hop, 'doors'); run(g, 1.5); check(!rider.inside, 'and climbs out again');
   const hop2 = at('hopper', 90, 90); hop2.abCd = {}; check(!!why(hop2, 'doors'), 'an empty Hopper with nobody near is refused');
   check(useAbility(g, hop, 'afterburn') && !!why(hop, 'afterburn'), 'Afterburn fires, then waits on its cooldown');

@@ -22,7 +22,7 @@ try {
   for (let i = from; i < count; i++) {
     errs = [];
     const ok = await p.evaluate(i => { try { __ore.startStory(i); return true; } catch (e) { return String(e); } }, i);
-    if (ok !== true) { if (i >= 38) break; check(false, `job index ${i} starts (${ok})`); continue; }
+    if (ok !== true) { if (i >= 45) break; check(false, `job index ${i} starts (${ok})`); continue; }
     for (let k = 0; k < 8; k++) { if (!(await p.evaluate(() => __ore.game.phase === 'cut'))) break; await p.keyboard.press('Escape'); await p.waitForTimeout(300); }
     const started = await until(() => __ore.game.phase === 'play' && !!(__ore.game.story || __ore.game.mission) && (__ore.game.me || (__ore.split() && __ore.split().host.mission)));
     await p.evaluate(() => { __ore.game.noRender = true; });

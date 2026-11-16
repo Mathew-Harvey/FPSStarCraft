@@ -29,7 +29,7 @@ function startGrow(g: Game, b: Building, to: GBKind) { (b as any).grow = { to, t
 export function tickGrow(g: Game, b: Building, dt: number) {
   const gr = growOf(b); if (!gr) return; gr.t -= dt * Math.max(0, g.rate(b)); b.obj.userData.ripen = Math.min(1, 1 - gr.t / gr.all); if (gr.t > 0) return;
   (b as any).grow = undefined; const from = b.kind; g.rebuild(b, gr.to); g.carpet.drop(b); g.carpet.add(b, gr.to, b.pos.x, b.pos.z, true);
-  g.puff(TMP.set(b.pos.x, b.h * .8, b.pos.z), 10, 2, M.gS, 1, 3); sfx.built();
+  g.puff(TMP.set(b.pos.x, b.h * .8, b.pos.z), 10, 2, M.gS, 1, 3); sfx.built(g.vol(b.pos));
   g.feed(G_VOICE, from === 'wingspire' ? 'The Tall Spire has grown. Bloaters can ripen into Sowers there.' : `The ${BLD[gr.to].name} has ripened.`, '', b.team);
 }
 const G_VOICE = 'Overgrowth';

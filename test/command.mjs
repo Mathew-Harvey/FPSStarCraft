@@ -47,7 +47,8 @@ try {
   check(r.kept, "the squad's own brain leaves bodies under the player's orders alone");
   check(r.far < 9, `they walk there and stand in a block (${r.far.toFixed(1)} m off at most)`);
   await shot('command-order');
-  r = await p.evaluate(() => { const g = __ore.game, C = g.cmd, foe = g.spawn('cantor', 1, 44, 24); foe.order = { type: 'guard', x: 44, z: 24 }; step(12); g.fog.update(g, 1, true); aim(44, 24); click(2); const one = [...C.sel][0]; g.truce = false; step(3); const r = { prey: [...C.sel].every(u => u.order.prey === foe), tgt: one.target === foe }; g.truce = true; foe.hp = 0; foe.alive = false; g.scene.remove(foe.obj); step(2); return r; });
+  // the view is put over the enemy first: at the yard's own framing it stands under the command card, where a right click belongs to the card
+  r = await p.evaluate(() => { const g = __ore.game, C = g.cmd, foe = g.spawn('cantor', 1, 44, 24); foe.order = { type: 'guard', x: 44, z: 24 }; step(12); g.fog.update(g, 1, true); const fx = C.focus.x, fz = C.focus.z; C.focus.set(foe.pos.x, 0, foe.pos.z); step(2); aim(foe.pos.x, foe.pos.z); click(2); const one = [...C.sel][0]; g.truce = false; step(3); const r = { prey: [...C.sel].every(u => u.order.prey === foe), tgt: one.target === foe }; C.focus.set(fx, 0, fz); g.truce = true; foe.hp = 0; foe.alive = false; g.scene.remove(foe.obj); step(2); return r; });
   check(r.prey && r.tgt, 'a right click on an enemy sets the picked bodies on that one');
   r = await p.evaluate(() => { const g = __ore.game, C = g.cmd; key('KeyR'); return [...C.sel].every(u => !u.order.mine && u.order.type === 'guard'); });
   check(r, 'R hands the picked bodies back to the squad');

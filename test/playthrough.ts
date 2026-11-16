@@ -14,7 +14,7 @@ import type { BKind, Kind, Unit, UpKey, Building } from '../src/data';
 import { useAbility, whyNot } from '../src/core/ability';
 import { load, unload } from '../src/core/cargo';
 import { sendToVent } from '../src/core/econ';
-import { addonOf } from '../src/factions/ironhold/bases';
+import { addonOf, crawl } from '../src/factions/ironhold/bases';
 import { MISSIONS, missionSides, charterTeam, Mission } from '../src/campaign';
 
 initHeadless();
@@ -116,6 +116,8 @@ class Play {
   done(i: number) { return !!this.g.ms['_o' + i]; }
 }
 
+/** Sends scouts down the roads, two at a time, until `done` (the stand-in for pressing H and waiting). */
+const scoutTill = (p: Play, secs: number, done: () => boolean) => { const g = p.g; let t = 0; return p.run(secs, () => { t -= T; if (t <= 0 && g.units.filter(u => u.alive && u.team === p.me && u.order.type === 'scout').length < 2) { t = 20; g.intel.send(p.me, null); } return done(); }, true); };
 const near = (p: Play, c: [number, number]) => { const b = p.body; return !!b && Math.hypot(b.pos.x - c[0], b.pos.z - c[1]) < 55; };
 /** What a player does on each job, as one script per job. */
 const SCRIPTS: Record<string, (p: Play) => void> = {
@@ -148,6 +150,13 @@ const SCRIPTS: Record<string, (p: Play) => void> = {
   'Off the Books': p => { const g = p.g, c = (g as any).cmd; if (c && p.may('lift')) { c.zt = .5; p.run(1); c.zt = 0; } p.build('bunkhouse'); p.train('linesman', 4); if (c) c.groups[0].us = g.own('linesman', p.me).slice(0, 4);
     p.act(p.hq(), 'surveyrig', 30); p.act(g.hqs(p.me).find(b => b.kind === 'surveyrig'), 'drone', 2);
     for (const s of MAP.sites!.slice(1)) if (g.hqs(p.me).length < 3) p.build('headframe', s as [number, number], 8, 30); p.defend(500, () => p.done(4)); },
+  'Desk Job': p => { const g = p.g, c = (g as any).cmd; if (c) c.zt = .5; p.run(1); p.build('bunkhouse'); p.run(1); const b = g.ownB('bunkhouse', true, p.me)[0]; p.train('linesman', 4); const ls = g.own('linesman', p.me);
+    if (c && b && p.may('rally')) c.rally.set(b, { x: 10, z: 20 });
+    if (c && ls[0]) { c.cur.set(ls[0], { k: 'p', x: 12, z: 20, id: 0, n: 1, t: 0, x2: 4, z2: 14 }); c.queue.set(ls[0], [{ k: 'm', x: 8, z: 18, id: 0, n: 1, t: 0 }]); } p.run(1); if (c) c.zt = 0; p.run(1);
+    const sp = g.buildings.find(q => q.alive && q.team === p.foe && q.kind === 'thornspire'); if (sp) { p.walk(sp.pos.x - 16, sp.pos.z); ls.forEach((u, i) => { u.pos.x = sp.pos.x - 14; u.pos.z = sp.pos.z + i * 2 - 3; u.order = { type: 'guard', x: u.pos.x, z: u.pos.z }; }); p.run(.5, undefined, true); g.damage(sp, 1e7, null); } p.run(2); },
+  'Lost Property': p => { const g = p.g, c = (g as any).cmd; if (c) { c.zt = 1; p.run(1); c.zt = 0; } p.build('bunkhouse'); p.train('linesman', 4);
+    if (p.may('scout')) scoutTill(p, 700, () => p.done(3)); p.defend(500, () => g.ms.rush === 2);
+    const b = g.ownB('bunkhouse', true, p.me)[0]; if (b) { crawl(g, b, b.pos.x + 30, b.pos.z + 8); p.run(90, () => p.done(5)); } p.raze('choir'); p.run(3); },
   'Ore Else': p => { const g = p.g; p.build('annex'); p.bolt('hangar', 'labbay'); p.train('claimbarge', 1); p.raze('wardpylon'); p.raze('broodpit'); p.raze('reedgate'); p.run(2); p.raze('choir'); p.run(3); check(!!g.ms.erupt, 'Ore Else: the canyon opens when the last Stone breaks'); p.defend(100, () => g.endT > 0); },
   'Wrong Body': p => { const g = p.g; p.run(400, () => p.done(0)); p.run(300, () => p.done(1)); p.build('hushwell'); p.build('hushwell'); p.train('tender', 8); p.run(5); p.defend(60, () => g.ms.wave === 2); },
   'Brood': p => { const g = p.g; p.build('broodpit'); if (p.build('siphonbell')) { const v = g.vents.find(v => v.tap && v.tap.team === p.me); for (const u of g.own('tender', p.me).slice(0, 3)) sendToVent(g, u, v || null); }
@@ -164,6 +173,8 @@ const SCRIPTS: Record<string, (p: Play) => void> = {
   'Hold the Note': p => { const g = p.g; p.build('songarchive'); p.train('warden', 1); p.train('choirmaster', 2); const c = roadPt(ROAD.len * .52, 34);
     const cm = g.own('choirmaster', p.me).slice(0, 2); cm.forEach((u, i) => { u.pos.x = c[0] + i * 2; u.pos.z = c[1]; }); p.cast(cm[0], 'join'); p.run(14, undefined, true);
     p.run(500, () => { for (const u of [...g.own('warden', p.me), ...g.own('chord', p.me)]) { u.pos.x = c[0]; u.pos.z = c[1]; u.order = { type: 'guard', x: c[0], z: c[1] }; } p.kill(u => u.order.type === 'raid'); return p.done(3); }, true); },
+  'Second Cap': p => { const g = p.g; if (p.may('scout')) scoutTill(p, 900, () => p.done(2)); else p.defend(300);
+    const caps = g.buildings.filter(b => b.alive && b.team === p.foe && g.isHQ(b)).sort((a, b) => Math.hypot(b.pos.x, b.pos.z) - Math.hypot(a.pos.x, a.pos.z)); if (caps.length > 1) g.damage(caps[0], 1e7, null); p.run(3); },
   'Sky Choir': p => { const g = p.g, [ix, iz] = [91, -103]; p.build('skyloft'); p.train('swift', 2); p.kill(u => u.kind === 'gadfly'); p.build('kiln'); p.up('vfar'); p.train('ferry', 1);
     const fe = g.own('ferry', p.me)[0]; p.kill(u => Math.hypot(u.pos.x - ix, u.pos.z - iz) < 20 && !u.air); const herd = () => { for (const u of g.army(p.me)) { u.pos.x = ix + 2; u.pos.z = iz + 2; u.order = { type: 'guard', x: ix, z: iz }; } };
     herd(); if (fe) p.cast(fe, 'unfold'); p.run(3, undefined, true); for (let k = 0; k < 6 && !p.done(3); k++) { p.train('cantor', g.own('cantor', p.me).length + 1); herd(); }
@@ -205,6 +216,10 @@ const SCRIPTS: Record<string, (p: Play) => void> = {
     p.build('sporesac'); const sac = g.ownB('sporesac', true, p.me).slice(-1)[0]; p.act(sac, 'uproot', 1); p.up('gbelly'); p.train('snapper', 4); const dr = g.own('drifter', p.me)[0];
     if (dr) { const sn = g.own('snapper', p.me).slice(0, 4); for (const u of sn) { u.pos.x = dr.pos.x + 1; u.pos.z = dr.pos.z; } p.cast(dr, 'board'); dr.pos.x = ix; dr.pos.z = iz; p.kill(u => Math.hypot(u.pos.x - ix, u.pos.z - iz) < 20 && !u.air); p.cast(dr, 'drop'); p.run(3, undefined, true); }
     p.raze('pumpjack', SIDE.home); p.raze('watchpost', SIDE.home); p.defend(20, () => g.endT > 0); },
+  'Behind the Wall': p => { const g = p.g; scoutTill(p, 900, () => p.done(2)); p.cash(600); p.train('grazer', 10);
+    const [hx, hz] = [p.hq().pos.x, p.hq().pos.z], far = MAP.sites!.map(s => [s[0], s[1]] as [number, number]).filter(s => Math.hypot(s[0] - hx, s[1] - hz) > 40 && Math.hypot(s[0], s[1]) > 120).sort((a, b) => Math.hypot(a[0] - hx, a[1] - hz) - Math.hypot(b[0] - hx, b[1] - hz));
+    for (const s of far) { if (g.hqs(p.me).length >= 3) break; p.build('mothercap', s, 8, 30); } if (g.hqs(p.me).length >= 3) p.log = p.log.filter(l => !/mothercap/.test(l));
+    p.defend(900, () => !!g.ms.col); p.defend(400, () => g.ms.col === 2); },
   'Deep Roots': p => { const g = p.g, [lx, lz] = [78.8, -47.6]; p.cash(400); p.train('grazer', 12); p.build('warren'); p.build('deeproot'); p.build('wingspire'); p.train('gnatwing', 1); const gw = g.own('gnatwing', p.me)[0]; if (gw) { gw.pos.x = lx; gw.pos.z = lz; }
     p.kill(u => Math.hypot(u.pos.x - lx, u.pos.z - lz) < 18); p.build('tunnelroot', [lx, lz], 0, 10); p.train('snapper', 8); const dp = g.ownB('deeproot', true, p.me)[0];
     if (dp) { for (const u of g.own('snapper', p.me).slice(0, 8)) { u.pos.x = dp.pos.x + 4; u.pos.z = dp.pos.z; } p.act(dp, 'go', 4); }
@@ -250,6 +265,8 @@ const TEACH: Record<string, { ban: string[]; lose: number }> = {
   'Lamps': { ban: ['flaktower'], lose: 1200 },
   'Air Freight': { ban: ['hopper'], lose: 1200 },
   'Off the Books': { ban: ['lift'], lose: 1200 },
+  'Desk Job': { ban: ['rally'], lose: 1200 },
+  'Lost Property': { ban: ['scout'], lose: 1500 },
   'Ore Else': { ban: ['annex'], lose: 1500 },
   'Wrong Body': { ban: ['hushwell'], lose: 900 },
   'Brood': { ban: ['siphonbell'], lose: 1200 },
@@ -258,6 +275,7 @@ const TEACH: Record<string, { ban: string[]; lose: number }> = {
   'Quiet Feet': { ban: ['mute'], lose: 1200 },
   'Listening Post': { ban: ['listener'], lose: 1200 },
   'Hold the Note': { ban: ['join'], lose: 1200 },
+  'Second Cap': { ban: ['scout'], lose: 1800 },
   'Sky Choir': { ban: ['unfold'], lose: 1500 },
   'Long Stride': { ban: ['reedwalker'], lose: 1200 },
   'The Last Verse': { ban: ['highbeacon'], lose: 1500 },
@@ -268,6 +286,7 @@ const TEACH: Record<string, { ban: string[]; lose: number }> = {
   'Elder': { ban: ['grow'], lose: 1200 },
   'What It Remembers': { ban: ['tuskhollow'], lose: 1500 },
   'Wings': { ban: ['uproot'], lose: 1500 },
+  'Behind the Wall': { ban: ['mothercap'], lose: 1800 },
   'Deep Roots': { ban: ['tunnelroot'], lose: 1200 },
   'Spore Season': { ban: ['hooksail'], lose: 1500 },
   'Old Opening': { ban: ['flaktower'], lose: 1500 },

@@ -245,7 +245,7 @@ export function lift(body: THREE.Object3D, o: { r: number; ground: (x: number, z
       g.position.set(P.x, y0 + .08, P.z);
       const k = Math.max(0, 1 - hgt / 60);                                        // the shadow spreads and softens the higher it is
       shadow.scale.setScalar(Math.max(o.r * (1 + hgt * .02), 3 * perPx)); shM.uniforms.uK.value = .16 + .22 * k + .08 * far;   // soft: from high up a dark disc reads as a hole in the ground
-      line.scale.set(Math.max(.03, 1.2 * perPx), Math.max(.01, hgt - o.r * .3), Math.max(.03, 1.2 * perPx)); line.visible = hgt > o.r * .5; lineM.opacity = .35 + .4 * far;
+      line.scale.set(Math.max(.03, 1.2 * perPx), Math.max(.01, hgt - o.r * .3), Math.max(.03, 1.2 * perPx)); line.visible = hgt > o.r * .5; lineM.opacity = .1 + .5 * far;   // faint from the ground, where the flier itself shows its height; plain from above, where it does not
     },
     off() { alive = false; },
     dispose() { shM.dispose(); lineM.dispose(); line.geometry.dispose(); } };

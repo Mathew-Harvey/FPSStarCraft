@@ -1,5 +1,6 @@
 // The heads-up display: plain HTML over the canvas, laid out in a 900-unit-tall space and scaled to fit.
 import { drawMap as drawGround } from './terrain';
+import { sheetFurniture, drawSheet, type Sheet } from './mapsheet';
 import * as THREE from 'three';
 import type { Game } from './game';
 import { UNIT, BLD, FACTION, SIDE, fac, foeOf, atHome, homeXZ, Kind, Unit, Building, MAP, MAPS, OUTPOST, VHOME, ROAD, NORTH_PATH, roadPt, isWorker, OVERTIME } from './data';
@@ -9,13 +10,15 @@ import { isFriend, multi, enemiesOf } from './core/sides';
 const capW = (t: string) => t.charAt(0).toUpperCase() + t.slice(1);
 
 const V = new THREE.Vector3();
-interface Floater { el: HTMLElement; pos: THREE.Vector3; t: number; life: number }
+interface Floater { el: HTMLElement; pos: THREE.Vector3; t: number; life: number; cls: string; word: string; n: number; bump: number }
 
 /** A clear one-pixel picture, for a body with no portrait drawn yet: better than the last body's face. */
 const BLANK = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
 export class Hud {
   W = 1600; H = 900; scale = 1;
   portraits: Record<string, string> = {};
+  /** The map's small pictures: a kind of body, or 'b:' and a kind of building, seen from above (drawn by mapIcons in main.ts). `half` on each is half the width of ground the picture covers, in metres. */
+  icons: Record<string, HTMLCanvasElement> = {};
   /** Colour-blind friendly team colours. */
   cb = false;
   /** Set when keys are rebound: turns the default key printed in a prompt into the key the player chose. */
@@ -29,7 +32,7 @@ export class Hud {
   private bars: HTMLElement[] = []; private barFill: HTMLElement[] = []; private labs: HTMLElement[] = [];
   private floats: Floater[] = []; private pingPos = new THREE.Vector3(); private pingT = 0;
   private hurtA = 0; private dirA = 0; private hitT = 0; private miniT = 0; private last = 0; private feedN = 0;
-  private mini: CanvasRenderingContext2D; private fogCv: HTMLCanvasElement | null = null; private fogHatch: HTMLCanvasElement | null = null; private hatchPat: CanvasPattern | null = null; private fogImg: ImageData | null = null;
+  private mini: CanvasRenderingContext2D; private fogCv: HTMLCanvasElement | null = null; private sheets: (Sheet | undefined)[] = []; private fogHatch: HTMLCanvasElement | null = null; private hatchPat: CanvasPattern | null = null; private fogImg: ImageData | null = null;
 
   constructor(private root: HTMLElement = document.getElementById('hud')!) {
     this.anchors = this.$('anchors'); this.mini = (this.$('mini') as HTMLCanvasElement).getContext('2d')!;
@@ -62,9 +65,14 @@ export class Hud {
     setTimeout(() => d.classList.add('old'), 6500); setTimeout(() => d.remove(), 7200);
   }
   damage(pos: THREE.Vector3, text: string, cls = '') {
+    // A big fight used to bury itself under its own words: every fall wrote a full-size KO! and thirty of them hid the bodies. Now a word
+    // that lands beside the same word still on screen is counted onto it ("KO! ×4"), which reads as one beat and leaves the fight in view.
+    const big = cls === 'ko' || cls === 'kobad';
+    if (big) for (const f of this.floats) if (f.cls === cls && f.word === text && f.t > f.life * .3 && (f.pos.x - pos.x) ** 2 + (f.pos.z - pos.z) ** 2 < 64) {
+      f.n++; f.el.textContent = `${text} ×${f.n}`; f.t = Math.min(f.life * .85, f.t + .3); f.bump = 1; return; }
     if (this.floats.length > 28) { const f = this.floats.shift()!; f.el.remove(); }
     const el = document.createElement('div'); el.className = 'fl out ' + cls; el.textContent = text; el.style.opacity = '0'; this.anchors.appendChild(el);
-    const life = cls === 'ko' || cls === 'kobad' ? 1.1 : .75; this.floats.push({ el, pos: pos.clone().add(V.set((Math.random() - .5) * .5, 0, (Math.random() - .5) * .5)), t: life, life });
+    const life = big ? 1.1 : .75; this.floats.push({ el, pos: pos.clone().add(V.set((Math.random() - .5) * .5, 0, (Math.random() - .5) * .5)), t: life, life, cls, word: text, n: 1, bump: 0 });
   }
   hurt(ang: number | null) { this.hurtA = Math.min(1, this.hurtA + .55); if (ang !== null) { this.dirA = 1; this.$('hurtDir').style.transform = `rotate(${(-ang).toFixed(2)}rad)`; } }
   /** The mark over the crosshair when a shot lands. A kill gets a bigger one that an ordinary hit in the same breath does not replace. */
@@ -160,7 +168,9 @@ export class Hud {
 
     // world-anchored bars
     let bi = 0, li = 0, si = 0;
-    const bar = (p: THREE.Vector3, y: number, frac: number, cls: string) => { if (bi >= this.bars.length) return; V.set(p.x, y, p.z); const q = V.clone(); if (!this.project(q, cam)) return; const b = this.bars[bi]; if (b.className !== cls) b.className = cls; b.hidden = false; b.style.transform = `translate(${V.x.toFixed(1)}px,${V.y.toFixed(1)}px)`; this.barFill[bi].style.width = Math.max(0, Math.min(1, frac)) * 100 + '%'; bi++; };
+    // From high up a full-size bar is wider than the body under it, so bars and status tags shrink as the view lifts.
+    const zs = cv ? Math.max(.45, 1 - Math.max(0, C.z - .15) * .85) : 1, zsc = zs < .99 ? ` scale(${zs.toFixed(2)})` : '';
+    const bar = (p: THREE.Vector3, y: number, frac: number, cls: string) => { if (bi >= this.bars.length) return; V.set(p.x, y, p.z); const q = V.clone(); if (!this.project(q, cam)) return; const b = this.bars[bi]; if (b.className !== cls) b.className = cls; b.hidden = false; b.style.transform = `translate(${V.x.toFixed(1)}px,${V.y.toFixed(1)}px)${zsc}`; this.barFill[bi].style.width = Math.max(0, Math.min(1, frac)) * 100 + '%'; bi++; };
     // A label over a body or building is kept out of the corners the HUD uses: the purse, clock and goal list top right (down to 400) and
     // the minimap top left (down to 240), so a building near the top of the screen does not write over them.
     const lab = (p: THREE.Vector3, y: number, html: string) => { if (li >= this.labs.length) return; const q = new THREE.Vector3(p.x, y, p.z); if (!this.project(q, cam)) return; const l = this.labs[li]; l.hidden = false; const lx = Math.max(150, Math.min(this.W - 150, V.x)); l.style.transform = `translate(${lx.toFixed(1)}px,${Math.max(lx > this.W - 400 ? 400 : lx < 330 ? 240 : 130, V.y).toFixed(1)}px)`; const k = 'l' + li; if (this.cache.get(k) !== html) { this.cache.set(k, html); l.firstElementChild!.innerHTML = html; } li++; };
@@ -169,7 +179,7 @@ export class Hud {
       if (!u.alive || u === me && !tab && !cv || !u.obj.visible) continue; const d = u.pos.distanceTo(ref), sel = cv && C.sel.has(u);
       if (u.pilot && u !== me && g.names[u.pilot] && d < (u.team === g.myTeam ? 120 : 30)) lab(u.pos, UNIT[u.kind].headY + 1.25, `<div class="mark out" style="color:var(--yel)">${g.names[u.pilot]}</div>`);
       if (!tab && !sel && d > Math.max(70, cv ? C.h * 2.2 : 0)) continue;
-      if (u.status && u.status.length && si < this.sts.length) { const w = statusWords(u); if (w) { V.set(u.pos.x, UNIT[u.kind].headY + 1.15, u.pos.z); if (this.project(V, cam)) { const t = this.sts[si++]; t.hidden = false; t.style.transform = `translate(${V.x.toFixed(1)}px,${V.y.toFixed(1)}px)`; const cls = 'st ' + w[1]; if (t.className !== cls) t.className = cls; if (t.textContent !== w[0]) t.textContent = w[0]; } } }
+      if (u.status && u.status.length && si < this.sts.length) { const w = statusWords(u); if (w) { V.set(u.pos.x, UNIT[u.kind].headY + 1.15, u.pos.z); if (this.project(V, cam)) { const t = this.sts[si++]; t.hidden = false; t.style.transform = `translate(${V.x.toFixed(1)}px,${V.y.toFixed(1)}px)${zsc}`; const cls = 'st ' + w[1]; if (t.className !== cls) t.className = cls; if (t.textContent !== w[0]) t.textContent = w[0]; } } }
       const hurtU = u.hp < u.maxHp || u.shield < u.maxShield; if (u.team === g.myTeam && !hurtU && !tab && !sel) continue; if (u.team !== g.myTeam && !hurtU && d > 40) continue;
       const y = UNIT[u.kind].headY + .75;
       if (u.maxShield && u.shield > 0) bar(u.pos, y + .22, u.shield / u.maxShield, 'hb s');
@@ -186,7 +196,7 @@ export class Hud {
         // From above, each of the player's buildings says what it is making, and each base how its seams are worked.
         const q = b.queue, hq = b.kind === FACTION[side].hq, sat = hq ? this.saturation(g, b) : null;
         const parts = [C.selB === b ? BLD[b.kind].name : '', q.length && b.kind !== 'mothercap' ? `${UNIT[q[0].kind].name} ${Math.floor((1 - q[0].t / UNIT[q[0].kind].time) * 100)}%${q.length > 1 ? ' · +' + (q.length - 1) : ''}` : '', sat ? `<span class="sat ${sat.cls}">Workers ${sat.n}/${sat.want} · ${sat.word}</span>` : ''].filter(Boolean);
-        if (parts.length && (C.selB === b || d < 200)) lab(b.pos, b.h + 2.4, `<div class="mark out" style="color:var(--cyan)">${parts.join('<br>')}</div>`);
+        if (parts.length && (C.selB === b || d < 200)) lab(b.pos, b.h + 2.4, `<div class="mark plate" style="color:var(--cyan)">${parts.join('<br>')}</div>`);
       }
       if (b.kind === 'wardpylon' && d < 110 && !tab && !building && !cv) lab(b.pos, b.h + 1.6, `<div class="mark out" style="color:var(--cyan)">Ward Pylon · shielding the base</div>`);
       if (!g.eco && b.kind === FACTION[SIDE.out].hq && b.team === SIDE.out && !side && d > 45 && !tab && !building && !cv && g.fog.seen(b.pos.x, b.pos.z)) lab(b.pos, b.h + 2, `<div class="mark out">${b === near ? (SIDE.out === 2 ? 'Mother Caps · ' : 'Choir Stones · ') + Math.round(d) + 'm' : ''}</div>`);
@@ -203,7 +213,9 @@ export class Hud {
       const f = this.floats[i]; f.t -= dt; if (f.t <= 0) { f.el.remove(); this.floats.splice(i, 1); continue; }
       const k = 1 - f.t / f.life, q = new THREE.Vector3(f.pos.x, f.pos.y + k * 1.1, f.pos.z);
       if (!this.project(q, cam)) { f.el.style.opacity = '0'; continue; }
-      const pop = k < .15 ? .6 + k / .15 * .6 : 1.2 - Math.min(1, (k - .15) * 2) * .2; f.el.style.opacity = k > .7 ? ((1 - k) / .3).toFixed(2) : '1'; f.el.style.transform = `translate(${V.x.toFixed(1)}px,${V.y.toFixed(1)}px) translate(-50%,-50%) scale(${pop.toFixed(2)}) rotate(-6deg)`;
+      // Words are sized by how far off they are, so one across the yard or under the command view does not cover the bodies it is about.
+      const far = Math.max(.3, Math.min(1, 15 / Math.max(1, cam.position.distanceTo(q)))); f.bump = Math.max(0, f.bump - dt * 6);
+      const pop = (k < .15 ? .6 + k / .15 * .6 : 1.2 - Math.min(1, (k - .15) * 2) * .2) * far * (1 + f.bump * .25 + Math.min(.4, (f.n - 1) * .06)); f.el.style.opacity = k > .7 ? ((1 - k) / .3).toFixed(2) : '1'; f.el.style.transform = `translate(${V.x.toFixed(1)}px,${V.y.toFixed(1)}px) translate(-50%,-50%) scale(${pop.toFixed(2)}) rotate(-6deg)`;
     }
     // minimap
     this.miniT -= dt; if (this.miniT <= 0) { this.miniT = .12; this.drawMap(g, this.mini, false); if (C.map) this.drawMap(g, this.big || (this.big = (this.$('bigmapC') as HTMLCanvasElement).getContext('2d')!), true); this.crew(g); }
@@ -271,7 +283,7 @@ export class Hud {
     return null;
   }
   private drawMap(g: Game, c: CanvasRenderingContext2D, big: boolean) {
-    const q = big ? 4 : 1; c.setTransform(q, 0, 0, q, 0, 0);
+    const q = big ? 4 : 2; c.setTransform(q, 0, 0, q, 0, 0);
     // framed on everything worth finding: the yard, the outpost, both routes and every ore field
     // On a hidden map the frame is a circle round your own base, wide enough to hold the other base wherever it is, so the frame gives nothing away.
     // Once they are found it slides over to sit between the two bases.
@@ -280,11 +292,12 @@ export class Hud {
     const pts = hid ? [[fcx - reach * 1.45, fcz - reach], [fcx + reach * 1.45, fcz + reach]] : [[0, 0], [OUTPOST.x, OUTPOST.z], ...NORTH_PATH, ...(MAP.sites || [])], bx0 = Math.min(...pts.map(p => p[0])) - 26, bx1 = Math.max(...pts.map(p => p[0])) + 26, bz0 = Math.min(...pts.map(p => p[1])) - 22, bz1 = Math.max(...pts.map(p => p[1])) + 22;
     const S = 260, span = Math.max(bx1 - bx0, (bz1 - bz0) / .69), x0 = (bx0 + bx1) / 2 - span / 2, z0 = (bz0 + bz1) / 2 - span * .345, k = S / span, X = (x: number) => (x - x0) * k, Z = (z: number) => (z - z0) * k;
     const fog = g.fog; fog.update(g, .12);
-    c.fillStyle = '#4a2f29'; c.fillRect(0, 0, S, 180);
-    c.strokeStyle = '#6b4a3a'; c.lineWidth = hid ? Math.max(2, 7 * k) : 7; c.beginPath(); if (hid) for (const r of MAP.roads || []) { c.moveTo(X(r[0]), Z(r[1])); c.lineTo(X(r[2]), Z(r[3])); } else { const a = roadPt(4), b = roadPt(ROAD.len + 6); c.moveTo(X(a[0]), Z(a[1])); c.lineTo(X(b[0]), Z(b[1])); } c.stroke();
+    // The ground is a surveyor's sheet (src/mapsheet.ts), drawn once for this frame of the map and kept.
+    { const roads = hid ? MAP.roads || [] : [[...roadPt(4), ...roadPt(ROAD.len + 6)]], live = g.spires.length, key = [big, MAP.name, x0.toFixed(1), z0.toFixed(1), k.toFixed(4), live, fac(g.myTeam)].join('|'), slot = big ? 1 : 0;
+      let sh = this.sheets[slot]; if (!sh || sh.key !== key) sh = this.sheets[slot] = { key, cv: drawSheet({ S, H: 180, q, X, Z, k, props: g.props, roads, big, title: MAP.name, sub: '', blank: false }) };
+      c.drawImage(sh.cv, 0, 0, S, 180); }
     if (!hid) { c.fillStyle = 'rgba(53,224,200,.16)'; c.beginPath(); c.arc(X(OUTPOST.x - 2 * ROAD.dx), Z(OUTPOST.z - 2 * ROAD.dz), 20 * k, 0, 7); c.fill(); }
     c.fillStyle = 'rgba(255,194,26,.13)'; c.beginPath(); c.arc(X(hid ? mhx : 0), Z(hid ? mhz : 0), 30 * k, 0, 7); c.fill();
-    for (const s of g.spires) { c.fillStyle = '#2a1a18'; c.beginPath(); c.arc(X(s.x), Z(s.z), Math.max(1.5, s.r * k), 0, 7); c.fill(); }
     drawGround(c, X, Z, k, g.myTeam, (x, z) => fog.seen(x, z));   // terrain (J): high ground, ramps, rock walls, vents, beacons
     // the fog: black where nobody has been, dimmed where nobody is looking now
     { const n = fog.n, cv = this.fogCv || (this.fogCv = document.createElement('canvas')); if (cv.width !== n) { cv.width = cv.height = n; this.fogImg = null; } const cx = cv.getContext('2d')!, img = this.fogImg || (this.fogImg = cx.createImageData(n, n)), d = img.data;
@@ -292,18 +305,28 @@ export class Hud {
       cx.putImageData(img, 0, 0);
       // Ground nobody has seen is hatched like the blank part of a survey sheet, rather than left as a black slab.
       const hc = big ? this.hatchBig || (this.hatchBig = document.createElement('canvas')) : this.fogHatch || (this.fogHatch = document.createElement('canvas')); if (hc.width !== S * q) { hc.width = S * q; hc.height = 180 * q; } const hx = hc.getContext('2d')!; hx.setTransform(q, 0, 0, q, 0, 0);
-      if (!this.hatchPat) { const t = document.createElement('canvas'); t.width = t.height = 9; const tg = t.getContext('2d')!; tg.fillStyle = '#211614'; tg.fillRect(0, 0, 9, 9); tg.strokeStyle = '#4a332c'; tg.lineWidth = 1.3; tg.beginPath(); tg.moveTo(-1, 10); tg.lineTo(10, -1); tg.moveTo(-1, 1); tg.lineTo(1, -1); tg.moveTo(8, 10); tg.lineTo(10, 8); tg.stroke(); this.hatchPat = hx.createPattern(t, 'repeat'); }
+      if (!this.hatchPat) { const t = document.createElement('canvas'); t.width = t.height = 9; const tg = t.getContext('2d')!; tg.fillStyle = '#211614'; tg.fillRect(0, 0, 9, 9); tg.strokeStyle = '#3d2a24'; tg.lineWidth = 1.1; tg.beginPath(); tg.moveTo(-1, 10); tg.lineTo(10, -1); tg.moveTo(-1, 1); tg.lineTo(1, -1); tg.moveTo(8, 10); tg.lineTo(10, 8); tg.stroke(); this.hatchPat = hx.createPattern(t, 'repeat'); }
       hx.globalCompositeOperation = 'source-over'; hx.clearRect(0, 0, S, 180); hx.imageSmoothingEnabled = true; if (hid) { hx.fillStyle = 'rgba(22,15,14,.925)'; hx.fillRect(0, 0, S, 180); hx.clearRect(X(fog.x0), Z(fog.z0), n * 4 * k, n * 4 * k); }   // past the edge of the world is as unknown as anywhere else
       hx.drawImage(cv, X(fog.x0), Z(fog.z0), n * 4 * k, n * 4 * k);
-      hx.globalCompositeOperation = 'source-in'; hx.fillStyle = this.hatchPat || '#211614'; hx.fillRect(0, 0, S, 180); c.drawImage(hc, 0, 0, S, 180); }
-    for (const o of g.ores) { if (o.amount <= 0 || !fog.seen(o.pos.x, o.pos.z)) continue; c.fillStyle = '#b8f58c'; c.fillRect(X(o.pos.x) - 2.5, Z(o.pos.z) - 2.5, 5, 5); }
+      hx.globalCompositeOperation = 'source-in'; hx.setTransform(1, 0, 0, 1, 0, 0); hx.fillStyle = this.hatchPat || '#211614'; hx.fillRect(0, 0, hc.width, hc.height); c.drawImage(hc, 0, 0, S, 180); }   // hatched in screen pixels, so the rules are as fine on the full map as on the small one
+    const sheetSub = ['Ironhold Charter survey', 'Chorus listening chart', 'Root memory'][fac(g.myTeam)] + ' · grid 50 m';
+    for (const o of g.ores) { if (o.amount <= 0 || !fog.seen(o.pos.x, o.pos.z)) continue; const ox = X(o.pos.x), oz = Z(o.pos.z), r = big ? 2.4 : 3.4; c.fillStyle = '#b8f58c'; c.strokeStyle = '#0e0d14'; c.lineWidth = big ? .6 : 1; c.beginPath(); c.moveTo(ox, oz - r); c.lineTo(ox + r * .8, oz); c.lineTo(ox, oz + r); c.lineTo(ox - r * .8, oz); c.closePath(); c.fill(); c.stroke(); }
     c.lineWidth = 1.5; c.strokeStyle = '#0e0d14';
+    // Buildings and bodies are small pictures of themselves seen from above (mapIcons in main.ts), each on a pad of its owner's colour.
+    // A kind with no picture yet (its art still on the way) keeps the plain square or dot.
+    const IC = this.icons, pic = (key: string, x: number, y: number, size: number, rot: number, col: string, dim = false): boolean => {
+      const im = IC[key]; if (!im) return false; const r = size / 2, bld = key[1] === ':';
+      c.save(); c.translate(x, y); if (rot) c.rotate(rot); c.fillStyle = col; c.strokeStyle = '#0e0d14'; c.lineWidth = big ? .5 : .9; c.globalAlpha = dim ? .55 : .92;
+      c.beginPath(); if (bld) c.rect(-r * .8, -r * .8, r * 1.6, r * 1.6); else c.arc(0, 0, r * .72, 0, 7); c.fill(); c.globalAlpha = 1; c.stroke();
+      if (dim) c.globalAlpha = .6; c.drawImage(im, -r, -r, size, size); c.restore(); return true; };
+    const bSize = (kind: string, hx: number, hz: number) => { const im = IC['b:' + kind] as any; return Math.max(big ? 11 : 14, (im ? im.half * 2 : Math.max(hx, hz) * 2.4) * k * (big ? 1.5 : 1.8)); };
+    const uSize = (kind: string) => { const im = IC[kind] as any; return Math.max(big ? 8.5 : 9, Math.min(big ? 18 : 16, (im ? im.half * 2 : 2) * k * (big ? 3.6 : 5))); };
     // Allies' buildings (a team game): in blue, always known.
-    for (const b of g.buildings) { if (!b.alive || b.team === g.myTeam || !isFriend(b.team, g.myTeam)) continue; const w = Math.max(5, b.hx * 2 * k), h = Math.max(5, b.hz * 2 * k); c.fillStyle = FRIEND; c.fillRect(X(b.pos.x) - w / 2, Z(b.pos.z) - h / 2, w, h); c.strokeRect(X(b.pos.x) - w / 2, Z(b.pos.z) - h / 2, w, h); }
-    for (const b of g.buildings) { if (!b.alive || b.team !== g.myTeam) continue; const w = Math.max(5, b.hx * 2 * k), h = Math.max(5, b.hz * 2 * k); c.fillStyle = b.built ? '#ffc21a' : '#7ef0ff'; c.fillRect(X(b.pos.x) - w / 2, Z(b.pos.z) - h / 2, w, h); c.strokeRect(X(b.pos.x) - w / 2, Z(b.pos.z) - h / 2, w, h); }
+    for (const b of g.buildings) { if (!b.alive || b.team === g.myTeam || !isFriend(b.team, g.myTeam)) continue; if (pic('b:' + b.kind, X(b.pos.x), Z(b.pos.z), bSize(b.kind, b.hx, b.hz), -b.obj.rotation.y, FRIEND)) continue; const w = Math.max(5, b.hx * 2 * k), h = Math.max(5, b.hz * 2 * k); c.fillStyle = FRIEND; c.fillRect(X(b.pos.x) - w / 2, Z(b.pos.z) - h / 2, w, h); c.strokeRect(X(b.pos.x) - w / 2, Z(b.pos.z) - h / 2, w, h); }
+    for (const b of g.buildings) { if (!b.alive || b.team !== g.myTeam) continue; if (pic('b:' + b.kind, X(b.pos.x), Z(b.pos.z), bSize(b.kind, b.hx, b.hz), -b.obj.rotation.y, b.built ? '#ffc21a' : '#7ef0ff', !b.built)) continue; const w = Math.max(5, b.hx * 2 * k), h = Math.max(5, b.hz * 2 * k); c.fillStyle = b.built ? '#ffc21a' : '#7ef0ff'; c.fillRect(X(b.pos.x) - w / 2, Z(b.pos.z) - h / 2, w, h); c.strokeRect(X(b.pos.x) - w / 2, Z(b.pos.z) - h / 2, w, h); }
     // Their buildings are drawn as your side last saw them: a new one shows when somebody looks at it, and a fallen one stays until somebody looks again.
-    for (const r of I.seen[mi].values()) { const B = BLD[r.kind], w = Math.max(5, B.hx * 2 * k), h = Math.max(5, B.hz * 2 * k); c.fillStyle = r.kind === 'reedgate' ? '#c58bff' : '#35e0c8'; c.fillRect(X(r.x) - w / 2, Z(r.z) - h / 2, w, h); c.strokeRect(X(r.x) - w / 2, Z(r.z) - h / 2, w, h); }
-    for (const u of g.units) { if (!u.alive || (u === g.me && !g.cmd.on) || (u.team !== g.myTeam && !isFriend(u.team, g.myTeam) && !fog.sees(u.pos.x, u.pos.z))) continue; const foeU = u.team !== g.myTeam, ally = foeU && isFriend(u.team, g.myTeam); c.fillStyle = ally ? FRIEND : foeU ? (u.kind === 'tender' ? '#c58bff' : this.cb ? '#ff9d1a' : '#ff4f9a') : isWorker(u.kind) ? (this.cb ? '#4da3ff' : '#8be04e') : '#f4ead2'; c.beginPath(); c.arc(X(u.pos.x), Z(u.pos.z), u.kind === 'warden' ? 5 : foeU ? 2.6 : 2.2, 0, 7); c.fill(); }
+    for (const r of I.seen[mi].values()) { const B = BLD[r.kind], w = Math.max(5, B.hx * 2 * k), h = Math.max(5, B.hz * 2 * k); if (pic('b:' + r.kind, X(r.x), Z(r.z), bSize(r.kind, B.hx, B.hz), 0, r.kind === 'reedgate' ? '#c58bff' : '#35e0c8')) continue; c.fillStyle = r.kind === 'reedgate' ? '#c58bff' : '#35e0c8'; c.fillRect(X(r.x) - w / 2, Z(r.z) - h / 2, w, h); c.strokeRect(X(r.x) - w / 2, Z(r.z) - h / 2, w, h); }
+    for (const u of g.units) { if (!u.alive || (u === g.me && !g.cmd.on) || (u.team !== g.myTeam && !isFriend(u.team, g.myTeam) && !fog.sees(u.pos.x, u.pos.z))) continue; const foeU = u.team !== g.myTeam, ally = foeU && isFriend(u.team, g.myTeam); const ucol = ally ? FRIEND : foeU ? (u.kind === 'tender' ? '#c58bff' : this.cb ? '#ff9d1a' : '#ff4f9a') : isWorker(u.kind) ? (this.cb ? '#4da3ff' : '#8be04e') : '#f4ead2'; if (u.inside) continue; if (pic(u.kind, X(u.pos.x), Z(u.pos.z), uSize(u.kind), -u.yaw, ucol)) continue; c.fillStyle = ucol; c.beginPath(); c.arc(X(u.pos.x), Z(u.pos.z), u.kind === 'warden' ? 5 : foeU ? 2.6 : 2.2, 0, 7); c.fill(); c.strokeStyle = '#0e0d14'; c.lineWidth = big ? .5 : .9; c.stroke(); }
     for (const p of g.pings) { c.strokeStyle = '#ffc21a'; c.lineWidth = 2.5; c.beginPath(); c.arc(X(p.x), Z(p.z), 4 + (8 - p.t) % 1 * 7, 0, 7); c.stroke(); }
     for (const u of g.units) if (u.alive && u.pilot && u !== g.me && u.team === g.myTeam) { c.fillStyle = '#ffc21a'; c.strokeStyle = '#0e0d14'; c.lineWidth = 1.5; c.beginPath(); c.arc(X(u.pos.x), Z(u.pos.z), 3.6, 0, 7); c.fill(); c.stroke(); }
     const D = g.dir; if (g.myTeam === SIDE.home && !g.eco && (D.raidIn < 15 || D.raidLive) && g.stones().length && Math.floor(performance.now() / 300) % 2) { c.fillStyle = '#ff4b3a'; c.strokeStyle = '#0e0d14'; c.lineWidth = 2; c.beginPath(); { const n = NORTH_PATH.length, p = D.raidDir === 'north' ? [(NORTH_PATH[n - 1][0] + NORTH_PATH[n - 2][0]) / 2, (NORTH_PATH[n - 1][1] + NORTH_PATH[n - 2][1]) / 2] : roadPt(62), a = Math.atan2(-p[1], -p[0]); c.moveTo(X(p[0]) + Math.cos(a) * 9, Z(p[1]) + Math.sin(a) * 9); c.lineTo(X(p[0]) + Math.cos(a + 2.4) * 8, Z(p[1]) + Math.sin(a + 2.4) * 8); c.lineTo(X(p[0]) + Math.cos(a - 2.4) * 8, Z(p[1]) + Math.sin(a - 2.4) * 8); } c.closePath(); c.fill(); c.stroke(); }
@@ -311,10 +334,11 @@ export class Hud {
     if (hid) { const rd = I.read(g.myTeam), txt = knows ? 'THEM: ' + rd.short.toUpperCase() : 'NOT FOUND · H SENDS A SCOUT'; c.fillStyle = 'rgba(14,13,20,.82)'; c.fillRect(0, big ? 172 : 161, S, big ? 8 : 19); c.fillStyle = knows ? '#35e0c8' : '#ffc21a'; c.font = `700 ${big ? 5.6 : 14}px "Barlow Condensed", sans-serif`; c.textBaseline = 'middle'; c.textAlign = 'left'; c.fillText(txt, big ? 4 : 8, big ? 176.2 : 171); c.textBaseline = 'alphabetic'; }
     const me = g.me, C = g.cmd;
     // picked bodies are ringed, and the ground the command view is looking at is framed
-    if (C.on) { c.strokeStyle = '#7ef0ff'; c.lineWidth = 1.2; for (const u of C.sel) { c.beginPath(); c.arc(X(u.pos.x), Z(u.pos.z), 4, 0, 7); c.stroke(); } }
+    if (C.on) { c.strokeStyle = '#7ef0ff'; c.lineWidth = big ? .7 : 1; for (const u of C.sel) { c.beginPath(); c.arc(X(u.pos.x), Z(u.pos.z), IC[u.kind] ? uSize(u.kind) * .42 : 4, 0, 7); c.stroke(); } }
     if (C.on && !C.map) { const p = new THREE.Vector3(), pts: number[][] = []; for (const [sx, sy] of [[0, 0], [this.W, 0], [this.W, this.H], [0, this.H]]) if (C.ground(sx, sy, p)) pts.push([X(p.x), Z(p.z)]); if (pts.length === 4) { c.strokeStyle = '#fff'; c.lineWidth = 1.5; c.beginPath(); pts.forEach((pt, i) => i ? c.lineTo(pt[0], pt[1]) : c.moveTo(pt[0], pt[1])); c.closePath(); c.stroke(); } }
     if (me && me.alive && !(C.on && g.net && me.pilot !== g.net.id)) { c.save(); c.translate(X(me.pos.x), Z(me.pos.z)); c.rotate(-g.yaw); c.fillStyle = '#fff'; c.strokeStyle = '#0e0d14'; c.lineWidth = 1.5; c.beginPath(); c.moveTo(0, 8); c.lineTo(5, -5); c.lineTo(0, -2); c.lineTo(-5, -5); c.closePath(); c.fill(); c.stroke(); c.restore(); }
     if (!big) return;
+    sheetFurniture(c, S, 180, k, MAP.name, sheetSub);
     // the full map names what is on it
     this.bm.x0 = x0; this.bm.z0 = z0; this.bm.k = k;
     const name = (x: number, z: number, t: string, col: string) => { c.font = `700 5.6px ${this.face || (this.face = getComputedStyle(this.root).fontFamily || 'sans-serif')}`; t = t.toUpperCase(); c.textAlign = 'center'; c.lineJoin = 'round'; c.lineWidth = 1.8; c.strokeStyle = '#0e0d14'; c.strokeText(t, X(x), Z(z)); c.fillStyle = col; c.fillText(t, X(x), Z(z)); };

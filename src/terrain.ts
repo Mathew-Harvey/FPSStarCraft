@@ -334,7 +334,8 @@ export function drawMap(c: CanvasRenderingContext2D, X: (x: number) => number, Z
   c.lineCap = 'butt';
   for (const R of TER.ridges) for (const m of R.ramps) { c.strokeStyle = '#b48d6c'; c.lineWidth = Math.max(1.5, m.w * k); c.beginPath(); c.moveTo(X(m.tx - m.ux), Z(m.tz - m.uz)); c.lineTo(X(m.fx), Z(m.fz)); c.stroke(); }
   for (const [x, z, a, len] of TER.walls) { const tx = -Math.sin(a), tz = Math.cos(a); c.strokeStyle = '#1b1210'; c.lineWidth = Math.max(2, 3 * k); c.beginPath(); c.moveTo(X(x - tx * len / 2), Z(z - tz * len / 2)); c.lineTo(X(x + tx * len / 2), Z(z + tz * len / 2)); c.stroke(); }
-  for (const [x, z] of TER.vents) { if (!seen(x, z)) continue; c.fillStyle = '#f05ad2'; c.beginPath(); c.arc(X(x), Z(z), Math.max(1.6, 1.3 * k), 0, 7); c.fill(); }
+  // a Flux vent is the colour Flux has everywhere else on the HUD (the pink it had was the colour of an enemy in sight), with an ink ring
+  for (const [x, z] of TER.vents) { if (!seen(x, z)) continue; const r = Math.max(1.8, 1.4 * k); c.fillStyle = '#c58bff'; c.strokeStyle = '#0e0d14'; c.lineWidth = Math.max(.5, r * .3); c.beginPath(); c.arc(X(x), Z(z), r, 0, 7); c.fill(); c.stroke(); c.fillStyle = '#0e0d14'; c.beginPath(); c.arc(X(x), Z(z), r * .32, 0, 7); c.fill(); }
   for (const B of TER.beacons) { if (!seen(B.x, B.z)) continue; const mine = B.alive && B.held & (1 << team); c.strokeStyle = !B.alive ? '#5a463e' : mine ? '#ffe36a' : B.held ? '#ff6a4a' : '#d8c7b0'; c.lineWidth = 1.6; c.beginPath(); c.arc(X(B.x), Z(B.z), Math.max(3, BEACON.REACH * k), 0, 7); c.stroke();
     if (mine) { c.strokeStyle = 'rgba(255,227,106,.35)'; c.beginPath(); c.arc(X(B.x), Z(B.z), BEACON.SEE * k, 0, 7); c.stroke(); } }
   c.restore();

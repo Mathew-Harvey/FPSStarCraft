@@ -83,7 +83,7 @@ export class Command {
   // ------------------------------------------------------------ in and out
   private lift() {
     const g = this.g, me = g.me!; this.focus.set(me.pos.x, 0, me.pos.z); this.cx = g.hud.W / 2; this.cy = g.hud.H / 2; this.sel.clear(); this.selB = null; this.dive = null; this.drag = null; this.box = null; this.wasL = false;
-    g.lmb = g.rmb = false; g.ads = 0; g.brace = false; drillSound(false, false); sfx.blip();
+    g.lmb = g.rmb = false; g.ads = 0; g.brace = false; drillSound(false, false); sfx.open();
     // The body left behind is ordinary crew until somebody comes back to it: a fighter holds where it stands, a worker goes back to work.
     if (!g.net && me.alive) { me.target = null; if (isWorker(me.kind)) { me.site = null; me.state = me.carrying > 0 ? 'toHQ' : 'idle'; } else me.order = { type: 'guard', x: me.pos.x, z: me.pos.z, mine: true }; }
   }
@@ -140,12 +140,12 @@ export class Command {
     { const [ox, oz] = MAP.mid!, dx = this.focus.x - ox, dz = this.focus.z - oz, d = Math.hypot(dx, dz), lim = MAP.rad! * 1.025; if (d > lim) { this.focus.x = ox + dx / d * lim; this.focus.z = oz + dz / d * lim; } }
     // the wheel
     if (w < 0) {
-      if (this.map) { const p = this.mapPt?.(this.cx, this.cy); if (p) this.focus.set(p[0], 0, p[1]); this.zt = this.back >= ZOOM.near && this.back <= ZOOM.far ? this.back : .6; this.cx = W / 2; this.cy = H / 2; sfx.blip(); }
+      if (this.map) { const p = this.mapPt?.(this.cx, this.cy); if (p) this.focus.set(p[0], 0, p[1]); this.zt = this.back >= ZOOM.near && this.back <= ZOOM.far ? this.back : .6; this.cx = W / 2; this.cy = H / 2; sfx.zoom(false); }
       else if (this.zt <= ZOOM.near + 1e-3) { this.land(); return; }
       else { this.zt = Math.max(ZOOM.near, this.zt - ZOOM.step); if (this.ground(this.cx, this.cy, P3)) this.focus.lerp(P3, .22); }
-    } else if (w > 0 && !this.map) { if (this.zt >= ZOOM.far - 1e-3) { this.back = ZOOM.far; this.zt = 1; this.drag = null; this.box = null; sfx.blip(); } else this.zt = Math.min(ZOOM.far, this.zt + ZOOM.step); }
+    } else if (w > 0 && !this.map) { if (this.zt >= ZOOM.far - 1e-3) { this.back = ZOOM.far; this.zt = 1; this.drag = null; this.box = null; sfx.zoom(true); } else this.zt = Math.min(ZOOM.far, this.zt + ZOOM.step); }
     // keys
-    if (P.has('KeyM')) { if (!this.map) { this.back = this.zt; this.zt = 1; this.drag = null; this.box = null; sfx.blip(); } else if (this.back < ZOOM.lift) { this.land(me); return; } else { this.zt = this.back; sfx.blip(); } }
+    if (P.has('KeyM')) { if (!this.map) { this.back = this.zt; this.zt = 1; this.drag = null; this.box = null; sfx.zoom(true); } else if (this.back < ZOOM.lift) { this.land(me); return; } else { this.zt = this.back; sfx.zoom(false); } }
     if (P.has('KeyN')) { this.land(me); return; }
     if (P.has('Space')) { this.focus.set(me.pos.x, 0, me.pos.z); if (this.map) this.zt = .4; }
     const shift = K.has('ShiftLeft') || K.has('ShiftRight'), ctrl = K.has('ControlLeft') || K.has('ControlRight');
@@ -153,7 +153,7 @@ export class Command {
     if (P.has('F1') || P.has('Backquote')) this.idleWorker();
     if (P.has('F2') || (ctrl && P.has('KeyA'))) { P.delete('KeyA'); this.allArmy(); }
     // the command card: its keys, then a click on one of its buttons
-    if (this.aim?.k === 'stake' && P.has('KeyR')) { P.delete('KeyR'); this.rot = !this.rot; sfx.blip(); }
+    if (this.aim?.k === 'stake' && P.has('KeyR')) { P.delete('KeyR'); this.rot = !this.rot; sfx.tick(); }
     this.card = cardFor(g, this.sel, this.selB, this.menu, this.aim);
     for (const b of this.card) if (P.has(b.key)) { P.delete(b.key); this.press(b); if (!this.on) return; this.card = cardFor(g, this.sel, this.selB, this.menu, this.aim); break; }
     if (P.has('Mouse0')) { const id = g.hud.cardAt(this.cx, this.cy); if (id) { P.delete('Mouse0'); g.lmb = false; this.clickCard(id); if (!this.on) return; this.card = cardFor(g, this.sel, this.selB, this.menu, this.aim); } }
@@ -163,8 +163,8 @@ export class Command {
     if (this.map) {
       const p = this.mapPt?.(this.cx, this.cy);
       if (p && this.aim && this.aim.k !== 'stake' && P.has('Mouse0')) { this.useAim(p[0], p[1], null, shift); }
-      else if (p && P.has('Mouse0')) { this.focus.set(p[0], 0, p[1]); this.zt = this.back >= ZOOM.near && this.back <= ZOOM.far ? this.back : .5; this.cx = W / 2; this.cy = H / 2; sfx.blip(); }
-      if (p && P.has('Mouse2')) { if (this.aim) { this.aim = null; sfx.blip(); } else if (this.sel.size) this.order(p[0], p[1], null, shift); else if (this.selB) this.setRally(p[0], p[1], null); }
+      else if (p && P.has('Mouse0')) { this.focus.set(p[0], 0, p[1]); this.zt = this.back >= ZOOM.near && this.back <= ZOOM.far ? this.back : .5; this.cx = W / 2; this.cy = H / 2; sfx.zoom(false); }
+      if (p && P.has('Mouse2')) { if (this.aim) { this.aim = null; sfx.cancel(); } else if (this.sel.size) this.order(p[0], p[1], null, shift); else if (this.selB) this.setRally(p[0], p[1], null); }
       this.wasL = false; this.drag = null; return;
     }
     // an order from the card waiting for a spot: a left click gives it, a right click drops it
@@ -172,7 +172,7 @@ export class Command {
       const on = this.ground(this.cx, this.cy, P3);
       if (this.aim.k === 'stake' && on) this.stakeHover(this.aim.b, P3);
       if (P.has('Mouse0') && on) { P.delete('Mouse0'); this.useAim(P3.x, P3.z, this.under(true), shift); }
-      if (P.has('Mouse2')) { P.delete('Mouse2'); this.aim = null; sfx.blip(); }
+      if (P.has('Mouse2')) { P.delete('Mouse2'); this.aim = null; sfx.cancel(); }
       this.drag = null; this.box = null; this.wasL = false; return;
     }
     // picking: a click, or a box dragged out
@@ -213,14 +213,14 @@ export class Command {
       sfx.blip(); return;
     }
     const b = this.ground(this.cx, this.cy, P3) ? this.buildingAt(P3, true) : null;
-    if (b) { this.sel.clear(); this.selB = b; sfx.blip(); } else if (!add) { this.sel.clear(); this.selB = null; }
+    if (b) { this.sel.clear(); this.selB = b; sfx.select(); } else if (!add) { this.sel.clear(); this.selB = null; }
   }
   private pickBox(q: [number, number, number, number], add: boolean) {
     const g = this.g, s = [0, 0], got: Unit[] = [];
     for (const u of g.units) if (this.mine(u) && this.screen(u.pos.x, UNIT[u.kind].bodyY, u.pos.z, s) && s[0] >= q[0] && s[0] <= q[2] && s[1] >= q[1] && s[1] <= q[3]) got.push(u);
     // A box with fighters in it takes the fighters and leaves the workers at their seams.
     const fight = got.filter(u => !isWorker(u.kind)), take = fight.length ? fight : got; this.aim = null; this.menu = '';
-    if (!add) this.sel.clear(); if (take.length) { this.selB = null; for (const u of take) this.sel.add(u); sfx.blip(); }
+    if (!add) this.sel.clear(); if (take.length) { this.selB = null; for (const u of take) this.sel.add(u); sfx.select(); }
   }
   /** What a right click is on: an enemy to attack, ore to work, or one of the player's own buildings to build or mend. */
   private under(any = false): { k: string; id: number } | null {
@@ -235,7 +235,7 @@ export class Command {
   }
   private order(x: number, z: number, on: { k: string; id: number } | null, shift = false) {
     const g = this.g, k = (on && on.k !== 'u' ? on.k : 'm') as Step['k']; this.issue({ k, x, z, id: on && on.k !== 'u' ? on.id : 0, n: this.sel.size, t: 0 }, shift);
-    g.hud.ping(V3(x, 0, z), (shift ? 'Then ' : '') + (k === 'a' ? 'Attacking' : k === 'o' ? 'Working this seam' : k === 'b' ? 'Building here' : 'Moving here')); sfx.callout();
+    g.hud.ping(V3(x, 0, z), (shift ? 'Then ' : '') + (k === 'a' ? 'Attacking' : k === 'o' ? 'Working this seam' : k === 'b' ? 'Building here' : 'Moving here')); if (k === 'a') sfx.attack(); else sfx.order();
     if (this.ackT <= 0) { this.ackT = 4; const u = [...this.sel][0], ack = u && UNIT[u.kind].ack; if (u && ack && ack.length) g.hud.feed(UNIT[u.kind].name, ack[Math.floor(Math.random() * ack.length)], 'in'); }
   }
   private send(k: string, x: number, z: number, id: number) { this.sendIds([...this.sel].map(u => u.id), k, x, z, id); }
@@ -287,27 +287,27 @@ export class Command {
     const a = b.act, us = [...this.sel];
     if (a.t === 'train' && this.selB) g.train(this.selB, a.k, true);
     else if (a.t === 'research') g.buyUpgrade(a.k, g.myTeam, true);
-    else if (a.t === 'aim') { const same = this.aim && this.aim.k === a.aim.k && (a.aim.k !== 'stake' || (this.aim as any).b === a.aim.b); this.aim = same ? null : a.aim; if (a.aim.k === 'stake') this.rot = false; sfx.blip(); }
-    else if (a.t === 'stop') { for (const u of us) { this.queue.delete(u); this.cur.delete(u); this.sendIds([u.id], 'm', u.pos.x, u.pos.z, 0); } sfx.blip(); }
-    else if (a.t === 'release') { for (const u of us) { this.queue.delete(u); this.cur.delete(u); } this.send('r', 0, 0, 0); sfx.blip(); }
+    else if (a.t === 'aim') { const same = this.aim && this.aim.k === a.aim.k && (a.aim.k !== 'stake' || (this.aim as any).b === a.aim.b); this.aim = same ? null : a.aim; if (a.aim.k === 'stake') this.rot = false; sfx.tick(); }
+    else if (a.t === 'stop') { for (const u of us) { this.queue.delete(u); this.cur.delete(u); this.sendIds([u.id], 'm', u.pos.x, u.pos.z, 0); } sfx.order(); }
+    else if (a.t === 'release') { for (const u of us) { this.queue.delete(u); this.cur.delete(u); } this.send('r', 0, 0, 0); sfx.order(); }
     else if (a.t === 'jump') { const u = us[0]; if (u) this.land(u); }
-    else if (a.t === 'buildMenu') { this.menu = 'build'; this.aim = null; sfx.blip(); }
-    else if (a.t === 'back') { this.menu = ''; this.aim = null; sfx.blip(); }
+    else if (a.t === 'buildMenu') { this.menu = 'build'; this.aim = null; sfx.open(); }
+    else if (a.t === 'back') { this.menu = ''; this.aim = null; sfx.close(); }
     else if (a.t === 'cancel' && this.selB) this.cancel(this.selB, this.selB.queue.length - 1);
     else if (a.t === 'bact' && this.selB) g.buildingAction(this.selB, a.key, true);
-    else if (a.t === 'unload') { const G = g as any; if (this.selB) G.unload(this.selB); else for (const c of us) if (roomOf(c) > 0 && c.cargo?.length) G.unload(c); sfx.blip(); }
+    else if (a.t === 'unload') { const G = g as any; if (this.selB) G.unload(this.selB); else for (const c of us) if (roomOf(c) > 0 && c.cargo?.length) G.unload(c); sfx.order(); }
     else if (a.t === 'ability') {
       const ab = abilityOf(a.kind, a.key)!, { ready } = casters(g, us, a.kind, ab);
       // Smart cast: a self cast goes off on every picked body of that kind that can; an aimed one waits for a click, and then only
       // one caster goes (the nearest that can reach).
-      if (ab.target === 'self') { for (const u of ready) g.useAbility(u, a.key); sfx.blip(); }
-      else { const same = this.aim && this.aim.k === 'ab' && this.aim.key === a.key && this.aim.kind === a.kind; this.aim = same ? null : { k: 'ab', kind: a.kind, key: a.key, name: ab.name }; sfx.blip(); }
+      if (ab.target === 'self') { for (const u of ready) g.useAbility(u, a.key); sfx.cast(); }
+      else { const same = this.aim && this.aim.k === 'ab' && this.aim.key === a.key && this.aim.kind === a.kind; this.aim = same ? null : { k: 'ab', kind: a.kind, key: a.key, name: ab.name }; sfx.tick(); }
     }
   }
   /** The card button a controller's D-pad has moved to (-1 for none); A presses it. */
   padFocus = -1;
   /** A controller steps the card focus by `d`, wrapping round. */
-  padStep(d: number) { const n = this.card.length; if (!n) { this.padFocus = -1; return; } this.padFocus = this.padFocus < 0 ? (d > 0 ? 0 : n - 1) : (this.padFocus + d + n) % n; sfx.blip(); }
+  padStep(d: number) { const n = this.card.length; if (!n) { this.padFocus = -1; return; } this.padFocus = this.padFocus < 0 ? (d > 0 ? 0 : n - 1) : (this.padFocus + d + n) % n; sfx.tick(); }
   /** A controller presses the focused card button. */
   padPress() { const b = this.card[this.padFocus]; if (b) this.press(b); else sfx.deny(); }
   /** A click on the card: a button, or one of the slots of the picked building's queue. */
@@ -316,12 +316,12 @@ export class Command {
     const b = this.card.find(x => x.id === id); if (b) this.press(b);
   }
   /** Takes one body off a building's queue and pays it back in full (online the server does it). */
-  cancel(b: Building, i: number) { if (i < 0 || i >= b.queue.length || bldRule(b.kind).buds) { sfx.deny(); return; } this.g.cancelTrain(b, i); sfx.blip(); }
+  cancel(b: Building, i: number) { if (i < 0 || i >= b.queue.length || bldRule(b.kind).buds) { sfx.deny(); return; } this.g.cancelTrain(b, i); sfx.cancel(); }
   /** The order a card button was waiting on, given at a spot (and maybe on something). */
   private useAim(x: number, z: number, on: { k: string; id: number } | null, shift: boolean) {
     const g = this.g, aim = this.aim!; let keep = shift;
     if (aim.k === 'move') this.order(x, z, on && on.k === 'a' ? on : null, shift);
-    else if (aim.k === 'patrol') { this.issue({ k: 'p', x, z, id: 0, n: this.sel.size, t: 0 }, shift); g.hud.ping(V3(x, 0, z), 'Patrolling to here and back'); sfx.callout(); }
+    else if (aim.k === 'patrol') { this.issue({ k: 'p', x, z, id: 0, n: this.sel.size, t: 0 }, shift); g.hud.ping(V3(x, 0, z), 'Patrolling to here and back'); sfx.order(); }
     else if (aim.k === 'gather') { if (on && on.k === 'o') this.order(x, z, on, shift); else { sfx.deny(); g.hud.feed(FACTION[g.myTeam].voice, 'Gather needs a seam: click on ore.', 'al'); keep = true; } }
     else if (aim.k === 'rally') this.setRally(x, z, on);
     else if (aim.k === 'stake') { if (!this.stake(aim.b, x, z)) keep = true; }
@@ -335,7 +335,7 @@ export class Command {
     const g = this.g, riders = [...this.sel].filter(u => !roomOf(u)); if (!riders.length || !hasBoard(g)) return false;
     const c = this.carrierAt(x, z); if (!c) { sfx.deny(); g.hud.feed(FACTION[g.myTeam].voice, 'Get in needs one of our carriers or bunkers: click on one.', 'al'); return false; }
     for (const u of riders) { this.queue.delete(u); this.cur.delete(u); }
-    (g as any).board(riders, c); sfx.callout(); g.hud.ping(V3(c.pos.x, 0, c.pos.z), 'Getting in'); return true;
+    (g as any).board(riders, c); sfx.order(); g.hud.ping(V3(c.pos.x, 0, c.pos.z), 'Getting in'); return true;
   }
   /** One of the player's carriers (a body or building with room) under the spot, if any. */
   carrierAt(x: number, z: number): Unit | Building | null {
@@ -350,7 +350,7 @@ export class Command {
     if (!a || !a.autocast || !hasAutocast()) { sfx.deny(); return; }
     const us = [...this.sel].filter(u => u.kind === kind), on = !us.some(u => !(u as any).autoOff?.[key]);
     for (const u of us) (AB as any).setAutocast(g, u, key, on);
-    sfx.blip(); g.hud.feed(FACTION[g.myTeam].voice, `${a.name}: ${on ? 'cast by itself again' : 'only when told'}.`, '');
+    sfx.tick(); g.hud.feed(FACTION[g.myTeam].voice, `${a.name}: ${on ? 'cast by itself again' : 'only when told'}.`, '');
   }
   /** An aimed ability, given by the nearest picked body of that kind that can reach the spot (or the body clicked). */
   cast(kind: Kind, key: string, x: number, z: number, id = 0): boolean {
@@ -358,7 +358,7 @@ export class Command {
     const t = { x, z, id: a.target === 'body' ? id || undefined : undefined }, us = [...this.sel].filter(u => u.kind === kind);
     us.sort((p, q) => Math.hypot(p.pos.x - x, p.pos.z - z) - Math.hypot(q.pos.x - x, q.pos.z - z));
     let why = '', who: Unit | undefined;
-    for (const u of us) { const w = whyNot(g, u, key, t); if (!w) { g.useAbility(u, key, t); sfx.blip(); g.hud.ping(V3(x, 0, z), a.name); return true; } if (!why) { why = w; who = u; } }
+    for (const u of us) { const w = whyNot(g, u, key, t); if (!w) { g.useAbility(u, key, t); sfx.cast(); g.hud.ping(V3(x, 0, z), a.name); return true; } if (!why) { why = w; who = u; } }
     sfx.deny(); g.hud.feed(FACTION[g.myTeam].voice, `${a.name}: ${abilityWords(why, a, who)}.`, 'al'); return false;
   }
 
@@ -366,7 +366,7 @@ export class Command {
   setRally(x: number, z: number, on: { k: string; id: number } | null) {
     const g = this.g, b = this.selB; if (!b || !g.sells(b)) return;
     const r: Rally = { x, z }; if (on && on.k === 'o') { r.ore = on.id; const n = g.ores[on.id]; r.x = n.pos.x; r.z = n.pos.z; } else if (on && (on.k === 'u' || on.k === 'a')) r.id = on.id;
-    this.rally.set(b, r); g.hud.ping(V3(r.x, 0, r.z), r.ore !== undefined ? 'New workers go to this seam' : r.id ? 'New bodies go to this one' : 'New bodies gather here'); sfx.callout();
+    this.rally.set(b, r); g.hud.ping(V3(r.x, 0, r.z), r.ore !== undefined ? 'New workers go to this seam' : r.id ? 'New bodies go to this one' : 'New bodies gather here'); sfx.order();
   }
   /** Where a rally point is now: a body it follows moves. */
   rallyAt(r: Rally): [number, number] { if (r.id) { const g = this.g, t = g.units.find(u => u.alive && u.id === r.id) || g.buildings.find(o => o.alive && o.id === r.id); if (t) return [t.pos.x, t.pos.z]; } return [r.x, r.z]; }
@@ -413,25 +413,25 @@ export class Command {
     const g = this.g;
     for (let i = 0; i < 10; i++) {
       const code = 'Digit' + ((i + 1) % 10); if (!P.has(code)) continue; P.delete(code); const G = this.groups[i], n = (i + 1) % 10;
-      if (ctrl) { G.us = [...this.sel]; G.b = this.sel.size ? null : this.selB; g.hud.feed('Groups', G.us.length || G.b ? `Group ${n}: ${G.us.length ? G.us.length + ' picked' : BLD[G.b!.kind].name}.` : `Group ${n} emptied.`, ''); sfx.blip(); continue; }
-      if (shift) { for (const u of this.sel) if (!G.us.includes(u)) G.us.push(u); if (this.sel.size) G.b = null; g.hud.feed('Groups', `Group ${n}: ${G.us.length} picked.`, ''); sfx.blip(); continue; }
+      if (ctrl) { G.us = [...this.sel]; G.b = this.sel.size ? null : this.selB; g.hud.feed('Groups', G.us.length || G.b ? `Group ${n}: ${G.us.length ? G.us.length + ' picked' : BLD[G.b!.kind].name}.` : `Group ${n} emptied.`, ''); sfx.select(); continue; }
+      if (shift) { for (const u of this.sel) if (!G.us.includes(u)) G.us.push(u); if (this.sel.size) G.b = null; g.hud.feed('Groups', `Group ${n}: ${G.us.length} picked.`, ''); sfx.select(); continue; }
       G.us = G.us.filter(u => this.mine(u)); if (G.b && !G.b.alive) G.b = null;
       if (!G.us.length && !G.b) { sfx.deny(); continue; }
       const twice = g.pipe.time - this.groupT < .45 && this.groupLast === i; this.groupT = g.pipe.time; this.groupLast = i;
       this.sel.clear(); this.selB = null; this.aim = null; this.menu = ''; if (G.us.length) for (const u of G.us) this.sel.add(u); else this.selB = G.b;
       // Pressed twice quickly: the view goes to them.
       if (twice) { let x = 0, z = 0; if (G.us.length) { for (const u of G.us) { x += u.pos.x; z += u.pos.z; } x /= G.us.length; z /= G.us.length; } else { x = G.b!.pos.x; z = G.b!.pos.z; } this.focus.set(x, 0, z); if (this.map) this.zt = this.back >= ZOOM.near && this.back <= ZOOM.far ? this.back : .5; }
-      sfx.blip();
+      sfx.select();
     }
   }
   /** Picks every fighter on the player's side. */
-  allArmy() { const g = this.g; this.sel.clear(); this.selB = null; this.aim = null; this.menu = ''; for (const u of g.units) if (this.mine(u) && !isWorker(u.kind)) this.sel.add(u); if (this.sel.size) sfx.blip(); else { sfx.deny(); g.hud.feed(FACTION[g.myTeam].voice, 'No fighters to pick.', 'al'); } }
+  allArmy() { const g = this.g; this.sel.clear(); this.selB = null; this.aim = null; this.menu = ''; for (const u of g.units) if (this.mine(u) && !isWorker(u.kind)) this.sel.add(u); if (this.sel.size) sfx.select(); else { sfx.deny(); g.hud.feed(FACTION[g.myTeam].voice, 'No fighters to pick.', 'al'); } }
   /** Workers doing nothing: standing where they were sent, or with no seam and no site. */
   idle() { return this.g.units.filter(u => this.mine(u) && isWorker(u.kind) && u !== this.g.me && (u.state === 'hold' || (u.state === 'idle' && !u.site && !u.node))); }
   /** Picks the next idle worker and looks at it. */
   idleWorker() {
     const g = this.g, list = this.idle(); if (!list.length) { sfx.deny(); g.hud.feed(FACTION[g.myTeam].voice, 'Every worker is busy.', ''); return; }
-    const u = list[this.idleI++ % list.length]; this.sel.clear(); this.selB = null; this.aim = null; this.menu = ''; this.sel.add(u); this.focus.set(u.pos.x, 0, u.pos.z); if (this.map) this.zt = .5; sfx.blip();
+    const u = list[this.idleI++ % list.length]; this.sel.clear(); this.selB = null; this.aim = null; this.menu = ''; this.sel.add(u); this.focus.set(u.pos.x, 0, u.pos.z); if (this.map) this.zt = .5; sfx.select();
   }
 
   // ------------------------------------------------------------ what is drawn on the ground: orders in a row, rally points, the building being staked

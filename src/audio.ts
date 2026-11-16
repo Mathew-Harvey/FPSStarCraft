@@ -9,7 +9,7 @@ let music: GainNode | null = null, volume = .5, mood = 0, moodNow = 0, step = 0,
 export function setVolume(v: number) { volume = v; if (master && ctx) master.gain.setTargetAtTime(v, ctx.currentTime, .05); }
 /** 0 is silence, .25 is calm base music, 1 is a full fight. */
 export function setMood(x: number) { if (!level) return; moods[seat] = x; mood = Math.max(moods[0], moods[1]); }
-let musicOn = true;
+let musicOn = true, windG: GainNode | null = null;
 export function setMusic(on: boolean) { musicOn = on; }
 let drillOsc: OscillatorNode | null = null, drillGain: GainNode | null = null;
 /** Split screen runs three copies of the game in one page: a silent one that owns the match, and one for each player. */
@@ -36,7 +36,7 @@ export function initAudio() {
     music = ctx.createGain(); music.gain.value = .0001; music.connect(master); setInterval(tick, 90);
     // a bed of desert wind that never quite repeats
     const w = ctx.createBufferSource(), wf = ctx.createBiquadFilter(), wg = ctx.createGain(), lfo = ctx.createOscillator(), lg = ctx.createGain();
-    w.buffer = noiseBuf; w.loop = true; wf.type = 'bandpass'; wf.frequency.value = 420; wf.Q.value = .6; wg.gain.value = .035; lfo.frequency.value = .13; lg.gain.value = 190;
+    w.buffer = noiseBuf; w.loop = true; wf.type = 'bandpass'; wf.frequency.value = 420; wf.Q.value = .6; wg.gain.value = .035; windG = wg; lfo.frequency.value = .13; lg.gain.value = 190;
     lfo.connect(lg); lg.connect(wf.frequency); w.connect(wf); wf.connect(wg); wg.connect(master); w.start(); lfo.start();
 
   } catch (e) { ctx = null; }
@@ -66,7 +66,7 @@ const synth = {
   streak: (n: number) => { [0, 4, 7, 12].slice(0, Math.min(4, n)).forEach((st, i) => later(() => tone(440 * Math.pow(2, st / 12), 440 * Math.pow(2, st / 12), .12, .2, 'square'), i * 70)); },
   boom: (vol = 1) => { noise(.7, 420, .9 * vol); tone(120, 28, .55, .6 * vol, 'sine'); noise(.12, 3000, .3 * vol, 'highpass'); },
   blast: (vol = 1) => { noise(.26, 1300, .75 * vol); tone(150, 40, .2, .45 * vol, 'sawtooth'); },
-  clang: () => { tone(620, 540, .22, .22, 'square'); tone(931, 860, .3, .14, 'triangle'); noise(.05, 4000, .3, 'highpass'); },
+  clang: (vol = 1) => { tone(620, 540, .22, .22 * vol, 'square'); tone(931, 860, .3, .14 * vol, 'triangle'); noise(.05, 4000, .3 * vol, 'highpass'); },
   hurt: () => { tone(170, 80, .16, .3, 'sawtooth'); noise(.1, 500, .3); },
   throw: () => { noise(.2, 1800, .2, 'bandpass'); tone(300, 520, .16, .1, 'sine'); },
   zap: (vol = 1) => { tone(1500, 320, .2, .16 * vol, 'sawtooth'); tone(2200, 700, .12, .1 * vol, 'sine'); },
@@ -75,9 +75,25 @@ const synth = {
   ore: () => { tone(880, 1320, .09, .18, 'triangle'); },
   bank: () => { tone(660, 990, .12, .18, 'triangle'); },
   blip: () => { tone(660, 660, .05, .12); },
+  // the interface, one sound per kind of action, so the hand learns them
+  select: () => { tone(720, 700, .04, .1, 'triangle'); },
+  order: () => { tone(520, 600, .05, .12, 'triangle'); },
+  attack: () => { tone(330, 300, .07, .14, 'square'); },
+  tick: () => { tone(900, 900, .02, .07, 'triangle'); },
+  open: () => { tone(440, 660, .08, .1, 'triangle'); },
+  close: () => { tone(660, 440, .08, .1, 'triangle'); },
+  queue: () => { tone(560, 840, .07, .12, 'triangle'); },
+  trained: () => { tone(392, 392, .08, .12, 'triangle'); later(() => tone(587, 587, .12, .12, 'triangle'), 80); },
+  cast: () => { tone(800, 1100, .06, .1, 'triangle'); },
+  cancel: () => { tone(500, 380, .07, .1, 'triangle'); },
+  hatch: () => { noise(.12, 500, .18); tone(200, 120, .1, .1, 'sine'); },
+  // the Gloam's own attacks: a wet spit, and a bite
+  spit: (vol = 1) => { noise(.12, 900, .2 * vol, 'bandpass'); },
+  bite: (vol = 1) => { noise(.1, 600, .3 * vol); tone(180, 70, .08, .15 * vol, 'sine'); },
+  zoom: (out = true) => { noise(.18, out ? 1800 : 2400, .08, 'bandpass'); },
   deny: () => { tone(160, 110, .16, .2); },
-  place: () => { tone(220, 440, .14, .2, 'triangle'); noise(.1, 500, .2); },
-  built: () => { tone(440, 440, .09, .18, 'triangle'); later(() => tone(660, 660, .14, .18, 'triangle'), 90); },
+  place: (vol = 1) => { tone(220, 440, .14, .2 * vol, 'triangle'); noise(.1, 500, .2 * vol); },
+  built: (vol = 1) => { tone(440, 440, .09, .18 * vol, 'triangle'); later(() => tone(660, 660, .14, .18 * vol, 'triangle'), 90); },
   jump: () => { noise(.3, 4000, .22, 'highpass'); tone(200, 1200, .22, .14, 'sine'); },
   card: () => { noise(.2, 300, .5); tone(110, 55, .3, .35, 'sawtooth'); },
   alarm: () => { tone(520, 520, .18, .22); later(() => tone(390, 390, .22, .22), 200); },
@@ -89,7 +105,7 @@ const synth = {
   pistol: (low = 0) => { noise(.07, 3400, .42, 'bandpass'); tone(420 + low * 160, 120, .06, .22, 'square'); noise(.2, 700, .08); },
   sniper: () => { noise(.08, 5000, .5, 'highpass'); noise(.5, 700, .7); tone(110, 30, .4, .5, 'sine'); tone(900, 200, .06, .2, 'sawtooth'); later(() => { noise(.05, 2800, .22, 'bandpass'); later(() => noise(.06, 1900, .26, 'bandpass'), 170); }, 420); },
   scatter: () => { noise(.3, 1100, .85); tone(130, 36, .24, .5, 'sawtooth'); noise(.07, 4200, .3, 'highpass'); later(() => noise(.05, 2600, .22, 'bandpass'), 330); later(() => { noise(.06, 1500, .26, 'bandpass'); tone(160, 110, .04, .12, 'square'); }, 470); },
-  cannon: () => { noise(.22, 800, .8); tone(95, 30, .26, .6, 'sine'); tone(300, 80, .08, .3, 'square'); noise(.4, 300, .25); },
+  cannon: (vol = 1) => { noise(.22, 800, .8 * vol); tone(95, 30, .26, .6, 'sine'); tone(300, 80, .08, .3, 'square'); noise(.4, 300, .25); },
   dry: () => { tone(1100, 900, .03, .12, 'square'); noise(.03, 5000, .15, 'highpass'); },
   kill: () => { tone(660, 990, .07, .16, 'triangle'); later(() => tone(990, 1480, .1, .14, 'triangle'), 60); },
   win: () => { [523, 659, 784, 1046].forEach((f, i) => later(() => tone(f, f, .25, .2, 'triangle'), i * 140)); },
@@ -122,7 +138,29 @@ function loadBank() {
     c.decodeAudioData(bytes.buffer).then(b => { (bank[group] = bank[group] || []).push(b); if (--left === 0) ready = !!bank.crack; }, () => { left = -1; });
   }
 }
-type Opt = { rate?: number, at?: number, lp?: number, jit?: number };
+type Opt = { rate?: number, at?: number, lp?: number, jit?: number, pan?: number };
+// ---------------------------------------------------------------- where a sound sits
+// Every sound from the world is placed left or right of the listener, the way a close-miked foley take is: near things sit
+// almost in the middle, far ones off to their side. `PAN` is the place of whatever is playing now; `withPan` sets it for one call.
+let PAN = 0, earX = 0, earZ = 0, earYaw = 0, spot: number | null = null;
+/** Where the listener stands and which way they face (radians, the game's yaw). Called every frame. */
+export function setEar(x: number, z: number, yaw: number) { earX = x; earZ = z; earYaw = yaw; }
+/** Left (-1) to right (1) for a spot in the world, as heard from the ear. Close sounds stay near the middle. */
+export function panOf(x: number, z: number) {
+  const dx = x - earX, dz = z - earZ, d = Math.hypot(dx, dz); if (d < .5) return 0;
+  // yaw 0 faces +z; the listener's right is (-cos yaw, sin yaw), and `side` is the offset along the left
+  const fx = Math.sin(earYaw), fz = Math.cos(earYaw), side = (fz * dx - fx * dz) / d;
+  return Math.max(-1, Math.min(1, -side * .85 * Math.min(1, d / 5)));
+}
+/** game.vol marks where the next world sound comes from; the next sfx call takes the mark and clears it. */
+export function heardAt(x: number, z: number) { spot = panOf(x, z); }
+export function withPan<T>(p: number, f: () => T): T { const o = PAN; PAN = p; try { return f(); } finally { PAN = o; } }
+const outs = new Map<number, AudioNode>();
+/** The node a sound plugs into: the master bus, through a stereo panner when it is off centre (shared per rounded place). */
+function out(pan = PAN): AudioNode {
+  if (!ctx || !master) return master!; const k = Math.round(pan * 10) / 10; if (!k || !(ctx as any).createStereoPanner) return master;
+  let n = outs.get(k); if (!n) { const sp = ctx.createStereoPanner(); sp.pan.value = k; sp.connect(master); outs.set(k, n = sp); } return n;
+}
 /** Plays a take from a group of samples. `lp` closes a low pass on it (distant sounds are duller), `at` delays it in seconds. */
 function S(name: string, peak: number, o: Opt = {}) {
   peak *= level; const list = bank[name]; if (!ctx || !master || !list || peak < .004) return;
@@ -130,7 +168,7 @@ function S(name: string, peak: number, o: Opt = {}) {
   const t = ctx.currentTime + (o.at || 0), src = ctx.createBufferSource(), g = ctx.createGain(), jit = o.jit ?? .05;
   src.buffer = list[i]; src.playbackRate.value = (o.rate || 1) * (1 + (Math.random() * 2 - 1) * jit); g.gain.value = peak;
   let tail: AudioNode = src; if (o.lp && o.lp < 16000) { const f = ctx.createBiquadFilter(); f.type = 'lowpass'; f.frequency.value = o.lp; f.Q.value = .5; src.connect(f); tail = f; }
-  tail.connect(g); g.connect(master); src.start(t);
+  tail.connect(g); g.connect(out(o.pan ?? PAN)); src.start(t);
 }
 /** A short sine drop for weight under a transient: felt more than heard. */
 function sub(f0: number, f1: number, dur: number, peak: number, at = 0) {
@@ -138,8 +176,18 @@ function sub(f0: number, f1: number, dur: number, peak: number, at = 0) {
   const t = ctx.currentTime + at, o = ctx.createOscillator(), g = ctx.createGain();
   o.type = 'sine'; o.frequency.setValueAtTime(f0, t); o.frequency.exponentialRampToValueAtTime(Math.max(20, f1), t + dur);
   g.gain.setValueAtTime(.0001, t); g.gain.exponentialRampToValueAtTime(Math.max(peak, .0002), t + .004); g.gain.exponentialRampToValueAtTime(.0001, t + dur);
-  o.connect(g); g.connect(master); o.start(t); o.stop(t + dur + .05);
+  o.connect(g); g.connect(out()); o.start(t); o.stop(t + dur + .05);
 }
+/** A breath of filtered noise that swells in and dies away: air, hiss, sand, steam. `f0`→`f1` sweeps the band. */
+function swell(dur: number, f0: number, f1: number, peak: number, at = 0, q = .8, rise = .3) {
+  peak *= level; if (!ctx || !master || !noiseBuf || peak < .004) return;
+  const t = ctx.currentTime + at, s = ctx.createBufferSource(), f = ctx.createBiquadFilter(), g = ctx.createGain();
+  s.buffer = noiseBuf; f.type = 'bandpass'; f.Q.value = q; f.frequency.setValueAtTime(f0, t); f.frequency.exponentialRampToValueAtTime(Math.max(30, f1), t + dur);
+  g.gain.setValueAtTime(.0001, t); g.gain.exponentialRampToValueAtTime(Math.max(peak, .0002), t + dur * rise); g.gain.exponentialRampToValueAtTime(.0001, t + dur);
+  s.connect(f); f.connect(g); g.connect(out()); s.start(t, Math.random() * .5, dur + .05);
+}
+/** A soft sine bell: quick bloom, a long smooth fall, a quiet octave and fifth above for shine. Tuned sounds for the Veyl. */
+function bell(f: number, dur: number, peak: number, at = 0) { sub(f, f * .998, dur, peak, at); sub(f * 2.001, f * 2, dur * .55, peak * .3, at); sub(f * 3.003, f * 3, dur * .3, peak * .1, at); }
 /** Far away sounds lose their top end before they lose their level. */
 const far = (v: number) => 900 + 13000 * Math.min(1, v) ** 1.6;
 /** A soft, low chime for rewards: sine with a quick bloom, no buzz. */
@@ -149,7 +197,7 @@ const sampled: typeof synth = {
   shot: (v = 1) => { S('crack', .4 * v, { lp: far(v), rate: .95 }); S('knock_hard', .28 * v, { lp: far(v) }); sub(95, 45, .08, .16 * v); },
   turret: (v = 1) => { S('crack', .38 * v, { lp: far(v), rate: .8 }); S('knock_hard', .4 * v, { lp: far(v), rate: .8 }); sub(80, 38, .12, .22 * v); },
   hit: (v = 1) => { S('punch', .6 * v, { rate: 1.05 }); S('pebble', .14 * v, { rate: 1.1 }); },
-  slash: (v = 1) => { S('slice', .3 * v, { lp: far(v) }); S('swish', .3 * v, { lp: far(v) }); },
+  slash: (v = 1) => { S('slice', .3 * v, { lp: Math.min(far(v), 2400), rate: .85 }); S('swish', .3 * v, { lp: far(v) }); },
   ko: (v = 1, veyl = true) => {
     if (veyl) { S('glass', .5 * v, { lp: far(v), rate: .85 }); S('field', .28 * v, { lp: far(v), rate: 1.3 }); sub(180, 60, .3, .18 * v); }
     else { S('punch_heavy', .55 * v, { lp: far(v) }); S('thud_soft', .45 * v, { at: .05 }); S('cloth', .2 * v, { lp: far(v) }); }
@@ -163,7 +211,7 @@ const sampled: typeof synth = {
   streak: (n: number) => { [0, 4, 7, 12].slice(0, Math.min(4, n)).forEach((st, i) => { S('knock', .22, { at: i * .07, rate: Math.pow(2, st / 12), jit: 0 }); chime(440 * Math.pow(2, st / 12), .16, .07, i * .07); }); },
   boom: (v = 1) => { const lp = far(v); S('crunch', .75 * v, { lp }); S('boom', .55 * v, { lp: Math.min(lp, 4000) }); if (v > .3) S('rumble', .35 * v, { at: .02 }); sub(70, 28, .5, .3 * v); },
   blast: (v = 1) => { const lp = far(v); S('crunch', .4 * v, { lp, rate: 1.25 }); S('knock_hard', .45 * v, { lp, rate: .85 }); sub(110, 40, .16, .25 * v); },
-  clang: () => { S('metal', .5); S('plate', .32, { rate: 1.1 }); },
+  clang: (v = 1) => { S('metal', .5 * v, { lp: far(v) }); S('plate', .32 * v, { rate: 1.1, lp: far(v) }); },
   hurt: () => { S('punch_heavy', .55, { rate: .95 }); sub(120, 55, .16, .3); },
   throw: () => { S('swish', .4); S('cloth', .14); },
   zap: (v = 1) => { S('zap', .42 * v, { lp: far(v) }); },
@@ -171,10 +219,24 @@ const sampled: typeof synth = {
   charge: (v = 1) => { S('field', .5 * v, { lp: far(v), rate: .8 }); S('beam', .25 * v, { lp: far(v), rate: .7, at: .55 }); sub(50, 110, .85, .14 * v); },
   ore: () => { S('mine', .42, { jit: .07 }); S('pebble', .22, { at: .045, rate: .85, jit: .12 }); },
   bank: () => { S('pour', .42, { rate: .72 }); S('thunk', .4); sub(90, 50, .2, .15); },
-  blip: () => { S('rocker', .42); },
+  blip: () => { S('ui_tap', .80); S('rocker_soft', .30, { at: .008 }); },
+  select: () => { S('ui_tap_firm', .76, { rate: .9 }); S('ui_clip', .27, { at: .015, rate: .8 }); sub(180, 140, .05, .10); },
+  order: () => { S('ui_snap', .65, { rate: .85 }); S('knock', .38, { rate: 1.2, at: .01 }); sub(140, 90, .06, .13); },
+  attack: () => { S('ui_latch', .72, { rate: .8 }); S('knock_hard', .38, { rate: 1.5 }); sub(110, 60, .08, .19); },
+  tick: () => { S('ui_toggle', .57, { jit: .08 }); },
+  open: () => { S('card_slide', .5, { rate: 1.1, lp: 2600 }); S('ui_latch', .49, { at: .05 }); },
+  close: () => { S('card_slide', .4, { rate: 1.35, lp: 2600 }); S('ui_off', .53, { at: .03 }); },
+  queue: () => { S('ui_button', .76, { rate: .85 }); S('thunk', .38, { rate: 1.5, at: .01 }); chime(523.3, .18, .057, .02); },
+  trained: () => { S('ui_latch', .61); chime(392, .4, .095, .02); chime(587.3, .5, .076, .1); },
+  cast: () => { S('ui_clip', .65, { rate: .9 }); S('rocker_soft', .38, { at: .01 }); chime(880, .14, .038, .01); },
+  cancel: () => { S('ui_off', .65); S('ui_tap', .38, { rate: .75, at: .03 }); },
+  spit: (v = 1) => { const lp = Math.min(far(v), 4000); S('goo', .42 * v, { lp, rate: 1.1, jit: .12 }); S('swish', .2 * v, { lp, rate: .75 }); S('pop', .18 * v, { lp, rate: 1.4, jit: .15 }); },
+  bite: (v = 1) => { const lp = Math.min(far(v), 4000); S('punch', .55 * v, { lp, rate: .9, jit: .1 }); S('squelch', .24 * v, { lp, rate: 1.15 }); S('slice', .14 * v, { lp: 2400, rate: .55 }); sub(130, 60, .08, .16 * v); },
+  hatch: () => { S('squelch', .42, { rate: .8 }); S('pop', .32, { at: .08, rate: .7 }); S('goo', .25, { at: .14, rate: .9 }); sub(120, 70, .12, .1, .08); },
+  zoom: (out = true) => { S(out ? 'whoosh' : 'suck', .18, { rate: out ? .7 : 1.3, lp: 3500 }); },
   deny: () => { S('denied', .34); S('off', .3); },
-  place: () => { S('thunk', .55); S('latch', .34, { at: .06 }); },
-  built: () => { S('lock', .75); S('thunk', .32, { at: .3 }); chime(330, .3, .06, .36); chime(495, .35, .05, .44); },
+  place: (v = 1) => { S('thunk', .55 * v); S('latch', .34 * v, { at: .06, lp: far(v) }); },
+  built: (v = 1) => { S('lock', .75 * v, { lp: far(v) }); S('thunk', .32 * v, { at: .3 }); chime(330, .3, .06 * v, .36); chime(495, .35, .05 * v, .44); },
   jump: () => { S('whoosh', .38, { rate: .8 }); S('field', .2, { rate: 1.5 }); S('cloth', .18, { at: .08 }); },
   card: () => { S('thud_soft', .6); S('knock_deep', .3); S('card', .42); },
   alarm: () => { S('bell', .42, { lp: 5000 }); S('bell', .34, { at: .32, rate: .84, lp: 4500 }); },
@@ -188,7 +250,7 @@ const sampled: typeof synth = {
   pistol: (low = 0) => { S('crack', .42, { rate: 1.28 + low * .1 }); S('knock_hard', .24, { rate: 1.35 }); sub(120, 60, .06, .2); S('act_light', .16, { at: .02, rate: 1.25 }); },
   sniper: () => { S('crack_tail', .6); S('drum', .5); S('knock_deep', .45); sub(105, 30, .45, .4); S('act_heavy', .3, { at: .42 }); S('bolt', .4, { at: .6 }); },
   scatter: () => { S('crack', .5, { rate: .72 }); S('knock_deep', .55); S('knock_hard', .5, { rate: .78 }); S('crack_tail', .26, { rate: .8 }); sub(85, 30, .26, .38); S('slide', .32, { at: .33 }); S('latch', .44, { at: .47 }); },
-  cannon: () => { S('drum', .55, { rate: 1.1 }); S('crunch', .32, { rate: 1.35 }); S('knock_hard', .5, { rate: .7 }); sub(80, 28, .3, .4); },
+  cannon: (v = 1) => { const lp = far(v); S('drum', .55 * v, { rate: 1.1, lp }); S('crunch', .32 * v, { rate: 1.35, lp }); S('knock_hard', .5 * v, { rate: .7, lp }); sub(80, 28, .3, .4 * v); },
   dry: () => { S('dry', .8); S('off', .3); },
   kill: () => { S('knock', .45, { rate: .9, jit: .02 }); S('space', .28); chime(660, .14, .05, .03); },
   win: () => { [523, 659, 784, 1046].forEach((f, i) => { chime(f / 2, .5, .12, i * .14); S('knock', .2, { at: i * .14, rate: f / 523, jit: 0 }); }); S('bell', .3, { at: .56, lp: 6000 }); },
@@ -231,7 +293,40 @@ const sampled: typeof synth = {
 export const soundsReady = () => ready;
 /** Both sets, for the sound board (tools/sfx/board.ts). */
 export const sets = { synth, sampled };
-export const sfx: typeof synth = new Proxy(synth, { get: (t, k: string) => (ready ? sampled : t)[k] });
+/** World sounds placed by where game.vol last looked. A call at full volume is the player's own and stays centred. */
+const PLACED = new Set(['trained', 'hatch', 'spit', 'bite', 'shot', 'turret', 'slash', 'ko', 'boom', 'blast', 'zap', 'dash', 'charge', 'impact', 'ricochet', 'bodyfall', 'shatter', 'splat', 'clang', 'throw', 'callout', 'blip', 'built', 'place']);
+export const sfx: typeof synth = new Proxy(synth, { get: (t, k: string) => {
+  const f = (ready ? sampled : t)[k as keyof typeof synth] as any, p = spot; spot = null;
+  if (p === null || !PLACED.has(k)) return f;
+  return (...a: any[]) => withPan(typeof a[0] === 'number' && a[0] >= .999 ? 0 : p, () => f(...a));
+} });
+/** Plays `play` into an offline context and returns what it made: for checking sounds without ears (tools/sfx/render.mjs). */
+export async function renderOffline(secs: number, play: () => void): Promise<AudioBuffer | null> {
+  if (!ready) return null; const keep = { ctx, master, noiseBuf, level, PAN }, oc = new OfflineAudioContext(2, Math.ceil(secs * 48000), 48000);
+  const m = oc.createGain(), warm = oc.createBiquadFilter(), soft = oc.createBiquadFilter(), comp = oc.createDynamicsCompressor();
+  m.gain.value = .5; warm.type = 'lowshelf'; warm.frequency.value = 140; warm.gain.value = 3; soft.type = 'highshelf'; soft.frequency.value = 7000; soft.gain.value = -3;
+  comp.threshold.value = -14; comp.ratio.value = 4; comp.knee.value = 12; m.connect(warm); warm.connect(soft); soft.connect(comp); comp.connect(oc.destination);
+  ctx = oc as unknown as AudioContext; master = m; level = 1; PAN = 0; outs.clear();
+  try { play(); } finally { ctx = keep.ctx; master = keep.master; level = keep.level; PAN = keep.PAN; outs.clear(); }
+  return oc.startRendering();
+}
+/** A looping take (an engine, a bed of crickets) whose level, place and speed are eased every frame. Silent until `set`. */
+export interface Loop { set(gain: number, pan?: number, rate?: number): void; stop(): void }
+export function loop(name: string, lp = 16000): Loop | null {
+  if (!ctx || !master || !ready || !bank[name] || !level) return null; const c = ctx, list = bank[name];
+  const src = c.createBufferSource(), g = c.createGain(), f = c.createBiquadFilter(), sp = (c as any).createStereoPanner ? c.createStereoPanner() : null;
+  src.buffer = list[Math.floor(Math.random() * list.length)]; src.loop = true; g.gain.value = .0001; f.type = 'lowpass'; f.frequency.value = lp; f.Q.value = .5;
+  src.connect(f); f.connect(g); if (sp) { g.connect(sp); sp.connect(master); } else g.connect(master);
+  src.start(c.currentTime, Math.random() * src.buffer.duration); const lv = level; let dead = false;
+  return {
+    set(gain, pan = 0, rate = 1) { if (dead) return; const t = c.currentTime; g.gain.setTargetAtTime(Math.max(.0001, gain * lv), t, .12); if (sp) sp.pan.setTargetAtTime(pan, t, .1); src.playbackRate.setTargetAtTime(rate, t, .2); },
+    stop() { if (dead) return; dead = true; const t = c.currentTime; g.gain.setTargetAtTime(.0001, t, .15); src.stop(t + .8); },
+  };
+}
+/** The wind bed's level (1 is a normal breeze), set from the weather each frame. */
+export function setWind(x: number) { if (ctx && windG) windG.gain.setTargetAtTime(.035 * Math.max(.2, Math.min(3, x)) * (level ? 1 : 0), ctx.currentTime, .8); }
+/** The building blocks, for the sound sets in other files (sound-abilities.ts). */
+export const kit = { S, sub, swell, bell, chime, far, withPan, ready: () => ready, has: (n: string) => !!bank[n] };
 
 export function drillSound(on: boolean, biting: boolean) {
   if (!ctx || !master || !level) return;

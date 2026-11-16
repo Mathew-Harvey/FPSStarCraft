@@ -415,4 +415,4 @@ function warden(): THREE.Group {
   return obj;
 }
 
-export const NEW: Record<string, () => THREE.Group> = { rigger, linesman: () => trooper(false), breacher: () => trooper(true), longshot: () => trooper(false, 'long'), patch: () => trooper(false, 'patch'), gantry, cantor, lancer, warden, tender };
+export const NEW: Record<string, () => THREE.Group> = { rigger, linesman: () => trooper(false), breacher: () => trooper(true), longshot: () => trooper(false, 'long'), patch: () => trooper(false, 'patch'), gantry, gantryflak: gantry, cantor, lancer, warden, tender };

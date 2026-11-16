@@ -414,7 +414,7 @@ export class Game {
     const g = V3(p.x, .6, p.z); this.puff(g, 5, radius * .62, acid ? M.gS : veyl ? M.teal : M.fire, 2.2, 1.5); this.puff(g, 3, radius * .5, acid ? M.gGlow : veyl ? M.cyan : M.fireD, 1.6, 2); this.puff(TMP2.set(p.x, 1.1, p.z), 5, radius * .7, acid ? M.gGlow : veyl ? M.indigoL : M.soot, 1.5, 1.7, 2.3); this.debris(g, 8, .3, acid ? M.gH : veyl ? M.crys : M.rock, 7); this.pow(g, radius * 1.5, acid ? 2 : veyl ? 1 : 0); this.scorchAt(p, radius * 1.5); if (radius >= 3.5) this.crater(p, radius * .55);
     const v = this.vol(p); this.shake = Math.max(this.shake, v * 1.1); if (!veyl) this.pipe.flash = Math.max(this.pipe.flash, v * .5); sfx.boom(v);
     flashLamp(p.x, 1.4, p.z, radius * 4 + 10, acid ? SICK : veyl ? TEAL : FIRE, .6);
-    this.hud.damage(V3(p.x, 2.2, p.z), acid ? 'SPLORCH!' : veyl ? 'WHUMM!' : 'BOOM!', team === this.myTeam || (team < 0 && !veyl) ? 'ko' : 'kobad');
+    if (!this.cmd.on && (v > .3 || from === this.me)) this.hud.damage(V3(p.x, 2.2, p.z), acid ? 'SPLORCH!' : veyl ? 'WHUMM!' : 'BOOM!', team === this.myTeam || (team < 0 && !veyl) ? 'ko' : 'kobad');
   }
 
   damage(t: Unit | Building, amt: number, from: Unit | Building | null, crit = false) {
@@ -484,7 +484,9 @@ export class Game {
     if (u.alive) unitRule(u.kind).dying?.(this, u, from);
     if (u.cargo?.length) spill(this, u, from); if (u.inside) { const c = u.inside; c.cargo = (c.cargo || []).filter(x => x !== u); u.inside = null; }
     if (u.alive) this.loseV(u, from); u.alive = false; const away = u.team !== SIDE.home, v = this.vol(u.pos), st = UNIT[u.kind];
-    this.hud.damage(V3(u.pos.x, st.headY + .4, u.pos.z), unitRule(u.kind).koWord || 'KO!', u.team !== this.myTeam ? 'ko' : 'kobad');
+    // The word is for a kill the player made with their own hands, or one that happens right beside them. A fight the crew is having
+    // somewhere else, or one watched from above, says nothing: the bodies falling are the news there, and a word on each buried them.
+    if (!this.cmd.on && this.me && (from === this.me || (this.me.alive && (u.pos.x - this.me.pos.x) ** 2 + (u.pos.z - this.me.pos.z) ** 2 < 100))) this.hud.damage(V3(u.pos.x, st.headY + .4, u.pos.z), unitRule(u.kind).koWord || 'KO!', u.team !== this.myTeam ? 'ko' : 'kobad');
     u.ring.visible = false; if (u.rig.flash) u.rig.flash.visible = false; this.bodyLayer(u, false);
     R(-1, 1); R(-1, 1);   // two draws the old fall used: kept so the match's seeded random numbers run exactly as before
     this.fx.kill(u, from);
@@ -548,7 +550,7 @@ export class Game {
     for (let i = 0; i < 8; i++) this.chunk(V3(b.pos.x + R(-b.hx, b.hx), R(.6, b.h), b.pos.z + R(-b.hz, b.hz)), R(.5, 1.1), this.bldMat(b, i), 7, b.pos, !veyl);
     this.shove(b.pos, Math.max(b.hx, b.hz) * 3, 8);
     this.pipe.flash = Math.max(this.pipe.flash, v * .6);
-    this.hud.damage(V3(b.pos.x, b.h * .6, b.pos.z), tall ? 'TIMBERRR!' : veyl ? 'KRA-KOOM!' : 'CRUNCH!', bad ? 'kobad' : 'ko'); sfx.boom(Math.max(.3, v)); this.shake = Math.max(this.shake, v);
+    if (!this.cmd.on && v > .2) this.hud.damage(V3(b.pos.x, b.h * .6, b.pos.z), tall ? 'TIMBERRR!' : veyl ? 'KRA-KOOM!' : 'CRUNCH!', bad ? 'kobad' : 'ko'); sfx.boom(Math.max(.3, v)); this.shake = Math.max(this.shake, v);
     if (b.builder) { b.builder.site = null; b.builder.state = 'idle'; }
     if (fac(b.team) === 2) this.carpet.drop(b);
     if (this.net) return;

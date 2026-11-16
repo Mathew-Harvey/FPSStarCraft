@@ -69,7 +69,7 @@ export function atlasify<T extends THREE.Object3D>(root: T): T {
 }
 
 const MAKERS: Record<string, () => THREE.Group> = { ...NEW, ...GLOAM_UNITS };
-const HEIGHT: Record<string, number> = { tender: 1.9, rigger: 1.55, linesman: 1.6, breacher: 1.8, longshot: 1.6, patch: 1.6, gantry: 3.3, cantor: 2.3, lancer: 2.2, warden: 4.4, ...GLOAM_HEIGHT };
+const HEIGHT: Record<string, number> = { tender: 1.9, rigger: 1.55, linesman: 1.6, breacher: 1.8, longshot: 1.6, patch: 1.6, gantry: 3.3, gantryflak: 3.3, cantor: 2.3, lancer: 2.2, warden: 4.4, ...GLOAM_HEIGHT };
 const protos: Record<string, THREE.Group> = {}, hadArt: Record<string, boolean> = {};
 /** A fresh copy of a unit model. Geometry is shared between copies. */
 export const atlasUsed = () => atlas ? atlas.cells.size : 0;

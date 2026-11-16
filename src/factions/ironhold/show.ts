@@ -13,8 +13,8 @@ import { isEnemy } from '../../core/sides';
 import { hasStatus } from '../../core/status';
 import { defineBuildingLook, defineUnitLook } from '../../net-look';
 import { plainBody } from '../../core/plain';
-import { heldMaterial, setLayer } from '../../gfx';
-import type { Model } from '../../models';
+import { heldMaterial, setLayer, offDice } from '../../gfx';
+import { unit as unitModel, type Model } from '../../models';
 import * as E from '../../look-ironhold';
 import { FxKit, cloud, ring, orb } from '../../fx/kit';
 import { skids, depotSunk } from './look/yard2';
@@ -73,6 +73,22 @@ for (const kind of Object.keys(ART) as Kind[]) looks[kind] = {
   },
 };
 defineUnits(looks);
+// Two kinds that had no figure and stood in a match as a plain grey block. A Gantry in flak mode is the same machine with both guns thrown
+// up at the sky (the body is made again when the mode changes, so the guns rise and fall with the switch). A Shaft Mine is its mound and
+// flag, drawn by E.shaftMine in showTick, so it has no body of its own.
+defineUnits({
+  gantryflak: {
+    // The stand-in block is still made and thrown away, and the figure is made on dice of its own: seeded matches roll as they did before.
+    figure: () => { plainBody('gantryflak'); return offDice(() => unitModel('gantryflak')); },
+    pose(_g: Game, u: Unit, _dt: number, _s: number, ease: number) {
+      const r = u.rig; if (r.arms) { r.arms.rotation.x += (-1.02 - u.swing * .14 - r.arms.rotation.x) * ease; r.arms.position.z = .05 - u.swing * .12; }
+      if (r.head) r.head.rotation.x += (-.3 - r.head.rotation.x) * ease;
+      if (r.flash) { r.flash.visible = u.flashT > 0; if (u.flashT > 0) r.flash.rotation.z = u.id + u.flashT * 40; }
+      return true;
+    },
+  },
+  shaftmine: { figure: () => { plainBody('shaftmine'); return offDice(() => { const root = new THREE.Group(), body = new THREE.Group(); body.name = 'body'; root.add(body); return { obj: root, rig: { body, height: .3 } } as Model; }); } },
+});
 
 // ---------------------------------------------------------------- first person
 /** A body driven from its seat sees its own bars, gun or hull: the figure stays drawn, with what would sit in the eye shrunk away.

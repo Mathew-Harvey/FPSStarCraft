@@ -442,6 +442,12 @@ G.cloud = cloud();
 G.blot = ragged(36, (i, r) => i % 3 === 0 ? .36 + r() * .14 : .27 + r() * .1);
 G.burst = ragged(26, (i, r) => i % 2 ? .19 + r() * .07 : .36 + r() * .14);
 type P3 = [number, number, number];
+/** Runs a piece of show-only building work on dice of its own. three.js draws an id from Math.random for every mesh and geometry it makes,
+ *  and the bot-match tests run the rules on a seeded Math.random, so a new piece of art would otherwise move every dice roll after it and
+ *  change who wins a test match. Art added since the test tables were made is built inside this. The world's own dice (R) are put
+ *  back afterwards too, so art built here never moves the layout of anything made after it. */
+let artDice = 20261116;
+export function offDice<T>(fn: () => T): T { const real = Math.random, held = seed; Math.random = () => (artDice = (artDice * 16807) % 2147483647) / 2147483647; try { return fn(); } finally { Math.random = real; seed = held; } }
 export function mk(geo: THREE.BufferGeometry, mat: THREE.Material, p: P3 | 0, s: P3 | 0, r: P3 | 0, parent: THREE.Object3D) {
   const m = new THREE.Mesh(geo, mat); if (p) m.position.set(p[0], p[1], p[2]); if (s) m.scale.set(s[0], s[1], s[2]); if (r) m.rotation.set(r[0], r[1], r[2]); parent.add(m); return m;
 }
@@ -522,7 +528,7 @@ export function makeSky() {
 }
 
 // ---------------------------------------------------------------- pipeline
-const POST_FS = `precision highp float; varying vec2 vUv; uniform sampler2D tC,tD,tN; uniform vec2 uRes; uniform sampler2D tB; uniform vec2 uSun; uniform float uNear,uFar,uOrtho,uPx,uSat,uStatic,uTime,uFlash,uBold,uProj,uAO,uGrit,uGlow,uShaft; uniform sampler2D tB2,tB3,tS; uniform vec3 uTint,uLift,uShaftC; uniform float uVig,uPunch,uFlare,uAsp,uFarInk; uniform vec2 uSunUV; ${NOISE}
+const POST_FS = `precision highp float; varying vec2 vUv; uniform sampler2D tC,tD,tN; uniform vec2 uRes; uniform sampler2D tB; uniform vec2 uSun; uniform float uNear,uFar,uOrtho,uPx,uSat,uStatic,uTime,uFlash,uBold,uProj,uAO,uGrit,uGlow,uShaft; uniform sampler2D tB2,tB3,tS; uniform vec3 uTint,uLift,uShaftC; uniform float uVig,uPunch,uFlare,uAsp,uFarInk,uNight; uniform vec2 uSunUV; ${NOISE}
 float lin(vec2 uv){ float d=texture2D(tD,uv).x; if(uOrtho>.5) return uNear+d*(uFar-uNear); float z=d*2.-1.; return 2.*uNear*uFar/(uFar+uNear-z*(uFar-uNear)); }
 vec3 nrm(vec2 uv){ return texture2D(tN,uv).xyz*2.-1.; }
 float edgeAt(vec2 u, vec2 sp){
@@ -595,6 +601,12 @@ void main(){
     float fv=(texture2D(tS,uSunUV).r+texture2D(tS,uSunUV+vec2(.016,0.)).r+texture2D(tS,uSunUV-vec2(.016,0.)).r+texture2D(tS,uSunUV+vec2(0.,.028)).r+texture2D(tS,uSunUV-vec2(0.,.028)).r)*.2;
     col=1.-(1.-col)*(1.-uShaftC*min(fl*uFlare*fv,.9)); }
   col=col*uTint+uLift;
+  // From the command view a night has to stay playable: the higher the view, the more the dark is lifted and the less blue it is, the way a
+  // survey lamp would show the ground. First person keeps the full dark.
+  // Moonlit ground at night ran to a flat electric blue. Blue far beyond the other two channels is folded back into them, so a night
+  // stays blue but keeps its drawing.
+  if(uNight>0.){ float ex=max(0.,col.b-max(col.r,col.g)*2.-.1); col.b-=ex*.62*uNight; col.rg+=ex*vec2(.1,.16)*uNight; }
+  { float hi=uFarInk*uNight; if(hi>0.){ vec3 c2=col*(1.+.85*hi)+vec3(.03,.035,.06)*hi; col=mix(c2,vec3(dot(c2,vec3(.3,.59,.11))),.22*hi); } }
   // the corners fall off a little, which pulls the eye in and deepens the mood of the hour
   if(uOrtho<.5){ vec2 vq=vUv-.5; col*=1.-uVig*smoothstep(.25,.95,dot(vq,vq)*2.2); }
   // The sky steps back: paler and less teal under the grade, so it is a backdrop and not the loudest thing in the frame.
@@ -631,6 +643,16 @@ export const PRE_DRAW: ((scene: THREE.Scene, cam: THREE.Camera, h: number) => vo
 /** Called with true just before the shadow map is drawn and false just after (src/meshes.ts draws bodies' shadows from a coarser model). */
 export const SHADOW_SWAP: ((on: boolean) => void)[] = [];
 export class Pipeline {
+  /** How much white the last second or two has already put on the screen, 0 to 1 (see flashShown). */
+  private flashTired = 0; private flashAt = -1;
+  /** The white frame as drawn. One blast gets its flash; a barrage does not hold the screen white. Each flash drawn tires the next ones
+   *  for a couple of seconds, and an ordinary blast is capped well short of a white-out. A full flash (the end of a match) is let through. */
+  flashShown() {
+    const dt = this.flashAt < 0 ? 0 : Math.max(0, Math.min(.1, this.time - this.flashAt)); this.flashAt = this.time;
+    this.flashTired = Math.min(1, Math.max(0, this.flashTired - dt * .4) + this.flash * dt * 2.4);
+    return this.flash >= .99 ? this.flash : Math.min(.4, this.flash) * (1 - .8 * this.flashTired);
+  }
+
   renderer: THREE.WebGLRenderer;
   w = 1; h = 1; px = 1;
   private rtC: THREE.WebGLRenderTarget; private rtN: THREE.WebGLRenderTarget; private rtS: THREE.WebGLRenderTarget;
@@ -675,7 +697,7 @@ export class Pipeline {
     SHARED.uShadow.value = this.rtS.depthTexture; SHARED.uShadowTex.value = 1 / S;
     this.rtC = new THREE.WebGLRenderTarget(4, 4); this.rtN = new THREE.WebGLRenderTarget(4, 4);
     this.postMat = new THREE.ShaderMaterial({
-      uniforms: { tC: { value: null }, tD: { value: null }, tN: { value: null }, uRes: { value: new THREE.Vector2(1, 1) }, uNear: { value: .06 }, uFar: { value: 4000 }, uOrtho: { value: 0 }, uPx: SHARED.uPx, uSat: { value: 1 }, uFlash: { value: 0 }, uStatic: { value: 0 }, uTime: { value: 0 }, uBold: { value: 1 }, uProj: { value: 1 }, uAO: { value: 1 }, uGrit: SHARED.uGrit, uGlow: { value: 1 }, tB3: { value: null }, uPunch: { value: 1 }, uFlare: { value: 0 }, uAsp: { value: 1 }, uSunUV: { value: new THREE.Vector2(.5, .5) }, uSun: { value: new THREE.Vector2(-.6, .8) }, tB: { value: null }, tB2: { value: null }, tS: { value: null }, uShaft: { value: 0 }, uVig: { value: .2 }, uFarInk: { value: 0 }, uShaftC: { value: V3(1, 1, 1) }, uTint: { value: V3(1, 1, 1) }, uLift: { value: V3() } },
+      uniforms: { tC: { value: null }, tD: { value: null }, tN: { value: null }, uRes: { value: new THREE.Vector2(1, 1) }, uNear: { value: .06 }, uFar: { value: 4000 }, uOrtho: { value: 0 }, uPx: SHARED.uPx, uSat: { value: 1 }, uFlash: { value: 0 }, uNight: { value: 0 }, uStatic: { value: 0 }, uTime: { value: 0 }, uBold: { value: 1 }, uProj: { value: 1 }, uAO: { value: 1 }, uGrit: SHARED.uGrit, uGlow: { value: 1 }, tB3: { value: null }, uPunch: { value: 1 }, uFlare: { value: 0 }, uAsp: { value: 1 }, uSunUV: { value: new THREE.Vector2(.5, .5) }, uSun: { value: new THREE.Vector2(-.6, .8) }, tB: { value: null }, tB2: { value: null }, tS: { value: null }, uShaft: { value: 0 }, uVig: { value: .2 }, uFarInk: { value: 0 }, uShaftC: { value: V3(1, 1, 1) }, uTint: { value: V3(1, 1, 1) }, uLift: { value: V3() } },
       vertexShader: `varying vec2 vUv; void main(){ vUv=uv; gl_Position=vec4(position.xy,0.,1.); }`, fragmentShader: POST_FS, depthTest: false, depthWrite: false,
     });
     this.postScene.add(this.fsq = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), this.postMat));
@@ -720,7 +742,7 @@ export class Pipeline {
     const e = ENV, S = SHARED, u = this.postMat.uniforms;
     S.uSunT.value.fromArray(e.sun); S.uAmbT.value.fromArray(e.amb); S.uKey.value = e.key; S.uFogD.value = e.fogK; S.uMist.value = e.mist; FOG.fromArray(e.fog); FOGS.fromArray(e.fogS);
     SKYU.uTop.value.fromArray(e.top); SKYU.uMid.value.fromArray(e.mid); SKYU.uCloud.value.fromArray(e.cloud); SKYU.uDisc.value.fromArray(e.disc); SKYU.uStars.value = e.stars; SKYU.uCover.value = e.cover;
-    u.uTint.value.fromArray(e.tint); u.uLift.value.fromArray(e.lift); u.uShaftC.value.fromArray(e.disc); u.uVig.value = .2 + e.stars * .16;
+    u.uTint.value.fromArray(e.tint); u.uLift.value.fromArray(e.lift); u.uShaftC.value.fromArray(e.disc); u.uVig.value = .2 + e.stars * .16; u.uNight.value = e.stars;
     S.uRimK.value = e.rim * e.key; S.uRimC.value.fromArray(e.disc); S.uCloudK.value = Math.min(.85, e.key * 1.2) * (e.cover > .82 ? Math.max(0, (.95 - e.cover) / .13) : 1) * .62; S.uCloudTh.value = 1.1 - e.cover * 1.04;
     this.glowMat.uniforms.uHot.value = e.hot / (Math.max(1, e.fogK * .75) * (1 + e.mist * 30));   // thick air is bright all over, and must not all glow
     // by night the ringed planet is what lights the land, so it shines
@@ -750,7 +772,7 @@ export class Pipeline {
     cam.layers.set(0); cam.layers.enable(L_VM); scene.overrideMaterial = this.normalMat;
     r.setRenderTarget(this.rtN); r.setClearColor(0x8080ff, 1); r.clear(); r.render(scene, cam); scene.overrideMaterial = null;
 
-    const u = this.postMat.uniforms; u.uOrtho.value = (cam as any).isOrthographicCamera ? 1 : 0; u.uProj.value = cam.projectionMatrix.elements[5]; u.uBold.value = this.bold; u.uFarInk.value = this.farInk >= 0 ? this.farInk : farInkOf(cam); u.uAO.value = this.ao; u.uNear.value = cam.near; u.uFar.value = cam.far; u.uSat.value = this.sat; u.uFlash.value = this.flash; u.uStatic.value = this.static; u.uTime.value = this.time;
+    const u = this.postMat.uniforms; u.uOrtho.value = (cam as any).isOrthographicCamera ? 1 : 0; u.uProj.value = cam.projectionMatrix.elements[5]; u.uBold.value = this.bold; u.uFarInk.value = this.farInk >= 0 ? this.farInk : farInkOf(cam); FOG_SHEET.dim.value = u.uFarInk.value * u.uNight.value; u.uAO.value = this.ao; u.uNear.value = cam.near; u.uFar.value = cam.far; u.uSat.value = this.sat; u.uFlash.value = this.flashShown(); u.uStatic.value = this.static; u.uTime.value = this.time;
     SUNV.copy(LIGHT).transformDirection(cam.matrixWorldInverse); u.uSun.value.set(SUNV.x, SUNV.y); if (u.uSun.value.lengthSq() < 1e-4) u.uSun.value.set(0, 1); u.uSun.value.normalize();
     SHARED.uGrit.value = this.grit; u.uGlow.value = this.glow * .9 * ENV.glow; SKYU.uTime.value = this.time; SHARED.uCloudO.value.set(this.time * .011 * (1 + ENV.wind * .6), this.time * .004);
     if (this.glow > 0) { const [a, b] = this.rtG, g = this.glowMat, bl = this.blurMat;
@@ -796,17 +818,31 @@ export function initHeadless() { makeTextures(); makeMaterials(); }
 /** The dark sheet over ground nobody has walked, seen from above. The fog is kept as one cell per few metres, and drawn straight that
  *  shows as stair steps. This reads it through a soft round brush a cell and a half wide and lets the edge wander a little, so the
  *  boundary is a smooth hand-drawn line at any zoom. `n` is the texture's width in cells. Same use as a MeshBasicMaterial with that map. */
+/** How far the picture is being lifted for a night seen from above (0 to 1). The blank sheet is drawn darker by as much, so the lift that makes the known ground readable does not also light up the ground nobody has seen. */
+export const FOG_SHEET = { dim: { value: 0 } };
 export function fogSheetMaterial(tex: THREE.Texture, n: number) {
+  // Ground the crew has never seen is drawn as the blank part of a survey sheet: dark paper ruled with pencil hatching and an inked edge
+  // where the known ground stops, in place of a flat black slab. Ground seen before but not watched now keeps its plain dim veil.
   return new THREE.ShaderMaterial({ transparent: true, depthTest: false, depthWrite: false,
-    uniforms: { tMap: { value: tex }, uT: { value: 1 / n } },
+    uniforms: { tMap: { value: tex }, uT: { value: 1 / n }, uDim: FOG_SHEET.dim },
     vertexShader: 'varying vec2 vUv; varying vec2 vW; void main(){ vUv=uv; vW=(modelMatrix*vec4(position,1.)).xz; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.); }',
-    fragmentShader: `uniform sampler2D tMap; uniform float uT; varying vec2 vUv; varying vec2 vW; ${NOISE}
+    fragmentShader: `uniform sampler2D tMap; uniform float uT,uDim; varying vec2 vUv; varying vec2 vW; ${NOISE}
       vec4 at(vec2 u){ return texture2D(tMap,clamp(u,vec2(uT*.5),vec2(1.-uT*.5))); }
+      float rule(float t,float wd){ float d=abs(fract(t)-.5), w=fwidth(t); return (1.-smoothstep(wd,wd+w*1.5,d))*(1.-smoothstep(.22,.5,w)); }
       void main(){
         vec2 w=vec2(vnoise(vW*.07),vnoise(vW*.07+19.))-.5; vec2 u=vUv+w*uT*1.4;
-        vec4 c=at(u)*.2; float s=0.;
+        vec4 c=at(u)*.2;
         for(int i=0;i<8;i++){ float a=float(i)*.785398+.39; vec2 o=vec2(cos(a),sin(a))*uT*1.25; c+=at(u+o)*.1; }
         // the soft step is pulled back toward the levels it was blended from, so the edge is round but not a long smear
         float al=c.a; al=mix(al,smoothstep(.1,.9,al),.55);
-        gl_FragColor=vec4(c.rgb,al); }` });
+        float unk=smoothstep(.6,.86,al);
+        // pencil hatching, two weights, wobbling a little like a hand-ruled sheet; it thins out before it can shimmer from high up
+        float wob=vnoise(vW*.21)*1.6, h1=rule((vW.x+vW.y+wob)/2.6,.06), h2=rule((vW.x-vW.y*.82+wob*.7)/9.5,.035);
+        float grain=vnoise(vW*.9)*.5+vnoise(vW*.045)*.5;
+        vec3 paper=vec3(.135,.098,.082)*(.82+.36*grain);
+        paper=mix(paper,vec3(.27,.2,.16),h1*.5); paper=mix(paper,vec3(.33,.25,.2),h2*.4);
+        // the inked edge of the known ground, with a pale chalk line just inside it
+        float e=abs(al-.72), ink=1.-smoothstep(.0,.07,e), chalk=(1.-smoothstep(.0,.05,abs(al-.56)))*.3;
+        paper/=1.+1.4*uDim; vec3 col=mix(c.rgb,paper,unk); col=mix(col,vec3(.05,.035,.03),ink*.85); col+=vec3(.5,.42,.33)*chalk*(1.-unk)/(1.+1.2*uDim);
+        gl_FragColor=vec4(col,max(al,ink*.9)); }` });
 }

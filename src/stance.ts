@@ -31,6 +31,7 @@ const MAN: Record<string, Man> = {
   patch: { shift: .13, tilt: .15, blade: .24, toe: .45, wide: .03, arms: .7, cross: .4, lean: .04, nod: .06, turn: .8 },
   rigger: { shift: .13, tilt: .16, blade: .2, toe: .5, wide: .04, arms: 0, cross: 0, lean: .13, nod: .14, turn: 1.0 },
   gantry: { shift: .2, tilt: .07, blade: .12, toe: .16, wide: .04, arms: .4, cross: 0, lean: .05, nod: 0, turn: .4 },
+  gantryflak: { shift: .2, tilt: .07, blade: .12, toe: .16, wide: .04, arms: 0, cross: 0, lean: -.04, nod: 0, turn: .4 },
 };
 /** What a body does once it has stood about for a while. 0 stays on its feet, 1 sits on the ground, 2 drops into a wide squat. */
 const restOf = (u: Unit) => { const h = hash(u.id, 21), r = unitRule(u.kind).stance?.rest; return r ? r(h) : h < .42 ? 1 : h < .64 ? 2 : 0; };

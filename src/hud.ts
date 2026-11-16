@@ -32,6 +32,7 @@ export class Hud {
   private cache = new Map<string, string>();
   private bars: HTMLElement[] = []; private barFill: HTMLElement[] = []; private labs: HTMLElement[] = [];
   private floats: Floater[] = []; private pingPos = new THREE.Vector3(); private pingT = 0;
+  private seenBox: { t: number; g: Game; b: number[] } | null = null;
   private hurtA = 0; private dirA = 0; private hitT = 0; private miniT = 0; private last = 0; private feedN = 0;
   private mini: CanvasRenderingContext2D; private fogCv: HTMLCanvasElement | null = null; private sheets: (Sheet | undefined)[] = []; private fogHatch: HTMLCanvasElement | null = null; private hatchPat: CanvasPattern | null = null; private fogImg: ImageData | null = null;
 
@@ -329,11 +330,22 @@ export class Hud {
   private drawMap(g: Game, c: CanvasRenderingContext2D, big: boolean) {
     const q = big ? 4 : 2; c.setTransform(q, 0, 0, q, 0, 0);
     // framed on everything worth finding: the yard, the outpost, both routes and every ore field
-    // On a hidden map the frame is a circle round your own base, wide enough to hold the other base wherever it is, so the frame gives nothing away.
+    // On a hidden map the frame gives nothing away: before the other base is found it holds only ground your side has seen (below).
     // Once they are found it slides over to sit between the two bases.
     const hid = !!MAP.hid, I = g.intel, mi = I.ix(g.myTeam), knows = I.knows(g.myTeam), [mhx, mhz] = homeXZ(g.myTeam), [fhx, fhz] = homeXZ(foeOf(g.myTeam));
     const reach = Math.hypot(VHOME.x, VHOME.z) + 45, fcx = knows ? (mhx + fhx) / 2 : mhx, fcz = knows ? (mhz + fhz) / 2 : mhz;
-    const pts = hid ? [[fcx - reach * 1.45, fcz - reach], [fcx + reach * 1.45, fcz + reach]] : [[0, 0], [OUTPOST.x, OUTPOST.z], ...NORTH_PATH, ...(MAP.sites || [])], bx0 = Math.min(...pts.map(p => p[0])) - 26, bx1 = Math.max(...pts.map(p => p[0])) + 26, bz0 = Math.min(...pts.map(p => p[1])) - 22, bz1 = Math.max(...pts.map(p => p[1])) + 22;
+    // The frame holds the ground your side has seen (and the other base, once found), with room round it, so your own base is not a speck
+    // in a sea of hatching. It only ever widens, in 25 m steps, so the sheet under it is redrawn rarely and the map never jumps about.
+    if (hid) { const t = performance.now(); if (!this.seenBox || this.seenBox.g !== g || t - this.seenBox.t > 1000) { const f = g.fog, n = f.n, C = f.cells; let i0 = n, i1 = -1, j0 = n, j1 = -1;
+        for (let j = 0; j < n; j++) for (let i = 0; i < n; i++) if (C[j * n + i]) { if (i < i0) i0 = i; if (i > i1) i1 = i; if (j < j0) j0 = j; if (j > j1) j1 = j; }
+        const q25 = (v: number, up: boolean) => (up ? Math.ceil : Math.floor)(v / 25) * 25, old = this.seenBox?.g === g ? this.seenBox : null;
+        let x0 = i1 < 0 ? mhx : f.x0 + i0 * 4, x1 = i1 < 0 ? mhx : f.x0 + (i1 + 1) * 4, z0 = i1 < 0 ? mhz : f.z0 + j0 * 4, z1 = i1 < 0 ? mhz : f.z0 + (j1 + 1) * 4;
+        if (knows) { x0 = Math.min(x0, fhx - 30); x1 = Math.max(x1, fhx + 30); z0 = Math.min(z0, fhz - 30); z1 = Math.max(z1, fhz + 30); }   // once found, their base is in the frame too
+        const cx = (x0 + x1) / 2, cz = (z0 + z1) / 2, w = Math.max(x1 - x0 + 120, 220), h = Math.max(z1 - z0 + 90, 150);   // room past the edge to send a scout into
+        x0 = q25(cx - w / 2, false); x1 = q25(cx + w / 2, true); z0 = q25(cz - h / 2, false); z1 = q25(cz + h / 2, true);
+        if (old) { x0 = Math.min(x0, old.b[0]); x1 = Math.max(x1, old.b[1]); z0 = Math.min(z0, old.b[2]); z1 = Math.max(z1, old.b[3]); }
+        this.seenBox = { t, g, b: [x0, x1, z0, z1] }; } }
+    const sb = this.seenBox?.b, pts = hid && sb ? [[sb[0] + 26, sb[2] + 22], [sb[1] - 26, sb[3] - 22]] : hid ? [[fcx - reach * 1.45, fcz - reach], [fcx + reach * 1.45, fcz + reach]] : [[0, 0], [OUTPOST.x, OUTPOST.z], ...NORTH_PATH, ...(MAP.sites || [])], bx0 = Math.min(...pts.map(p => p[0])) - 26, bx1 = Math.max(...pts.map(p => p[0])) + 26, bz0 = Math.min(...pts.map(p => p[1])) - 22, bz1 = Math.max(...pts.map(p => p[1])) + 22;
     const S = 260, span = Math.max(bx1 - bx0, (bz1 - bz0) / .69), x0 = (bx0 + bx1) / 2 - span / 2, z0 = (bz0 + bz1) / 2 - span * .345, k = S / span, X = (x: number) => (x - x0) * k, Z = (z: number) => (z - z0) * k;
     const fog = g.fog; fog.update(g, .12);
     // The ground is a surveyor's sheet (src/mapsheet.ts), drawn once for this frame of the map and kept.

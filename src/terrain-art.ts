@@ -28,7 +28,7 @@ function outline(R: Ridge, step = 1.6) {
 export function buildTerrain(prop: PropFn, w: THREE.Group, anim: ((t: number) => void)[]) {
   if (!TER.ridges.length && !TER.vents.length && !TER.beacons.length && !TER.paint.length) return;
   let ds = 4409 + TER.ridges.length * 31 + TER.vents.length; const D = (a = 0, b = 1) => { ds = (ds * 16807) % 2147483647; return a + (b - a) * ds / 2147483647; };
-  const cliff: THREE.BufferGeometry[] = [], top: THREE.BufferGeometry[] = [], stone: THREE.BufferGeometry[] = [], glow: THREE.BufferGeometry[] = [], dark: THREE.BufferGeometry[] = [];
+  const cliff: THREE.BufferGeometry[] = [], top: THREE.BufferGeometry[] = [], stone: THREE.BufferGeometry[] = [], glow: THREE.BufferGeometry[] = [], dark: THREE.BufferGeometry[] = [], flux: THREE.BufferGeometry[] = [], burn: THREE.BufferGeometry[] = [];
   const add = (list: THREE.BufferGeometry[], geo: THREE.BufferGeometry, p: number[], s: number[] = [1, 1, 1], r: number[] = [0, 0, 0]) => {
     const g = (geo.index ? geo.toNonIndexed() : geo.clone()); for (const k of Object.keys(g.attributes)) if (k !== 'position' && k !== 'normal' && k !== 'uv') g.deleteAttribute(k);
     if (!g.attributes.uv) g.setAttribute('uv', new THREE.Float32BufferAttribute(new Float32Array(g.attributes.position.count * 2), 2));
@@ -74,8 +74,12 @@ export function buildTerrain(prop: PropFn, w: THREE.Group, anim: ((t: number) =>
   const puffs: THREE.Mesh[] = [];
   for (const [x, z] of TER.vents) { const y = groundH(x, z);
     for (let i = 0; i < 7; i++) { const a = i / 7 * 6.2832 + D(-.2, .2), d = 1.5 + D(0, .4), s = D(.45, .75); add(stone, rocks(i), [x + Math.cos(a) * d, y + s * .2, z + Math.sin(a) * d], [s * 1.3, s * .9, s * 1.1], [D(-.3, .3), D(0, 6), D(-.3, .3)]); }
-    add(dark, G.disc, [x, y + .04, z], [1.5, 1.5, 1], [-Math.PI / 2, 0, 0]); add(glow, G.disc, [x, y + .06, z], [.55, .55, 1], [-Math.PI / 2, 0, 0]);
-    for (let i = 0; i < 4; i++) { const a = D(0, 6.28); add(glow, shard(.08, .6, 5, .3), [x + Math.cos(a) * .5, y + .15, z + Math.sin(a) * .5], [1, D(.7, 1.3), 1], [D(-.5, .5), D(0, 3), D(-.5, .5)]); }
+    // From above the throat has to read as a hole in burnt ground with Flux light in it, not a black coin: a ragged scorch, a small dark throat,
+    // the light in Flux violet (the colour of the Flux counter and of the map's vent mark) and cracks of it running out under the rim stones.
+    { const sh = new THREE.Shape(), n = 16; for (let j = 0; j < n; j++) { const a = j / n * 6.2832, d = 2.5 * (.74 + .3 * Math.abs(Math.sin(j * 2.7 + x * .31 + z * .17))); j ? sh.lineTo(Math.cos(a) * d, Math.sin(a) * d) : sh.moveTo(Math.cos(a) * d, Math.sin(a) * d); } sh.closePath(); add(burn, new THREE.ShapeGeometry(sh), [x, y + .03, z], [1, 1, 1], [-Math.PI / 2, 0, 0]); }
+    add(dark, G.disc, [x, y + .045, z], [1, 1, 1], [-Math.PI / 2, 0, 0]); add(flux, G.disc, [x, y + .06, z], [.5, .5, 1], [-Math.PI / 2, 0, 0]);
+    for (let i = 0; i < 6; i++) { const a = i / 6 * 6.2832 + Math.sin(x + i * 1.9) * .35, len = 1 + .7 * Math.abs(Math.sin(z * .7 + i * 2.3)), r = .55 + len / 2; add(flux, G.box, [x + Math.cos(a) * r, y + .05, z + Math.sin(a) * r], [len, .03, .09], [0, -a, 0]); }
+    for (let i = 0; i < 4; i++) { const a = D(0, 6.28); add(flux, shard(.08, .6, 5, .3), [x + Math.cos(a) * .5, y + .15, z + Math.sin(a) * .5], [1, D(.7, 1.3), 1], [D(-.5, .5), D(0, 3), D(-.5, .5)]); }
     for (let i = 0; i < 3; i++) { const p = mk(G.sph, M.dust, [x, y + 1, z], [.6, .6, .6], 0, w); p.userData = { x, z, y, k: i / 3 + D(0, .2) }; puffs.push(p); } }
   if (puffs.length) anim.push(t => { for (const p of puffs) { const u = p.userData, k = (t * .22 + u.k) % 1, s = .45 + k * 1.3; p.position.set(u.x + Math.sin(t * .7 + u.k * 9) * k * .8, u.y + .6 + k * 5, u.z + Math.cos(t * .5 + u.k * 7) * k * .6); p.scale.setScalar(k < .85 ? s : s * (1 - (k - .85) / .15)); } });
 
@@ -84,9 +88,9 @@ export function buildTerrain(prop: PropFn, w: THREE.Group, anim: ((t: number) =>
   TER.paint.forEach(([x, z, r, kind], i) => { const sh = new THREE.Shape(), n = 18; for (let j = 0; j <= n; j++) { const a = j / n * 6.2832, d = r * (j === n ? 1 : D(.78, 1.08)); if (j === n) { sh.closePath(); break; } j ? sh.lineTo(Math.cos(a) * d, Math.sin(a) * d) : sh.moveTo(Math.cos(a) * d, Math.sin(a) * d); }
     add(paint[kind] || paint[0], new THREE.ShapeGeometry(sh), [x, groundH(x, z) + .025 + i * .004, z], [1, 1, 1], [-Math.PI / 2, 0, 0]);
     if (kind === 2) for (let j = 0; j < Math.round(r * .8); j++) { const a = D(0, 6.28), d = D(0, r * .85), sc = D(.2, .5); add(stone, rocks(j), [x + Math.cos(a) * d, groundH(x, z) + sc * .15, z + Math.sin(a) * d], [sc, sc * .6, sc], [0, D(0, 6), 0]); } });
-  for (const [list, mat] of [[cliff, M.mesa], [top, M.ground], [stone, M.rockB], [glow, M.mag], [dark, M.soot], [paint[0], M.dust], [paint[1], M.scorch], [paint[2], M.rock], [paint[3], M.concrete]] as [THREE.BufferGeometry[], THREE.Material][]) if (list.length) {
+  for (const [list, mat] of [[cliff, M.mesa], [top, M.ground], [stone, M.rockB], [glow, M.mag], [flux, M.violet], [burn, M.scorch], [dark, M.soot], [paint[0], M.dust], [paint[1], M.scorch], [paint[2], M.rock], [paint[3], M.concrete]] as [THREE.BufferGeometry[], THREE.Material][]) if (list.length) {
     for (const g of list) { for (const k of Object.keys(g.attributes)) if (k !== 'position' && k !== 'normal' && k !== 'uv') g.deleteAttribute(k); if (!g.attributes.uv) g.setAttribute('uv', new THREE.Float32BufferAttribute(new Float32Array(g.attributes.position.count * 2), 2)); if (g.index) list[list.indexOf(g)] = g.toNonIndexed(); }
-    const m = new THREE.Mesh(mergeGeometries(list), mat); m.frustumCulled = false; m.receiveShadow = true; m.castShadow = mat !== M.mag; m.userData.terrain = true; w.add(m); }
+    const m = new THREE.Mesh(mergeGeometries(list), mat); m.frustumCulled = false; m.receiveShadow = true; m.castShadow = mat !== M.mag && mat !== M.violet && mat !== M.scorch; m.userData.terrain = true; w.add(m); }
 
   // Rock walls: a row of big boulders across the back way into a natural. Each one has to be broken to get through.
   TER.walls.forEach(([x, z, a, len], wi) => { const tx = -Math.sin(a), tz = Math.cos(a), n = Math.max(3, Math.ceil(len / 2.1)), blocks: Prop[] = [];

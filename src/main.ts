@@ -84,7 +84,7 @@ function framing(kind: Kind, obj: THREE.Object3D): { y: number; dist: number } {
  *  what is the figure and what is ground (so the ink line and the shading come through, and nothing has to be guessed from a colour).
  *  Called from portraits(), under its noon light and with its shared values already set. */
 const ICON_PX = 112;
-function mapIcons(units: Kind[]) {
+function mapIcons(keys: string[]) {
   const scene = new THREE.Scene(), sheet = new THREE.MeshBasicMaterial({ color: 0 }), ground = new THREE.Mesh(new THREE.PlaneGeometry(400, 400), sheet); ground.rotation.x = -Math.PI / 2; ground.position.y = -.03; scene.add(ground);
   const cam = new THREE.OrthographicCamera(-1, 1, 1, -1, .1, 300); cam.up.set(0, 0, -1);
   const tmp = document.createElement('canvas'); tmp.width = tmp.height = ICON_PX; const tc = tmp.getContext('2d', { willReadFrequently: true })!;
@@ -105,23 +105,32 @@ function mapIcons(units: Kind[]) {
     const ink = document.createElement('canvas'); ink.width = ink.height = ICON_PX; const ic = ink.getContext('2d')!; ic.drawImage(tmp, 0, 0); ic.globalCompositeOperation = 'source-in'; ic.fillStyle = '#17100e'; ic.fillRect(0, 0, ICON_PX, ICON_PX);
     const out = document.createElement('canvas'); out.width = out.height = ICON_PX; const oc = out.getContext('2d')!; for (let i = 0; i < 8; i++) oc.drawImage(ink, Math.cos(i * .7854) * 2.6, Math.sin(i * .7854) * 2.6); oc.drawImage(tmp, 0, 0); (out as any).half = half; return out;
   };
-  for (const kind of units) { const as = (PORTRAIT_AS[kind] || kind) as Kind; let m: MD.Model | null = null; try { m = unitRule(as).figure?.() ?? MD.unit(as); } catch { try { m = MD.unit(as); } catch { m = null; } }
+  const idle: ((t: number) => void)[] = [];
+  for (const key of keys) {
+    if (key.startsWith('b:')) { let o: THREE.Object3D | null = null; try { o = bldRule(key.slice(2) as BKind).model?.(idle) ?? null; } catch { o = null; } if (!o) continue; const c = shot(o); if (c) hud.icons[key] = c; continue; }
+    const kind = key as Kind, as = (PORTRAIT_AS[kind] || kind) as Kind; let m: MD.Model | null = null; try { m = unitRule(as).figure?.() ?? MD.unit(as); } catch { try { m = MD.unit(as); } catch { m = null; } }
     if (!m) continue; if (m.rig?.flash) m.rig.flash.visible = false; const c = shot(m.obj); if (c) hud.icons[kind] = c; }
-  // Buildings are drawn again whenever a faction's art has arrived since the last time, since a building has no faction written on it.
-  const have = [0, 1, 2].filter(f => artHas([f])).join('');
-  if (have !== iconArt) { iconArt = have; const idle: ((t: number) => void)[] = [];
-    for (const k of Object.keys(BLD) as BKind[]) { let o: THREE.Object3D | null = null; try { o = bldRule(k).model?.(idle) ?? null; } catch { o = null; } if (!o) continue; const c = shot(o); if (c) hud.icons['b:' + k] = c; } }
   sheet.dispose(); ground.geometry.dispose();
 }
 let iconArt = '-';
-function portraits(redo = false, only?: Kind[]) {
-  // Called as each match starts: no screen flash carries over from the menu or the match before.
-  if (redo) pipe.flash = 0;
-  const todo = only || (Object.keys(UNIT) as Kind[]).filter(k => { const f = UNIT[k].team ?? 0; return f >= 0 && f <= 2 && (!hud.portraits[k] || (!portraitArt.has(f) && artHas([f]))); });
-  if (!todo.length) return;
-  const scene = new THREE.Scene(); scene.add(makeSky());
-  const cam = new THREE.PerspectiveCamera(30, 1, .1, 4000);
-  pipe.resize(236, 236);
+const iconQ: string[] = []; let iconT = 0;
+function queueIcons(units: Kind[]) {
+  for (const k of units) if (!iconQ.includes(k)) iconQ.push(k);
+  // Buildings are drawn again whenever a faction's art has arrived since the last time, since a building has no faction written on it.
+  const have = [0, 1, 2].filter(f => artHas([f])).join('');
+  if (have !== iconArt) { iconArt = have; for (const k of Object.keys(BLD)) if (!iconQ.includes('b:' + k)) iconQ.push('b:' + k); }
+}
+/** Draws the next few queued map pictures (`all` draws every one left). Each takes two small renders, so a few per quarter second. */
+function pumpIcons(all = false) {
+  if (!iconQ.length) return; const now = performance.now(); if (!all && now - iconT < 250) return; iconT = now;
+  const keys = iconQ.splice(0, all ? iconQ.length : 3);
+  try { studio(ICON_PX, () => offDice(() => mapIcons(keys))); } catch (e) { console.warn('map pictures', e); }
+  pipe.w = 0; resize();
+}
+/** Runs picture-taking work (portraits, map pictures) under the same noon light, with the match's lamps, detail switch and screen
+ *  flash set aside, and puts everything back afterwards. */
+function studio(size: number, fn: () => void) {
+  pipe.resize(size, size);
   // Every picture under the same noon light, whatever hour and weather the match before left set.
   // and with the match's lamps off: they stand at world spots, and one near the middle of the map lit a picture white.
   const was = { ...NOW }, lamps = LAMP_N.value; setLight(12, 'clear', 0); LAMP_N.value = 0;
@@ -132,7 +141,16 @@ function portraits(redo = false, only?: Kind[]) {
   const lodWas = LOD.force; LOD.force = 0;
   // and no screen flash or static: the pipeline's flash is a whole-screen whiten, and a blast on the menu's backdrop can set it.
   const pv = { flash: pipe.flash, static: pipe.static, sat: pipe.sat }; pipe.flash = 0; pipe.static = 0; pipe.sat = 1;
-  for (const kind of todo) {
+  try { fn(); } finally { LOD.force = lodWas; Object.assign(pipe, pv); sharedSwap(back); setLight(was.hour, was.wx, was.w); LAMP_N.value = lamps; }
+}
+function portraits(redo = false, only?: Kind[]) {
+  // Called as each match starts: no screen flash carries over from the menu or the match before.
+  if (redo) pipe.flash = 0;
+  const todo = only || (Object.keys(UNIT) as Kind[]).filter(k => { const f = UNIT[k].team ?? 0; return f >= 0 && f <= 2 && (!hud.portraits[k] || (!portraitArt.has(f) && artHas([f]))); });
+  if (!todo.length) return;
+  const scene = new THREE.Scene(); scene.add(makeSky());
+  const cam = new THREE.PerspectiveCamera(30, 1, .1, 4000);
+  studio(236, () => { for (const kind of todo) {
     // A kind that is another kind set up differently (the Gantry braced as flak) wears that kind's figure.
     const as = (PORTRAIT_AS[kind] || kind) as Kind;
     let m: MD.Model; try { m = unitRule(as).figure?.() ?? MD.unit(as); } catch { try { m = MD.unit(as); } catch { m = plainBody(kind); } }
@@ -143,10 +161,10 @@ function portraits(redo = false, only?: Kind[]) {
     pipe.draw(scene, cam, V3(0, 0, 0), 8);
     hud.portraits[kind] = canvas.toDataURL('image/jpeg', .85);
     scene.remove(m.obj);
-  }
+  } });
   // The map's small pictures: every body and building of the factions whose art is here, seen from straight above (see mapIcons).
-  try { offDice(() => mapIcons(todo)); } catch (e) { console.warn('map pictures', e); }
-  LOD.force = lodWas; Object.assign(pipe, pv); sharedSwap(back); setLight(was.hour, was.wx, was.w); LAMP_N.value = lamps;
+  // They are queued and drawn a few at a time while the game runs (pumpIcons), so a page is not held up drawing them all at once.
+  queueIcons(todo);
   for (const f of [0, 1, 2]) if (artHas([f])) portraitArt.add(f);
   if (redo) resize();
 }
@@ -570,6 +588,7 @@ let still = false;
 function frame(now: number) {
   // The first frame's time stamp can be earlier than the moment this script set `last` (a long boot), which made dt about -18 s:
   // the screen flash and shake then grew instead of fading (to about 46) and whitened the first frames of a match.
+  pumpIcons();
   const dt = Math.max(0, (now - last) / 1000); last = now; watchFrame(game, dt); if (still) { game.noRender = true; if (game2) game2.noRender = true; }
   // Without mouse capture, holding the cursor near a screen edge turns the view.
   pad.frame(); if (touchOn) document.body.classList.toggle('playing', live());
@@ -602,5 +621,5 @@ function frame(now: number) {
   if (fast > 900 && quality < 1) { quality = Math.min(1, quality / .85); fast = 0; pipe.aa = aaFor(); pipe.ao = aoFor(); pipe.glow = pipe.shafts = glowFor(); LAMP_ON.value = (gfxI as number) !== 1; resize(); }
   requestAnimationFrame(frame);
 }
-(window as any).__ore = { MAP: () => MAP, ter: () => TER, models: MD, tx: TX, mats: M, gloamB: GLOAM_BUILDINGS, gloamBloom: bloomPatch, sounds: { ready: soundsReady, sfx }, quit, atlasUsed: MD.atlasUsed, game, start, pipe, hud, hud2, startSplit, startVeyl, pause, resume, touch: pad, setTouch, reg: { defineAbilities, abilitiesOf, useAbility, defineBuildings, UNIT, BLD, isFriend }, padDrive: (p: Gamepad, dt = 1 / 30) => padDrive(game, p, 0, dt), split: () => split, game2: () => game2, setFree: (v: boolean) => { freeMouse = v; }, hold: (v: boolean) => { still = v; if (!v) { game.noRender = false; if (game2) game2.noRender = false; } }, pickMap, pickSize, portraits: (only?: Kind[]) => portraits(true, only), setRaid: (v: boolean) => { raid = v; showSide(); if (mode === 'skirm' && builtTeam !== teamKey()) fresh(); }, pickSide: (s: number, f = 0) => { mode = "skirm"; sideI = s; foeI = s ? s - 1 : f; showSide(); fresh(); }, unlock: () => { camp = STORY_JOBS; mpOpen = true; mode = 'multi'; showMode(); }, net: () => net, pickJob: (i: number) => { mode = 'camp'; camp = Math.max(camp, Math.min(i, STORY_JOBS)); jobI = i; showMode(); fresh(); }, playCuts, cuts: CUTS, cutP, startStory: (i: number) => { mode = 'camp'; jobI = i; camp = Math.max(camp, Math.min(i, STORY_JOBS)); start(); } };
+(window as any).__ore = { flushIcons: () => pumpIcons(true), MAP: () => MAP, ter: () => TER, models: MD, tx: TX, mats: M, gloamB: GLOAM_BUILDINGS, gloamBloom: bloomPatch, sounds: { ready: soundsReady, sfx }, quit, atlasUsed: MD.atlasUsed, game, start, pipe, hud, hud2, startSplit, startVeyl, pause, resume, touch: pad, setTouch, reg: { defineAbilities, abilitiesOf, useAbility, defineBuildings, UNIT, BLD, isFriend }, padDrive: (p: Gamepad, dt = 1 / 30) => padDrive(game, p, 0, dt), split: () => split, game2: () => game2, setFree: (v: boolean) => { freeMouse = v; }, hold: (v: boolean) => { still = v; if (!v) { game.noRender = false; if (game2) game2.noRender = false; } }, pickMap, pickSize, portraits: (only?: Kind[]) => portraits(true, only), setRaid: (v: boolean) => { raid = v; showSide(); if (mode === 'skirm' && builtTeam !== teamKey()) fresh(); }, pickSide: (s: number, f = 0) => { mode = "skirm"; sideI = s; foeI = s ? s - 1 : f; showSide(); fresh(); }, unlock: () => { camp = STORY_JOBS; mpOpen = true; mode = 'multi'; showMode(); }, net: () => net, pickJob: (i: number) => { mode = 'camp'; camp = Math.max(camp, Math.min(i, STORY_JOBS)); jobI = i; showMode(); fresh(); }, playCuts, cuts: CUTS, cutP, startStory: (i: number) => { mode = 'camp'; jobI = i; camp = Math.max(camp, Math.min(i, STORY_JOBS)); start(); } };
 requestAnimationFrame(frame);

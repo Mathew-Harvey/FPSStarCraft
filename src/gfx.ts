@@ -444,9 +444,10 @@ G.burst = ragged(26, (i, r) => i % 2 ? .19 + r() * .07 : .36 + r() * .14);
 type P3 = [number, number, number];
 /** Runs a piece of show-only building work on dice of its own. three.js draws an id from Math.random for every mesh and geometry it makes,
  *  and the bot-match tests run the rules on a seeded Math.random, so a new piece of art would otherwise move every dice roll after it and
- *  change who wins a test match. Art added since the test tables were made is built inside this. */
+ *  change who wins a test match. Art added since the test tables were made is built inside this. The world's own dice (R) are put
+ *  back afterwards too, so art built here never moves the layout of anything made after it. */
 let artDice = 20261116;
-export function offDice<T>(fn: () => T): T { const real = Math.random; Math.random = () => (artDice = (artDice * 16807) % 2147483647) / 2147483647; try { return fn(); } finally { Math.random = real; } }
+export function offDice<T>(fn: () => T): T { const real = Math.random, held = seed; Math.random = () => (artDice = (artDice * 16807) % 2147483647) / 2147483647; try { return fn(); } finally { Math.random = real; seed = held; } }
 export function mk(geo: THREE.BufferGeometry, mat: THREE.Material, p: P3 | 0, s: P3 | 0, r: P3 | 0, parent: THREE.Object3D) {
   const m = new THREE.Mesh(geo, mat); if (p) m.position.set(p[0], p[1], p[2]); if (s) m.scale.set(s[0], s[1], s[2]); if (r) m.rotation.set(r[0], r[1], r[2]); parent.add(m); return m;
 }

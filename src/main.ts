@@ -21,7 +21,7 @@ import { watchInit, watchFrame } from './watch';
 import { treeHtml, treeTabs } from './tree';
 import { TEAM_LAYOUTS } from './teammaps';
 import { isFriend, planTeams, type TeamPlan } from './core/sides';
-import { defineBuildings, unitRule } from './core/registry';
+import { defineBuildings, unitRule, bldRule } from './core/registry';
 import { defineAbilities, abilitiesOf, useAbility } from './core/ability';
 import { artGate, artSoon } from './artgate';
 import { artHas } from './artfiles';
@@ -79,6 +79,41 @@ function framing(kind: Kind, obj: THREE.Object3D): { y: number; dist: number } {
   const span = Math.max(1.1, (top - lo) * .8, w * .55);
   return { y: top - span * .45, dist: span / (2 * Math.tan(15 * Math.PI / 180)) * 1.05 + w * .25 };
 }
+/** Draws the small pictures the minimap and the full map use in place of squares and dots: each kind of body and building seen from
+ *  straight above, on a clear ground. A kind is drawn twice, on a black sheet and on a grey one, and the two pictures taken apart give
+ *  what is the figure and what is ground (so the ink line and the shading come through, and nothing has to be guessed from a colour).
+ *  Called from portraits(), under its noon light and with its shared values already set. */
+const ICON_PX = 112;
+function mapIcons(units: Kind[]) {
+  const scene = new THREE.Scene(), sheet = new THREE.MeshBasicMaterial({ color: 0 }), ground = new THREE.Mesh(new THREE.PlaneGeometry(400, 400), sheet); ground.rotation.x = -Math.PI / 2; ground.position.y = -.03; scene.add(ground);
+  const cam = new THREE.OrthographicCamera(-1, 1, 1, -1, .1, 300); cam.up.set(0, 0, -1);
+  const tmp = document.createElement('canvas'); tmp.width = tmp.height = ICON_PX; const tc = tmp.getContext('2d', { willReadFrequently: true })!;
+  pipe.resize(ICON_PX, ICON_PX);
+  const shot = (obj: THREE.Object3D, lift = 0): HTMLCanvasElement | null => {
+    obj.position.set(0, lift, 0); obj.rotation.set(0, 0, 0); scene.add(obj); obj.updateMatrixWorld(true); PBOX.setFromObject(obj);
+    if (!isFinite(PBOX.min.x) || PBOX.max.x - PBOX.min.x < .01) { scene.remove(obj); return null; }
+    const cx = (PBOX.min.x + PBOX.max.x) / 2, cz = (PBOX.min.z + PBOX.max.z) / 2, half = Math.max(PBOX.max.x - PBOX.min.x, PBOX.max.z - PBOX.min.z) / 2 * 1.1 + .15;
+    cam.left = -half; cam.right = half; cam.top = half; cam.bottom = -half; cam.updateProjectionMatrix(); cam.position.set(cx, PBOX.max.y + 40, cz); cam.lookAt(cx, 0, cz); cam.updateMatrixWorld();
+    const grab = (col: number) => { sheet.color.setHex(col); pipe.draw(scene, cam, V3(cx, 0, cz), half * 2); tc.clearRect(0, 0, ICON_PX, ICON_PX); tc.drawImage(canvas, 0, 0, ICON_PX, ICON_PX); return tc.getImageData(0, 0, ICON_PX, ICON_PX); };
+    const A = grab(0x000000), B = grab(0x9a9a9a), a = A.data, b = B.data; scene.remove(obj);
+    const lum = (d: Uint8ClampedArray, i: number) => d[i] * .3 + d[i + 1] * .59 + d[i + 2] * .11, span = Math.max(8, lum(b, 0) - lum(a, 0));
+    let solid = 0;
+    for (let i = 0; i < a.length; i += 4) { const al = Math.max(0, Math.min(1, 1 - (lum(b, i) - lum(a, i)) / span)), k = al > .04 ? 1 / al : 0; a[i] = Math.min(255, a[i] * k); a[i + 1] = Math.min(255, a[i + 1] * k); a[i + 2] = Math.min(255, a[i + 2] * k); a[i + 3] = al < .12 ? 0 : al * 255; if (al > .5) solid++; }
+    if (solid < 30) return null;
+    tc.putImageData(A, 0, 0);
+    // an ink line round the whole figure, the way the game draws one: the figure's own shape in ink, laid a little to every side under it
+    const ink = document.createElement('canvas'); ink.width = ink.height = ICON_PX; const ic = ink.getContext('2d')!; ic.drawImage(tmp, 0, 0); ic.globalCompositeOperation = 'source-in'; ic.fillStyle = '#17100e'; ic.fillRect(0, 0, ICON_PX, ICON_PX);
+    const out = document.createElement('canvas'); out.width = out.height = ICON_PX; const oc = out.getContext('2d')!; for (let i = 0; i < 8; i++) oc.drawImage(ink, Math.cos(i * .7854) * 2.6, Math.sin(i * .7854) * 2.6); oc.drawImage(tmp, 0, 0); (out as any).half = half; return out;
+  };
+  for (const kind of units) { const as = (PORTRAIT_AS[kind] || kind) as Kind; let m: MD.Model | null = null; try { m = unitRule(as).figure?.() ?? MD.unit(as); } catch { try { m = MD.unit(as); } catch { m = null; } }
+    if (!m) continue; if (m.rig?.flash) m.rig.flash.visible = false; const c = shot(m.obj); if (c) hud.icons[kind] = c; }
+  // Buildings are drawn again whenever a faction's art has arrived since the last time, since a building has no faction written on it.
+  const have = [0, 1, 2].filter(f => artHas([f])).join('');
+  if (have !== iconArt) { iconArt = have; const idle: ((t: number) => void)[] = [];
+    for (const k of Object.keys(BLD) as BKind[]) { let o: THREE.Object3D | null = null; try { o = bldRule(k).model?.(idle) ?? null; } catch { o = null; } if (!o) continue; const c = shot(o); if (c) hud.icons['b:' + k] = c; } }
+  sheet.dispose(); ground.geometry.dispose();
+}
+let iconArt = '-';
 function portraits(redo = false, only?: Kind[]) {
   // Called as each match starts: no screen flash carries over from the menu or the match before.
   if (redo) pipe.flash = 0;
@@ -109,12 +144,14 @@ function portraits(redo = false, only?: Kind[]) {
     hud.portraits[kind] = canvas.toDataURL('image/jpeg', .85);
     scene.remove(m.obj);
   }
+  // The map's small pictures: every body and building of the factions whose art is here, seen from straight above (see mapIcons).
+  try { mapIcons(todo); } catch (e) { console.warn('map pictures', e); }
   LOD.force = lodWas; Object.assign(pipe, pv); sharedSwap(back); setLight(was.hour, was.wx, was.w); LAMP_N.value = lamps;
   for (const f of [0, 1, 2]) if (artHas([f])) portraitArt.add(f);
   if (redo) resize();
 }
 
-portraits(); hud2.portraits = hud.portraits;
+portraits(); hud2.portraits = hud.portraits; hud2.icons = hud.icons;
 pipe.w = 0; resize();
 // Multiplayer is open from the first launch: friends who want to play together should not have to finish the story first.
 let camp = 0, sideDone = 0, mpOpen = true, mode = 'camp', jobI = 0, pname = '', srv = '';

@@ -55,7 +55,7 @@ const seedCap: AbilityDef = {
   key: 'seed', name: 'Seed Cap', hotkey: 'Mouse2', energy: G2.keeper.seed.energy, cd: 1, cast: .6, range: G2.keeper.seed.range + 6, target: 'body', who: 'ally',
   blurb: 'Seeds a Mother Cap: 20 s later it has 3 more Buds than it can grow by itself.',
   can: (g, _u, t) => { const b = g.buildings.find(x => x.id === t.id); return !!b && isCap(b) && b.built && !((b as any).seedT > 0); },
-  effect: (g, u, _t, tgt) => { const b = tgt as Building; (b as any).seedT = G2.keeper.seed.t; g.puff(TMP.set(b.pos.x, b.h * .6, b.pos.z), 6, 1, M.gS, .5, 2); u.swing = 1; if (g.vol(b.pos) > .2) sfx.blip(); },
+  effect: (g, u, _t, tgt) => { const b = tgt as Building; (b as any).seedT = G2.keeper.seed.t; g.puff(TMP.set(b.pos.x, b.h * .6, b.pos.z), 6, 1, M.gS, .5, 2); u.swing = 1; },
   ai: (g, u) => { if (busyFight(g, u, 10)) return null; const b = caps(g, u.team).filter(c => !((c as any).seedT > 0) && (c.buds || 0) <= budMax(g, c)).sort((a, c) => dist(a, u) - dist(c, u))[0]; return b && g.distToBox(b, u.pos.x, u.pos.z) < G2.keeper.seed.range ? { x: b.pos.x, z: b.pos.z, id: b.id } : null; },
 };
 /** Spore Pod: a Keeper plants a pod on its own Bloom. The pod grows Bloom of its own, and can plant one more pod once (actions.ts). */
@@ -66,7 +66,7 @@ const sporePod: AbilityDef = {
   effect: (g, u, t) => {
     /* a pod the Keeper chose by itself is checked again as it lands: Keepers casting together all saw the same room 0.8 s ago */
     const ai = (u as any).podAi; (u as any).podAi = false; if (ai && !keepsRoom(g, u.team, t.x, t.z, true)) return;
-    const b = g.addBuilding('sporepod', u.team, Math.round(t.x), Math.round(t.z), false); (b as any).hops = 1; u.swing = 1; if (g.vol(b.pos) > .2) sfx.place(); },
+    const b = g.addBuilding('sporepod', u.team, Math.round(t.x), Math.round(t.z), false); (b as any).hops = 1; u.swing = 1; },
   ai: (g, u) => {
     if (busyFight(g, u, 14) || (u.energy ?? 0) < G2.keeper.seed.energy + G2.keeper.pod.energy) return null;
     const home = caps(g, u.team).sort((a, b) => dist(a, u) - dist(b, u))[0]; if (!home) return null;
@@ -115,14 +115,14 @@ const mend: AbilityDef = {
   key: 'mend', name: 'Mend', hotkey: 'KeyC', energy: G2.keeper.mend.energy, cd: 1, cast: 0, range: G2.keeper.mend.range, target: 'body', who: 'ally', autocast: true,
   blurb: 'Heals a friend 75 at once and 50 more over 12 seconds.',
   can: (g, _u, t) => { const o = (bodyOf(g, t.id) as Unit | null); return !!o && o.hp < o.maxHp; },
-  effect: (g, u, _t, tgt) => { const o = tgt as Unit; if (!isUnit(o)) return; const M2 = G2.keeper.mend; act(u, 'mend'); o.hp = Math.min(o.maxHp, o.hp + M2.now); MEND.set(o.id, [M2.over, M2.over / M2.t]); g.tracer(V3(u.pos.x, 1.6, u.pos.z), V3(o.pos.x, UNIT[o.kind].bodyY + (o.alt || 0), o.pos.z), bileMat, .1); g.puff(TMP.set(o.pos.x, 1, o.pos.z), 3, .6, M.gS, .6); if (g.vol(o.pos) > .2) sfx.blip(); },
+  effect: (g, u, _t, tgt) => { const o = tgt as Unit; if (!isUnit(o)) return; const M2 = G2.keeper.mend; act(u, 'mend'); o.hp = Math.min(o.maxHp, o.hp + M2.now); MEND.set(o.id, [M2.over, M2.over / M2.t]); g.tracer(V3(u.pos.x, 1.6, u.pos.z), V3(o.pos.x, UNIT[o.kind].bodyY + (o.alt || 0), o.pos.z), bileMat, .1); g.puff(TMP.set(o.pos.x, 1, o.pos.z), 3, .6, M.gS, .6); },
   ai: (g, u) => { let best: Unit | null = null, bl = 74; for (const o of g.units) { if (!o.alive || o.team !== u.team || o === u && false || dist(o, u) > G2.keeper.mend.range || !UNIT[o.kind].cost) continue; const lost = o.maxHp - o.hp; if (lost > bl) { bl = lost; best = o; } } return best ? { x: best.pos.x, z: best.pos.z, id: best.id } : null; },
 };
 /** Bile Lob: a blob of bile lands on a spot after 2.5 s (a mark shows where), 60 to everything there. Breaks set-up guns and glass walls. */
 const bileLob: AbilityDef = {
   key: 'bile', name: 'Bile Lob', hotkey: 'Mouse2', energy: 0, cd: G2.lobber.lob.cd, cast: .25, range: G2.lobber.lob.range, target: 'point',
   blurb: 'Lobs bile at a spot. A mark shows where; 2.5 s later everything there takes 60.',
-  effect: (g, u, t) => { fuse(g, u, t, 'bile', G2.lobber.lob.fuse, G2.lobber.lob.r); g.tracer(V3(u.pos.x, 1.8, u.pos.z), V3(t.x, 4, t.z), bileMat, .14); u.swing = 1; if (g.vol(u.pos) > .1) sfx.throw(); },
+  effect: (g, u, t) => { fuse(g, u, t, 'bile', G2.lobber.lob.fuse, G2.lobber.lob.r); g.tracer(V3(u.pos.x, 1.8, u.pos.z), V3(t.x, 4, t.z), bileMat, .14); u.swing = 1; },
   ai: (g, u) => {
     const L = G2.lobber.lob; let best: Target | null = null, bs = 0;
     // A body that cannot move (set up, rooted, digging) or a building is the surest hit; otherwise a knot of at least two.
@@ -135,7 +135,7 @@ const bileLob: AbilityDef = {
 const choke: AbilityDef = {
   key: 'choke', name: 'Choke Spores', hotkey: 'Mouse2', energy: G2.smother.choke.energy, cd: 1, cast: .3, range: G2.smother.choke.range, target: 'area', radius: G2.smother.choke.r,
   blurb: 'A cloud bursts on a spot 1 s after a mark shows: everything there is held in place for 4 s and takes 30.',
-  effect: (g, u, t) => { fuse(g, u, t, 'choke', G2.smother.choke.fuse, G2.smother.choke.r); u.swing = 1; if (g.vol(u.pos) > .1) sfx.throw(); },
+  effect: (g, u, t) => { fuse(g, u, t, 'choke', G2.smother.choke.fuse, G2.smother.choke.r); u.swing = 1; },
   ai: (g, u) => clump(g, u, G2.smother.choke.range, G2.smother.choke.r, 3),
 };
 /** Rot Mind: a Smother takes over one enemy body for 12 s (16 with Deep Rot). Not a huge one, and not one a player drives. */
@@ -171,7 +171,7 @@ const fling: AbilityDef = {
       const h = g.spawn('husk', u.team, u.pos.x + R(-1.2, 1.2), u.pos.z + R(-1.2, 1.2)); giveLife(g, h, S.life); h.order = { type: 'amove', x: t.x + R(-2, 2), z: t.z + R(-2, 2) };
       if (g.upOf(u.team).gwings) { h.air = true; h.alt = 4; (h as any).flyT = S.fly; }
     }
-    u.swing = 1; g.puff(TMP.set(u.pos.x, .8, u.pos.z), 4, .8, M.gS, .8); if (g.vol(u.pos) > .1) sfx.throw();
+    u.swing = 1; g.puff(TMP.set(u.pos.x, .8, u.pos.z), 4, .8, M.gS, .8);
   },
   ai: (g, u) => { const t = u.target && u.target.alive ? u.target : g.acquire(u, G2.seeder.range, 0); return t && dist(t as Unit, u) < G2.seeder.range ? { x: t.pos.x, z: t.pos.z } : null; },
 };
@@ -180,14 +180,14 @@ const reel: AbilityDef = {
   key: 'reel', name: 'Reel', hotkey: 'Mouse2', energy: G2.hooksail.reel.energy, cd: 1, cast: .3, range: G2.hooksail.reel.range, target: 'body', who: 'foe',
   blurb: 'Hooks one enemy body and pulls it 9 m toward you.',
   can: (g, _u, t) => { const o = (bodyOf(g, t.id) as Unit | null); return !!o; },
-  effect: (g, u, _t, tgt) => { const o = tgt as Unit; if (!isUnit(o)) return; const dx = u.pos.x - o.pos.x, dz = u.pos.z - o.pos.z, d = Math.hypot(dx, dz) || 1, pull = Math.min(G2.hooksail.reel.pull, Math.max(0, d - 2)); o.kx += dx / d * pull * 7; o.kz += dz / d * pull * 7; o.target = null; g.tracer(V3(u.pos.x, (u.alt || 0) + .8, u.pos.z), V3(o.pos.x, UNIT[o.kind].bodyY + (o.alt || 0), o.pos.z), bileMat, .06); if (g.vol(o.pos) > .1) sfx.clang(); },
+  effect: (g, u, _t, tgt) => { const o = tgt as Unit; if (!isUnit(o)) return; const dx = u.pos.x - o.pos.x, dz = u.pos.z - o.pos.z, d = Math.hypot(dx, dz) || 1, pull = Math.min(G2.hooksail.reel.pull, Math.max(0, d - 2)); o.kx += dx / d * pull * 7; o.kz += dz / d * pull * 7; o.target = null; g.tracer(V3(u.pos.x, (u.alt || 0) + .8, u.pos.z), V3(o.pos.x, UNIT[o.kind].bodyY + (o.alt || 0), o.pos.z), bileMat, .06); },
   ai: (g, u) => { const o = foeBody(g, u, G2.hooksail.reel.range, o => UNIT[o.kind].cost + (UNIT[o.kind].flux || 0) >= 200 || (o.speed === 0)); return o ? { x: o.pos.x, z: o.pos.z, id: o.id } : null; },
 };
 /** Spore Cloud: a cloud 4 m wide for 8 s. Enemy bodies inside it cannot land a hit from more than a step away. */
 const cloud: AbilityDef = {
   key: 'cloud', name: 'Spore Cloud', hotkey: 'KeyE', energy: G2.hooksail.cloud.energy, cd: 1, cast: .3, range: G2.hooksail.cloud.range, target: 'area', radius: G2.hooksail.cloud.r,
   blurb: 'A cloud of spores for 8 seconds: enemy bodies inside it cannot hit anything more than a step away.',
-  effect: (g, u, t) => { addCloud(g, t.x, t.z, u.team); g.evq?.push(['gc', Math.round(t.x * 10) / 10, Math.round(t.z * 10) / 10, u.team]); if (g.vol(u.pos) > .1) sfx.scatter(); },
+  effect: (g, u, t) => { addCloud(g, t.x, t.z, u.team); g.evq?.push(['gc', Math.round(t.x * 10) / 10, Math.round(t.z * 10) / 10, u.team]); },
   ai: (g, u) => clump(g, u, G2.hooksail.cloud.range, G2.hooksail.cloud.r, 3, o => !G_DIGS.includes(o.kind as GKind)),
 };
 /** Drink: a Hooksail drinks 200 health from one of its own buildings for 50 energy. */

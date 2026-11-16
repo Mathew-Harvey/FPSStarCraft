@@ -7,6 +7,7 @@ import { isEnemy } from './sides';
 import { canAct } from './status';
 import { CASTERS } from '../net-look';
 import { unitRule } from './registry';
+import { castSound } from '../sound-abilities';
 const dugOK = (u: Unit, a: AbilityDef | null) => !!a?.dug || !!unitRule(u.kind).dugFight;
 
 /** Where an ability is aimed: a spot on the ground, a body or building (id), or the caster itself. */
@@ -81,6 +82,7 @@ function fire(g: Game, u: Unit, a: AbilityDef, t: Target) {
 }
 /** Plays an ability's look (its `show`). A broken look never stops the game. */
 export function showCast(g: Game, u: Unit, a: AbilityDef, t: Target, tgt: Unit | Building | null) {
+  try { castSound(g, u, a, t, tgt); } catch (e) { console.warn('ability sound', a.key, e); }
   if (!a.show) return; try { a.show(g, u, t, tgt); } catch (e) { console.warn('ability look', a.key, e); }
 }
 

@@ -114,13 +114,13 @@ export function stomp(g: Game, u: Unit) {
   g.blastProps(p, 6.5, 60, u); g.shove(p, 9, 10);
   for (let i = 0; i < 10; i++) { const a = i / 10 * 6.283; g.puff(TMP.set(p.x + Math.cos(a) * 2.6, .3, p.z + Math.sin(a) * 2.6), 1, 1.1, M.dust, 1.6, .5); }
   g.debris(TMP.set(p.x, .3, p.z), 8, .22, M.rock, 7); g.scorchAt(p, 5); g.warn(p.x, p.z, 6.5, .35);
-  const v = g.vol(p); g.shake = Math.max(g.shake, v * 1.2); sfx.boom(v); sfx.clang();
+  const v = g.vol(p); g.shake = Math.max(g.shake, v * 1.2); sfx.boom(v); sfx.clang(v);
   if (u === g.me || any) g.hud.damage(V3(p.x, 2.4, p.z), 'STOMP!', 'ko');
 }
 /** The Patch's pulse: tops up every friendly body nearby, the caster included. */
 export function patchUp(g: Game, u: Unit) {
   let n = 0; for (const o of g.own(undefined, u.team)) { if (Math.hypot(o.pos.x - u.pos.x, o.pos.z - u.pos.z) > 9 || o.hp >= o.maxHp) continue; o.hp = Math.min(o.maxHp, o.hp + 45); n++; if (o !== u) g.puff(TMP.set(o.pos.x, UNIT[o.kind].bodyY + .4, o.pos.z), 3, .3, M.teal, 1.8, .5); }
-  for (let i = 0; i < 12; i++) { const a = i / 12 * 6.283; g.puff(TMP.set(u.pos.x + Math.cos(a) * 4.5, .3, u.pos.z + Math.sin(a) * 4.5), 1, .35, M.teal, 1.2, .3); } sfx.built(); if (u === g.me) g.hud.damage(V3(u.pos.x + Math.sin(g.yaw) * 2, 1.8, u.pos.z + Math.cos(g.yaw) * 2), n ? `PATCHED ×${n}` : 'ALL GOOD', 'shield');
+  for (let i = 0; i < 12; i++) { const a = i / 12 * 6.283; g.puff(TMP.set(u.pos.x + Math.cos(a) * 4.5, .3, u.pos.z + Math.sin(a) * 4.5), 1, .35, M.teal, 1.2, .3); } sfx.built(g.vol(u.pos)); if (u === g.me) g.hud.damage(V3(u.pos.x + Math.sin(g.yaw) * 2, 1.8, u.pos.z + Math.cos(g.yaw) * 2), n ? `PATCHED ×${n}` : 'ALL GOOD', 'shield');
 }
 export function aiSoldier(g: Game, u: Unit, dt: number) {
   const heavy = u.kind === 'breacher', big = u.kind === 'gantry', long = u.kind === 'longshot', doc = u.kind === 'patch', up = g.upOf(u.team), glass = long && up.glass, range = big ? 24 : long ? (glass ? 44 : 36) : doc ? 15 : heavy ? 10 : 19;

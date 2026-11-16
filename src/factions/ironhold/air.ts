@@ -26,7 +26,7 @@ const WALKER: Gun = { range: 8, cd: .7, acc: .8, hit: (_g, _u, t) => isUnit(t) ?
 const GADFLY: Gun = { range: 7.5, cd: 1.25, acc: .85, w: .1, hit: (_g, _u, t) => isUnit(t) ? 24 : 18, snd: v => { if (v > .05) sfx.turret(v); } };
 const STAKE: Gun = { range: 7, cd: .4, acc: .8, hit: () => 8 };
 const BARGE: Gun = { range: 10, cd: .25, acc: .85, w: .1, hit: (_g, _u, t) => isUnit(t) && t.air ? 5 : 8, snd: v => { if (v > .05) sfx.turret(v); } };
-const FLAK: Gun = { range: 22, cd: .8, acc: .9, w: .12, hit: () => 14, snd: v => { if (v > .05) sfx.cannon(); } };
+const FLAK: Gun = { range: 22, cd: .8, acc: .9, w: .12, hit: () => 14, snd: v => { if (v > .05) sfx.cannon(v); } };
 /** A flak burst up in the air: every enemy flier within `r` of the target takes half again. The ground splash (Game.burst) misses fliers. */
 function airBurst(g: Game, u: Unit, t: Unit, dmg: number, r = 2.5) {
   for (const o of within(g, u.team, t.pos.x, t.pos.z, r, 'air')) if (o !== t) g.damage(o, dmg * .5, u);
@@ -37,13 +37,13 @@ function airBurst(g: Game, u: Unit, t: Unit, dmg: number, r = 2.5) {
 defineAbilities('hopper', [{
   key: 'afterburn', name: 'Afterburn', hotkey: 'C', energy: 0, cd: TUNE.afterburn.cd, cast: 0, range: 0, target: 'self',
   blurb: `${TUNE.afterburn.t} s of ${Math.round((TUNE.afterburn.pace - 1) * 100)}% more speed.`,
-  effect(g, u) { boost(g, u, 'burn', TUNE.afterburn.t); g.puff(TMP.set(u.pos.x, (u.alt || 0) + 1, u.pos.z), 4, .6, M.fire, -.5, .6); if (g.vol(u.pos) > .2) sfx.dash(1); },
+  effect(g, u) { boost(g, u, 'burn', TUNE.afterburn.t); g.puff(TMP.set(u.pos.x, (u.alt || 0) + 1, u.pos.z), 4, .6, M.fire, -.5, .6); },
   ai: (g, u) => g.time - u.lastHit < 1 && u.hp < u.maxHp * .6 ? { x: u.pos.x, z: u.pos.z } : null,
 }, {
   key: 'doors', name: 'Load or unload', hotkey: 'RMB', energy: 0, cd: 1, cast: 0, range: 0, target: 'self',
   blurb: 'Takes in every friend on foot within 4 m, up to 8 beds; with anyone aboard, lets them all down on ropes.',
   can: (g, u) => (u.cargo?.length ? true : g.units.some(o => o.alive && o.team === u.team && !o.air && !o.inside && o !== u && dist(o, u) < 5 + UNIT.hopper.rad)),
-  effect(g, u) { if (u.cargo?.length) { unload(g, u); sfx.blip(); return; } for (const o of g.units.filter(o => o.alive && o.team === u.team && !o.air && !o.inside && o !== u && o !== g.me && !hasTag(o, 'huge')).sort((a, b) => dist(a, u) - dist(b, u))) { u.alt = Math.min(u.alt || 0, 2); load(g, u, o); } sfx.blip(); },
+  effect(g, u) { if (u.cargo?.length) { unload(g, u); return; } for (const o of g.units.filter(o => o.alive && o.team === u.team && !o.air && !o.inside && o !== u && o !== g.me && !hasTag(o, 'huge')).sort((a, b) => dist(a, u) - dist(b, u))) { u.alt = Math.min(u.alt || 0, 2); load(g, u, o); } },
 }]);
 /** A bot Hopper flies a drop: it loads soldiers at the rally, flies to the push's goal, and lets them out short of it. */
 function aiHopper(g: Game, u: Unit, dt: number) {
@@ -90,7 +90,7 @@ const machineFoe = (g: Game, u: Unit, id?: number) => { const o = g.units.find(x
 defineAbilities('surveyor', [{
   key: 'stake', name: 'Stake Gun', hotkey: 'C', energy: TUNE.stake.energy, cd: 2, cast: .5, range: TUNE.stake.range, target: 'point',
   blurb: `Drops a gun turret that fires for ${TUNE.stake.t} s.`,
-  effect(g, u, t) { const s = g.spawn('staketurret', u.team, t.x, t.z); mem(s).born = g.time; g.puff(TMP.set(t.x, .4, t.z), 4, .6, M.dust, .5, 1); sfx.clang(); },
+  effect(g, u, t) { const s = g.spawn('staketurret', u.team, t.x, t.z); mem(s).born = g.time; g.puff(TMP.set(t.x, .4, t.z), 4, .6, M.dust, .5, 1); },
   ai(g, u) { const f = nearest(g, u, 14, o => !o.air); return f && (u.energy || 0) >= 75 ? { x: (u.pos.x + f.pos.x) / 2, z: (u.pos.z + f.pos.z) / 2 } : null; },
 }, {
   key: 'jam', name: 'Jam', hotkey: 'T', energy: TUNE.jam.energy, cd: 1, cast: 0, range: TUNE.jam.range, target: 'body', who: 'foe',
@@ -119,7 +119,7 @@ defineAbilities('claimbarge', [{
   key: 'foreclose', name: 'Foreclosure', hotkey: 'C', energy: TUNE.foreclose.energy, cd: 2, cast: TUNE.foreclose.cast, range: TUNE.foreclose.range, target: 'body', who: 'foe',
   blurb: `Charges for ${TUNE.foreclose.cast} s, then one shell for ${TUNE.foreclose.dmg} damage.`,
   can: (g, u) => !!up(g, u).foreclose,
-  effect(g, u, _t, o) { if (!o || !o.alive) return; const a = V3(u.pos.x, (u.alt || 0) + 2.6, u.pos.z), b = V3(o.pos.x, isUnit(o) ? UNIT[o.kind].bodyY + (o.alt || 0) : 2, o.pos.z); g.tracer(a, b, beamMat, .5); g.damage(o, TUNE.foreclose.dmg * mulOf(g, u), u); g.explode(b, u.team, 0, 2.5, u); sfx.boom(g.vol(o.pos)); },
+  effect(g, u, _t, o) { if (!o || !o.alive) return; const a = V3(u.pos.x, (u.alt || 0) + 2.6, u.pos.z), b = V3(o.pos.x, isUnit(o) ? UNIT[o.kind].bodyY + (o.alt || 0) : 2, o.pos.z); g.tracer(a, b, beamMat, .5); g.damage(o, TUNE.foreclose.dmg * mulOf(g, u), u); g.explode(b, u.team, 0, 2.5, u); },
   ai(g, u) { let best: Tgt | null = null, bs = 199; for (const o of [...g.units, ...g.buildings] as Tgt[]) { if (!o.alive || !isEnemy(u.team, o.team) || gap(g, u, o) > TUNE.foreclose.range || !fair(g, { ...u, kind: 'linesman' } as Unit, o)) continue; const s = isUnit(o) ? o.hp + (UNIT[o.kind].flux || 0) : (o as Building).hp > 400 && (o as Building).hp < 700 ? 400 : 0; if (s > bs) { bs = s; best = o; } } return best ? { x: best.pos.x, z: best.pos.z, id: best.id } : null; },
 }, {
   key: 'relocate', name: 'Relocate', hotkey: 'T', energy: 0, cd: TUNE.relocate.cd, cast: TUNE.relocate.cast, range: 9999, target: 'point',
@@ -133,13 +133,13 @@ defineAbilities('claimbarge', [{
 defineAbilities('gantry', [{
   key: 'flak', name: 'Flak mode', hotkey: 'T', energy: 0, cd: 1, cast: 0, range: 0, target: 'self',
   blurb: `Swaps the cannons over ${TUNE.flakSwitch} s for bursting shells that only reach the air.`,
-  effect(g, u) { morph(g, u, 'gantryflak', TUNE.flakSwitch); sfx.clang(); },
+  effect(g, u) { morph(g, u, 'gantryflak', TUNE.flakSwitch); },
   ai(g, u) { const air = nearest(g, u, 26, o => !!o.air && seenBy(g, u.team, o)); const ground = nearest(g, u, 14, o => !o.air); return air && !ground && within(g, u.team, air.pos.x, air.pos.z, 12, 'air').length >= 2 ? { x: u.pos.x, z: u.pos.z } : null; },
 }]);
 defineAbilities('gantryflak', [{
   key: 'ground', name: 'Cannon mode', hotkey: 'T', energy: 0, cd: 1, cast: 0, range: 0, target: 'self',
   blurb: `Back to the ground cannons over ${TUNE.flakSwitch} s.`,
-  effect(g, u) { morph(g, u, 'gantry', TUNE.flakSwitch); sfx.clang(); },
+  effect(g, u) { morph(g, u, 'gantry', TUNE.flakSwitch); },
   ai(g, u) { const air = nearest(g, u, 30, o => !!o.air && seenBy(g, u.team, o)); return !air ? { x: u.pos.x, z: u.pos.z } : null; },
 }]);
 
@@ -156,7 +156,7 @@ defineAbilities('longshot', [{
 }, {
   key: 'tranq', name: 'Tranq', hotkey: 'T', energy: TUNE.tranq.energy, cd: 1, cast: 1, range: TUNE.tranq.range, target: 'area', radius: TUNE.tranq.r,
   blurb: `A dart that bursts in a ${TUNE.tranq.r} m circle: everyone there loses ${TUNE.tranq.burn} energy and all their shields.`,
-  effect(g, u, t) { for (const o of within(g, u.team, t.x, t.z, TUNE.tranq.r)) { if (o.energy) o.energy = Math.max(0, o.energy - TUNE.tranq.burn); if (o.shield > 0) { o.shield = 0; g.bubble(o); } } g.puff(TMP.set(t.x, 1, t.z), 8, .8, M.teal, .5, TUNE.tranq.r); sfx.blast(g.vol(V3(t.x, 0, t.z)) * .5); },
+  effect(g, u, t) { for (const o of within(g, u.team, t.x, t.z, TUNE.tranq.r)) { if (o.energy) o.energy = Math.max(0, o.energy - TUNE.tranq.burn); if (o.shield > 0) { o.shield = 0; g.bubble(o); } } g.puff(TMP.set(t.x, 1, t.z), 8, .8, M.teal, .5, TUNE.tranq.r); },
   ai(g, u) { let best: Unit | null = null, bs = 99; for (const o of g.units) { if (!o.alive || !isEnemy(u.team, o.team) || dist(o, u) > TUNE.tranq.range) continue; const s = within(g, u.team, o.pos.x, o.pos.z, TUNE.tranq.r).reduce((a, x) => a + x.shield + (x.energy || 0) * .8, 0); if (s > bs) { bs = s; best = o; } } return best ? { x: best.pos.x, z: best.pos.z } : null; },
 }, {
   key: 'deep', name: 'Deep Charge', hotkey: 'Y', energy: 0, cd: 5, cast: TUNE.deep.cast, range: TUNE.deep.range, target: 'point',
@@ -165,7 +165,7 @@ defineAbilities('longshot', [{
   effect(g, u, t) {
     const s = mem(u).deep; mem(u).deep = null; if (!s) return;
     g.explode(V3(t.x, .5, t.z), u.team, TUNE.deep.dmg * .55, TUNE.deep.r, u); for (const b of g.buildings) if (b.alive && isEnemy(u.team, b.team) && g.distToBox(b, t.x, t.z) < TUNE.deep.r) g.damage(b, TUNE.deep.dmg * 1.5, u);
-    g.pipe.flash = Math.max(g.pipe.flash, g.vol(V3(t.x, 0, t.z))); sfx.boom(1);
+    g.pipe.flash = Math.max(g.pipe.flash, g.vol(V3(t.x, 0, t.z)));
   },
   ai(g, u) { if (!chargeAt(g, u.team) || hasStatus(u, 'unseen') === false && nearest(g, u, 10)) return null; let best: Building | null = null; for (const b of g.buildings) if (b.alive && isEnemy(u.team, b.team) && g.distToBox(b, u.pos.x, u.pos.z) < TUNE.deep.range && (!best || g.isHQ(b))) best = b; return best ? { x: best.pos.x, z: best.pos.z } : null; },
 }]);

@@ -53,8 +53,10 @@ try {
   // the players leave: the match is kept, and the end screen links the replay
   A.close(); V.close();
   check(await until(W, () => __ore.game.phase === 'over' || document.getElementById('menu').hidden === false, null, 20000), 'when the players leave, the watcher\'s match ends');
-  await sleep(1500);
-  const link = await W.evaluate(() => [...document.querySelectorAll('#end a')].map(a => a.getAttribute('href')).find(h => /\/replays\//.test(h || '')) || '');
+  // the server names the kept replay a moment after the match ends, and a slow page draws the end screen a few frames later
+  const t0 = Date.now(), hasLink = () => [...document.querySelectorAll('#end a')].map(a => a.getAttribute('href')).find(h => /\/replays\//.test(h || '')) || '';
+  await until(W, hasLink, null, 20000); console.log(`  (replay link after ${Date.now() - t0} ms)`);
+  const link = await W.evaluate(hasLink);
   check(/\/replays\/\w/.test(link), `the end screen links the replay file (${link})`);
   // play it back in the page from the replay list
   await W.evaluate(() => __ore.quit()); await sleep(500);

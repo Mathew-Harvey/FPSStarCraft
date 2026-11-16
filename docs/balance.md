@@ -162,8 +162,8 @@ nothing special (`cmd`: 10 of 54 won by minute 15, none by minute 6). Rows: /mnt
 |---|---|---|---|
 | Long-range sniping | drives an Ironhold rifle, stands 110 m off, shoots whatever is nearest, backs away from fighters | 19 of 54; Ironhold 18 of 18, no body lost | 11 of 54; Ironhold 5 of 18 |
 | Same, standing off at 50 m | | (Ironhold 14 of 18 at 65 m) | Ironhold 12 of 18, no better than plain fighting in first person (13 of 18) |
-| Snapper all-in | every fighter sent at the far base the moment it is out | 9 of 54, 7 by minute 6: Gloam v Veyl 6 of 6, the Choir Stone down at 3:20 | **not fixed** (see below) |
-| Main-building snipe | every fighter told to hit the main building and nothing else | 8 of 54, 5 by minute 6 (all Gloam v Veyl) | not fixed, same cause |
+| Snapper all-in | every fighter sent at the far base the moment it is out | 9 of 54, 7 by minute 6: Gloam v Veyl 6 of 6, the Choir Stone down at 3:20 | fixed 2026-11-16: Choir Stone bolt (see below) |
+| Main-building snipe | every fighter told to hit the main building and nothing else | 8 of 54, 5 by minute 6 (all Gloam v Veyl) | fixed with it: 0 of 12 |
 | Worker harass | a driven body that only shoots workers | 16 of 54 | 17 of 54 |
 | Driven rush | a driven body runs at the far base from its first second | 33 of 54, 1 by minute 6 | 29 of 54, 3 by minute 6 |
 | Points turtle | never pushes, keeps the army home, hopes to win on points at 40 | 7 of 54 on points, 47 lost | not changed: not a cheese |
@@ -180,12 +180,28 @@ The fixes:
 3. **Crew bonus softened** (`LEAD` in command.ts, Mat's pick): 1.15 / .92, was 1.25 / .85. A scripted driver beside the army beat the bot
    30 of 36 at 40 minutes with the old bonus, 24 of 36 with the new one; 19 of 36 with none, and 20 of 36 from the command view only.
 
-**Not fixed: the early Snapper all-in against the Veyl.** About twelve Snappers sent at 1:50 kill every Tender and the Choir Stone by 3:30,
+**The early Snapper all-in against the Veyl (fixed 2026-11-16, Mat: "Fix that cheese move").** About twelve Snappers sent at 1:50 kill every Tender and the Choir Stone by 3:30,
 because the Veyl bot has spent every coin on Tenders and has no Cantor yet. Four ways of making the Veyl bot guard its opening were tried
 (`VEYL_EARLY` in veyl/conductor.ts, shipped off): each stopped the all-in (0 of 6 to 1 of 9) but cost the Veyl the ordinary bot match
 against the Gloam, which opens with the same Snapper flood: Veyl v Gloam 37 to 35 with the guard off, 20 to 52, 17 to 55 and 8 to 64 with it
 on (72 matches each). Slower Snappers (build time 10 s, or 35 ore a pair) did not stop it either. This is the same problem as Finding 3: the
 Gloam win with an early Snapper flood, so the fix belongs with round 4 (a slower Snapper rush with a stronger Gloam mid-game, stream D).
+
+Fix: the Choir Stone's own bolt (`CHOIR_GUN` in veyl/rules.ts) went from 6 every 1.15 s at 21 m to 11 every 0.8 s at 22 m. It was half the
+Ironhold Headframe's rivet gun (9 every 0.8 s at 20 m), which is why the same all-in won 1 of 6 against Ironhold and 6 of 6 against the Veyl.
+Scripted Gloam all-in on the Veyl, 9 matches each (tools/fp.ts allin, maps 0-2): as it was 9 of 9 by 3:20; bolt 9 / 0.8 s 8 of 9 by 6:40;
+11 / 0.8 s at 22 m 1 of 9; 12 / 0.8 s at 24 m 0 of 9. With a 12 bolt the Gloam and Ironhold all-ins and main-building snipes on the Veyl
+won 0 of 12 each, and a driven rush 4 of 12, none by minute 6.
+
+Bot tables (3 seeds, maps 0,1,2,20,21,22, rows in /mnt/project-files/full-depth/L/rush/): as it was, 108 matches, Ironhold v Veyl 17 to 19,
+Ironhold v Gloam 16 to 20, Veyl v Gloam 17 to 19. With the 12 bolt and 2400 health: 17 to 19, 16 to 20, 25 to 11 (too far). With the 12
+bolt alone, Veyl v Gloam 25 to 11 over 36. Shipped, 11 at 22 m with the old health: Veyl v Gloam 19 to 17 over 36.
+
+Tried first and dropped, since the Gloam bot itself lives off the cheap Snapper (Snapper 63-75% of Gloam army spend): a fair Snapper price
+(50 a pair: the Gloam lost 144 of 144; 36 a pair, about even in equal-value duels: the all-in still won 9 of 9), a weaker bite on buildings
+(the Stone fell at 3:54 instead of 3:24), and a Gloam rebuild (6 more Grazers a Cap, more ore a trip, fewer Blisters: Ironhold v Gloam even,
+but the Veyl then lost 19 to 23 of 24, and Cantor or Lancer bonus damage on living bodies held the Veyl near 7 of 24). The Snapper share and
+the Gloam mid-game stay round 4 work.
 
 Also seen: a driven body with perfect aim is far stronger than its bot, which real players are not; the Gloam bot's Snappers come out two at
 a time and run at a driven Linesman pair after pair (Ironhold v Gloam driven rush: 2 of 6 over by minute 5 on map 0).

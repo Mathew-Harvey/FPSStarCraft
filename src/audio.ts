@@ -170,13 +170,25 @@ function S(name: string, peak: number, o: Opt = {}) {
   let tail: AudioNode = src; if (o.lp && o.lp < 16000) { const f = ctx.createBiquadFilter(); f.type = 'lowpass'; f.frequency.value = o.lp; f.Q.value = .5; src.connect(f); tail = f; }
   tail.connect(g); g.connect(out(o.pan ?? PAN)); src.start(t);
 }
-/** A short sine drop for weight under a transient: felt more than heard. */
-function sub(f0: number, f1: number, dur: number, peak: number, at = 0) {
+/** A pure sine, gliding f0 to f1: for tuned things only (bells, chimes, a Veyl note). Never under a hit: a gliding sine is a "boink". */
+function pure(f0: number, f1: number, dur: number, peak: number, at = 0) {
   peak *= level; if (!ctx || !master || peak < .004) return;
   const t = ctx.currentTime + at, o = ctx.createOscillator(), g = ctx.createGain();
   o.type = 'sine'; o.frequency.setValueAtTime(f0, t); o.frequency.exponentialRampToValueAtTime(Math.max(20, f1), t + dur);
   g.gain.setValueAtTime(.0001, t); g.gain.exponentialRampToValueAtTime(Math.max(peak, .0002), t + .004); g.gain.exponentialRampToValueAtTime(.0001, t + dur);
   o.connect(g); g.connect(out()); o.start(t); o.stop(t + dur + .05);
+}
+/** Weight under a transient: low noise through two low passes, fast in and dying over `dur`. No pitch to hear, so a hit
+ *  lands as a thump instead of a "boink". f0/f1 set the band (the higher of the two is the corner); a rising pair swells in. */
+function sub(f0: number, f1: number, dur: number, peak: number, at = 0) {
+  const fc = Math.max(40, Math.max(f0, f1) * 1.25), up = f1 > f0;
+  // white noise keeps only fc/24000 of its power under the corner: scale back up so it weighs what the sine did
+  peak *= level * 1.1 * Math.sqrt(24000 / fc); if (!ctx || !master || !noiseBuf || peak < .004) return;
+  const t = ctx.currentTime + at, s = ctx.createBufferSource(), a = ctx.createBiquadFilter(), b = ctx.createBiquadFilter(), g = ctx.createGain();
+  s.buffer = noiseBuf; a.type = b.type = 'lowpass'; a.Q.value = .5; b.Q.value = .6; a.frequency.value = fc;
+  b.frequency.setValueAtTime(up ? fc * .6 : fc, t); b.frequency.exponentialRampToValueAtTime(up ? fc : Math.max(30, fc * .55), t + dur);
+  g.gain.setValueAtTime(.0001, t); g.gain.exponentialRampToValueAtTime(Math.max(peak, .0002), t + (up ? dur * .7 : .003)); g.gain.exponentialRampToValueAtTime(.0001, t + dur * (up ? 1 : 1.15));
+  s.connect(a); a.connect(b); b.connect(g); g.connect(out()); s.start(t, Math.random() * .5, dur * 1.2 + .05);
 }
 /** A breath of filtered noise that swells in and dies away: air, hiss, sand, steam. `f0`→`f1` sweeps the band. */
 function swell(dur: number, f0: number, f1: number, peak: number, at = 0, q = .8, rise = .3) {
@@ -187,19 +199,19 @@ function swell(dur: number, f0: number, f1: number, peak: number, at = 0, q = .8
   s.connect(f); f.connect(g); g.connect(out()); s.start(t, Math.random() * .5, dur + .05);
 }
 /** A soft sine bell: quick bloom, a long smooth fall, a quiet octave and fifth above for shine. Tuned sounds for the Veyl. */
-function bell(f: number, dur: number, peak: number, at = 0) { sub(f, f * .998, dur, peak, at); sub(f * 2.001, f * 2, dur * .55, peak * .3, at); sub(f * 3.003, f * 3, dur * .3, peak * .1, at); }
+function bell(f: number, dur: number, peak: number, at = 0) { pure(f, f * .998, dur, peak, at); pure(f * 2.001, f * 2, dur * .55, peak * .3, at); pure(f * 3.003, f * 3, dur * .3, peak * .1, at); }
 /** Far away sounds lose their top end before they lose their level. */
 const far = (v: number) => 900 + 13000 * Math.min(1, v) ** 1.6;
 /** A soft, low chime for rewards: sine with a quick bloom, no buzz. */
-function chime(f: number, dur: number, peak: number, at = 0) { sub(f, f * .995, dur, peak, at); sub(f * 2, f * 1.99, dur * .6, peak * .25, at); }
+function chime(f: number, dur: number, peak: number, at = 0) { pure(f, f * .995, dur, peak, at); pure(f * 2, f * 1.99, dur * .6, peak * .25, at); }
 
 const sampled: typeof synth = {
-  shot: (v = 1) => { S('crack', .4 * v, { lp: far(v), rate: .95 }); S('knock_hard', .28 * v, { lp: far(v) }); sub(95, 45, .08, .16 * v); },
-  turret: (v = 1) => { S('crack', .38 * v, { lp: far(v), rate: .8 }); S('knock_hard', .4 * v, { lp: far(v), rate: .8 }); sub(80, 38, .12, .22 * v); },
+  shot: (v = 1) => { S('gun_rifle', .5 * v, { lp: far(v), rate: .97, jit: .04 }); },
+  turret: (v = 1) => { S('gun_heavy', .55 * v, { lp: far(v), jit: .04 }); },
   hit: (v = 1) => { S('punch', .6 * v, { rate: 1.05 }); S('pebble', .14 * v, { rate: 1.1 }); },
   slash: (v = 1) => { S('slice', .3 * v, { lp: Math.min(far(v), 2400), rate: .85 }); S('swish', .3 * v, { lp: far(v) }); },
   ko: (v = 1, veyl = true) => {
-    if (veyl) { S('glass', .5 * v, { lp: far(v), rate: .85 }); S('field', .28 * v, { lp: far(v), rate: 1.3 }); sub(180, 60, .3, .18 * v); }
+    if (veyl) { S('glass', .5 * v, { lp: far(v), rate: .85 }); S('shimmer', .3 * v, { lp: far(v), rate: .9 }); sub(180, 60, .3, .18 * v); }
     else { S('punch_heavy', .55 * v, { lp: far(v) }); S('thud_soft', .45 * v, { at: .05 }); S('cloth', .2 * v, { lp: far(v) }); }
   },
   step: (heavy = false, walker = false) => {
@@ -209,14 +221,14 @@ const sampled: typeof synth = {
   },
   crit: () => { S('tink', .26, { rate: 1.15 }); chime(1320, .12, .05); },
   streak: (n: number) => { [0, 4, 7, 12].slice(0, Math.min(4, n)).forEach((st, i) => { S('knock', .22, { at: i * .07, rate: Math.pow(2, st / 12), jit: 0 }); chime(440 * Math.pow(2, st / 12), .16, .07, i * .07); }); },
-  boom: (v = 1) => { const lp = far(v); S('crunch', .75 * v, { lp }); S('boom', .55 * v, { lp: Math.min(lp, 4000) }); if (v > .3) S('rumble', .35 * v, { at: .02 }); sub(70, 28, .5, .3 * v); },
-  blast: (v = 1) => { const lp = far(v); S('crunch', .4 * v, { lp, rate: 1.25 }); S('knock_hard', .45 * v, { lp, rate: .85 }); sub(110, 40, .16, .25 * v); },
+  boom: (v = 1) => { const lp = far(v); S('blast_big', .8 * v, { lp: Math.min(lp, 7000), jit: .04 }); if (v > .3) S('rumble', .2 * v, { at: .03 }); },
+  blast: (v = 1) => { const lp = far(v); S('blast_small', .5 * v, { lp, jit: .05 }); S('gun_heavy', .32 * v, { lp, rate: .92 }); },
   clang: (v = 1) => { S('metal', .5 * v, { lp: far(v) }); S('plate', .32 * v, { rate: 1.1, lp: far(v) }); },
   hurt: () => { S('punch_heavy', .55, { rate: .95 }); sub(120, 55, .16, .3); },
   throw: () => { S('swish', .4); S('cloth', .14); },
-  zap: (v = 1) => { S('zap', .42 * v, { lp: far(v) }); },
+  zap: (v = 1) => { S('veyl_shot', .8 * v, { lp: far(v), jit: .06 }); },
   dash: (v = 1) => { S('whoosh', .45 * v, { lp: far(v), rate: .9 }); S('cloth', .16 * v); },
-  charge: (v = 1) => { S('field', .5 * v, { lp: far(v), rate: .8 }); S('beam', .25 * v, { lp: far(v), rate: .7, at: .55 }); sub(50, 110, .85, .14 * v); },
+  charge: (v = 1) => { S('rise', .45 * v, { lp: far(v), rate: .9 }); S('field', .18 * v, { lp: Math.min(far(v), 3000), rate: .8 }); sub(50, 110, .85, .14 * v); },
   ore: () => { S('mine', .42, { jit: .07 }); S('pebble', .22, { at: .045, rate: .85, jit: .12 }); },
   bank: () => { S('pour', .42, { rate: .72 }); S('thunk', .4); sub(90, 50, .2, .15); },
   blip: () => { S('ui_tap', .80); S('rocker_soft', .30, { at: .008 }); },
@@ -246,11 +258,11 @@ const sampled: typeof synth = {
     S('mag_in', .42, { at: dur * .52 }); S('latch', .3, { at: dur * .52 + .02 });
     S('bolt', .5, { at: dur * .86 }); S('act_light', .28, { at: dur * .86 + .05 });
   },
-  rifle: (low = 0) => { S('crack', .5, { rate: 1 + low * .08 }); S('knock_hard', .42 * (1 - low * .4)); sub(78, 38, .1, .34 * (1 - low * .3)); S('act_light', .1, { at: .03, rate: 1.1 }); },
-  pistol: (low = 0) => { S('crack', .42, { rate: 1.28 + low * .1 }); S('knock_hard', .24, { rate: 1.35 }); sub(120, 60, .06, .2); S('act_light', .16, { at: .02, rate: 1.25 }); },
-  sniper: () => { S('crack_tail', .6); S('drum', .5); S('knock_deep', .45); sub(105, 30, .45, .4); S('act_heavy', .3, { at: .42 }); S('bolt', .4, { at: .6 }); },
-  scatter: () => { S('crack', .5, { rate: .72 }); S('knock_deep', .55); S('knock_hard', .5, { rate: .78 }); S('crack_tail', .26, { rate: .8 }); sub(85, 30, .26, .38); S('slide', .32, { at: .33 }); S('latch', .44, { at: .47 }); },
-  cannon: (v = 1) => { const lp = far(v); S('drum', .55 * v, { rate: 1.1, lp }); S('crunch', .32 * v, { rate: 1.35, lp }); S('knock_hard', .5 * v, { rate: .7, lp }); sub(80, 28, .3, .4 * v); },
+  rifle: (low = 0) => { S('gun_rifle', .55, { rate: 1 + low * .05, jit: .03 }); S('act_light', .1, { at: .03, rate: 1.1 }); },
+  pistol: (low = 0) => { S('gun_pistol', .56, { rate: 1 + low * .05, jit: .03 }); S('act_light', .16, { at: .02, rate: 1.25 }); },
+  sniper: () => { S('gun_sniper', .78, { jit: .02 }); S('act_heavy', .3, { at: .42 }); S('bolt', .4, { at: .6 }); },
+  scatter: () => { S('gun_scatter', .78, { jit: .03 }); S('slide', .32, { at: .33 }); S('latch', .44, { at: .47 }); },
+  cannon: (v = 1) => { S('gun_cannon', .7 * v, { lp: far(v), jit: .04 }); },
   dry: () => { S('dry', .8); S('off', .3); },
   kill: () => { S('knock', .45, { rate: .9, jit: .02 }); S('space', .28); chime(660, .14, .05, .03); },
   win: () => { [523, 659, 784, 1046].forEach((f, i) => { chime(f / 2, .5, .12, i * .14); S('knock', .2, { at: i * .14, rate: f / 523, jit: 0 }); }); S('bell', .3, { at: .56, lp: 6000 }); },
@@ -260,14 +272,14 @@ const sampled: typeof synth = {
     if (kind === 3) { S('zap', .2 * v, { lp, rate: 1.5, jit: .12 }); S('tink', .12 * v, { lp, rate: 1.5 }); }
     else if (kind === 1) { S('glass', .26 * v, { lp, rate: 1.55, jit: .12 }); S('tink', .2 * v, { lp, rate: .9, jit: .1 }); if (heavy) S('crunch', .2 * v, { lp, rate: 1.5 }); }
     else if (kind === 2) { S('punch', .4 * v, { lp: Math.min(lp, 3800), rate: .8, jit: .1 }); S('slice', .2 * v, { lp: Math.min(lp, 3000), rate: .62, jit: .12 }); if (heavy) S('crunch', .24 * v, { lp: 2400, rate: .7 }); }
-    else { S('punch', .36 * v, { lp, rate: 1.12, jit: .1 }); S('plate', .2 * v, { lp, rate: 1.5, jit: .14 }); if (heavy) { S('metal', .26 * v, { lp, rate: 1.15 }); S('punch_heavy', .3 * v, { lp }); } }
+    else { S('punch', .4 * v, { lp, rate: 1.05, jit: .1 }); S('pebble', .12 * v, { lp, rate: 1.2, jit: .14 }); if (heavy) { S('metal', .26 * v, { lp, rate: 1.15 }); S('punch_heavy', .3 * v, { lp }); } }
     if (heavy) sub(110, 48, .1, .2 * v);
   },
   ricochet: (v = 1, kind = 0) => {
     const lp = far(v);
     if (kind === 0) { S('pebble', .3 * v, { lp, rate: .8, jit: .2 }); S('thud_soft', .16 * v, { lp: Math.min(lp, 3000), rate: 1.5, jit: .15 }); }
     else if (kind === 1) { S('pebble', .34 * v, { lp, rate: 1.15, jit: .2 }); S('knock', .14 * v, { lp, rate: 1.6, jit: .15 }); }
-    else if (kind === 2) { S('tink', .3 * v, { lp, rate: 1.1, jit: .2 }); S('metal', .2 * v, { lp, rate: 1.5, jit: .15 }); if (Math.random() < .35) { sub(2600 + Math.random() * 900, 1200, .16, .05 * v, .01); sub(3900, 2100, .12, .02 * v, .01); } }
+    else if (kind === 2) { S('tink', .3 * v, { lp, rate: 1.1, jit: .2 }); S('metal', .2 * v, { lp, rate: 1.5, jit: .15 }); if (Math.random() < .35) swell(.18, 3400 + Math.random() * 900, 1300, .05 * v, .01, 5, .08); }
     else if (kind === 3) { S('glass', .22 * v, { lp, rate: 1.7, jit: .15 }); S('tink', .2 * v, { lp, rate: 1.3, jit: .15 }); }
     else { S('slice', .22 * v, { lp: Math.min(lp, 3200), rate: .7, jit: .15 }); S('punch', .2 * v, { lp: Math.min(lp, 3000), rate: .7 }); }
   },
@@ -326,7 +338,7 @@ export function loop(name: string, lp = 16000): Loop | null {
 /** The wind bed's level (1 is a normal breeze), set from the weather each frame. */
 export function setWind(x: number) { if (ctx && windG) windG.gain.setTargetAtTime(.035 * Math.max(.2, Math.min(3, x)) * (level ? 1 : 0), ctx.currentTime, .8); }
 /** The building blocks, for the sound sets in other files (sound-abilities.ts). */
-export const kit = { S, sub, swell, bell, chime, far, withPan, ready: () => ready, has: (n: string) => !!bank[n] };
+export const kit = { S, sub, pure, swell, bell, chime, far, withPan, ready: () => ready, has: (n: string) => !!bank[n] };
 
 export function drillSound(on: boolean, biting: boolean) {
   if (!ctx || !master || !level) return;

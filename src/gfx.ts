@@ -714,7 +714,9 @@ export class Pipeline {
     if (cw !== this.cw || ch !== this.ch) { this.cw = cw; this.ch = ch; this.renderer.setSize(cw, ch, false); }
     if (w === this.w && h === this.h && this.aa === this.aaNow) return;
     this.w = w; this.h = h; this.aaNow = this.aa; this.px = h / 900; SHARED.uPx.value = this.px;
-    this.rtC.dispose(); this.rtN.dispose();
+    // The depth texture is not freed with its target in three 0.160: without this each resize kept a full-screen depth buffer, and the map
+    // pictures' studio resizes (main.ts pumpIcons) grew a page by tens of MB a second.
+    this.rtC.depthTexture?.dispose(); this.rtC.dispose(); this.rtN.dispose();
     this.rtC = new THREE.WebGLRenderTarget(w, h, { minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter, samples: this.aa });
     this.rtC.depthTexture = new THREE.DepthTexture(w, h); this.rtC.depthTexture.type = THREE.UnsignedIntType;
     this.rtN = new THREE.WebGLRenderTarget(w, h, { minFilter: THREE.NearestFilter, magFilter: THREE.NearestFilter });

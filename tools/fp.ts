@@ -8,6 +8,8 @@
 //   mode rush: the script drives a body straight at the far base from the first second and shoots its way in (the opening check:
 //              no opening should win by minute 6 against a bot that scouts).
 //   me, foe: factions 0 Ironhold, 1 Veyl, 2 Gloam. Prints one JSON line a match.
+//   trial dials: set (UNIT/BLD fields), gnaw (Gloam bite on buildings), cg (CHOIR_GUN, the Choir Stone's bolt), VE, LEAD, HUNT;
+//   trace: n prints both sides every n x 15 s to stderr (ore, worker states, fighters by kind and order, buildings).
 //   node tools/run-ts.mjs tools/fp.ts sum rows.jsonl   win rate of the player's side by mode, and rush matches over by minute 6.
 import { readFileSync } from 'node:fs';
 import { noHud, noPipe } from '../server/shim';
@@ -20,6 +22,8 @@ import { clearMatch } from '../src/core/sides';
 import { LEAD } from '../src/command';
 import { HUNT } from '../src/game';
 import { VEYL_EARLY } from '../src/factions/veyl/conductor';
+import { G_TUNE } from '../src/factions/gloam/numbers';
+import { CHOIR_GUN } from '../src/factions/veyl/rules';
 
 const NAMES = ['Ironhold', 'Veyl', 'Gloam'];
 if (process.argv[2] === 'sum') {
@@ -39,7 +43,7 @@ function avg(a: number[]) { return a.reduce((x, y) => x + y, 0) / Math.max(1, a.
 function med(a: number[]) { const s = a.slice().sort((x, y) => x - y); return s.length ? s[s.length >> 1] : 0; }
 
 initHeadless();
-const o = JSON.parse(process.argv[2] || '{}'); if (o.LEAD) Object.assign(LEAD, o.LEAD); if (o.HUNT) Object.assign(HUNT, o.HUNT); if (o.VE) Object.assign(VEYL_EARLY, o.VE); for (const k in o.set || {}) Object.assign((UNIT as any)[k] ?? (BLD as any)[k], o.set[k]);   // e.g. {"LEAD":{"dmg":1,"guard":1}} drives with the crew bonus off
+const o = JSON.parse(process.argv[2] || '{}'); if (o.LEAD) Object.assign(LEAD, o.LEAD); if (o.HUNT) Object.assign(HUNT, o.HUNT); if (o.VE) Object.assign(VEYL_EARLY, o.VE); if (o.gnaw) G_TUNE.bite.gnaw = o.gnaw; if (o.cg) Object.assign(CHOIR_GUN, o.cg); for (const k in o.set || {}) Object.assign((UNIT as any)[k] ?? (BLD as any)[k], o.set[k]);   // e.g. {"LEAD":{"dmg":1,"guard":1}} drives with the crew bonus off
 const mode: string = o.mode || 'lead', mins = o.mins ?? (mode === 'rush' ? 8 : 40);
 for (const seed0 of o.seeds || [1]) {
   let seed = seed0; Math.random = () => { seed = (seed * 16807) % 2147483647; return (seed - 1) / 2147483646; };
@@ -98,6 +102,7 @@ for (const seed0 of o.seeds || [1]) {
     px = m.pos.x; pz = m.pos.z; };
   const t0 = Date.now();
   for (let i = 0; i < (mins * 60 + 5) * 30 && g.phase !== 'over'; i++) { step(); g.update(1 / 30); g.evq!.length = 0;
+    if (o.trace && i % (o.trace * 450) === 0) { const hh = g.hqs(H)[0], d = (u: any, b: any) => b ? Math.round(Math.hypot(u.pos.x - b.pos.x, u.pos.z - b.pos.z)) : -1; const row = (T: number, hb: any) => { const us = g.units.filter(u => u.alive && u.team === T), f = us.filter(u => isFighter(u)); const kinds: Record<string, number> = {}; for (const u of f) kinds[u.kind.slice(0, 4)] = (kinds[u.kind.slice(0, 4)] || 0) + 1; const near = f.filter(u => d(u, hb) < 45).length, ord: Record<string, number> = {}; for (const u of f) { const k = u.order ? u.order.type[0] : '-'; ord[k] = (ord[k] || 0) + 1; } const st: Record<string, number> = {}; for (const u of us) if (!isFighter(u)) { const k = (u.kind.slice(0, 2)) + ':' + u.state; st[k] = (st[k] || 0) + 1; } return `ore${Math.round(g.purse[T])} ${JSON.stringify(st)} w${us.length - f.length} f${f.length} ${JSON.stringify(kinds)} nearHhq${near} ord${JSON.stringify(ord)} b${g.buildings.filter(b => b.alive && b.team === T).length}`; }; console.error(Math.round(g.time), 'H', row(H, hh), '| O (dist to H hq)', row(O, hh)); }
     if (o.debug && i % 300 === 0) { const m = g.me, f = hq(); console.error(Math.round(g.time), m?.kind, m && f ? Math.round(Math.hypot(m.pos.x - f.pos.x, m.pos.z - f.pos.z)) : -1, Math.round(dealt), m?.alive); } }
   const win = g.winners.length ? (g.winners.includes(H) ? 0 : 1) : g.phase === 'over' ? (g.won ? 0 : 1) : -1;
   if (o.debug) console.error("end", g.phase, g.won, g.hqs(H).length, g.hqs(O).length, g.units.filter(u => u.alive && u.team === H).length);

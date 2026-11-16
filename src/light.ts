@@ -58,6 +58,7 @@ export const WEATHER: Record<string, Wx> = {
   mist: { fogK: 1.3, mist: .03, key: .72, shaft: 1.3, pull: .3, hue: [.9, .96, 1], dim: 1, blot: .3, sun: [1, 1, 1], amb: [1.06, 1.06, 1.06], cover: .1, motes: .4, wind: .3 },
 };
 const lerp = (a: number, b: number, k: number) => a + (b - a) * k;
+const DUSK_HUE: C3 = [.96, .6, .62], DUSK_AMB: C3 = [.95, 1, 1.4], T4: C3 = [0, 0, 0], T5: C3 = [0, 0, 0];
 const mix3 = (o: C3, a: C3, b: C3, k: number) => { o[0] = lerp(a[0], b[0], k); o[1] = lerp(a[1], b[1], k); o[2] = lerp(a[2], b[2], k); return o; };
 const lum = (c: C3) => c[0] * .3 + c[1] * .59 + c[2] * .11;
 const hash = (a: number, b: number) => { const v = Math.sin(a * 127.1 + b * 311.7) * 43758.5453; return v - Math.floor(v); };
@@ -99,8 +100,12 @@ export function setLight(hour: number, wx = 'clear', w = 0) {
   if (day) { const le = Math.max(.26, el); KEYDIR.set(Math.cos(az) * Math.cos(le), Math.sin(le), Math.sin(az) * Math.cos(le)).normalize(); } else KEYDIR.copy(PLANET);
   const x = WEATHER[wx]; if (!x || w <= 0) return;
   ENV.fogK *= lerp(1, x.fogK, w); ENV.mist += x.mist * w; ENV.key *= lerp(1, x.key, w); ENV.shaft *= lerp(1, x.shaft, w); ENV.cover = Math.min(1, ENV.cover + x.cover * w); ENV.motes *= lerp(1, x.motes, w); ENV.wind *= lerp(1, x.wind, w);
-  for (let j = 0; j < 3; j++) { ENV.sun[j] *= lerp(1, x.sun[j], w); ENV.amb[j] *= lerp(1, x.amb[j], w); }
-  for (const f of ['fog', 'fogS'] as const) { const c = ENV[f], l = lum(c) * 1.06 * x.dim; T3[0] = x.hue[0] * l; T3[1] = x.hue[1] * l; T3[2] = x.hue[2] * l; mix3(c, c, T3, x.pull * w); }
+  // Weather with a hue of its own (a dust storm) turns with the hour: in the low sun of dawn and dusk the air goes rose and violet and the
+  // shade goes cool, so a storm at dusk is not one flat orange from the boots to the sky.
+  const low = x.pull > .5 ? Math.max(0, 1 - Math.abs(hour - 19.2) / 1.8, 1 - Math.abs(hour - 5.8) / 1.5) : 0, hue = T4, amb = T5;
+  for (let j = 0; j < 3; j++) { hue[j] = lerp(x.hue[j], DUSK_HUE[j], low); amb[j] = lerp(x.amb[j], DUSK_AMB[j], low); }
+  for (let j = 0; j < 3; j++) { ENV.sun[j] *= lerp(1, x.sun[j], w); ENV.amb[j] *= lerp(1, amb[j], w); }
+  for (const f of ['fog', 'fogS'] as const) { const c = ENV[f], l = lum(c) * 1.06 * x.dim; T3[0] = hue[0] * l; T3[1] = hue[1] * l; T3[2] = hue[2] * l; mix3(c, c, T3, x.pull * w * (f === 'fog' ? 1 - low * .35 : 1)); }
   for (const f of ['top', 'mid'] as const) mix3(ENV[f], ENV[f], ENV.fog, x.blot * w);
   mix3(ENV.cloud, ENV.cloud, ENV.fog, x.blot * w); for (let j = 0; j < 3; j++) ENV.cloud[j] *= lerp(1, x.dim, w); ENV.stars *= 1 - x.blot * w; mix3(ENV.disc, ENV.disc, ENV.fogS, x.blot * w * .5);
 }

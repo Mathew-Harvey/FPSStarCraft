@@ -18,7 +18,8 @@ async function watcher(code) {
   await W.goto(URL); await W.waitForFunction('window.__ore');
   await W.evaluate(code => { __ore.setFree(true); __ore.game.noRender = true; __ore.unlock(); document.getElementById('mName').value = 'Wen'; document.getElementById('mCode').value = code; }, code);
   await W.click('#mWatch');
-  check(await until(W, () => __ore.game.net?.watch && __ore.game.me && __ore.game.phase === 'play'), 'Wen joins to watch');
+  // a watcher lays out the whole world before it can show it, which for a four-start map is about 20 s on a two-core machine
+  check(await until(W, () => __ore.game.net?.watch && __ore.game.me && __ore.game.phase === 'play', undefined, 60000), 'Wen joins to watch');
   return W;
 }
 try {

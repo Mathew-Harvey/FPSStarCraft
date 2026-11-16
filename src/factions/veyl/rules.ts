@@ -138,6 +138,11 @@ defineFaction(1, {
     for (const x of g.own(undefined, team)) { if (sh) { x.maxShield *= sh; x.shield *= sh; } if (air && UNIT[x.kind].air) { x.maxHp *= air; x.hp *= air; x.maxShield *= air; x.shield *= air; } }
   },
 });
+/** The Choir Stone's own song bolt at the nearest foe in reach. It was 6 every 1.15 s at 21 m, half the Ironhold Headframe's rivet gun
+ *  (9 every 0.8 s at 20 m), so a dozen Snappers out at 1:50 could gnaw the Stone down by 3:30 before the first Cantors were up (Mat: "Fix
+ *  that cheese move", 2026-11-15). At 11 every 0.8 s at 22 m the scripted Snapper all-in won 1 of 9 (was 9 of 9) and bot Veyl v Gloam went
+ *  19 to 17 over 36; 12 at 24 m stopped it too but tipped Veyl v Gloam to 25 to 11 (docs/balance.md, stream L). */
+export const CHOIR_GUN = { dmg: 11, cd: .8, r: 22 };
 defineBuildings(Object.fromEntries((['choir', 'broodpit', 'reedgate', 'kiln', 'skyloft'] as const).map(k => [k, { hatch: hatchVeyl }])));
 
 defineBuildings({
@@ -147,8 +152,8 @@ defineBuildings({
       if (tgt) { g.tracer(V3(b.pos.x, 6.9, b.pos.z), V3(tgt.pos.x, (tgt.alt || 0) + UNIT[tgt.kind].bodyY, tgt.pos.z), beamMat, .2); sfx.zap(g.vol(b.pos) * .7); g.damage(tgt, S.dmg * g.vMul(b.team), b); g.puff(TMP.copy(tgt.pos).setY((tgt.alt || 0) + 1), 2, .5, M.mag, .5); } else b.cd = .3; }
   } },
   choir: { tick(g, b, dt) {
-    b.cd -= dt; if (b.cd <= 0) { b.cd = 1.15; let tgt: Unit | null = null, bd = 21; for (const o of g.units) { if (!o.alive || !isEnemy(o.team, b.team)) continue; const d = o.pos.distanceTo(b.pos); if (d < bd) { bd = d; tgt = o; } }
-      if (tgt) { g.tracer(V3(b.pos.x, 9.6, b.pos.z), V3(tgt.pos.x, 1.1, tgt.pos.z), beamMat, .16); sfx.zap(g.vol(b.pos) * .8); g.damage(tgt, 6 * g.vMul(b.team), b); g.puff(TMP.copy(tgt.pos).setY(1), 2, .5, M.teal, .5); } }
+    b.cd -= dt; if (b.cd <= 0) { b.cd = CHOIR_GUN.cd; let tgt: Unit | null = null, bd = CHOIR_GUN.r; for (const o of g.units) { if (!o.alive || !isEnemy(o.team, b.team)) continue; const d = o.pos.distanceTo(b.pos); if (d < bd) { bd = d; tgt = o; } }
+      if (tgt) { g.tracer(V3(b.pos.x, 9.6, b.pos.z), V3(tgt.pos.x, 1.1, tgt.pos.z), beamMat, .16); sfx.zap(g.vol(b.pos) * .8); g.damage(tgt, CHOIR_GUN.dmg * g.vMul(b.team), b); g.puff(TMP.copy(tgt.pos).setY(1), 2, .5, M.teal, .5); } }
   } },
 });
 

@@ -86,7 +86,7 @@ for (const [map, home, out] of [[mapCode(0, VAST) + 500, 0, 1], [mapCode(2, VAST
 //    on the map until somebody looks again.
 {
   const g = match(mapCode(0, VAST) + 800), I = g.intel, H = SIDE.home, O = SIDE.out; g.dir.auto = false; g.dir.vs.auto = false; g.dir.docSet = g.dir.vs.docSet = true;
-  const scout = g.spawn('linesman', H, VHOME.x - ROAD.dx * 20, VHOME.z - ROAD.dz * 20); scout.pilot = 9; run(g, 2);
+  const scout = g.spawn('linesman', H, VHOME.x - ROAD.dx * 20, VHOME.z - ROAD.dz * 20); scout.pilot = 9; scout.hp = scout.maxHp = 1e5; run(g, 2);   // inside the Choir Stone's bolt (veyl/rules.ts CHOIR_GUN): kept alive, this check is about sight
   const hq = g.ownB(FACTION[O].hq, false, O)[0];
   check(I.found[0] && I.seen[0].has(hq.id) && !I.found[1], 'a body standing in sight of their base puts it on the map, and seeing is one way only');
   const far = g.addBuilding('broodpit', O, Math.round(VHOME.x + ROAD.dx * 34), Math.round(VHOME.z + ROAD.dz * 34), true); run(g, 2);

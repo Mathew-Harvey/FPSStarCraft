@@ -4,7 +4,7 @@
 import { noHud, noPipe } from '../server/shim';
 import { Game } from '../src/game';
 import { initHeadless } from '../src/gfx';
-import { BLD, DIFFS, FACTION, ROAD, SIDE, STORY, TRAINS, UNIT, fac, roadPt, setMap, setSides, setTeamGame } from '../src/data';
+import { BLD, DIFFS, FACTION, MAP, ROAD, SIDE, STORY, TRAINS, UNIT, fac, roadPt, setMap, setSides, setTeamGame } from '../src/data';
 import type { BKind, Kind } from '../src/data';
 import { fieldsOn } from '../src/factions/veyl/fields';
 import { MISSIONS, STORY_JOBS, missionSides, charterTeam, fromOldSave, Mission } from '../src/campaign';
@@ -82,5 +82,15 @@ for (const name of ['Common Ground', 'Three Voices']) { const m = job(name); con
 { const at = (n: string) => MISSIONS.findIndex(m => m.name === n);
   check(fromOldSave(13, 3) === at('Brood') && fromOldSave(17, 3) === at('Open Hands') && fromOldSave(19, 3) === at('Rooted') && fromOldSave(28, 3) === STORY_JOBS, 'a save from the 28-job list moves to the same next job');
   check(fromOldSave(8, 2) === at('Wrong Body') && fromOldSave(3, 2) === at('Night Shift'), 'a save from the 24-job list moves to the same next job'); }
+// ---- a save from the 38-job list (before the scouting and command view jobs) lands on the same next job
+{ const at = (n: string) => MISSIONS.findIndex(m => m.name === n);
+  check(fromOldSave(11, 4) === at('Ore Else') && fromOldSave(12, 4) === at('Wrong Body') && fromOldSave(19, 4) === at('Sky Choir') && fromOldSave(30, 4) === at('Deep Roots') && fromOldSave(38, 4) === STORY_JOBS, 'a save from the 38-job list moves to the same next job');
+  check(MISSIONS.slice(0, STORY_JOBS).every((m, i) => m.tag === `Job ${i + 1}`), 'the jobs are numbered in order'); }
+// ---- the three scouting jobs: a hidden map, nothing known at the start, the bot side on the build plan the job names, the pause screen's reading
+for (const [name, plan, read] of [['Lost Property', 'rush', 'rush'], ['Second Cap', 'boom', 'boom'], ['Behind the Wall', 'fort', 'fort']] as const) {
+  const { g, mine } = host(job(name)); run(g, 3); const foe = mine === SIDE.home ? SIDE.out : SIDE.home;
+  check(!!MAP.hid && !g.intel.knows(mine) && g.dir.side(foe).doc?.key === plan, `${name}: a hidden map, the enemy not found, the bot side on the ${plan} plan (${g.dir.side(foe).doc?.key})`);
+  run(g, 200); for (const b of g.buildings) if (b.alive && b.team === foe) g.intel.seen[g.intel.ix(mine)].set(b.id, { id: b.id, kind: b.kind, x: b.pos.x, z: b.pos.z, built: b.built, t: g.time });
+  check(g.intel.read(mine).key === read, `${name}: with their base on record the scouts read it as ${read} (${g.intel.read(mine).key}: ${g.buildings.filter(b => b.alive && b.team === foe).map(b => b.kind).join(', ')})`); }
 console.log(fails.length ? `\n${fails.length} failed` : '\nall passed');
 process.exit(fails.length ? 1 : 0);

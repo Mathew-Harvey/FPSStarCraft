@@ -39,7 +39,7 @@ check(a.join() === c.join(), `and the same again with a Gloam match on another m
 // and the second run is recorded and played back as a replay: the same world every second, and the same end. One mirror per faction
 // (side codes: 0 Ironhold, 4 the Veyl, 8 the Gloam). RICH=0,4 runs only those.
 for (const [out, F] of ([[0, 'Ironhold'], [4, 'Veyl'], [8, 'Gloam']] as [number, string][]).filter(([o]) => !process.env.RICH || process.env.RICH.split(',').includes(String(o)))) {
-  const rs = { ...setup, out, seed: 4242 + out + +(process.env.RICH_SEED || 0), rules: { ore: 5000, flux: 2000, speed: 1 } }, N = +(process.env.RICH_TICKS || (out ? 18000 : 9000));   // the Veyl and the Gloam take ten minutes to tech into their full kit
+  const rs = { ...setup, out, seed: 4242 + out + +(process.env.RICH_SEED || 0), rules: { ore: 5000, flux: 2000, speed: 1 } }, N = +(process.env.RICH_TICKS || (out === 4 ? 27000 : out ? 18000 : 9000));   // the Gloam take ten minutes to tech into their full kit, the Veyl fifteen (at ten, whether a second Tuner song came was a coin: seed 4243 cast only the Wall on the lead itself)
   const rich = () => {
     const m = new Match(rs, seats(), () => { /* nobody */ }, 'test', true), hs: string[] = [], air = new Set<string>(), cast = new Set<string>();
     for (let i = 0; i < N; i++) { if (m.step()) break; if (i % 30 === 29) { hs.push(worldHash(m.g)); for (const u of m.g.units) { if (!u.alive) continue; if (UNIT[u.kind].air) air.add(u.kind); for (const k in u.abCd || {}) cast.add(u.kind + '.' + k); } } }

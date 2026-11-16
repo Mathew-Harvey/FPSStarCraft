@@ -4,6 +4,7 @@
 // Options: mins (stop after, default 40), ot (minute overtime starts, 0 for never), otk (overtime's rate per minute), reach (Choir Stone reach in m), vhp and vdmg (the two numbers in Game.vBoost).
 import { noHud, noPipe } from '../server/shim';
 import { Game } from '../src/game';
+import { CHOIR_GUN } from '../src/factions/veyl/rules';
 import { initHeadless } from '../src/gfx';
 import { DIFFS, FACTION, UNIT, BLD, setMap, setSides, isFighter, OVERTIME, CHOIR_REACH, CLEAVE } from '../src/data';
 import { V_TUNE } from '../src/factions/veyl/numbers';
@@ -18,7 +19,7 @@ for (const [tab, T] of [['v', V_TUNE], ['g', G_TUNE]] as const) for (const k in 
 if (spec0.brood) Object.assign(BROOD_BASE, spec0.brood); if (spec0.garden !== undefined) BROOD_EARLY.garden = spec0.garden; if (spec0.ghold !== undefined) BROOD_EARLY.hold = spec0.ghold; if (spec0.mid) Object.assign(BROOD_MID, typeof spec0.mid === "object" ? { on: 1, ...spec0.mid } : { on: 1 });   // mid: stream D's round 4 tech timing (BROOD_MID)   // brood: {"snapper":2} sets the Gloam bot's base army weights
 if (spec0.vlate !== undefined) Object.assign(VEYL_LATE, typeof spec0.vlate === "object" ? { on: 1, ...spec0.vlate } : { on: spec0.vlate });   // vlate: stream L round 4, the slow Flux bodies hold their price (veyl/conductor.ts)
 if (spec0.vearly !== undefined) Object.assign(VEYL_EARLY, typeof spec0.vearly === "object" ? spec0.vearly : { on: spec0.vearly });   // vearly: 0 switches off the cheese-pass opening guard (veyl/conductor.ts)
- if (spec0.reach !== undefined) CHOIR_REACH.m = spec0.reach; if (spec0.cleave !== undefined) CLEAVE.n = spec0.cleave; if (spec0.cleaveK !== undefined) CLEAVE.k = spec0.cleaveK; if (spec0.bite) G_TUNE.bite.snapper = spec0.bite; if (spec0.cap) BLD.mothercap.cost = spec0.cap; if (spec0.bud) G_TUNE.budEvery = spec0.bud; if (spec0.gnaw) G_TUNE.bite.gnaw = spec0.gnaw;
+ if (spec0.reach !== undefined) CHOIR_REACH.m = spec0.reach; if (spec0.cleave !== undefined) CLEAVE.n = spec0.cleave; if (spec0.cleaveK !== undefined) CLEAVE.k = spec0.cleaveK; if (spec0.bite) G_TUNE.bite.snapper = spec0.bite; if (spec0.cap) BLD.mothercap.cost = spec0.cap; if (spec0.bud) G_TUNE.budEvery = spec0.bud; if (spec0.gnaw) G_TUNE.bite.gnaw = spec0.gnaw; if (spec0.cg) Object.assign(CHOIR_GUN, spec0.cg);   // cg: the Choir Stone's bolt, e.g. {"dmg":6,"cd":1.15,"r":21} (the old one)
 for (const k in spec0.set || {}) Object.assign((UNIT as any)[k] ?? (BLD as any)[k], spec0.set[k]);   // trial numbers: {"set":{"snapper":{"hp":58}}}   // stream L: the bot push rule, e.g. {"edge":0} for the old head count
 if (spec0.ot !== undefined) { OVERTIME.start = spec0.ot * 60; if (spec0.otk) OVERTIME.perMin = spec0.otk; }
 if (spec0.limit !== undefined) OVERTIME.limit = spec0.limit * 60;   // limit: minute of the points win (0 = off)

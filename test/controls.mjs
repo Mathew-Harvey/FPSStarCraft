@@ -55,9 +55,10 @@ try {
   // ---- the card for bodies
   r = await p.evaluate(() => { const g = __ore.game, C = g.cmd, ls = g.own('linesman'); pickAll(ls.slice(0, 3)); const ids = C.card.map(b => b.id), keys = C.card.map(b => b.key), dom = [...document.querySelectorAll('#ccard .cb')].map(e => e.textContent);
     return { ids, keys, dom, shown: !document.getElementById('ccard').hidden }; });
-  check(r.shown && ['move', 'stop', 'patrol', 'release', 'jump'].every(i => r.ids.includes(i)), `fighters picked: the card shows Move, Stop, Patrol, Back to squad and Jump in (${r.ids})`);
-  check(new Set(r.keys).size === r.keys.length && !r.keys.some(k => /Key[WASDMN]|Digit/.test(k)), `every button has its own key, and none of them pans or lifts the view (${r.keys.map(k => k.replace('Key', ''))})`);
-  check(r.dom.length === r.ids.length && /Q/.test(r.dom[0]), 'the HUD draws each button with its key on it');
+  check(r.shown && ['move', 'stop', 'attack', 'hold', 'patrol', 'release', 'jump'].every(i => r.ids.includes(i)), `fighters picked: the card shows Move, Stop, Attack, Hold, Patrol, Back to squad and Jump in (${r.ids})`);
+  check(new Set(r.keys).size === r.keys.length && !r.keys.some(k => /KeyN|Digit|Arrow|Space|Tab|Backspace|Backquote/.test(k)), `every button has its own key, and none of them pans or lifts the view (${r.keys.map(k => k.replace('Key', ''))})`);
+  check(['move:KeyM', 'stop:KeyS', 'attack:KeyA', 'hold:KeyH', 'patrol:KeyP'].every(x => r.ids.indexOf(x.split(':')[0]) >= 0 && r.keys[r.ids.indexOf(x.split(':')[0])] === x.split(':')[1]), `the orders sit on the classic keys: M move, S stop, A attack, H hold, P patrol (${r.ids.map((id, i) => id + ' ' + r.keys[i].replace('Key', '')).join(', ')})`);
+  check(r.dom.length === r.ids.length && /M/.test(r.dom[0]), 'the HUD draws each button with its key on it');
   await shot('card-fighters');
 
   // ---- Shift: orders lined up, and their waypoints
@@ -71,23 +72,23 @@ try {
   check(r.seen.length >= 3 && Math.max(...r.end) < 8 && r.left.every(n => !n), `they walk the spots in order and stop at the last one (${r.seen.join(' then ')}; started ${r.start})`);
   r = await p.evaluate(() => { const g = __ore.game, C = g.cmd, ls = g.own('linesman').slice(0, 2); pickAll(ls); const at = ls.map(u => [u.pos.x, u.pos.z]); key('KeyP'); const lit = C.aim && C.aim.k === 'patrol'; look(30, 46); aim(30, 46, 0); click(0);
     let there = false, back = false; for (let i = 0; i < 40; i++) { step(30); const d = Math.hypot(ls[0].pos.x - 30, ls[0].pos.z - 46); if (d < 7) there = true; if (there && Math.hypot(ls[0].pos.x - at[0][0], ls[0].pos.z - at[0][1]) < 8) { back = true; break; } }
-    key('KeyH'); const stopped = ls.every(u => !C.cur.has(u) && Math.hypot(u.order.x - u.pos.x, u.order.z - u.pos.z) < 3); return { lit, there, back, stopped }; });
+    key('KeyS'); const stopped = ls.every(u => !C.cur.has(u) && Math.hypot(u.order.x - u.pos.x, u.order.z - u.pos.z) < 3); return { lit, there, back, stopped }; });
   check(r.lit, 'P lights the Patrol button and waits for a spot');
   check(r.there && r.back, 'a patrol walks to the spot and back again');
-  check(r.stopped, 'H stops them where they stand');
+  check(r.stopped, 'S stops them where they stand');
 
   await p.close(); p = await open();
   // ---- a building: the card, the queue, cancelling, rally points
   r = await p.evaluate(() => { const g = __ore.game, C = g.cmd, bh = g.addBuilding('bunkhouse', 0, 16, 16, true); for (const x of [-34, -42, -50]) g.addBuilding('depot', 0, x, 24, true); g.ore = 2000; look(16, 16); aim(16, 16, 0); click(0); step(1);
-    const ids = C.card.map(b => b.id), off = Object.fromEntries(C.card.map(b => [b.id, b.off])); for (let i = 0; i < 6; i++) key('KeyE'); const q = bh.queue.length, full = C.card.find(b => b.id === 'tr:linesman').off;
-    const slots = document.querySelectorAll('#cpan .qs:not(.none)').length, before = g.ore; key('Backspace'); const after = g.ore, q2 = bh.queue.length;
+    const ids = C.card.map(b => b.id), off = Object.fromEntries(C.card.map(b => [b.id, b.off])); const lk = C.card.find(b => b.id === 'tr:linesman').key; for (let i = 0; i < 6; i++) key(lk); const q = bh.queue.length, full = C.card.find(b => b.id === 'tr:linesman').off;
+    const slots = document.querySelectorAll('#cpan .qs:not(.none)').length, before = g.ore; key('Delete'); const after = g.ore, q2 = bh.queue.length;
     const price = +(/(\d+) ore/.exec(C.card.find(b => b.id === 'tr:linesman').sub) || [0, 0])[1]; return { sel: C.selB === bh, ids, off, q, full, slots, refund: after - before, q2, price }; });
   const linePrice = r.price;
   check(r.sel && r.ids.includes('tr:linesman') && r.ids.includes('tr:breacher') && r.ids.includes('rally'), `a Bunkhouse picked: the card shows what it trains and a rally point (${r.ids})`);
   check(/Lab Bay/.test(r.off['tr:breacher']), `a unit that needs an add-on or another building is greyed and says which ("${r.off['tr:breacher']}")`);
   check(r.q === 5 && /Queue full/.test(r.full), `the queue holds five, and the sixth press says the queue is full (${r.q}, "${r.full}")`);
   check(r.slots === 5, `the five queued bodies show in the panel (${r.slots})`);
-  check(linePrice > 0 && r.refund === linePrice && r.q2 === 4, `Backspace takes the last one off and pays its ore back (${r.refund} ore)`);
+  check(linePrice > 0 && r.refund === linePrice && r.q2 === 4, `Delete takes the last one off and pays its ore back (${r.refund} ore)`);
   await shot('card-building');
   r = await p.evaluate(() => { const g = __ore.game, C = g.cmd, bh = C.selB; const q0 = bh.queue.length, before = g.ore, el = document.querySelector('#cpan .qs[data-cb="q:1"]'), rc = el.getBoundingClientRect(), R = document.getElementById('hud').getBoundingClientRect(), s = g.hud.scale;
     C.cx = (rc.left + rc.width / 2 - R.left) / s; C.cy = (rc.top + rc.height / 2 - R.top) / s; click(0); return { refund: g.ore - before, q: q0 - bh.queue.length }; });
@@ -102,8 +103,8 @@ try {
   check(r.lines, 'the rally point is drawn from the building to the spot');
   await shot('rally');
   r = await p.evaluate(() => { const g = __ore.game, C = g.cmd, hf = g.ownB('headframe')[0], seam = g.ores.filter(o => o.amount > 0).sort((a, b) => Math.hypot(a.pos.x - hf.pos.x, a.pos.z - hf.pos.z) - Math.hypot(b.pos.x - hf.pos.x, b.pos.z - hf.pos.z))[3]; look(hf.pos.x, hf.pos.z); C.sel.clear(); C.selB = hf; step(1);
-    key('KeyL'); look(seam.pos.x, seam.pos.z); aim(seam.pos.x, seam.pos.z, 0); click(0); const r0 = C.rally.get(hf); const w = g.spawn('rigger', 0, hf.pos.x, hf.pos.z + hf.hz + 1.2); step(3); return { ore: r0 && r0.ore === g.ores.indexOf(seam), pref: w.pref === seam }; });
-  check(r.ore && r.pref, 'L then a click on ore rallies a Headframe to that seam, and a new Rigger goes to work it');
+    key('KeyR'); look(seam.pos.x, seam.pos.z); aim(seam.pos.x, seam.pos.z, 0); click(0); const r0 = C.rally.get(hf); const w = g.spawn('rigger', 0, hf.pos.x, hf.pos.z + hf.hz + 1.2); step(3); return { ore: r0 && r0.ore === g.ores.indexOf(seam), pref: w.pref === seam }; });
+  check(r.ore && r.pref, 'R then a click on ore rallies a Headframe to that seam, and a new Rigger goes to work it');
   r = await p.evaluate(() => { const g = __ore.game, C = g.cmd, bh = g.ownB('bunkhouse')[0], lead = g.own('linesman')[0]; C.sel.clear(); C.selB = bh; look(lead.pos.x, lead.pos.z); aim(lead.pos.x, lead.pos.z); click(2); const r0 = C.rally.get(bh); lead.pos.x += 10; const u = g.spawn('linesman', 0, bh.pos.x, bh.pos.z + bh.hz + 1.2); step(2); return { id: r0 && r0.id === lead.id, d: Math.hypot(u.order.x - lead.pos.x, u.order.z - lead.pos.z) }; });
   check(r.id && r.d < 4, `a rally point on one of the side's bodies sends new bodies to wherever that body is now (${r.d.toFixed(1)} m off)`);
 
@@ -122,7 +123,7 @@ try {
   check(!r.fits && r.none && r.kept, 'on top of another building it does not fit: nothing is staked and the order waits for a better spot');
 
   // ---- the HUD
-  r = await p.evaluate(() => { const g = __ore.game, C = g.cmd; key('KeyH'); C.sel.clear(); C.selB = null; step(3); const t = id => document.getElementById(id).textContent; const sup = t('sup').split('/').map(Number);
+  r = await p.evaluate(() => { const g = __ore.game, C = g.cmd; key('KeyS'); C.sel.clear(); C.selB = null; step(3); const t = id => document.getElementById(id).textContent; const sup = t('sup').split('/').map(Number);
     return { flux: t('flux'), sup, cap: g.supplyCap(0), bases: t('cpan') }; });
   check(r.flux === '0', 'the HUD shows Flux beside ore (0 until the side has any)');
   check(r.sup[1] === Math.min(200, r.cap) && r.sup[1] <= 200, `supply reads used out of room, 200 at most (${r.sup.join('/')})`);
@@ -198,6 +199,50 @@ try {
   r = await p.evaluate(() => { const g = __ore.game, C = g.cmd; C.selB = null; step(1); ptap(3); const army = C.sel.size; ptap(8); step(25); return { army, on: C.on }; });
   check(r.army >= 5 && !r.on, `Y picks the whole army (${r.army}) and a tap of View drops back into the body`);
 
+  // ---- page three and a half: the classic strategy keys from above, the key sets switching with the view, and the Options screen
+  await p.close(); p = await open();
+  r = await p.evaluate(() => { const g = __ore.game, C = g.cmd, ls = g.own('linesman').slice(0, 2); pickAll(ls); key('KeyA'); const lit = C.aim?.k === 'attack'; look(20, 36); aim(20, 36, 0); click(0);
+    return { lit, k: ls.map(u => C.cur.get(u)?.k).join(), fight: ls.every(u => u.order.type === 'amove' && !u.order.pass) }; });
+  check(r.lit && r.k === 'm,m' && r.fight, `A then a click on the ground sends them there fighting on the way (${r.k})`);
+  r = await p.evaluate(() => { const g = __ore.game, C = g.cmd, ls = g.own('linesman').slice(0, 2); pickAll(ls); key('KeyM'); const lit = C.aim?.k === 'move'; look(-10, 40); aim(-10, 40, 0); click(0);
+    const pass = ls.every(u => u.order.pass), k = ls.map(u => C.cur.get(u)?.k).join(); step(400); return { lit, pass, k, after: ls.some(u => u.order.pass), d: Math.max(...ls.map(u => Math.hypot(u.pos.x + 10, u.pos.z - 40))) }; });
+  check(r.lit && r.pass && r.k === 'v,v', `M then a click moves them without stopping to fight (${r.k})`);
+  check(!r.after && r.d < 9, `once there they fight again as usual (${r.d.toFixed(1)} m off)`);
+  r = await p.evaluate(() => { const g = __ore.game, C = g.cmd, ls = g.own('linesman').slice(2, 4); pickAll(ls); key('KeyH'); const at = ls.map(u => [u.pos.x, u.pos.z]), hold = ls.every(u => u.order.hold && u.order.mine);
+    g.truce = false; const foe = g.spawn('lancer', 1, ls[0].pos.x + 14, ls[0].pos.z); foe.order = { type: 'guard', x: foe.pos.x, z: foe.pos.z }; step(90); g.truce = true; foe.alive && (foe.hp = 0);
+    return { hold, moved: Math.max(...ls.map((u, i) => Math.hypot(u.pos.x - at[i][0], u.pos.z - at[i][1]))) }; });
+  check(r.hold && r.moved < .6, `H holds them where they stand, even with a foe close by (moved ${r.moved.toFixed(2)} m)`);
+  r = await p.evaluate(() => { const g = __ore.game, C = g.cmd, ws = g.own('rigger').filter(u => u !== g.me).slice(0, 2); for (const w of ws) { w.node = null; w.pref = null; w.site = null; w.state = 'hold'; } C.sel.clear(); step(1); key('F1', ['ControlLeft']);
+    return { n: C.sel.size, all: [...C.sel].every(u => u.kind === 'rigger') }; });
+  check(r.n >= 2 && r.all, `Ctrl and F1 picks every idle worker (${r.n})`);
+  r = await p.evaluate(() => { const g = __ore.game, C = g.cmd; look(10, 10); key('F5', ['ControlLeft']); look(70, 70); key('F5'); return Math.hypot(C.focus.x - 10, C.focus.z - 10); });
+  check(r < 1, `Ctrl and F5 keeps a camera spot, F5 goes back to it (${r.toFixed(2)} m off)`);
+  r = await p.evaluate(() => { const g = __ore.game, C = g.cmd, hf = g.ownB('headframe')[0]; C.sel.clear(); C.selB = null; look(70, 70); key('Backspace'); return { sel: C.selB === hf, d: Math.hypot(C.focus.x - hf.pos.x, C.focus.z - hf.pos.z) }; });
+  check(r.sel && r.d < 1, `Backspace picks the base and looks at it (${r.d.toFixed(1)} m off)`);
+  r = await p.evaluate(() => { const g = __ore.game, C = g.cmd, u = g.own('linesman')[5]; step(10); u.hp -= 5; step(10); look(-60, 60); key('Space'); return Math.hypot(C.focus.x - u.pos.x, C.focus.z - u.pos.z); });
+  check(r < 2, `Space goes to where one of ours was last hurt (${r.toFixed(1)} m off)`);
+  r = await p.evaluate(() => { const g = __ore.game, C = g.cmd, K = __ore.keys, ls = g.own('linesman').slice(0, 2); K.KB.layout = 'grid'; pickAll(ls); step(1); const grid = C.card.map(b => b.key); K.KB.layout = 'name';
+    K.rebind('cmd', 'attack', 'KeyZ'); step(1); const z = C.card.find(b => b.id === 'attack').key, moved = Object.keys(K.KB.cmd).sort().join(); K.rebind('cmd', 'attack', 'KeyA'); step(1); return { grid, z, moved, back: C.card.find(b => b.id === 'attack').key, left: Object.keys(K.KB.cmd).length }; });
+  check(r.grid[0] === 'KeyQ' && r.grid[1] === 'KeyW' && r.grid[5] === 'KeyA', `the grid layout gives the card Q W E R T, A S D F G, Z X C V B by place (${r.grid.slice(0, 6).map(k => k.replace('Key', ''))})`);
+  check(r.z === 'KeyZ' && r.back === 'KeyA' && r.left === 0, `a command view key moved in Options moves on the card, and moving it back leaves nothing changed (${r.moved})`);
+  // A real key press: up here A is a key of its own (not first person's strafe), and a first-person key moved elsewhere only counts in first person.
+  await p.evaluate(() => { __ore.keys.rebind('fp', 'KeyW', 'KeyI'); });
+  await p.keyboard.down('KeyI'); await p.keyboard.down('KeyA');
+  r = await p.evaluate(() => { const g = __ore.game; return { up: g.cmd.on, i: g.keys.has('KeyI'), w: g.keys.has('KeyW'), a: g.keys.has('KeyA') }; });
+  await p.keyboard.up('KeyI'); await p.keyboard.up('KeyA');
+  await p.evaluate(() => { const g = __ore.game; g.cmd.sel.clear(); key('KeyN'); step(25); });
+  await p.keyboard.down('KeyI');
+  const r2 = await p.evaluate(() => { const g = __ore.game; return { up: g.cmd.on, w: g.keys.has('KeyW'), i: g.keys.has('KeyI') }; });
+  await p.keyboard.up('KeyI'); await p.evaluate(() => { __ore.keys.rebind('fp', 'KeyW', 'KeyW'); });
+  check(r.up && r.i && !r.w && r.a && !r2.up && r2.w && !r2.i, `the keys in use switch with the view: from above I is I and A is A, in first person I walks forward (${JSON.stringify([r, r2])})`);
+  r = await p.evaluate(() => { document.querySelectorAll('#keySet button')[1].click(); const heads = [...document.querySelectorAll('#keys h4')].map(e => e.textContent), att = [...document.querySelectorAll('#keys button')].find(b => /^Attack/.test(b.textContent));
+    att.click(); return { heads, txt: att.textContent, wait: document.querySelector('#keys button.on')?.textContent }; });
+  await p.keyboard.press('KeyK');
+  const r3 = await p.evaluate(() => { const K = __ore.keys, saved = JSON.parse(localStorage.getItem('ore-else') || '{}'); const out = { now: K.ck('attack'), saved: saved.kc && saved.kc.attack, txt: [...document.querySelectorAll('#keys button')].find(b => /^Attack/.test(b.textContent)).textContent };
+    document.getElementById('keysReset').click(); return { ...out, after: K.ck('attack') }; });
+  check(r.heads.join() === 'Orders,Picking and camera,Control groups' && /A$/.test(r.txt), `Options lists the command view keys under their headings (${r.heads.join(', ')}; "${r.txt}")`);
+  check(/Press a key/.test(r.wait) && r3.now === 'KeyK' && r3.saved === 'KeyK' && /K$/.test(r3.txt) && r3.after === 'KeyA', `clicking one and pressing a key rebinds it and saves it; "Put these keys back" puts it back ("${r3.txt}")`);
+
   // ---- page four: abilities, building commands and status on the card and HUD (test-only content where the factions have none yet)
   await p.close(); p = await open();
   await p.evaluate(() => { const R = __ore.reg, g = __ore.game;
@@ -223,6 +268,9 @@ try {
     const sub0 = C.card.find(x => x.id === 'ab:linesman:brace').sub, sub1 = rc(), off = ls.every(u => u.autoOff?.brace), sub2 = rc(), on = ls.every(u => !u.autoOff?.brace);
     return { sub0, sub1, sub2, off, on, moved: ls.some(u => u.order?.type === 'move') }; });
   check(r.off && r.on && /by itself/.test(r.sub0) && r.sub1 !== r.sub0 && r.sub2 === r.sub0, `a right click on an ability button switches casting by itself off for the picked bodies and back on ("${r.sub0}" / "${r.sub1}")`);
+  r = await p.evaluate(() => { const g = __ore.game, C = g.cmd, mix = [...g.own('linesman').filter(u => !u.pilot).slice(0, 2), ...g.own('longshot').slice(-2)]; C.selB = null; pickAll(mix); const ab = () => C.card.filter(b => b.id.startsWith('ab:')).map(b => b.id.split(':')[1]).filter((k, i, l) => l.indexOf(k) === i);
+    const all = ab(); key('Tab'); step(1); const one = ab(); key('Tab'); step(1); const two = ab(); return { all, one, two }; });
+  check(r.all.length === 2 && r.one.length === 1 && r.two.length === 1 && r.one[0] !== r.two[0], `Tab steps through the kinds picked, and the card shows that kind's abilities (${r.all} then ${r.one} then ${r.two})`);
   // Get in and Unload all, with Ironhold's real carrier, the Hopper.
   r = await p.evaluate(() => { const g = __ore.game, C = g.cmd, hf = g.ownB('headframe')[0], h = g.spawn('hopper', 0, hf.pos.x + 12, hf.pos.z + 4), ls = g.own('linesman').filter(u => !u.pilot && !u.inside).slice(0, 2);
     for (const [i, u] of ls.entries()) u.pos.set(h.pos.x - 5, 0, h.pos.z + i * 1.5); g.dir.auto = false; pickAll(ls); const gb = C.card.find(x => x.id === 'board');

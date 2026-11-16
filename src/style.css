@@ -281,6 +281,7 @@ body.cb{--grn:#4da3ff;--mag:#ff9d1a}
 .binds button b{background:var(--paper);color:var(--ink);padding:1px 8px;min-width:30px;text-align:center}
 .binds button.on{border-color:var(--yel)}.binds button.on b{background:var(--yel)}
 .binds button:focus-visible{outline:4px solid var(--teal);outline-offset:2px}
+.binds h4{grid-column:1/-1;margin:10px 0 0;font-family:var(--cond);font-weight:700;font-size:14px;letter-spacing:.12em;text-transform:uppercase;color:var(--yel)}
 #pOpts .lbl{font-family:var(--cond);font-weight:700;letter-spacing:.1em;text-transform:uppercase;align-self:center}
 #pOpts{display:flex;flex-direction:column;gap:14px}#pOpts[hidden]{display:none}
 #fps{position:fixed;left:8px;bottom:6px;z-index:50;font:700 13px var(--cond);letter-spacing:.08em;color:var(--paper);background:rgba(14,13,20,.8);padding:2px 8px;pointer-events:none}

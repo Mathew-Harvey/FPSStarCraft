@@ -2,6 +2,7 @@
 // the game already reads from the keyboard and mouse, so the game code does not know the difference.
 import type { Game } from './game';
 import { isWorker, fac } from './data';
+import { ck, upKey } from './keys';
 
 export type TouchPref = 'auto' | 'on' | 'off';
 
@@ -73,7 +74,7 @@ export class TouchPad {
     if (!down) return;
     switch (b.key) {
       case 'pause': this.act.pause(); return;
-      case 'up': g.pressed.add('KeyN'); this.cmdMode = ''; return;
+      case 'up': g.pressed.add(g.cmd.on ? ck('fp') : 'KeyN'); this.cmdMode = ''; return;
       case 'cbox': this.cmdMode = this.cmdMode === 'box' ? '' : 'box'; return;
       case 'corder': this.cmdMode = this.cmdMode === 'order' ? '' : 'order'; return;
       case 'say': this.act.chat(); return;
@@ -81,7 +82,7 @@ export class TouchPad {
       case 'jump': if (g.tab) { g.keys.delete('Tab'); this.held.delete('Tab'); } else this.hold('Tab', true); return;
       case 'wheel-': g.wheel = -1; return;
       case 'wheel+': g.wheel = 1; return;
-      default: g.pressed.add(b.key);
+      default: { const k = g.cmd.on ? upKey(b.key) : b.key; if (k) g.pressed.add(k); }
     }
   }
 

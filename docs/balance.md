@@ -215,5 +215,23 @@ then stays near nothing for minutes. Note that `lost.w` also counts every Grazer
 Tried and dropped: a home gun on the Mother Cap like the Headframe's (9 every 0.8 s at 20 m). It fired in half the Gloam matches and moved
 nothing: Ironhold v Gloam 16 to 20 and Veyl v Gloam 19 to 17 again over the same 72 seeds (rows m_cap0 and m_cap9).
 
+**Round 4 fix (2026-11-17, Mat: "Keep working through what is open"): the Gloam expand.** The Gloam bot took a second Mother Cap in 10 of
+72 matches, so it never had the money to tech past Snappers. `BROOD_EXP` (gloam/brain.ts) puts the second and third Caps ahead of the tech
+steps from 4 minutes, and a Mother Cap costs 250 ore (was 400). The richer Gloam's scripted all-in then won 7 of 9 on the Veyl again, so
+`VEYL_EARLY` is on with its Cantor-first guard off: the Veyl hold their Tenders when swamped (all-in 2 of 9).
+
+| 72 or more matches, Gloam pairings | Ironhold v Gloam | Veyl v Gloam | Snapper share of Gloam army spend |
+|---|---|---|---|
+| before | 16-20 | 19-17 | 60% / 75% |
+| early Caps at 400 ore | 27-8 | 32-4 | 31% / 45% |
+| early Caps at 250 ore (143) | 41-31 | 35-36 | 31% / 29% |
+| the full Veyl guard as well | | 6-30 | |
+| shipped: Tender hold only | 19-17 | 20-16 | 32% / 25% |
+
+Final table, 162 matches (3 seeds, maps 0,1,2,20,21,22, every pairing and mirror; rows L/rush/m_final): Ironhold v Veyl 18 to 18, Ironhold
+v Gloam 19 to 17, Veyl v Gloam 20 to 16; mirrors yard 9 to 9, 6 to 12, 7 to 11; nothing undecided, 3 won on points, middle match 21.8 min.
+Comebacks 65 of 162 (was 30 of 108) and the lead changed in half the matches (was a third). Quillbacks and Blisters are about 20% each of Gloam
+army spend. Still over the line: Cantor 40% of Veyl army spend against the Gloam, 35% against Ironhold.
+
 Also seen: a driven body with perfect aim is far stronger than its bot, which real players are not; the Gloam bot's Snappers come out two at
 a time and run at a driven Linesman pair after pair (Ironhold v Gloam driven rush: 2 of 6 over by minute 5 on map 0).

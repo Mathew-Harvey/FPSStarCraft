@@ -8,7 +8,7 @@
 //   mode rush: the script drives a body straight at the far base from the first second and shoots its way in (the opening check:
 //              no opening should win by minute 6 against a bot that scouts).
 //   me, foe: factions 0 Ironhold, 1 Veyl, 2 Gloam. Prints one JSON line a match.
-//   trial dials: set (UNIT/BLD fields), gnaw (Gloam bite on buildings), cg (CHOIR_GUN, the Choir Stone's bolt), VE, LEAD, HUNT;
+//   trial dials: set (UNIT/BLD fields), gnaw (Gloam bite on buildings), cg (CHOIR_GUN, the Choir Stone's bolt), gexp (BROOD_EXP, the Gloam's early Caps), VE, LEAD, HUNT;
 //   trace: n prints both sides every n x 15 s to stderr (ore, worker states, fighters by kind and order, buildings).
 //   node tools/run-ts.mjs tools/fp.ts sum rows.jsonl   win rate of the player's side by mode, and rush matches over by minute 6.
 import { readFileSync } from 'node:fs';
@@ -24,6 +24,7 @@ import { HUNT } from '../src/game';
 import { VEYL_EARLY } from '../src/factions/veyl/conductor';
 import { G_TUNE } from '../src/factions/gloam/numbers';
 import { CHOIR_GUN } from '../src/factions/veyl/rules';
+import { BROOD_EXP } from '../src/factions/gloam/brain';
 
 const NAMES = ['Ironhold', 'Veyl', 'Gloam'];
 if (process.argv[2] === 'sum') {
@@ -43,7 +44,7 @@ function avg(a: number[]) { return a.reduce((x, y) => x + y, 0) / Math.max(1, a.
 function med(a: number[]) { const s = a.slice().sort((x, y) => x - y); return s.length ? s[s.length >> 1] : 0; }
 
 initHeadless();
-const o = JSON.parse(process.argv[2] || '{}'); if (o.LEAD) Object.assign(LEAD, o.LEAD); if (o.HUNT) Object.assign(HUNT, o.HUNT); if (o.VE) Object.assign(VEYL_EARLY, o.VE); if (o.gnaw) G_TUNE.bite.gnaw = o.gnaw; if (o.cg) Object.assign(CHOIR_GUN, o.cg); for (const k in o.set || {}) Object.assign((UNIT as any)[k] ?? (BLD as any)[k], o.set[k]);   // e.g. {"LEAD":{"dmg":1,"guard":1}} drives with the crew bonus off
+const o = JSON.parse(process.argv[2] || '{}'); if (o.LEAD) Object.assign(LEAD, o.LEAD); if (o.HUNT) Object.assign(HUNT, o.HUNT); if (o.VE) Object.assign(VEYL_EARLY, o.VE); if (o.gnaw) G_TUNE.bite.gnaw = o.gnaw; if (o.cg) Object.assign(CHOIR_GUN, o.cg); if (o.gexp) Object.assign(BROOD_EXP, o.gexp); for (const k in o.set || {}) Object.assign((UNIT as any)[k] ?? (BLD as any)[k], o.set[k]);   // e.g. {"LEAD":{"dmg":1,"guard":1}} drives with the crew bonus off
 const mode: string = o.mode || 'lead', mins = o.mins ?? (mode === 'rush' ? 8 : 40);
 for (const seed0 of o.seeds || [1]) {
   let seed = seed0; Math.random = () => { seed = (seed * 16807) % 2147483647; return (seed - 1) / 2147483646; };

@@ -6,11 +6,11 @@ import { noHud, noPipe } from '../server/shim';
 import { Game } from '../src/game';
 import { CHOIR_GUN } from '../src/factions/veyl/rules';
 import { initHeadless } from '../src/gfx';
-import { DIFFS, FACTION, UNIT, BLD, setMap, setSides, isFighter, OVERTIME, CHOIR_REACH, CLEAVE } from '../src/data';
+import { DIFFS, FACTION, UNIT, BLD, setMap, setSides, isFighter, foeOf, OVERTIME, CHOIR_REACH, CLEAVE } from '../src/data';
 import { V_TUNE } from '../src/factions/veyl/numbers';
 import { G_TUNE } from '../src/factions/gloam/numbers';
 import { BROOD_BASE } from '../src/factions/gloam/brood-mix';
-import { BROOD_EARLY, BROOD_MID } from '../src/factions/gloam/brain';
+import { BROOD_EARLY, BROOD_MID, BROOD_EXP } from '../src/factions/gloam/brain';
 import { VEYL_LATE, VEYL_EARLY } from '../src/factions/veyl/conductor';
 import { TERRAIN } from '../src/terrain';
 import { costOf } from '../src/core/econ';
@@ -19,7 +19,7 @@ for (const [tab, T] of [['v', V_TUNE], ['g', G_TUNE]] as const) for (const k in 
 if (spec0.brood) Object.assign(BROOD_BASE, spec0.brood); if (spec0.garden !== undefined) BROOD_EARLY.garden = spec0.garden; if (spec0.ghold !== undefined) BROOD_EARLY.hold = spec0.ghold; if (spec0.mid) Object.assign(BROOD_MID, typeof spec0.mid === "object" ? { on: 1, ...spec0.mid } : { on: 1 });   // mid: stream D's round 4 tech timing (BROOD_MID)   // brood: {"snapper":2} sets the Gloam bot's base army weights
 if (spec0.vlate !== undefined) Object.assign(VEYL_LATE, typeof spec0.vlate === "object" ? { on: 1, ...spec0.vlate } : { on: spec0.vlate });   // vlate: stream L round 4, the slow Flux bodies hold their price (veyl/conductor.ts)
 if (spec0.vearly !== undefined) Object.assign(VEYL_EARLY, typeof spec0.vearly === "object" ? spec0.vearly : { on: spec0.vearly });   // vearly: 0 switches off the cheese-pass opening guard (veyl/conductor.ts)
- if (spec0.reach !== undefined) CHOIR_REACH.m = spec0.reach; if (spec0.cleave !== undefined) CLEAVE.n = spec0.cleave; if (spec0.cleaveK !== undefined) CLEAVE.k = spec0.cleaveK; if (spec0.bite) G_TUNE.bite.snapper = spec0.bite; if (spec0.cap) BLD.mothercap.cost = spec0.cap; if (spec0.bud) G_TUNE.budEvery = spec0.bud; if (spec0.gnaw) G_TUNE.bite.gnaw = spec0.gnaw; if (spec0.cg) Object.assign(CHOIR_GUN, spec0.cg);   // cg: the Choir Stone's bolt, e.g. {"dmg":6,"cd":1.15,"r":21} (the old one)
+ if (spec0.reach !== undefined) CHOIR_REACH.m = spec0.reach; if (spec0.cleave !== undefined) CLEAVE.n = spec0.cleave; if (spec0.cleaveK !== undefined) CLEAVE.k = spec0.cleaveK; if (spec0.bite) G_TUNE.bite.snapper = spec0.bite; if (spec0.cap) BLD.mothercap.cost = spec0.cap; if (spec0.bud) G_TUNE.budEvery = spec0.bud; if (spec0.gnaw) G_TUNE.bite.gnaw = spec0.gnaw; if (spec0.cg) Object.assign(CHOIR_GUN, spec0.cg); if (spec0.gexp) Object.assign(BROOD_EXP, { on: 1, ...spec0.gexp });   // gexp: the Gloam's second Cap ahead of tech (gloam/brain.ts BROOD_EXP)   // cg: the Choir Stone's bolt, e.g. {"dmg":6,"cd":1.15,"r":21} (the old one)
 for (const k in spec0.set || {}) Object.assign((UNIT as any)[k] ?? (BLD as any)[k], spec0.set[k]);   // trial numbers: {"set":{"snapper":{"hp":58}}}   // stream L: the bot push rule, e.g. {"edge":0} for the old head count
 if (spec0.ot !== undefined) { OVERTIME.start = spec0.ot * 60; if (spec0.otk) OVERTIME.perMin = spec0.otk; }
 if (spec0.limit !== undefined) OVERTIME.limit = spec0.limit * 60;   // limit: minute of the points win (0 = off)
@@ -59,6 +59,8 @@ while (g.phase !== 'over' && g.time < mins * 60 + 5) {   // + 5 s: a points win 
     for (const u of g.units) if (u.alive && !alive.has(u)) alive.set(u, [u.team, true, u.kind]);
     for (const b of g.buildings) if (b.alive && !alive.has(b)) alive.set(b, [b.team, false, b.kind]);
     for (const [x, [t, isU, k]] of alive) if (!x.alive) { alive.delete(x); if (t !== H && t !== O) continue;
+      if (isU && spec0.wlog && !isFighter(x)) { const foe = g.units.filter(u => u.alive && u.team !== t && u.team < 900 && isFighter(u)).map(u => [Math.hypot(u.pos.x - x.pos.x, u.pos.z - x.pos.z), u] as [number, any]).sort((a, b) => a[0] - b[0])[0], hq = Math.min(...g.hqs(t).map(b => Math.hypot(b.pos.x - x.pos.x, b.pos.z - x.pos.z))), mine = g.army(t).map(u => Math.hypot(u.pos.x - x.pos.x, u.pos.z - x.pos.z)).sort((a, b) => a - b);
+        console.error(JSON.stringify({ wd: Math.round(g.time), t, k, foe: foe ? [foe[1].kind, foe[1].order?.type, Math.round(foe[0])] : null, hq: Math.round(hq), own: [mine.filter(d => d < 30).length, Math.round(mine[0] ?? -1)], army: [mine.length, Math.round(g.army(t).map(u => Math.min(...g.hqs(t).map(b => Math.hypot(b.pos.x - u.pos.x, b.pos.z - u.pos.z)))).sort((a, b) => a - b)[mine.length >> 1] ?? -1)], foes: g.army(foeOf(t)).filter(u => Math.min(...g.hqs(t).map(b => Math.hypot(b.pos.x - u.pos.x, b.pos.z - u.pos.z))) < 50).length, plan: (t === H ? g.dir : g.dir.vs).plan?.phase || '-' })); }   // wlog: every worker death, who was near and where (stream L round 4)
       if (isU) { const w = !isFighter(x); if (w) lost[t].w++; else lost[t].u++; lost[t].ore += UNIT[k].cost || 0; if (firstBlood < 0 && !w) firstBlood = g.time; deathT.push(g.time); }
       else { if (x.built === false && x.hp > 0) continue; lost[t].b++; lost[t].ore += BLD[k].cost || 0; if (firstB < 0) firstB = g.time; bT.push(g.time); } }
   }

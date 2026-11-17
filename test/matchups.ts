@@ -118,7 +118,7 @@ for (const home of [0, 1, 2]) for (const outF of [0, 1, 2]) {
   // Each brain builds up and trains an army at this end, measured with the other side's brain switched off (its workers stand, nobody
   // comes): whether a side is pressed by minute ten moves with every balance round, and this check is about the brain, not the balance.
   for (const [t, i] of [[H, 0], [O, 1]]) {
-    const w = match(outF, 0, home), S = (x: number) => (x === SIDE.home ? w.dir : w.dir.vs) as any, other = i ? SIDE.home : SIDE.out; S(other).auto = false;
+    const w = match(outF, 0, home), S = (x: number) => (x === SIDE.home ? w.dir : w.dir.vs) as any, other = i ? SIDE.home : SIDE.out; S(other).auto = false; w.human[other] = true;   /* the director turns a side nobody plays back on every tick (director.ts), so the other side counts as played */
     const most = [0, 0]; let n = 0; run(w, 480, () => { if (n++ % 30 === 0) { most[0] = Math.max(most[0], w.ownB(undefined, true, t).length); most[1] = Math.max(most[1], w.army(t).length); } });
     const mined = Math.floor(w.stats[i ? 'minedV' : 'mined']);
     check(most[0] >= 4 && most[1] >= 4 && mined > 600, `${tag}: unpressed, the ${NAME(t)} bots dig, build and train in eight minutes (${most[0]} buildings, ${most[1]} fighters, ${mined} ore)`);

@@ -203,5 +203,35 @@ Tried first and dropped, since the Gloam bot itself lives off the cheap Snapper 
 but the Veyl then lost 19 to 23 of 24, and Cantor or Lancer bonus damage on living bodies held the Veyl near 7 of 24). The Snapper share and
 the Gloam mid-game stay round 4 work.
 
+**After the fix (2026-11-17, main 14743f4, 108 matches as above):** Ironhold v Veyl 17 to 19, Ironhold v Gloam 16 to 20, Veyl v Gloam 19 to 17.
+Every pairing is inside 16 to 20 of 36. What is still short is variety, not fairness: Snapper 60% (against Ironhold) and 75% (against the
+Veyl) of Gloam army spend, Cantor 45 to 52% of Veyl army spend against the Gloam (the gate says no kind over 35%).
+
+Where Gloam workers die (`tools/review.ts` option `wlog`: every worker death with the nearest foe, its order, and both armies): against
+Ironhold the Gloam's first Snapper push dies at the Headframe, Ironhold's counter-push of about seven walks into the Gloam yard at 3:50 with
+two or three Gloam fighters at home, and the Grazers are eaten with no Gloam fighter in reach (19 to 31 of 30 to 36 raid deaths); the swarm
+then stays near nothing for minutes. Note that `lost.w` also counts every Grazer that roots into a building.
+
+Tried and dropped: a home gun on the Mother Cap like the Headframe's (9 every 0.8 s at 20 m). It fired in half the Gloam matches and moved
+nothing: Ironhold v Gloam 16 to 20 and Veyl v Gloam 19 to 17 again over the same 72 seeds (rows m_cap0 and m_cap9).
+
+**Round 4 fix (2026-11-17, Mat: "Keep working through what is open"): the Gloam expand.** The Gloam bot took a second Mother Cap in 10 of
+72 matches, so it never had the money to tech past Snappers. `BROOD_EXP` (gloam/brain.ts) puts the second and third Caps ahead of the tech
+steps from 4 minutes, and a Mother Cap costs 250 ore (was 400). The richer Gloam's scripted all-in then won 7 of 9 on the Veyl again, so
+`VEYL_EARLY` is on with its Cantor-first guard off: the Veyl hold their Tenders when swamped (all-in 2 of 9).
+
+| 72 or more matches, Gloam pairings | Ironhold v Gloam | Veyl v Gloam | Snapper share of Gloam army spend |
+|---|---|---|---|
+| before | 16-20 | 19-17 | 60% / 75% |
+| early Caps at 400 ore | 27-8 | 32-4 | 31% / 45% |
+| early Caps at 250 ore (143) | 41-31 | 35-36 | 31% / 29% |
+| the full Veyl guard as well | | 6-30 | |
+| shipped: Tender hold only | 19-17 | 20-16 | 32% / 25% |
+
+Final table, 162 matches (3 seeds, maps 0,1,2,20,21,22, every pairing and mirror; rows L/rush/m_final): Ironhold v Veyl 18 to 18, Ironhold
+v Gloam 19 to 17, Veyl v Gloam 20 to 16; mirrors yard 9 to 9, 6 to 12, 7 to 11; nothing undecided, 3 won on points, middle match 21.8 min.
+Comebacks 65 of 162 (was 30 of 108) and the lead changed in half the matches (was a third). Quillbacks and Blisters are about 20% each of Gloam
+army spend. Still over the line: Cantor 40% of Veyl army spend against the Gloam, 35% against Ironhold.
+
 Also seen: a driven body with perfect aim is far stronger than its bot, which real players are not; the Gloam bot's Snappers come out two at
 a time and run at a driven Linesman pair after pair (Ironhold v Gloam driven rush: 2 of 6 over by minute 5 on map 0).

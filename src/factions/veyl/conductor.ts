@@ -16,8 +16,11 @@ import { fieldsOf, inField, quicken, energyOf, unfolded } from './fields';
 
 /** Stream L round 4: the slow Flux bodies (Mute, Choirmaster, Warden) hold their price back, see the army mix below. Off: 0. */
 export const VEYL_LATE = { on: 1, army: 6, gap: .03 };
-/** Stream L cheese pass: an early swarm of small bodies counts by bodies too, and holds the Tender line (see the swarm rule below). Off: 0. */
-export const VEYL_EARLY = { on: 0, bodies: 2, near: 70, tenders: 8, guardT: 150, guard: 0, guardG: 2 };
+/** Stream L cheese pass: an early swarm of small bodies counts by bodies too, and holds the Tender line (see the swarm rule below). Off: 0.
+ *  On since round 4 (2026-11-17), with the Cantor-first guard off (guardG 0): once the Gloam bot expanded early, a scripted Gloam all-in
+ *  won 7 of 9 on the Veyl; with this 2 of 9, and bot Veyl v Gloam 20 to 16, Ironhold v Veyl 18 to 18 (72). The guard too stopped the
+ *  all-in (0 of 9) but lost Veyl v Gloam 6 to 30. */
+export const VEYL_EARLY = { on: 1, bodies: 2, near: 70, tenders: 8, guardT: 150, guard: 0, guardG: 0 };
 
 /** The Veyl's own build plans on top of the shared doctrines: which tech path they lean on. */
 export type VPlan = 'ground' | 'air' | 'tech';

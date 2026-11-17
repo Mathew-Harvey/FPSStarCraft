@@ -25,7 +25,7 @@ function play(name: string, plan: TeamPlan, seed: number, MAPC: number) {
     check(g.ores.filter(n => Math.hypot(n.pos.x - hx, n.pos.z - hz) < 32).length >= 6, `${name}: ${g.sideName(t)} has seams at home`);
   }
   let friendly = 0, foul = ''; const dmg = g.damage.bind(g);
-  (g as any).damage = (t: any, amt: number, from: any, ...rest: any[]) => { if (from && from.team !== t.team && !isEnemy(from.team, t.team)) { friendly++; foul = `${from.kind}(${from.team}) hit ${t.kind}(${t.team})`; } return dmg(t, amt, from, ...rest); };
+  (g as any).damage = (t: any, amt: number, from: any, ...rest: any[]) => { if (from && from.team !== t.team && !isEnemy(from.team, t.team) && from.kind !== 'knell' /* a Knell's orb bursts on everything near it, its own side too, by design (veyl/units.ts) */) { friendly++; foul = `${from.kind}(${from.team}) hit ${t.kind}(${t.team})`; } return dmg(t, amt, from, ...rest); };
   const dt = 1 / 30; let tick = 0; const built: Record<number, number> = {}, marched: Record<number, number> = {}, wrongMarch: string[] = [];
   while (g.phase !== 'over' && g.time < mins * 60) {
     g.update(dt); g.evq!.length = 0; tick++;

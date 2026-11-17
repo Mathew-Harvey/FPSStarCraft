@@ -61,7 +61,8 @@ export const G_UNIT: Record<GKind, UnitDef> = {
  *  `eldercap` and `ancientcap` are the Mother Cap's ripened tiers: the building stays a Mother Cap (so it is still the home building everywhere)
  *  and these rows give their names, prices (the difference) and ripening times. */
 export const G_BLD: Record<GBKind, BldDef> = {
-  mothercap: { name: 'Mother Cap', hp: 2200, hx: 5.6, hz: 4.6, h: 9.8, cost: 400, time: 55, blurb: 'A new base: grows Buds and Keepers, banks ore', tags: L, armour: 1 },
+  // 250, was 400 (stream L round 4): with the Bloom to seed and a Grazer to root, a 400-ore Cap meant the bot never took a second base.
+  mothercap: { name: 'Mother Cap', hp: 2200, hx: 5.6, hz: 4.6, h: 9.8, cost: 250, time: 55, blurb: 'A new base: grows Buds and Keepers, banks ore', tags: L, armour: 1 },
   eldercap: { name: 'Elder Cap', hp: 2500, hx: 5.6, hz: 4.6, h: 12, cost: 150, flux: 100, time: 50, blurb: 'The Mother Cap ripened: opens tier 2', tags: L, armour: 1 },
   ancientcap: { name: 'Ancient Cap', hp: 2800, hx: 6, hz: 5, h: 15, cost: 200, flux: 150, time: 70, blurb: 'The Elder Cap ripened: opens tier 3', tags: L, armour: 1 },
   sporesac: { name: 'Spore Sac', hp: 600, hx: 2.2, hz: 2.0, h: 4.6, cost: 75, time: 12, blurb: 'Eight more beds; uproots into a Drifter', tags: L },

@@ -74,7 +74,8 @@ export function overgrowth(D: Director, dt: number, V: Side = D.vs) {
   else if (wantSac) put('sporesac', 'We are crowded. Rooting a Spore Sac.');
   else if (growing) saving = false;
   // BROOD_EXP (stream L round 4, off by default): the second Cap comes ahead of the tech steps once it is due, with the Buds holding its price.
-  else if (BROOD_EXP.on && warrenUp && exp.site && caps.length < Math.min(BROOD_EXP.caps, wantCaps + (g.time > BROOD_EXP.t ? 1 : 0)) && g.time > BROOD_EXP.t && army >= BROOD_EXP.army) {
+  // A swarm that digs in (the fort doctrine) still takes its towers first and expands at its own time, so a scout can read it.
+  else if (BROOD_EXP.on && warrenUp && exp.site && caps.length < Math.min(BROOD_EXP.caps, wantCaps + 1) && g.time > (DOC.key === 'fort' ? Math.max(BROOD_EXP.t, DOC.expT) : BROOD_EXP.t) && army >= BROOD_EXP.army) {
     hold = BLD.mothercap.cost; const at = capSpot(exp.site);
     if (cash() >= BLD.mothercap.cost && canRoot && at && g.place('mothercap', at[0], at[1], false, T, null)) D.say('Overgrowth', 'A Grazer has wandered to the far seam to become a Mother Cap. The Bloom will follow it.', '', T); }
   // The Quill Garden before the outnumbered rule, with the Buds holding its price: without this a third of the Brood never grew one

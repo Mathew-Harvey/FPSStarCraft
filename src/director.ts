@@ -132,7 +132,7 @@ export class Director implements Side {
     }
   }
   /** An order from the command view, for the bodies named. `k` is 'm' go there and fight whatever is on the way, 'a' attack one enemy body or
-   *  building, 'o' work an ore seam, 'b' build or mend one of your own buildings, 'r' go back to the squad or back to work. Bodies ordered this
+   *  building, 'o' work an ore seam, 'b' build or mend one of your own buildings, 'r' go back to the squad or back to work, 'v' go there without stopping to fight, 'h' hold where they stand. Bodies ordered this
    *  way are left alone by the side's own brain until they are handed back, or until a squad order from first person takes them. */
   command(team: number, ids: number[], k: string, x = 0, z = 0, tid = 0) {
     const g = this.g, want = new Set(ids.slice(0, 80)), us = g.units.filter(u => u.alive && !u.inside && u.team === team && !u.pilot && want.has(u.id)); if (!us.length) return 0;
@@ -155,8 +155,10 @@ export class Director implements Side {
       if (w && (!b.built || b.hp < b.maxHp)) { off(w); if (b.builder && b.builder !== w) b.builder.site = null; if (w.site && w.site !== b) w.site.builder = null; w.site = b; b.builder = w; w.state = 'idle'; }
       if (fighters.length) go(fighters, null); return (w ? 1 : 0) + fighters.length;
     }
-    if (k !== 'm') return 0;
-    go(fighters, null); const sp = spots(workers.length, 2); workers.forEach((u, i) => walk(u, sp[i][0], sp[i][1])); return us.length;
+    // Hold: stand where they are and only shoot what comes in reach. Workers just stop.
+    if (k === 'h') { for (const u of fighters) { u.order = { type: 'guard', x: u.pos.x, z: u.pos.z, mine: true, hold: true }; u.target = null; } workers.forEach(u => walk(u, u.pos.x, u.pos.z)); return us.length; }
+    if (k !== 'm' && k !== 'v') return 0;
+    go(fighters, null); if (k === 'v') for (const u of fighters) { u.order.pass = true; u.order.passT = 0; u.target = null; } const sp = spots(workers.length, 2); workers.forEach((u, i) => walk(u, sp[i][0], sp[i][1])); return us.length;
   }
   /** One squad or base order. In multiplayer the server runs this for whichever player sent it, with lead set to their body. */
   order(k: string, x = 0, z = 0, lead: Unit | null = this.g.me) {

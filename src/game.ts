@@ -74,6 +74,8 @@ export const r1 = (v: number) => Math.round(v * 10) / 10;
 
 /** Stream L cheese pass: how bots answer a player shooting from afar (see damage). minD: only past this distance; r: fighters this near what was hit go. */
 export const HUNT = { minD: 22, r: 60 };
+/** How far a body holding position (H from above) looks for something to shoot: about the reach of most guns, so it does not stare at a foe it cannot hit. */
+export const HOLD_REACH = 22;
 export class Game {
   scene = new THREE.Scene();
   cam = new THREE.PerspectiveCamera(68, 1, .06, 4000);
@@ -1018,7 +1020,12 @@ export class Game {
       if (u.kx || u.kz) { u.pos.x += u.kx * dt; u.pos.z += u.kz * dt; const k = Math.max(0, 1 - dt * 7); u.kx *= k; u.kz *= k; if (Math.abs(u.kx) + Math.abs(u.kz) < .05) u.kx = u.kz = 0; this.collide(u, u.pos.x, u.pos.z); }
       if (fac(u.team) === 0 && u.hp < u.maxHp && t - u.lastHit > 5) for (const b of this.buildings) if (b.team === u.team && b.built && bldRule(b.kind).mends && Math.abs(b.pos.x - u.pos.x) < 16 && Math.abs(b.pos.z - u.pos.z) < 16) { u.hp = Math.min(u.maxHp, u.hp + 5 * dt); break; }
       if (u.pilot) { u.kx = u.kz = 0; if (u.hp < u.maxHp && t - u.lastHit > 6) u.hp = Math.min(u.maxHp, u.hp + u.maxHp * .05 * dt); }
-      else if ((u !== me || this.staticT > 0 || this.cmd.on) && (!u.status || canAct(u, !!unitRule(u.kind).dugFight))) { if (u.boarding && boardWork(this, u, dt)) { /* walking to its carrier */ } else if (u.order.type === 'scout') this.intel.walk(u, dt); else if (isWorker(u.kind)) { const w = unitRule(u.kind).work; if (!w || !w(this, u, dt)) this.aiRigger(u, dt); } else (unitRule(u.kind).ai || factionRule(u.team).ai || DEFAULTS.ai)?.(this, u, dt); }
+      else if ((u !== me || this.staticT > 0 || this.cmd.on) && (!u.status || canAct(u, !!unitRule(u.kind).dugFight))) { if (u.boarding && boardWork(this, u, dt)) { /* walking to its carrier */ } else if (u.order.type === 'scout') this.intel.walk(u, dt); else if (isWorker(u.kind)) { const w = unitRule(u.kind).work; if (!w || !w(this, u, dt)) this.aiRigger(u, dt); } else { const o = u.order, hx = u.pos.x, hz = u.pos.z;
+          // A move from above with no fighting ends once the body is there, or has not moved for two seconds.
+          if (o.pass) { u.target = null; o.passT = (o.passT || 0) + dt; if (Math.hypot(o.x - hx, o.z - hz) < 6.5 || o.passT > 120) { o.pass = false; } }
+          (unitRule(u.kind).ai || factionRule(u.team).ai || DEFAULTS.ai)?.(this, u, dt);
+          if (o.hold) { u.pos.x = hx; u.pos.z = hz; }
+          else if (o.pass && Math.abs(u.pos.x - hx) + Math.abs(u.pos.z - hz) < 1e-3 * dt) { o.passStill = (o.passStill || 0) + dt; if (o.passStill > 2) o.pass = false; } else if (o.pass) o.passStill = 0; } }
     }
     // keep bodies apart
     for (let i = 0; i < us.length; i++) { const a = us[i]; if (!a.alive) continue; const ra = UNIT[a.kind].rad; for (let j = i + 1; j < us.length; j++) { const b = us[j]; if (!b.alive) continue; const dx = b.pos.x - a.pos.x; if (dx > 4 || dx < -4) continue; if ((a.air || b.air || a.inside || b.inside) && (!sameLayer(a, b) || a.inside || b.inside)) continue; const dz = b.pos.z - a.pos.z, mine = a === me || b === me, lim = (ra + UNIT[b.kind].rad) * (mine ? (a.team === b.team ? 1.8 : 1.25) : 1.12), d2 = dx * dx + dz * dz; if (d2 < lim * lim && d2 > 1e-5) { const d = Math.sqrt(d2), p = (lim - d) * .5; const wa = a === me || a.pilot ? 0 : unitRule(b.kind).heavy ? 2 : mine ? 2 : 1, wb = b === me || b.pilot ? 0 : unitRule(a.kind).heavy ? 2 : mine ? 2 : 1; a.pos.x -= dx / d * p * wa; a.pos.z -= dz / d * p * wa; b.pos.x += dx / d * p * wb; b.pos.z += dz / d * p * wb; } } }
@@ -1094,7 +1101,9 @@ export class Game {
     else if (u.state === 'toHQ') { if (!hq) { u.state = 'wait'; return; } if (this.distToBox(hq, u.pos.x, u.pos.z) < 1.7 + this.bankReach(hq)) { this.purse[side] += u.carrying * this.oreK(side); if (!atHome(side)) this.stats.minedV += u.carrying; else this.stats.mined += u.carrying; this.stats.bySide[side] = (this.stats.bySide[side] || 0) + u.carrying; u.carrying = 0; if (u.rig.pack) u.rig.pack.visible = false; u.state = 'idle'; } else { /* Walk to the near face of the home building, so neither end of the map has a longer walk round it than the other. */ const x = Math.max(hq.pos.x - hq.hx - .8, Math.min(hq.pos.x + hq.hx + .8, u.pos.x)), z = Math.max(hq.pos.z - hq.hz - .8, Math.min(hq.pos.z + hq.hz + .8, u.pos.z)); this.moveTo(u, x, z, dt, .3); } }
   }
   acquire(u: Unit, range: number, bRange: number) {
-    if (this.truce) return null; const blind = !!u.status && hasStatus(u, 'blind'); if (blind) { range = Math.min(range, 4); bRange = Math.min(bRange, 4); }
+    if (this.truce || u.order.pass) return null;
+    // Holding position: only what is close enough to shoot without walking (most guns reach about this far).
+    if (u.order.hold) { range = Math.min(range, HOLD_REACH); bRange = Math.min(bRange, HOLD_REACH); } const blind = !!u.status && hasStatus(u, 'blind'); if (blind) { range = Math.min(range, 4); bRange = Math.min(bRange, 4); }
     // The one enemy a player set this body on from the command view, while it stands, can be hit by this body and can be seen.
     { const pr = u.order.prey; if (pr) { if (!pr.alive || (isUnit(pr) && pr.inside)) u.order.prey = undefined; else if (!blind && canHit(u, pr) && seenBy(this, u.team, pr)) return pr; } }
     let best: Unit | Building | null = null, bd = range;

@@ -12,6 +12,7 @@ import { silent } from './factions/veyl/fields';
 import { LEAD } from './command';
 import { REACH } from './factions/ironhold/rules';
 import { setDug, isDug } from './factions/gloam/roster';
+import { ck, keyText } from './keys';
 
 export interface Objective { text: (g: Game) => string; done: (g: Game) => boolean }
 export interface Mission {
@@ -471,14 +472,14 @@ const ACT1: Mission[] = [
     cutOut: ['queue'],
   }),
   job(12, 1, {
-    name: 'Desk Job', side: 0, foe: 1, map: 0, diff: 0, dusk: DAY, teaches: 'Orders from the command view: staking a building from above (B), rally points (L), orders in a row (Shift), patrols (P), the idle Rigger and whole army keys (F1, F2). Then the crew bonus for coming back down',
-    brief: 'Head office read last night\'s report and made you Acting Shift Supervisor for one shift. The pay is the same. A supervisor gives orders from the command view (N). Up there: click a Rigger, press B, pick the Bunkhouse and click the ground to stake it. Click the Bunkhouse, press L and click the road: every Linesman it trains will walk to that spot by itself. Hold Shift while you give orders and a body does them one after the other. Press P and click, and the picked bodies walk to that spot and back until told otherwise. F1 picks a Rigger with nothing to do. F2 picks every fighter. Then press N to come back down, and knock down a Veyl building with your crew round you.',
+    name: 'Desk Job', side: 0, foe: 1, map: 0, diff: 0, dusk: DAY, teaches: 'Orders from the command view: staking a building from above (B), rally points (R), orders in a row (Shift), patrols (P), the idle Rigger and whole army keys (F1, F2). Then the crew bonus for coming back down',
+    brief: 'Head office read last night\'s report and made you Acting Shift Supervisor for one shift. The pay is the same. A supervisor gives orders from the command view (N). Up there: click a Rigger, press B, pick the Bunkhouse and click the ground to stake it. Click the Bunkhouse, press R and click the road: every Linesman it trains will walk to that spot by itself. Hold Shift while you give orders and a body does them one after the other. Press P and click, and the picked bodies walk to that spot and back until told otherwise. F1 picks a Rigger with nothing to do. F2 picks every fighter. Then press N to come back down, and knock down a Veyl building with your crew round you.',
     allow: IRON_T3, units: ['linesman', 'dustbike', 'breacher', 'patch', 'sapper', 'longshot', 'gantry', 'piledriver'], raids: true, auto: false, lockAuto: true, cutIn: ['promotion'],
     objectives: [
-      { text: () => 'From the command view (N), stake a Bunkhouse: click a Rigger, press B', done: g => g.ms.staked === 1 },
-      { text: () => 'Give a building a rally point: click it, press L, click the ground', done: g => g.ms.rally === 1 },
+      { text: () => `From the command view (N), stake a Bunkhouse: click a Rigger, press ${keyText(ck('build'))}`, done: g => g.ms.staked === 1 },
+      { text: () => `Give a building a rally point: click it, press ${keyText(ck('rally'))}, click the ground`, done: g => g.ms.rally === 1 },
       { text: () => 'Hold Shift and give one body two orders in a row', done: g => g.ms.row === 1 },
-      { text: () => 'Send fighters on patrol: pick them, press P, click the ground', done: g => g.ms.patrol === 1 },
+      { text: () => `Send fighters on patrol: pick them, press ${keyText(ck('patrol'))}, click the ground`, done: g => g.ms.patrol === 1 },
       { text: g => `Come down (N) and knock down a Veyl building with three of your crew within ${LEAD.reach} m of you (${Math.min(3, g.ms.led || 0)}/3 with you now)`, done: g => g.ms.front === 1 },
     ],
     tick: (g, s, dt) => {

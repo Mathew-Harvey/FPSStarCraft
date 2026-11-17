@@ -50,8 +50,8 @@ try {
   // the view is put over the enemy first: at the yard's own framing it stands under the command card, where a right click belongs to the card
   r = await p.evaluate(() => { const g = __ore.game, C = g.cmd, foe = g.spawn('cantor', 1, 44, 24); foe.order = { type: 'guard', x: 44, z: 24 }; step(12); g.fog.update(g, 1, true); const fx = C.focus.x, fz = C.focus.z; C.focus.set(foe.pos.x, 0, foe.pos.z); step(2); aim(foe.pos.x, foe.pos.z); click(2); const one = [...C.sel][0]; g.truce = false; step(3); const r = { prey: [...C.sel].every(u => u.order.prey === foe), tgt: one.target === foe }; C.focus.set(fx, 0, fz); g.truce = true; foe.hp = 0; foe.alive = false; g.scene.remove(foe.obj); step(2); return r; });
   check(r.prey && r.tgt, 'a right click on an enemy sets the picked bodies on that one');
-  r = await p.evaluate(() => { const g = __ore.game, C = g.cmd; key('KeyR'); return [...C.sel].every(u => !u.order.mine && u.order.type === 'guard'); });
-  check(r, 'R hands the picked bodies back to the squad');
+  r = await p.evaluate(() => { const g = __ore.game, C = g.cmd; key('KeyC'); return [...C.sel].every(u => !u.order.mine && u.order.type === 'guard'); });
+  check(r, 'C hands the picked bodies back to the squad');
   // a worker, a seam and a building site
   r = await p.evaluate(() => { const g = __ore.game, C = g.cmd, w = g.own('rigger').find(u => u !== g.me), far = g.ores.reduce((a, n) => Math.hypot(n.pos.x, n.pos.z) > Math.hypot(a.pos.x, a.pos.z) && Math.hypot(n.pos.x, n.pos.z) < 40 ? n : a, g.ores[0]);
     C.focus.set(w.pos.x, 0, w.pos.z); step(2); aim(w.pos.x, w.pos.z); click(0); const picked = C.sel.size === 1 && C.sel.has(w);
@@ -62,8 +62,8 @@ try {
   check(r.seam, 'a right click on ore sends a worker to that seam, and it keeps to it');
   check(r.site, 'a right click on a building site puts the worker on it');
   // a building: E trains from above
-  r = await p.evaluate(() => { const g = __ore.game, C = g.cmd, bh = g.addBuilding('bunkhouse', 0, 16, 16, true); for (const x of [-34, -42]) g.addBuilding('depot', 0, x, 24, true); g.ore = 600; C.focus.set(16, 0, 16); step(2); aim(16, 16, 0); click(0); const sel = C.selB === bh; step(1); const shop = C.card.map(b => b.label).join(' '); key('KeyE'); return { sel, shop, q: bh.queue.length, ore: g.ore, pan: document.getElementById('cpan').textContent }; });
-  check(r.sel && /Linesman/.test(r.shop) && r.q === 1 && r.ore < 600, `picking a building and pressing E trains from above (${r.q} queued)`);
+  r = await p.evaluate(() => { const g = __ore.game, C = g.cmd, bh = g.addBuilding('bunkhouse', 0, 16, 16, true); for (const x of [-34, -42]) g.addBuilding('depot', 0, x, 24, true); g.ore = 600; C.focus.set(16, 0, 16); step(2); aim(16, 16, 0); click(0); const sel = C.selB === bh; step(1); const shop = C.card.map(b => b.label).join(' '); key(C.card.find(b => b.id === 'tr:linesman').key); return { sel, shop, q: bh.queue.length, ore: g.ore, pan: document.getElementById('cpan').textContent }; });
+  check(r.sel && /Linesman/.test(r.shop) && r.q === 1 && r.ore < 600, `picking a building and pressing its train key trains from above (${r.q} queued)`);
   await shot('command-building');
 
   // ---- leading in person (the target is a Choirmaster: a Veyl body with no armour, so the hit lands at face value)
@@ -82,12 +82,12 @@ try {
   r = await p.evaluate(() => { const g = __ore.game, C = g.cmd, me = g.me, u = g.own('linesman')[0]; g.jumpCd = 0; C.focus.set(u.pos.x, 0, u.pos.z); step(2); aim(u.pos.x, u.pos.z); click(0); const had = C.sel.has(u); while (C.on) wheel(-1); step(30); const r = { had, in: g.me === u, was: g.lastBody === me, z: C.z, vis: !g.buildings.some(b => !b.obj.visible) }; return r; });
   check(r.had && r.in && r.z === 0, 'the wheel all the way in drops the player into the picked body');
   check(r.vis, 'back in first person nothing is hidden');
-  r = await p.evaluate(() => { const g = __ore.game, C = g.cmd, me = g.me; key('KeyM'); step(12); const open = C.map && !document.getElementById('bigmap').hidden; const m = document.getElementById('bigmap').getBoundingClientRect(); return { open, w: m.width, me: g.me === me }; });
+  r = await p.evaluate(() => { const g = __ore.game, C = g.cmd, me = g.me; key(__ore.game.cmd.on ? __ore.keys.ck('map') : 'KeyM'); step(12); const open = C.map && !document.getElementById('bigmap').hidden; const m = document.getElementById('bigmap').getBoundingClientRect(); return { open, w: m.width, me: g.me === me }; });
   check(r.open && r.w > 300, `M opens the full map from first person (${Math.round(r.w)} px wide)`);
   await shot('map');
   r = await p.evaluate(() => { const g = __ore.game, C = g.cmd, hud = g.hud; C.cx = hud.W / 2 + 60; C.cy = hud.H / 2; const pt = C.mapPt(C.cx, C.cy); click(0); step(10); return { cmd: C.on && !C.map, d: pt ? Math.hypot(C.focus.x - pt[0], C.focus.z - pt[1]) : 99 }; });
   check(r.cmd && r.d < 1, 'a click on the map takes the command view to that spot');
-  r = await p.evaluate(() => { const g = __ore.game, C = g.cmd, me = g.me; key('KeyN'); step(20); const a = !C.on && g.me === me; key('KeyM'); step(6); const b = C.map; key('KeyM'); step(20); return { a, b, c: !C.on && g.me === me }; });
+  r = await p.evaluate(() => { const g = __ore.game, C = g.cmd, me = g.me; key('KeyN'); step(20); const a = !C.on && g.me === me; key(__ore.game.cmd.on ? __ore.keys.ck('map') : 'KeyM'); step(6); const b = C.map; key(__ore.game.cmd.on ? __ore.keys.ck('map') : 'KeyM'); step(20); return { a, b, c: !C.on && g.me === me }; });
   check(r.a, 'N goes back to the body the player left');
   check(r.b && r.c, 'M again closes the map and returns to first person');
 
@@ -102,7 +102,7 @@ try {
     window.key = k => { __ore.game.pressed.add(k); step(1); };
     const g = __ore.game; g.introT = 0; g.hourFix = 13; g.wxFix = 'clear'; g.truce = true; g.dir.raidIn = 9999; g.dir.auto = false; for (let i = 0; i < 3; i++) g.spawn('linesman', 0, -4 + i * 2.2, 14); step(20);
   });
-  const mid = () => { const g = __ore.game, C = g.cmd, hud = g.hud; if (C.map) { key('KeyM'); step(6); } key('KeyM'); step(12); const m = document.getElementById('bigmap'), pt = C.mapPt(hud.W / 2, parseFloat(m.style.top) + parseFloat(m.style.height) / 2); return pt; };
+  const mid = () => { const g = __ore.game, C = g.cmd, hud = g.hud; if (C.map) { key(__ore.game.cmd.on ? __ore.keys.ck('map') : 'KeyM'); step(6); } key(__ore.game.cmd.on ? __ore.keys.ck('map') : 'KeyM'); step(12); const m = document.getElementById('bigmap'), pt = C.mapPt(hud.W / 2, parseFloat(m.style.top) + parseFloat(m.style.height) / 2); return pt; };
   await p.evaluate(`window.mid = ${mid}`);
   r = await p.evaluate(() => { const g = __ore.game, C = g.cmd, hq = g.buildings.filter(b => b.alive && b.team !== g.myTeam).sort((a, b) => b.maxHp - a.maxHp)[0]; window.foeHq = hq; key('KeyN'); step(30); const pt = mid();
     return { hid: !!__ore.MAP().hid, size: Math.floor(__ore.MAP().code / 10) % 10, knows: g.intel.knows(g.myTeam), known: C.known(hq), vis: hq.obj.visible, d: pt ? Math.hypot(pt[0], pt[1]) : 999, far: Math.hypot(hq.pos.x, hq.pos.z) }; });
@@ -110,10 +110,10 @@ try {
   check(!r.known && !r.vis, 'from above, the hidden base is not drawn and cannot be picked');
   check(r.d < 3, `the full map is framed round your own base while theirs is not found (${r.d.toFixed(1)} m off)`);
   await shot('map-vast-blind');
-  r = await p.evaluate(() => { const g = __ore.game; key('KeyH'); step(4); const s = g.units.find(u => u.alive && u.team === g.myTeam && u.order.type === 'scout'); if (!s) return { sent: false }; g.dir.command(g.myTeam, [s.id], 'm', 20, 20, 0); return { sent: true, type: s.order.type, mine: !!s.order.mine }; });
-  check(r.sent, 'H sends a scout from the command view and the map');
+  r = await p.evaluate(() => { const g = __ore.game; key(g.cmd.on ? __ore.keys.ck('scout') : 'KeyH'); step(4); const s = g.units.find(u => u.alive && u.team === g.myTeam && u.order.type === 'scout'); if (!s) return { sent: false }; g.dir.command(g.myTeam, [s.id], 'm', 20, 20, 0); return { sent: true, type: s.order.type, mine: !!s.order.mine }; });
+  check(r.sent, 'the scout key (F3 from above) sends a scout from the command view and the map');
   check(r.type === 'amove' && r.mine, 'a scout given an order from above stops scouting and does as told');
-  r = await p.evaluate(() => { const g = __ore.game, C = g.cmd, hq = foeHq; g.spawn('linesman', 0, hq.pos.x + 12, hq.pos.z + 12); step(24); const pt = mid(); key('KeyM'); step(14);
+  r = await p.evaluate(() => { const g = __ore.game, C = g.cmd, hq = foeHq; g.spawn('linesman', 0, hq.pos.x + 12, hq.pos.z + 12); step(24); const pt = mid(); key(__ore.game.cmd.on ? __ore.keys.ck('map') : 'KeyM'); step(14);
     return { knows: g.intel.knows(g.myTeam), known: C.known(hq), vis: hq.obj.visible, up: C.on && !C.map, d: pt ? Math.hypot(pt[0] - hq.pos.x / 2, pt[1] - hq.pos.z / 2) : 999 }; });
   check(r.knows && r.known && r.up && r.vis, 'once one of yours has seen their base, the command view draws it from the scouting records');
   check(r.d < 30, `and the full map slides over to hold both bases (${r.d.toFixed(1)} m from the point half way)`);

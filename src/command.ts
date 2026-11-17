@@ -7,7 +7,8 @@
 import * as THREE from 'three';
 import type { Game } from './game';
 import { UNIT, BLD, MAP, FACTION, Unit, Building, BKind, Kind, isWorker, fac } from './data';
-import { cardFor, Btn, Aim, KEYS, casters, abilityWords, hasBoard, hasAutocast } from './card';
+import { cardFor, Btn, Aim, casters, abilityWords, hasBoard, hasAutocast } from './card';
+import { ck } from './keys';
 import * as AB from './core/ability';
 import { abilityOf, whyNot } from './core/ability';
 import { roomOf } from './core/cargo';
@@ -27,12 +28,12 @@ export const LEAD = { reach: 30, dmg: 1.15, guard: .92 };
 export const ZOOM = { lift: .12, map: .9, step: .1, near: .2, far: .8, /** how tall a slice of ground the view shows at its nearest and furthest, in metres */ h0: 13, h1: 105, fov: 22 };
 
 const A = V3(), B = V3(), P3 = V3(), AUX = new THREE.Object3D();
-/** One order for one body: go (m), attack (a), work a seam (o), build or mend (b), or walk back and forth fighting (p, between x,z and x2,z2).
+/** One order for one body: go and fight on the way (m), go without fighting (v), attack (a), work a seam (o), build or mend (b), or walk back and forth fighting (p, between x,z and x2,z2).
  *  `n` is how many were sent together, so a block of bodies counts as there once its middle is close; `t` is how long it has run. */
-export interface Step { k: 'm' | 'a' | 'o' | 'b' | 'p'; x: number; z: number; id: number; n: number; t: number; x2?: number; z2?: number; /** closest it has come, and when */ best?: number; bestT?: number }
+export interface Step { k: 'm' | 'v' | 'a' | 'o' | 'b' | 'p'; x: number; z: number; id: number; n: number; t: number; x2?: number; z2?: number; /** closest it has come, and when */ best?: number; bestT?: number }
 /** Where a building sends what it trains: a spot on the ground, a body (`id`, followed to wherever it is then), or a seam (`ore`, by index). */
 export interface Rally { x: number; z: number; id?: number; ore?: number }
-const STEP_COL: Record<string, number[]> = { m: [.55, 1, .45], a: [1, .35, .3], o: [1, .85, .3], b: [.5, .95, 1], p: [.5, .95, 1], r: [1, .78, .1] };
+const STEP_COL: Record<string, number[]> = { m: [1, .6, .35], v: [.55, 1, .45], a: [1, .35, .3], o: [1, .85, .3], b: [.5, .95, 1], p: [.5, .95, 1], r: [1, .78, .1] };
 const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
 
 export class Command {
@@ -72,6 +73,12 @@ export class Command {
   private lines: THREE.LineSegments | null = null; private ghosts: Record<string, THREE.Object3D[]> = {}; private pending: { k: BKind; x: number; z: number; t: number; ids: number[] }[] = []; private qT = 0;
   private drag: [number, number] | null = null; private wasL = false; private peekT = 0; private back = 0; private dive: Unit | null = null;
   private clickT = -9; private clickKind = ''; private ackT = 0; private hid = false;
+  /** The kind whose abilities the card shows when more than one kind is picked (Tab steps through them); null shows them all. */
+  sub: Kind | null = null;
+  /** Saved camera spots (Ctrl and the camera key keeps one), and the next base the base key goes to. */
+  cams: ({ x: number; z: number; zt: number } | null)[] = [null, null, null, null]; private baseI = 0;
+  /** Where something of ours was last hurt, and when (game time): the last alert key goes there. */
+  alert: { x: number; z: number; t: number } | null = null; private hpSeen = new Map<number, number>(); private alertT = 0;
   private fogMesh: THREE.Mesh | null = null; private fogTex: THREE.DataTexture | null = null; private fogA: Float32Array | null = null; private fogD: Uint8Array | null = null; private fogT = 0;
 
   constructor(private g: Game) { }
@@ -94,7 +101,7 @@ export class Command {
     if (!u) for (const s of this.sel) if (free(s)) { u = s; break; }
     if (!u && !this.map) { let bd = this.h * 1.3; for (const o of g.units) { if (!free(o)) continue; const d = Math.hypot(o.pos.x - this.focus.x, o.pos.z - this.focus.z) + (o === me ? -3 : 0); if (d < bd) { bd = d; u = o; } } }
     if (!u || (u !== me && g.jumpCd > 0 && me && me.alive)) u = me;
-    this.zt = 0; this.sel.clear(); this.selB = null; this.box = null; this.drag = null; this.aim = null; this.menu = ''; this.dive = null; g.lmb = g.rmb = false; g.pressed.delete('Mouse0'); g.pressed.delete('Mouse2');
+    this.zt = 0; this.sel.clear(); this.selB = null; this.box = null; this.drag = null; this.aim = null; this.menu = ''; this.sub = null; this.dive = null; g.lmb = g.rmb = false; g.pressed.delete('Mouse0'); g.pressed.delete('Mouse2');
     if (!u || !u.alive) return;
     if (u === me) { const cd = g.jumpCd; g.possess(u, true); g.jumpCd = cd; } else g.possess(u);
   }
@@ -108,8 +115,8 @@ export class Command {
     if (!this.on) this.focus.lerp(A.set(me.pos.x, 0, me.pos.z), Math.min(1, dt * 12));
     for (const u of this.sel) if (!u.alive || u.team !== g.myTeam) this.sel.delete(u);
     if (this.selB && !this.selB.alive) this.selB = null;
-    this.watchNew(); this.runQueues(dt); this.landPending(dt);
-    if (!this.sel.size && !this.selB) { this.aim = null; this.menu = ''; }
+    this.watchNew(); this.runQueues(dt); this.landPending(dt); this.watchHurt(dt);
+    if (!this.sel.size && !this.selB) { this.aim = null; this.menu = ''; this.sub = null; }
     const w = g.wheel, free = me.alive && g.staticT <= 0 && !g.tab && g.introT <= 0 && !this.locked;
     if (!this.on) {
       // One notch out only lifts the camera a little, and it settles back: a wheel bumped in a firefight does not pull anyone out of their body.
@@ -134,7 +141,8 @@ export class Command {
     if (g.mmb && !this.map) { this.focus.x -= g.mdx * k * mpp; this.focus.z -= g.mdy * k * mpp / Math.sin(this.pitch); }
     else { this.cx = clamp(this.cx + g.mdx * k, 0, W); this.cy = clamp(this.cy + g.mdy * k, 0, H); }
     if (!this.map) {
-      let px = 0, pz = 0; if (K.has('KeyA') || K.has('ArrowLeft') || this.cx <= 1) px--; if (K.has('KeyD') || K.has('ArrowRight') || this.cx >= W - 1) px++; if (K.has('KeyW') || K.has('ArrowUp') || this.cy <= 1) pz--; if (K.has('KeyS') || K.has('ArrowDown') || this.cy >= H - 1) pz++;
+      // The command view pans with the arrow keys (by default) and the screen edge; W A S D are orders up here, the way the classic games have them.
+      let px = 0, pz = 0; if (K.has(ck('panL')) || this.cx <= 1) px--; if (K.has(ck('panR')) || this.cx >= W - 1) px++; if (K.has(ck('panU')) || this.cy <= 1) pz--; if (K.has(ck('panD')) || this.cy >= H - 1) pz++;
       if (px || pz) { const sp = this.h * 1.9 * dt; this.focus.x += px * sp; this.focus.z += pz * sp; }
     }
     { const [ox, oz] = MAP.mid!, dx = this.focus.x - ox, dz = this.focus.z - oz, d = Math.hypot(dx, dz), lim = MAP.rad! * 1.025; if (d > lim) { this.focus.x = ox + dx / d * lim; this.focus.z = oz + dz / d * lim; } }
@@ -144,21 +152,26 @@ export class Command {
       else if (this.zt <= ZOOM.near + 1e-3) { this.land(); return; }
       else { this.zt = Math.max(ZOOM.near, this.zt - ZOOM.step); if (this.ground(this.cx, this.cy, P3)) this.focus.lerp(P3, .22); }
     } else if (w > 0 && !this.map) { if (this.zt >= ZOOM.far - 1e-3) { this.back = ZOOM.far; this.zt = 1; this.drag = null; this.box = null; sfx.zoom(true); } else this.zt = Math.min(ZOOM.far, this.zt + ZOOM.step); }
-    // keys
-    if (P.has('KeyM')) { if (!this.map) { this.back = this.zt; this.zt = 1; this.drag = null; this.box = null; sfx.zoom(true); } else if (this.back < ZOOM.lift) { this.land(me); return; } else { this.zt = this.back; sfx.zoom(false); } }
-    if (P.has('KeyN')) { this.land(me); return; }
-    if (P.has('Space')) { this.focus.set(me.pos.x, 0, me.pos.z); if (this.map) this.zt = .4; }
     const shift = K.has('ShiftLeft') || K.has('ShiftRight'), ctrl = K.has('ControlLeft') || K.has('ControlRight');
-    this.groupKeys(P, shift, ctrl);
-    if (P.has('F1') || P.has('Backquote')) this.idleWorker();
-    if (P.has('F2') || (ctrl && P.has('KeyA'))) { P.delete('KeyA'); this.allArmy(); }
-    // the command card: its keys, then a click on one of its buttons
+    // the command card first: in the grid layout its keys can be any letter, and a button pressed is not also read as a view key
     if (this.aim?.k === 'stake' && P.has('KeyR')) { P.delete('KeyR'); this.rot = !this.rot; sfx.tick(); }
-    this.card = cardFor(g, this.sel, this.selB, this.menu, this.aim);
-    for (const b of this.card) if (P.has(b.key)) { P.delete(b.key); this.press(b); if (!this.on) return; this.card = cardFor(g, this.sel, this.selB, this.menu, this.aim); break; }
-    if (P.has('Mouse0')) { const id = g.hud.cardAt(this.cx, this.cy); if (id) { P.delete('Mouse0'); g.lmb = false; this.clickCard(id); if (!this.on) return; this.card = cardFor(g, this.sel, this.selB, this.menu, this.aim); } }
-    // the Quartermaster and the squad's question still answer to their keys from up here
-    P.delete('Mouse1'); P.delete('KeyV'); g.dir.playerOrders(P, A, B, -1);
+    if (!ctrl) {
+      this.card = cardFor(g, this.sel, this.selB, this.menu, this.aim, this.sub);
+      for (const b of this.card) if (b.key && P.has(b.key)) { P.delete(b.key); this.press(b); if (!this.on) return; this.card = cardFor(g, this.sel, this.selB, this.menu, this.aim, this.sub); break; }
+    }
+    // keys of the view
+    if (P.has(ck('map'))) { if (!this.map) { this.back = this.zt; this.zt = 1; this.drag = null; this.box = null; sfx.zoom(true); } else if (this.back < ZOOM.lift) { this.land(me); return; } else { this.zt = this.back; sfx.zoom(false); } }
+    if (P.has(ck('fp'))) { this.land(me); return; }
+    if (P.has(ck('alert'))) this.toAlert();
+    if (P.has(ck('base'))) this.nextBase();
+    this.groupKeys(P, shift, ctrl); this.camKeys(P, shift, ctrl);
+    if (P.has(ck('idle'))) { if (ctrl) this.allIdle(); else this.idleWorker(); }
+    if (P.has(ck('army')) || (ctrl && P.has('KeyA'))) { P.delete('KeyA'); this.allArmy(); }
+    if (P.has(ck('sub'))) this.nextSub();
+    this.card = cardFor(g, this.sel, this.selB, this.menu, this.aim, this.sub);
+    if (P.has('Mouse0')) { const id = g.hud.cardAt(this.cx, this.cy); if (id) { P.delete('Mouse0'); g.lmb = false; this.clickCard(id); if (!this.on) return; this.card = cardFor(g, this.sel, this.selB, this.menu, this.aim, this.sub); } }
+    // the Quartermaster, scouting and the squad's question still answer from up here, on keys of their own (H, Z and G are orders up here)
+    P.delete('Mouse1'); { const Q = new Set<string>(); if (P.has(ck('qm'))) Q.add('KeyG'); if (P.has(ck('scout'))) Q.add('KeyH'); if (P.has(ck('yes'))) Q.add('KeyZ'); if (Q.size) g.dir.playerOrders(Q, A, B, -1); }
 
     if (this.map) {
       const p = this.mapPt?.(this.cx, this.cy);
@@ -204,7 +217,7 @@ export class Command {
   }
   private buildingAt(p: THREE.Vector3, own: boolean): Building | null { const g = this.g; for (const b of g.buildings) if (b.alive && (own ? b.team === g.myTeam : isEnemy(b.team, g.myTeam) && this.known(b)) && Math.abs(p.x - b.pos.x) < b.hx + 1.2 && Math.abs(p.z - b.pos.z) < b.hz + 1.2) return b; return null; }
   private pickAt(add: boolean, all = false) {
-    const g = this.g, u = this.unitAt(true); this.aim = null; this.menu = '';
+    const g = this.g, u = this.unitAt(true); this.aim = null; this.menu = ''; this.sub = null;
     if (u) {
       // A double click, or Ctrl and a click, picks every one of that kind on the screen.
       const twice = all || (g.pipe.time - this.clickT < .4 && this.clickKind === u.kind); this.clickT = g.pipe.time; this.clickKind = u.kind; this.selB = null;
@@ -219,7 +232,7 @@ export class Command {
     const g = this.g, s = [0, 0], got: Unit[] = [];
     for (const u of g.units) if (this.mine(u) && this.screen(u.pos.x, UNIT[u.kind].bodyY, u.pos.z, s) && s[0] >= q[0] && s[0] <= q[2] && s[1] >= q[1] && s[1] <= q[3]) got.push(u);
     // A box with fighters in it takes the fighters and leaves the workers at their seams.
-    const fight = got.filter(u => !isWorker(u.kind)), take = fight.length ? fight : got; this.aim = null; this.menu = '';
+    const fight = got.filter(u => !isWorker(u.kind)), take = fight.length ? fight : got; this.aim = null; this.menu = ''; this.sub = null;
     if (!add) this.sel.clear(); if (take.length) { this.selB = null; for (const u of take) this.sel.add(u); sfx.select(); }
   }
   /** What a right click is on: an enemy to attack, ore to work, or one of the player's own buildings to build or mend. */
@@ -235,7 +248,7 @@ export class Command {
   }
   private order(x: number, z: number, on: { k: string; id: number } | null, shift = false) {
     const g = this.g, k = (on && on.k !== 'u' ? on.k : 'm') as Step['k']; this.issue({ k, x, z, id: on && on.k !== 'u' ? on.id : 0, n: this.sel.size, t: 0 }, shift);
-    g.hud.ping(V3(x, 0, z), (shift ? 'Then ' : '') + (k === 'a' ? 'Attacking' : k === 'o' ? 'Working this seam' : k === 'b' ? 'Building here' : 'Moving here')); if (k === 'a') sfx.attack(); else sfx.order();
+    g.hud.ping(V3(x, 0, z), (shift ? 'Then ' : '') + (k === 'a' ? 'Attacking' : k === 'o' ? 'Working this seam' : k === 'b' ? 'Building here' : [...this.sel].some(u => !isWorker(u.kind)) ? 'Moving here, fighting on the way' : 'Moving here')); if (k === 'a') sfx.attack(); else sfx.order();
     if (this.ackT <= 0) { this.ackT = 4; const u = [...this.sel][0], ack = u && UNIT[u.kind].ack; if (u && ack && ack.length) g.hud.feed(UNIT[u.kind].name, ack[Math.floor(Math.random() * ack.length)], 'in'); }
   }
   private send(k: string, x: number, z: number, id: number) { this.sendIds([...this.sel].map(u => u.id), k, x, z, id); }
@@ -263,7 +276,7 @@ export class Command {
     const g = this.g, d = Math.hypot(u.pos.x - s.x, u.pos.z - s.z), reach = s.k === 'p' ? 5 : 4.5 + Math.sqrt(s.n) * 1.5;
     // A body that has come no closer for four seconds, and is not fighting, is as close as it is going to get (blocked, or standing in the block round the spot).
     if (s.best === undefined || d < s.best - .5) { s.best = d; s.bestT = s.t; }
-    if (s.k === 'm' || s.k === 'p') return d < reach || (isWorker(u.kind) && s.t > 1 && u.state !== 'walk') || (s.t - s.bestT! > 4 && !u.target) || s.t > 90;
+    if (s.k === 'm' || s.k === 'v' || s.k === 'p') return d < reach || (isWorker(u.kind) && s.t > 1 && u.state !== 'walk') || (s.t - s.bestT! > 4 && !u.target) || s.t > 90;
     if (s.k === 'a') return !g.units.some(o => o.alive && o.id === s.id) && !g.buildings.some(o => o.alive && o.id === s.id);
     if (s.k === 'b') { const b = g.buildings.find(o => o.id === s.id); return !b || !b.alive || (b.built && b.hp >= b.maxHp) || (s.t > 2 && u.site !== b); }
     return false;
@@ -288,6 +301,7 @@ export class Command {
     if (a.t === 'train' && this.selB) g.train(this.selB, a.k, true);
     else if (a.t === 'research') g.buyUpgrade(a.k, g.myTeam, true);
     else if (a.t === 'aim') { const same = this.aim && this.aim.k === a.aim.k && (a.aim.k !== 'stake' || (this.aim as any).b === a.aim.b); this.aim = same ? null : a.aim; if (a.aim.k === 'stake') this.rot = false; sfx.tick(); }
+    else if (a.t === 'hold') { for (const u of us) { this.queue.delete(u); this.cur.delete(u); } this.sendIds(us.map(u => u.id), 'h', 0, 0, 0); g.hud.feed(UNIT[us[0].kind].name, 'Holding here.', ''); sfx.order(); }
     else if (a.t === 'stop') { for (const u of us) { this.queue.delete(u); this.cur.delete(u); this.sendIds([u.id], 'm', u.pos.x, u.pos.z, 0); } sfx.order(); }
     else if (a.t === 'release') { for (const u of us) { this.queue.delete(u); this.cur.delete(u); } this.send('r', 0, 0, 0); sfx.order(); }
     else if (a.t === 'jump') { const u = us[0]; if (u) this.land(u); }
@@ -320,7 +334,8 @@ export class Command {
   /** The order a card button was waiting on, given at a spot (and maybe on something). */
   private useAim(x: number, z: number, on: { k: string; id: number } | null, shift: boolean) {
     const g = this.g, aim = this.aim!; let keep = shift;
-    if (aim.k === 'move') this.order(x, z, on && on.k === 'a' ? on : null, shift);
+    if (aim.k === 'move') { this.issue({ k: 'v', x, z, id: 0, n: this.sel.size, t: 0 }, shift); g.hud.ping(V3(x, 0, z), (shift ? 'Then ' : '') + 'Moving, not stopping to fight'); sfx.order(); }
+    else if (aim.k === 'attack') this.order(x, z, on && on.k === 'a' ? on : null, shift);
     else if (aim.k === 'patrol') { this.issue({ k: 'p', x, z, id: 0, n: this.sel.size, t: 0 }, shift); g.hud.ping(V3(x, 0, z), 'Patrolling to here and back'); sfx.order(); }
     else if (aim.k === 'gather') { if (on && on.k === 'o') this.order(x, z, on, shift); else { sfx.deny(); g.hud.feed(FACTION[g.myTeam].voice, 'Gather needs a seam: click on ore.', 'al'); keep = true; } }
     else if (aim.k === 'rally') this.setRally(x, z, on);
@@ -412,26 +427,62 @@ export class Command {
   private groupKeys(P: Set<string>, shift: boolean, ctrl: boolean) {
     const g = this.g;
     for (let i = 0; i < 10; i++) {
-      const code = 'Digit' + ((i + 1) % 10); if (!P.has(code)) continue; P.delete(code); const G = this.groups[i], n = (i + 1) % 10;
+      const code = ck('g' + ((i + 1) % 10)); if (!code || !P.has(code)) continue; P.delete(code); const G = this.groups[i], n = (i + 1) % 10;
       if (ctrl) { G.us = [...this.sel]; G.b = this.sel.size ? null : this.selB; g.hud.feed('Groups', G.us.length || G.b ? `Group ${n}: ${G.us.length ? G.us.length + ' picked' : BLD[G.b!.kind].name}.` : `Group ${n} emptied.`, ''); sfx.select(); continue; }
       if (shift) { for (const u of this.sel) if (!G.us.includes(u)) G.us.push(u); if (this.sel.size) G.b = null; g.hud.feed('Groups', `Group ${n}: ${G.us.length} picked.`, ''); sfx.select(); continue; }
       G.us = G.us.filter(u => this.mine(u)); if (G.b && !G.b.alive) G.b = null;
       if (!G.us.length && !G.b) { sfx.deny(); continue; }
       const twice = g.pipe.time - this.groupT < .45 && this.groupLast === i; this.groupT = g.pipe.time; this.groupLast = i;
-      this.sel.clear(); this.selB = null; this.aim = null; this.menu = ''; if (G.us.length) for (const u of G.us) this.sel.add(u); else this.selB = G.b;
+      this.sel.clear(); this.selB = null; this.aim = null; this.menu = ''; this.sub = null; if (G.us.length) for (const u of G.us) this.sel.add(u); else this.selB = G.b;
       // Pressed twice quickly: the view goes to them.
       if (twice) { let x = 0, z = 0; if (G.us.length) { for (const u of G.us) { x += u.pos.x; z += u.pos.z; } x /= G.us.length; z /= G.us.length; } else { x = G.b!.pos.x; z = G.b!.pos.z; } this.focus.set(x, 0, z); if (this.map) this.zt = this.back >= ZOOM.near && this.back <= ZOOM.far ? this.back : .5; }
       sfx.select();
     }
   }
   /** Picks every fighter on the player's side. */
-  allArmy() { const g = this.g; this.sel.clear(); this.selB = null; this.aim = null; this.menu = ''; for (const u of g.units) if (this.mine(u) && !isWorker(u.kind)) this.sel.add(u); if (this.sel.size) sfx.select(); else { sfx.deny(); g.hud.feed(FACTION[g.myTeam].voice, 'No fighters to pick.', 'al'); } }
+  allArmy() { const g = this.g; this.sel.clear(); this.selB = null; this.aim = null; this.menu = ''; this.sub = null; for (const u of g.units) if (this.mine(u) && !isWorker(u.kind)) this.sel.add(u); if (this.sel.size) sfx.select(); else { sfx.deny(); g.hud.feed(FACTION[g.myTeam].voice, 'No fighters to pick.', 'al'); } }
   /** Workers doing nothing: standing where they were sent, or with no seam and no site. */
   idle() { return this.g.units.filter(u => this.mine(u) && isWorker(u.kind) && u !== this.g.me && (u.state === 'hold' || (u.state === 'idle' && !u.site && !u.node))); }
   /** Picks the next idle worker and looks at it. */
   idleWorker() {
     const g = this.g, list = this.idle(); if (!list.length) { sfx.deny(); g.hud.feed(FACTION[g.myTeam].voice, 'Every worker is busy.', ''); return; }
-    const u = list[this.idleI++ % list.length]; this.sel.clear(); this.selB = null; this.aim = null; this.menu = ''; this.sel.add(u); this.focus.set(u.pos.x, 0, u.pos.z); if (this.map) this.zt = .5; sfx.select();
+    const u = list[this.idleI++ % list.length]; this.sel.clear(); this.selB = null; this.aim = null; this.menu = ''; this.sub = null; this.sel.add(u); this.focus.set(u.pos.x, 0, u.pos.z); if (this.map) this.zt = .5; sfx.select();
+  }
+
+  /** Picks every idle worker (Ctrl and the idle worker key). */
+  allIdle() { const g = this.g, list = this.idle(); if (!list.length) { sfx.deny(); g.hud.feed(FACTION[g.myTeam].voice, 'Every worker is busy.', ''); return; } this.sel.clear(); this.selB = null; this.aim = null; this.menu = ''; this.sub = null; for (const u of list) this.sel.add(u); sfx.select(); }
+  /** Picks the next of the side's main buildings (Headframe, Choir Stone or Mother Cap) and looks at it. */
+  nextBase() {
+    const g = this.g, list = g.buildings.filter(b => b.alive && b.team === g.myTeam && b.kind === FACTION[g.myTeam].hq); if (!list.length) { sfx.deny(); return; }
+    const b = list[this.baseI++ % list.length]; this.sel.clear(); this.selB = b; this.aim = null; this.menu = ''; this.sub = null; this.focus.set(b.pos.x, 0, b.pos.z); if (this.map) this.zt = this.back >= ZOOM.near && this.back <= ZOOM.far ? this.back : .5; sfx.select();
+  }
+  /** The camera goes to the last place something of ours was hurt; with no alert yet, to the body left behind. */
+  toAlert() {
+    const g = this.g, a = this.alert, me = g.me!;
+    if (a) this.focus.set(a.x, 0, a.z); else this.focus.set(me.pos.x, 0, me.pos.z);
+    if (this.map) this.zt = this.back >= ZOOM.near && this.back <= ZOOM.far ? this.back : .4;
+  }
+  /** With more than one kind picked, brings up the next kind's abilities on the card. */
+  nextSub() {
+    const kinds = [...new Set([...this.sel].map(u => u.kind))]; if (kinds.length < 2) { this.sub = null; return; }
+    const i = this.sub ? kinds.indexOf(this.sub) : -1; this.sub = kinds[(i + 1) % kinds.length]; this.aim = null; sfx.tick(); this.g.hud.feed('Card', `${UNIT[this.sub].name}: their abilities are up.`, '');
+  }
+  /** Camera spots: the key alone goes to a saved spot, with Ctrl (or Shift) it keeps where the camera is now. */
+  private camKeys(P: Set<string>, shift: boolean, ctrl: boolean) {
+    for (let i = 0; i < 4; i++) {
+      const code = ck('cam' + (i + 1)); if (!code || !P.has(code)) continue; P.delete(code);
+      if (ctrl || shift) { this.cams[i] = { x: this.focus.x, z: this.focus.z, zt: this.map ? this.back || .5 : this.zt }; this.g.hud.feed('Camera', `Spot ${i + 1} kept.`, ''); sfx.select(); continue; }
+      const c = this.cams[i]; if (!c) { sfx.deny(); continue; }
+      this.focus.set(c.x, 0, c.z); this.zt = Math.max(ZOOM.near, Math.min(ZOOM.far, c.zt));
+    }
+  }
+  /** Notes where bodies and buildings of ours are being hurt, for the last alert key. Read from health, so it works online too. */
+  private watchHurt(dt: number) {
+    this.alertT -= dt; if (this.alertT > 0) return; this.alertT = .25;
+    const g = this.g, t = g.myTeam, seen = this.hpSeen, a = this.alert;
+    const look = (id: number, hp: number, x: number, z: number) => { const was = seen.get(id); seen.set(id, hp); if (was !== undefined && hp < was - .5 && (!a || g.time - a.t > 3 || Math.hypot(a.x - x, a.z - z) < 25)) this.alert = { x, z, t: g.time }; };
+    for (const u of g.units) if (u.alive && u.team === t) look(u.id, u.hp + (u.shield || 0), u.pos.x, u.pos.z);
+    for (const b of g.buildings) if (b.alive && b.team === t && b.built) look(b.id, b.hp, b.pos.x, b.pos.z);
   }
 
   // ------------------------------------------------------------ what is drawn on the ground: orders in a row, rally points, the building being staked

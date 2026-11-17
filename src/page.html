@@ -179,9 +179,11 @@
       </div>
       <div class="row"><span class="lbl">Touch controls</span><div class="diff" id="touchPick" role="group" aria-label="Touch controls"><button type="button">Auto<small>On for phones and tablets</small></button><button type="button">On<small>Always show them</small></button><button type="button">Off<small>Keyboard and mouse</small></button></div></div>
       <div class="row"><span class="lbl">Picture</span><div class="diff" id="gfx" role="group" aria-label="Graphics quality"><button type="button">Auto<small>Adjusts to your machine</small></button><button type="button">Low<small>Fastest</small></button><button type="button">Medium<small>Balanced</small></button><button type="button">High<small>Sharpest</small></button></div></div>
-      <p class="teach only-keys">Keys. Click one, then press the key you want. Mouse buttons stay as they are.</p>
+      <p class="teach only-keys">Keys. First person and the command view each have their own set, and the set in use changes with the view. The command view starts on the standard keys of the classic strategy games. Click a key, then press the one you want. Mouse buttons stay as they are.</p>
+      <div class="row only-keys"><span class="lbl">Key set</span><div class="diff" id="keySet" role="group" aria-label="Key set"><button type="button">First person<small>Walking, shooting, building</small></button><button type="button">Command view<small>Orders and groups from above</small></button></div></div>
+      <div class="row only-keys" id="keyLayoutRow"><span class="lbl">Card keys</span><div class="diff" id="keyLayout" role="group" aria-label="Command card keys"><button type="button">By name<small>First free letter of each name</small></button><button type="button">Grid<small>Q W E R T · A S D F G · Z X C V B</small></button></div></div>
       <div class="binds only-keys" id="keys"></div>
-      <div class="row only-keys"><button type="button" class="mini-btn" id="keysReset">Put the keys back</button></div>
+      <div class="row only-keys"><button type="button" class="mini-btn" id="keysReset">Put these keys back</button></div>
       <details class="fmore only-keys"><summary>Every key, and what it does</summary>
       <div class="keys only-keys">
       <h3>Controls</h3>
@@ -203,7 +205,9 @@
       <div><kbd>M</kbd>The whole map</div>
       <div><kbd>H</kbd>Send a scout</div>
       <div><kbd>Fly</kbd>In a flier, Space climbs and Ctrl drops</div>
-      <div><kbd>Ctrl</kbd>In the command view, Ctrl and a number saves a group, the number alone picks it. F1 finds an idle worker, F2 picks every fighter</div>
+      <div><kbd>Above</kbd>The command view has its own keys, the standard ones of the classic strategy games: A attack, M move, S stop, H hold, P patrol, G gather, C return cargo, B build, R rally. Train, research and ability buttons take the first free letter of their name (or the grid, in Options)</div>
+      <div><kbd>Ctrl</kbd>In the command view, Ctrl and a number keeps a group, Shift and a number adds to it, the number picks it and twice looks at it. F1 idle worker (Ctrl+F1 all of them), F2 every fighter, Tab next kind in the group</div>
+      <div><kbd>Space</kbd>From above: Space goes to the last alert, Backspace to the next base, F5 to F8 to a camera spot (Ctrl keeps one), the arrows pan, ` opens the whole map, Q the Quartermaster, F3 sends a scout, F4 says yes to the squad</div>
       <div><kbd>Esc</kbd>Pause</div>
       <div><kbd>Pad</kbd>Player two in split screen: sticks move and look, RT fires, LT aims, LB jumps bodies</div>
       </div>

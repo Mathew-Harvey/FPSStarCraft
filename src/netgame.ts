@@ -189,7 +189,7 @@ export function serverCmd(g: Game, pid: number, unit: Unit | null, c: any[]) {
   else if (k === 'pt') { if (unit && unit.kind === 'patch') useAbility(g, unit, 'pulse'); }
   else if (k === 'uo') {
     // Orders from the command view: which bodies, what to do, and where. Only this player's own side, and never a body somebody is driving.
-    const o = String(c[1]), ids = Array.isArray(c[5]) ? c[5].filter((v: any) => typeof v === 'number').slice(0, 80) : []; if (o.length !== 1 || !'maobr'.includes(o) || !ids.length) return;
+    const o = String(c[1]), ids = Array.isArray(c[5]) ? c[5].filter((v: any) => typeof v === 'number').slice(0, 80) : []; if (o.length !== 1 || !'maobrvh'.includes(o) || !ids.length) return;
     // An attack order has to name something this side was sent: a guessed id of a body in the fog gets nothing.
     if (o === 'a') { const V = WIRES.get(g)?.views.get(side), tid = Math.round(num(4)); if (V && !(V.sentU.has(tid) || V.sentB.has(tid))) { dropped.unseen = (dropped.unseen || 0) + 1; return; } }
     g.dir.command(side, ids, o, Math.max(-900, Math.min(900, num(2))), Math.max(-900, Math.min(900, num(3))), Math.round(num(4)));

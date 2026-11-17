@@ -27,6 +27,7 @@ import { defineAbilities, abilitiesOf, useAbility } from './core/ability';
 import { artGate, artSoon } from './artgate';
 import { artHas } from './artfiles';
 import { TouchPad, TouchPref, touchDevice, touchWords } from './touch';
+import { KB, FP_BINDS, CMD_BINDS, fk, ck, logical, keyText, rebind, loadKeys, cmdBound, type Layout } from './keys';
 import { PORTRAIT as VEYL_PORTRAIT } from './factions/veyl/look/figures';
 
 THREE.ColorManagement.enabled = false;
@@ -185,15 +186,10 @@ let camp = 0, sideDone = 0, mpOpen = true, mode = 'camp', jobI = 0, pname = '', 
 const MP_AFTER = 14;
 let net: Net | null = null;
 /** Rebindable actions: [what the game code listens for, label]. A player's choice is stored as action code to physical key. */
-const ACTIONS: [string, string][] = [['KeyW', 'Forward'], ['KeyS', 'Back'], ['KeyA', 'Left'], ['KeyD', 'Right'], ['ShiftLeft', 'Sprint'], ['Space', 'Dash'], ['Tab', 'Jump wheel'], ['KeyF', 'Jump to target'], ['KeyQ', 'Last body'], ['KeyE', 'Use or train'], ['KeyR', 'Reload or rotate'], ['KeyC', 'Grenade or ability'], ['Digit1', 'Drill'], ['Digit2', 'Build'], ['KeyG', 'Quartermaster or raid'], ['KeyZ', 'Yes to the squad'], ['KeyX', 'Hold'], ['KeyV', 'Follow me'], ['KeyH', 'Send a scout'], ['KeyB', 'Ping'], ['KeyN', 'Command view'], ['KeyM', 'Map'], ['Enter', 'Chat']];
-let binds: Record<string, string> = {}, gfxI = 0, cbOn = false, optsOpen = false, fpsOn = false, fpsN = 0, fpsT = 0, fpsWorst = 0;
-const keyOf = (action: string) => binds[action] || action;
-const keyText = (code: string) => code.replace(/^Key|^Digit/, '').replace('ShiftLeft', 'Shift').replace('ShiftRight', 'R Shift').replace('ControlLeft', 'Ctrl').replace('AltLeft', 'Alt').replace(/^Arrow/, '').replace(/^Numpad/, 'Num ');
-/** The key a player pressed, as the action the game code listens for. A default key that has been given away does nothing. */
-function logical(code: string) { for (const a in binds) if (binds[a] === code) return a; return binds[code] ? 'Unbound' : code; }
+let gfxI = 0, cbOn = false, optsOpen = false, fpsOn = false, fpsN = 0, fpsT = 0, fpsWorst = 0;
 let diffI = 1, mapI = 0, sideI = 0, foeI = 0, sens = 1, vol = .5, mus = true, curX = .5, moved = false;
-try { const o = JSON.parse(localStorage.getItem('ore-else') || '{}'); if (o.d >= 0 && o.d < 3) diffI = o.d; if (o.side >= 0 && o.side < 3) sideI = o.side; if (o.vs >= 0 && o.vs < 3) foeI = o.vs; else if (sideI) foeI = 2; else if (o.foe === 1) foeI = 1; if (validMap(o.map)) mapI = o.map % 100; if (o.st >= 2 && o.st <= 5) { if (o.camp > 0) camp = Math.min(STORY_JOBS, o.st < 5 ? fromOldSave(o.camp, o.st) : o.camp); if (o.sd > 0) sideDone = o.sd | 0; if (o.ore > 0) STORY.oreTotal = o.ore; } else if (o.camp > 0) camp = [0, 1, 2, 3, 3, 8][Math.min(5, o.camp)]; if (o.mp) mpOpen = true; if (o.mode === 'skirm') mode = 'skirm'; if (o.tp === 'on' || o.tp === 'off') touchPref = o.tp; if (typeof o.name === 'string') pname = o.name.slice(0, 14); if (typeof o.srv === 'string') srv = o.srv.slice(0, 200); if (o.s > 0) sens = o.s; if (o.v >= 0) vol = o.v; if (o.m === false) mus = false; if (o.q >= 0 && o.q < 4) gfxI = o.q | 0; cbOn = !!o.cb; fpsOn = !!o.fps; splitSide = o.ss !== 0; if (o.side === 1) sideI = 1; if (o.k && typeof o.k === 'object') for (const [a] of ACTIONS) if (typeof o.k[a] === 'string' && o.k[a] !== a) binds[a] = o.k[a]; } catch (e) { /* storage is optional */ }
-const save = () => { try { localStorage.setItem('ore-else', JSON.stringify({ d: diffI, map: mapI, camp, st: 5, sd: sideDone, ore: Math.floor(STORY.oreTotal), mp: mpOpen, mode: mode === 'multi' ? 'camp' : mode, name: pname, srv, s: sens, v: vol, m: mus, q: gfxI, cb: cbOn, fps: fpsOn, ss: splitSide ? 1 : 0, side: sideI, vs: foeI, k: binds, tp: touchPref })); } catch (e) { /* storage is optional */ } };
+try { const o = JSON.parse(localStorage.getItem('ore-else') || '{}'); if (o.d >= 0 && o.d < 3) diffI = o.d; if (o.side >= 0 && o.side < 3) sideI = o.side; if (o.vs >= 0 && o.vs < 3) foeI = o.vs; else if (sideI) foeI = 2; else if (o.foe === 1) foeI = 1; if (validMap(o.map)) mapI = o.map % 100; if (o.st >= 2 && o.st <= 5) { if (o.camp > 0) camp = Math.min(STORY_JOBS, o.st < 5 ? fromOldSave(o.camp, o.st) : o.camp); if (o.sd > 0) sideDone = o.sd | 0; if (o.ore > 0) STORY.oreTotal = o.ore; } else if (o.camp > 0) camp = [0, 1, 2, 3, 3, 8][Math.min(5, o.camp)]; if (o.mp) mpOpen = true; if (o.mode === 'skirm') mode = 'skirm'; if (o.tp === 'on' || o.tp === 'off') touchPref = o.tp; if (typeof o.name === 'string') pname = o.name.slice(0, 14); if (typeof o.srv === 'string') srv = o.srv.slice(0, 200); if (o.s > 0) sens = o.s; if (o.v >= 0) vol = o.v; if (o.m === false) mus = false; if (o.q >= 0 && o.q < 4) gfxI = o.q | 0; cbOn = !!o.cb; fpsOn = !!o.fps; splitSide = o.ss !== 0; if (o.side === 1) sideI = 1; loadKeys(o.k, o.kc, o.kl); } catch (e) { /* storage is optional */ }
+const save = () => { try { localStorage.setItem('ore-else', JSON.stringify({ d: diffI, map: mapI, camp, st: 5, sd: sideDone, ore: Math.floor(STORY.oreTotal), mp: mpOpen, mode: mode === 'multi' ? 'camp' : mode, name: pname, srv, s: sens, v: vol, m: mus, q: gfxI, cb: cbOn, fps: fpsOn, ss: splitSide ? 1 : 0, side: sideI, vs: foeI, k: KB.fp, kc: KB.cmd, kl: KB.layout, tp: touchPref })); } catch (e) { /* storage is optional */ } };
 jobI = Math.min(camp, STORY_JOBS - 1);
 const jobOpen = (i: number) => i < STORY_JOBS ? i <= camp : camp >= (MISSIONS[i].opens || 0);
 const jobDone = (i: number) => i < STORY_JOBS ? i < camp : !!(sideDone & (1 << (i - STORY_JOBS)));
@@ -243,17 +239,19 @@ const chatClose = () => { chat.hidden = true; chat.value = ''; chat.blur(); };
 chat.addEventListener('keydown', e => { e.stopPropagation(); if (e.key === 'Enter') { const t = chat.value.trim(); if (t && game.net) game.net.cmd('ch', t); chatClose(); } else if (e.key === 'Escape') { e.preventDefault(); chatClose(); } });
 chat.addEventListener('keyup', e => e.stopPropagation()); chat.addEventListener('blur', () => { chat.hidden = true; });
 addEventListener('keydown', e => {
-  const code = logical(e.code);
+  // Each view has its own set of keys: first person reads its bindings as the actions they are for, the command view reads the key
+  // itself and looks its bindings up (src/keys.ts), so the set in use switches when the view does.
+  const code = game.cmd.on ? e.code : logical(e.code);
   if (rebinding) return;
   if (cutP.on) { e.preventDefault(); if (e.code === 'Escape') skipCuts(); else if (!e.repeat && (e.code === 'Space' || e.code === 'Enter' || e.code === 'ArrowRight')) cutP.next(); return; }
   if (split && game2 && !padTwo && logical(e.code) === e.code && P2KEYS[e.code]) { if (live()) { e.preventDefault(); const k = P2KEYS[e.code]; if (k === 'Tool') { if (!e.repeat) game2.pressed.add(game2.tool === 2 ? 'Digit1' : 'Digit2'); } else if (k === 'Wheel-' || k === 'Wheel+') { if (!e.repeat) game2.wheel = k === 'Wheel+' ? 1 : -1; } else if (k === 'Mouse0' || k === 'Mouse2') { if (!e.repeat) game2.pressed.add(k); if (k === 'Mouse0') game2.lmb = true; else game2.rmb = true; } else if (k.startsWith('Look')) look2.add(k); else { if (!e.repeat) game2.pressed.add(k); game2.keys.add(k); } p2Seen = true; } return; }
   if (game.net && !split && game.phase === 'play' && code === 'Enter') { e.preventDefault(); game.keys.clear(); chat.hidden = false; chat.focus(); return; }
   // Ctrl and a number keeps a control group, Ctrl+A picks the army, F1 and F2 pick idle workers and the army: the browser's own uses of those keys are held back during play.
-  const rts = (e.ctrlKey && (/^Digit\d$/.test(e.code) || e.code === 'KeyA')) || e.code === 'F1' || e.code === 'F2';
+  const rts = (e.ctrlKey && (/^Digit\d$/.test(e.code) || e.code === 'KeyA')) || e.code === 'F1' || e.code === 'F2' || (game.cmd.on && cmdBound(e.code));
   if (live()) { if ((!e.ctrlKey && !e.metaKey && e.code !== 'Escape' && !/^F\d/.test(e.code)) || rts) e.preventDefault(); if (!e.repeat) game.pressed.add(code); game.keys.add(code); }
   if (e.code === 'Escape' && freeMouse) { if (game.phase === 'play' || game.phase === 'card') pause(); else if (game.phase === 'paused') resume(); }
 });
-addEventListener('keyup', e => { const k = split && game2 && logical(e.code) === e.code ? P2KEYS[e.code] : ''; if (k && game2) { if (k === 'Mouse0') game2.lmb = false; else if (k === 'Mouse2') game2.rmb = false; else if (k.startsWith('Look')) look2.delete(k); else game2.keys.delete(k); if (!padTwo) return; } game.keys.delete(logical(e.code)); });
+addEventListener('keyup', e => { const k = split && game2 && logical(e.code) === e.code ? P2KEYS[e.code] : ''; if (k && game2) { if (k === 'Mouse0') game2.lmb = false; else if (k === 'Mouse2') game2.rmb = false; else if (k.startsWith('Look')) look2.delete(k); else game2.keys.delete(k); if (!padTwo) return; } game.keys.delete(logical(e.code)); game.keys.delete(e.code); });
 addEventListener('blur', () => { game.keys.clear(); game.lmb = game.rmb = game.mmb = false; if (game2) { game2.keys.clear(); game2.lmb = game2.rmb = false; } look2.clear(); });
 canvas.addEventListener('mousedown', e => { if (!live()) return; e.preventDefault(); game.pressed.add('Mouse' + e.button); if (e.button === 0) game.lmb = true; if (e.button === 2) game.rmb = true; if (e.button === 1) game.mmb = true; if (!locked() && !freeMouse) lock(); });
 addEventListener('mouseup', e => { if (e.button === 0) game.lmb = false; if (e.button === 2) game.rmb = false; if (e.button === 1) game.mmb = false; });
@@ -341,12 +339,12 @@ function padDrive(g: Game, p: Gamepad, slot: number, dt: number) {
     // From above: left stick slides the view (W A S D), right stick moves the cursor, RT picks or presses the card under the cursor,
     // LT gives an order, D-pad up and down zoom, left and right step through the card and A presses it, X idle worker, Y whole army.
     const lx = ax(0), ly = ax(1), rx = ax(2), ry = ax(3), C = g.cmd;
-    hold('KeyW', ly < -.3); hold('KeyS', ly > .3); hold('KeyA', lx < -.3); hold('KeyD', lx > .3); hold('ShiftLeft', false); hold('Tab', false);
+    hold(ck('panU'), ly < -.3); hold(ck('panD'), ly > .3); hold(ck('panL'), lx < -.3); hold(ck('panR'), lx > .3); hold('ShiftLeft', false); hold('Tab', false);
     g.mdx += rx * (.35 + .65 * Math.abs(rx)) * 1100 * dt; g.mdy += ry * (.35 + .65 * Math.abs(ry)) * 1100 * dt;
     const f = padFire[slot], rt = down(7), lt = down(6);
     if (rt !== f[0]) { f[0] = rt; g.lmb = rt; if (rt) g.pressed.add('Mouse0'); } if (lt !== f[1]) { f[1] = lt; g.rmb = lt; if (lt) g.pressed.add('Mouse2'); }
     if (hit(12)) g.wheel = -1; if (hit(13)) g.wheel = 1; if (hit(14)) C.padStep(-1); if (hit(15)) C.padStep(1);
-    if (hit(0)) C.padPress(); tap(2, 'F1'); tap(3, 'F2'); if (viewTap) g.pressed.add('KeyN');
+    if (hit(0)) C.padPress(); tap(2, ck('idle')); tap(3, ck('army')); if (viewTap) g.pressed.add(ck('fp'));
     if (hit(9)) pause();
   } else if (game.phase === 'play' || game.phase === 'card') {
     if (viewHeld) { padViewDone[slot] = true; g.keys.delete('KeyV'); g.pressed.add('KeyN'); }
@@ -614,22 +612,33 @@ const sens2 = $('sens2') as HTMLInputElement, vol2 = $('vol2') as HTMLInputEleme
 const aoFor = () => gfxI === 1 || (gfxI === 0 && quality < .75) ? 0 : 1;
 const glowFor = () => gfxI === 1 || (gfxI === 0 && quality < .6) ? 0 : 1;
 const aaFor = () => gfxI === 1 || (gfxI === 0 && quality < 1) ? 0 : 4;
-function applyOpts() { document.body.classList.toggle('cb', cbOn); hud.cb = hud2.cb = cbOn; pipe.shadowEvery = gfxI === 1 ? 3 : 1; pipe.aa = aaFor(); pipe.ao = aoFor(); pipe.glow = pipe.shafts = glowFor(); LAMP_ON.value = (gfxI as number) !== 1; pipe.w = 0; hud.relabel(touchOn ? k => TOUCHKEYS[k] ?? k : Object.keys(binds).length ? k => keyText(keyOf(k === 'Tab' || k === 'Space' ? k : 'Key' + k)) : null); resize(); }
+function applyOpts() { document.body.classList.toggle('cb', cbOn); hud.cb = hud2.cb = cbOn; pipe.shadowEvery = gfxI === 1 ? 3 : 1; pipe.aa = aaFor(); pipe.ao = aoFor(); pipe.glow = pipe.shafts = glowFor(); LAMP_ON.value = (gfxI as number) !== 1; pipe.w = 0; hud.relabel(touchOn ? k => TOUCHKEYS[k] ?? k : Object.keys(KB.fp).length ? k => keyText(fk(k === 'Tab' || k === 'Space' ? k : 'Key' + k)) : null); resize(); }
 /** On a touch screen the HUD names the on-screen buttons instead of keys. */
 const TOUCHKEYS: Record<string, string> = { RMB: 'Aim', MMB: 'Send', TAB: 'Jump', Tab: 'Jump', Space: 'Dash', C: 'Ability', Q: 'Back', V: 'Squad', G: 'QM', R: 'Reload' };
 function syncOpts() { sens2.value = sensEl.value = String(sens); vol2.value = volEl.value = String(vol); mus2.checked = musEl.checked = mus; cbEl.checked = cbOn; gfxB.forEach((b, i) => b.classList.toggle('on', i === gfxI)); }
-function showKeys() { $('keys').innerHTML = ACTIONS.map(([a, label]) => `<button type="button" data-a="${a}" class="${rebinding === a ? 'on' : ''}">${label}<b>${rebinding === a ? 'Press a key' : keyText(keyOf(a))}</b></button>`).join(''); }
+/** Which set of keys Options is showing: first person, or the command view. */
+let keySet: 'fp' | 'cmd' = 'cmd';
+const keySetB = Array.from($('keySet').querySelectorAll('button')) as HTMLButtonElement[], layoutB = Array.from($('keyLayout').querySelectorAll('button')) as HTMLButtonElement[], LAYOUTS: Layout[] = ['name', 'grid'];
+function showKeys() {
+  const list = keySet === 'fp' ? FP_BINDS : CMD_BINDS, key = (id: string) => keySet === 'fp' ? fk(id) : ck(id); let grp = '', html = '';
+  for (const b of list) { if (keySet === 'cmd' && b.grp !== grp) { grp = b.grp; html += `<h4>${grp}</h4>`; } const on = rebinding === keySet + ':' + b.id; html += `<button type="button" data-a="${b.id}" class="${on ? 'on' : ''}">${b.label}<b>${on ? 'Press a key' : keyText(key(b.id))}</b></button>`; }
+  $('keys').innerHTML = html;
+  keySetB.forEach((b, i) => { const on = (i ? 'cmd' : 'fp') === keySet; b.classList.toggle('on', on); b.setAttribute('aria-pressed', String(on)); });
+  $('keyLayoutRow').hidden = keySet !== 'cmd'; layoutB.forEach((b, i) => { const on = LAYOUTS[i] === KB.layout; b.classList.toggle('on', on); b.setAttribute('aria-pressed', String(on)); });
+}
+keySetB.forEach((b, i) => b.addEventListener('click', () => { keySet = i ? 'cmd' : 'fp'; rebinding = ''; showKeys(); }));
+layoutB.forEach((b, i) => b.addEventListener('click', () => { KB.layout = LAYOUTS[i]; save(); showKeys(); }));
 sens2.addEventListener('input', () => { sens = +sens2.value; game.sens = sens; pad.sens = sens; save(); syncOpts(); }); vol2.addEventListener('input', () => { vol = +vol2.value; setVolume(vol); save(); syncOpts(); });
 sensEl.addEventListener('input', syncOpts); volEl.addEventListener('input', syncOpts);
 mus2.addEventListener('change', () => { mus = mus2.checked; setMusic(mus); save(); syncOpts(); });
 cbEl.addEventListener('change', () => { cbOn = cbEl.checked; save(); applyOpts(); });
 const fpsEl = $('fpsOn') as HTMLInputElement; fpsEl.checked = fpsOn; $('fps').hidden = !fpsOn; fpsEl.addEventListener('change', () => { fpsOn = fpsEl.checked; $('fps').hidden = !fpsOn; save(); });
 gfxB.forEach((b, i) => b.addEventListener('click', () => { gfxI = i; quality = 1; save(); syncOpts(); applyOpts(); }));
-$('keys').addEventListener('click', e => { const b = (e.target as HTMLElement).closest('button') as HTMLButtonElement | null; if (!b) return; rebinding = rebinding === b.dataset.a ? '' : b.dataset.a || ''; showKeys(); });
-$('keysReset').addEventListener('click', () => { binds = {}; rebinding = ''; save(); showKeys(); applyOpts(); });
+$('keys').addEventListener('click', e => { const b = (e.target as HTMLElement).closest('button') as HTMLButtonElement | null; if (!b) return; const a = keySet + ':' + (b.dataset.a || ''); rebinding = rebinding === a ? '' : a; showKeys(); });
+$('keysReset').addEventListener('click', () => { const m = KB[keySet]; for (const k of Object.keys(m)) delete m[k]; if (keySet === 'cmd') KB.layout = 'name'; rebinding = ''; save(); showKeys(); applyOpts(); });
 addEventListener('keydown', e => {
   if (!rebinding) return; e.preventDefault(); e.stopImmediatePropagation();
-  if (e.code !== 'Escape') { const a = rebinding, was = keyOf(a), other = ACTIONS.find(([x]) => x !== a && keyOf(x) === e.code); if (other) { if (was === other[0]) delete binds[other[0]]; else binds[other[0]] = was; } if (e.code === a) delete binds[a]; else binds[a] = e.code; save(); }
+  if (e.code !== 'Escape') { const i = rebinding.indexOf(':'), set = rebinding.slice(0, i) as 'fp' | 'cmd'; rebind(set, rebinding.slice(i + 1), e.code); save(); }
   rebinding = ''; showKeys(); applyOpts();
 }, true);
 const touchB = Array.from($('touchPick').querySelectorAll('button')) as HTMLButtonElement[], TP: TouchPref[] = ['auto', 'on', 'off'];
@@ -678,5 +687,5 @@ function frame(now: number) {
   if (fast > 900 && quality < 1) { quality = Math.min(1, quality / .85); fast = 0; pipe.aa = aaFor(); pipe.ao = aoFor(); pipe.glow = pipe.shafts = glowFor(); LAMP_ON.value = (gfxI as number) !== 1; resize(); }
   requestAnimationFrame(frame);
 }
-(window as any).__ore = { flushIcons: () => pumpIcons(true), MAP: () => MAP, ter: () => TER, models: MD, tx: TX, mats: M, gloamB: GLOAM_BUILDINGS, gloamBloom: bloomPatch, sounds: { ready: soundsReady, sfx }, quit, atlasUsed: MD.atlasUsed, game, start, pipe, hud, hud2, startSplit, startVeyl, pause, resume, touch: pad, setTouch, reg: { defineAbilities, abilitiesOf, useAbility, defineBuildings, UNIT, BLD, isFriend }, padDrive: (p: Gamepad, dt = 1 / 30) => padDrive(game, p, 0, dt), split: () => split, game2: () => game2, setFree: (v: boolean) => { freeMouse = v; }, hold: (v: boolean) => { still = v; if (!v) { game.noRender = false; if (game2) game2.noRender = false; } }, pickMap, pickSize, portraits: (only?: Kind[]) => portraits(true, only), setRaid: (v: boolean) => { raid = v; showSide(); if (mode === 'skirm' && builtTeam !== teamKey()) fresh(); }, pickSide: (s: number, f = 0) => { mode = "skirm"; front = 'in'; optsOpen = false; showMode(); sideI = s; foeI = s ? s - 1 : f; showSide(); fresh(); }, unlock: () => { camp = STORY_JOBS; mpOpen = true; mode = 'multi'; front = 'in'; showMode(); }, net: () => net, pickJob: (i: number) => { mode = 'camp'; front = 'in'; camp = Math.max(camp, Math.min(i, STORY_JOBS)); jobI = i; showMode(); fresh(); }, playCuts, cuts: CUTS, cutP, startStory: (i: number) => { mode = 'camp'; front = 'in'; jobI = i; camp = Math.max(camp, Math.min(i, STORY_JOBS)); start(); } };
+(window as any).__ore = { keys: { KB, ck, rebind, show: () => showKeys() }, flushIcons: () => pumpIcons(true), MAP: () => MAP, ter: () => TER, models: MD, tx: TX, mats: M, gloamB: GLOAM_BUILDINGS, gloamBloom: bloomPatch, sounds: { ready: soundsReady, sfx }, quit, atlasUsed: MD.atlasUsed, game, start, pipe, hud, hud2, startSplit, startVeyl, pause, resume, touch: pad, setTouch, reg: { defineAbilities, abilitiesOf, useAbility, defineBuildings, UNIT, BLD, isFriend }, padDrive: (p: Gamepad, dt = 1 / 30) => padDrive(game, p, 0, dt), split: () => split, game2: () => game2, setFree: (v: boolean) => { freeMouse = v; }, hold: (v: boolean) => { still = v; if (!v) { game.noRender = false; if (game2) game2.noRender = false; } }, pickMap, pickSize, portraits: (only?: Kind[]) => portraits(true, only), setRaid: (v: boolean) => { raid = v; showSide(); if (mode === 'skirm' && builtTeam !== teamKey()) fresh(); }, pickSide: (s: number, f = 0) => { mode = "skirm"; front = 'in'; optsOpen = false; showMode(); sideI = s; foeI = s ? s - 1 : f; showSide(); fresh(); }, unlock: () => { camp = STORY_JOBS; mpOpen = true; mode = 'multi'; front = 'in'; showMode(); }, net: () => net, pickJob: (i: number) => { mode = 'camp'; front = 'in'; camp = Math.max(camp, Math.min(i, STORY_JOBS)); jobI = i; showMode(); fresh(); }, playCuts, cuts: CUTS, cutP, startStory: (i: number) => { mode = 'camp'; front = 'in'; jobI = i; camp = Math.max(camp, Math.min(i, STORY_JOBS)); start(); } };
 requestAnimationFrame(frame);

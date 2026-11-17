@@ -83,7 +83,7 @@ export const UPGRADES: UpDef[] = [...I_UPGRADES, ...V_UPGRADES.map(u => ({ ...u,
 /** Research a side can buy. */
 export const upsOf = (team: number) => UPGRADES.filter(u => (u.team || 0) === fac(team));
 
-export interface Order { type: 'guard' | 'amove' | 'follow' | 'raid' | 'scout'; x: number; z: number; path?: number[][]; lead?: Unit; /** Seconds to stand and let the rest of the march catch up. */ waitT?: number; /** Given by a player from the command view: the side's own brain leaves this body alone until it is handed back. */ mine?: boolean; /** The one enemy body or building this body was told to attack. */ prey?: Unit | Building; /** A scout: on its way home, walking round a find, and turned back hurt. */ back?: boolean; loop?: boolean; fled?: boolean }
+export interface Order { type: 'guard' | 'amove' | 'follow' | 'raid' | 'scout'; x: number; z: number; path?: number[][]; lead?: Unit; /** Seconds to stand and let the rest of the march catch up. */ waitT?: number; /** Given by a player from the command view: the side's own brain leaves this body alone until it is handed back. */ mine?: boolean; /** The one enemy body or building this body was told to attack. */ prey?: Unit | Building; /** Told from above to walk there without stopping to fight (until it gets there or is stuck), or to hold where it stands and only shoot what comes in reach. */ pass?: boolean; hold?: boolean; passT?: number; passStill?: number; /** A scout: on its way home, walking round a find, and turned back hurt. */ back?: boolean; loop?: boolean; fled?: boolean }
 export interface Unit {
   /** Set once a Veyl guard has broken off to regrow its shield, so it only does that once. */
   fled?: boolean; leashed?: boolean;

@@ -8,6 +8,7 @@ import { costOf, canPay, shortOf, type Cost } from './core/econ';
 import * as AB from './core/ability';
 import { abilitiesOf, whyNot, type AbilityDef } from './core/ability';
 import { roomOf } from './core/cargo';
+import { ck, fillKeys } from './keys';
 
 /** Transport and the autocast switch come from the engine core (stream A); the buttons show once the game has them. */
 export const hasBoard = (g: Game) => typeof (g as any).board === 'function' && typeof (g as any).unload === 'function';
@@ -24,25 +25,16 @@ export interface Btn {
   /** The button is lit: the order it starts is waiting for a click on the map. */
   on?: boolean;
   /** What pressing it does, given which of the picked bodies or which building it is for. */
-  act: { t: 'train'; k: Kind } | { t: 'research'; k: UpKey } | { t: 'aim'; aim: Aim } | { t: 'stop' } | { t: 'release' } | { t: 'jump' } | { t: 'buildMenu' } | { t: 'back' } | { t: 'cancel' }
+  act: { t: 'train'; k: Kind } | { t: 'hold' } | { t: 'research'; k: UpKey } | { t: 'aim'; aim: Aim } | { t: 'stop' } | { t: 'release' } | { t: 'jump' } | { t: 'buildMenu' } | { t: 'back' } | { t: 'cancel' }
     | { t: 'ability'; kind: Kind; key: string } | { t: 'bact'; key: string } | { t: 'unload' };
 }
 /** An order that waits for a spot or a body to be clicked. */
-export type Aim = { k: 'move' } | { k: 'patrol' } | { k: 'gather' } | { k: 'rally' } | { k: 'stake'; b: BKind } | { k: 'ab'; kind: Kind; key: string; name: string } | { k: 'board' };
+export type Aim = { k: 'move' } | { k: 'attack' } | { k: 'patrol' } | { k: 'gather' } | { k: 'rally' } | { k: 'stake'; b: BKind } | { k: 'ab'; kind: Kind; key: string; name: string } | { k: 'board' };
 
-/** Keys for the card, by the code the keyboard sends. None of them pans the view (W A S D), lifts or drops it (M N), jumps (F) or is a number. */
-export const KEYS = {
-  move: 'KeyQ', stop: 'KeyH', board: 'KeyJ', unload: 'KeyK', patrol: 'KeyP', release: 'KeyR', jump: 'KeyF', gather: 'KeyO', build: 'KeyB', rally: 'KeyL', cancel: 'Backspace',
-  /** Train and research slots on a building, in order: E T Y U are the keys the first-person shop already uses. Fourteen, so a Cap's
-   *  eleven kinds all fit; V is left out because the squad orders use it. The last three (, . /) are for the Mother Cap, whose eleven
-   *  kinds, four research and Ripen need seventeen. (With a second player on the keyboard those keys are theirs, as I O P J K already are; the buttons still click.) */
-  slots: ['KeyE', 'KeyT', 'KeyY', 'KeyU', 'KeyI', 'KeyO', 'KeyP', 'KeyJ', 'KeyK', 'KeyQ', 'KeyZ', 'KeyX', 'KeyC', 'KeyG', 'Comma', 'Period', 'Slash'],
-  /** Abilities of the picked bodies, in order, after the fixed orders. */
-  abilities: ['KeyE', 'KeyT', 'KeyY', 'KeyU', 'KeyZ', 'KeyX', 'KeyC', 'KeyG'],
-  /** Buildings in the build list, in order. */
-  builds: ['KeyQ', 'KeyE', 'KeyT', 'KeyY', 'KeyU', 'KeyI', 'KeyO', 'KeyP', 'KeyH', 'KeyJ', 'KeyK', 'KeyL'],
-};
-const PUNCT: Record<string, string> = { Backspace: '⌫', Comma: ',', Period: '.', Slash: '/', ControlLeft: 'Ctrl', ControlRight: 'R Ctrl', ShiftLeft: 'Shift', ShiftRight: 'R Shift', AltLeft: 'Alt', Space: 'Space', Tab: 'Tab', Mouse0: 'LMB', Mouse2: 'RMB', Mouse1: 'MMB' };
+/** Most card buttons get their key from src/keys.ts: the fixed orders from the command view bindings, the rest from their names or their
+ *  place on the card (see fillKeys). The slot count is how many train and research buttons a building's card can hold. */
+const SLOTS = 17;
+const PUNCT: Record<string, string> = { Backspace: '⌫', Delete: 'Del', Backquote: '`', Semicolon: ';', Quote: "'", BracketLeft: '[', BracketRight: ']', Comma: ',', Period: '.', Slash: '/', ControlLeft: 'Ctrl', ControlRight: 'R Ctrl', ShiftLeft: 'Shift', ShiftRight: 'R Shift', AltLeft: 'Alt', Space: 'Space', Tab: 'Tab', Mouse0: 'LMB', Mouse2: 'RMB', Mouse1: 'MMB' };
 export const keyName = (code: string) => PUNCT[code] ?? code.replace(/^Key|^Digit/, '');
 
 /** The reason a building cannot train a kind now, or '' when it can. Mirrors the checks in Game.train so the button and the order agree. */
@@ -100,48 +92,57 @@ export function casters(g: Game, us: Unit[], kind: Kind, a: AbilityDef): { ready
 }
 
 /** The buttons for what is picked: a building's training and research, or the orders the picked bodies take. */
-export function cardFor(g: Game, sel: Set<Unit>, selB: Building | null, menu: '' | 'build', aim: Aim | null): Btn[] {
+export function cardFor(g: Game, sel: Set<Unit>, selB: Building | null, menu: '' | 'build', aim: Aim | null, sub: Kind | null = null): Btn[] {
+  const out = card(g, sel, selB, menu, aim, sub);
+  fillKeys(out, b => b.label);
+  return out;
+}
+function card(g: Game, sel: Set<Unit>, selB: Building | null, menu: '' | 'build', aim: Aim | null, sub: Kind | null): Btn[] {
   const out: Btn[] = [], lit = (k: string) => !!aim && aim.k === k;
   if (selB) {
     const b = selB, t = b.team; let i = 0;
-    for (const k of TRAINS[b.kind] || []) { const two = unitRule(k).pair ? 2 : 1; out.push({ id: 'tr:' + k, key: KEYS.slots[i++], label: UNIT[k].name + (two > 1 ? ' ×2' : ''), sub: `${price(costOf(k), two)} · ${UNIT[k].supply * two} supply`, off: trainBlock(g, b, k), icon: k, act: { t: 'train', k } }); }
-    for (const u of UPGRADES.filter(u => u.at === b.kind && (u.team || 0) === fac(t))) { if (g.upOf(t)[u.key]) continue; if (i >= KEYS.slots.length) break; out.push({ id: 'up:' + u.key, key: KEYS.slots[i++], label: u.name, sub: `${price(costOf(u.key))} · ${u.blurb}`, off: researchBlock(g, b, u.key), act: { t: 'research', k: u.key } }); }
-    for (const ac of bldRule(b.kind).actions?.(g, b) || []) { if (i >= KEYS.slots.length) break;
+    for (const k of TRAINS[b.kind] || []) { const two = unitRule(k).pair ? 2 : 1; out.push({ id: 'tr:' + k, key: (i++, ''), label: UNIT[k].name + (two > 1 ? ' ×2' : ''), sub: `${price(costOf(k), two)} · ${UNIT[k].supply * two} supply`, off: trainBlock(g, b, k), icon: k, act: { t: 'train', k } }); }
+    for (const u of UPGRADES.filter(u => u.at === b.kind && (u.team || 0) === fac(t))) { if (g.upOf(t)[u.key]) continue; if (i >= SLOTS) break; out.push({ id: 'up:' + u.key, key: (i++, ''), label: u.name, sub: `${price(costOf(u.key))} · ${u.blurb}`, off: researchBlock(g, b, u.key), act: { t: 'research', k: u.key } }); }
+    for (const ac of bldRule(b.kind).actions?.(g, b) || []) { if (i >= SLOTS) break;
       const why = (ac.ok?.(g, b) || '') || (ac.cost && !canPay(g, t, ac.cost) ? 'Needs ' + shortOf(g, t, ac.cost) + ' more' : '') || (b.built ? '' : 'Still going up');
-      out.push({ id: 'ba:' + ac.key, key: KEYS.slots[i++], label: ac.name, sub: (ac.cost ? price(ac.cost) + ' · ' : '') + (ac.blurb || ''), off: why.replace(/\.$/, ''), act: { t: 'bact', key: ac.key } }); }
-    if (roomOf(b) > 0 && hasBoard(g)) out.push({ id: 'unload', key: KEYS.unload, label: 'Unload all', sub: `${b.cargo?.length || 0} of ${roomOf(b)} inside`, off: b.cargo?.length ? '' : 'Nobody inside', act: { t: 'unload' } });
+      out.push({ id: 'ba:' + ac.key, key: (i++, ''), label: ac.name, sub: (ac.cost ? price(ac.cost) + ' · ' : '') + (ac.blurb || ''), off: why.replace(/\.$/, ''), act: { t: 'bact', key: ac.key } }); }
+    if (roomOf(b) > 0 && hasBoard(g)) out.push({ id: 'unload', key: ck('unload'), label: 'Unload all', sub: `${b.cargo?.length || 0} of ${roomOf(b)} inside`, off: b.cargo?.length ? '' : 'Nobody inside', act: { t: 'unload' } });
     if (TRAINS[b.kind]) {
-      out.push({ id: 'rally', key: KEYS.rally, label: 'Rally point', sub: 'Where new bodies go', off: b.built ? '' : 'Still going up', on: lit('rally'), act: { t: 'aim', aim: { k: 'rally' } } });
-      if (!bldRule(b.kind).buds) out.push({ id: 'cancel', key: KEYS.cancel, label: 'Cancel last', sub: 'Paid back in full', off: b.queue.length ? '' : 'Nothing queued', act: { t: 'cancel' } });
+      out.push({ id: 'rally', key: ck('rally'), label: 'Rally point', sub: 'Where new bodies go', off: b.built ? '' : 'Still going up', on: lit('rally'), act: { t: 'aim', aim: { k: 'rally' } } });
+      if (!bldRule(b.kind).buds) out.push({ id: 'cancel', key: ck('cancel'), label: 'Cancel last', sub: 'Paid back in full', off: b.queue.length ? '' : 'Nothing queued', act: { t: 'cancel' } });
     }
     return out;
   }
   if (!sel.size) return out;
   const us = [...sel], workers = us.filter(u => isWorker(u.kind)), team = us[0].team;
   if (menu === 'build' && workers.length) {
-    FACTION[team].builds.forEach((k, i) => { if (i < KEYS.builds.length) out.push({ id: 'bd:' + k, key: KEYS.builds[i], label: BLD[k].name, sub: `${price(costOf(k))} · ${BLD[k].blurb}`, off: buildBlock(g, k, team), icon: k, on: !!aim && aim.k === 'stake' && aim.b === k, act: { t: 'aim', aim: { k: 'stake', b: k } } }); });
-    out.push({ id: 'back', key: KEYS.build, label: 'Back', sub: 'To the orders', off: '', act: { t: 'back' } });
+    FACTION[team].builds.forEach(k => { out.push({ id: 'bd:' + k, key: '', label: BLD[k].name, sub: `${price(costOf(k))} · ${BLD[k].blurb}`, off: buildBlock(g, k, team), icon: k, on: !!aim && aim.k === 'stake' && aim.b === k, act: { t: 'aim', aim: { k: 'stake', b: k } } }); });
+    out.push({ id: 'back', key: ck('build'), label: 'Back', sub: 'To the orders', off: '', act: { t: 'back' } });
     return out;
   }
-  out.push({ id: 'move', key: KEYS.move, label: 'Move', sub: 'Then click the ground', off: '', on: lit('move'), act: { t: 'aim', aim: { k: 'move' } } });
-  out.push({ id: 'stop', key: KEYS.stop, label: 'Stop', sub: 'Stand where they are', off: '', act: { t: 'stop' } });
-  if (us.length > workers.length) out.push({ id: 'patrol', key: KEYS.patrol, label: 'Patrol', sub: 'Back and forth, fighting', off: '', on: lit('patrol'), act: { t: 'aim', aim: { k: 'patrol' } } });
-  out.push({ id: 'release', key: KEYS.release, label: workers.length === us.length ? 'Back to work' : 'Back to squad', sub: 'The side\'s own orders again', off: '', act: { t: 'release' } });
-  out.push({ id: 'jump', key: KEYS.jump, label: 'Jump in', sub: 'Drive the first one picked', off: '', act: { t: 'jump' } });
+  const fighters = us.length > workers.length;
+  out.push({ id: 'move', key: ck('move'), label: 'Move', sub: fighters ? 'Then click: no fighting on the way' : 'Then click the ground', off: '', on: lit('move'), act: { t: 'aim', aim: { k: 'move' } } });
+  out.push({ id: 'stop', key: ck('stop'), label: 'Stop', sub: 'Stand where they are', off: '', act: { t: 'stop' } });
+  if (fighters) out.push({ id: 'attack', key: ck('attack'), label: 'Attack', sub: 'Click a foe, or ground to fight on the way', off: '', on: lit('attack'), act: { t: 'aim', aim: { k: 'attack' } } });
+  if (fighters) out.push({ id: 'hold', key: ck('hold'), label: 'Hold', sub: 'Stay put, shoot what comes in reach', off: '', act: { t: 'hold' } });
+  if (fighters) out.push({ id: 'patrol', key: ck('patrol'), label: 'Patrol', sub: 'Back and forth, fighting', off: '', on: lit('patrol'), act: { t: 'aim', aim: { k: 'patrol' } } });
+  out.push({ id: 'release', key: ck('release'), label: workers.length === us.length ? (workers.some(u => u.carrying > 0) ? 'Return cargo' : 'Back to work') : 'Back to squad', sub: 'The side\'s own orders again', off: '', act: { t: 'release' } });
+  out.push({ id: 'jump', key: ck('jump'), label: 'Jump in', sub: 'Drive the first one picked', off: '', act: { t: 'jump' } });
   if (hasBoard(g)) {
     const carriers = us.filter(u => roomOf(u) > 0), riders = us.filter(u => !roomOf(u));
-    if (riders.length) out.push({ id: 'board', key: KEYS.board, label: 'Get in', sub: 'Then click a carrier or bunker', off: '', on: !!aim && aim.k === 'board', act: { t: 'aim', aim: { k: 'board' } } });
-    if (carriers.length) out.push({ id: 'unload', key: KEYS.unload, label: 'Unload all', sub: carriers.reduce((n, c) => n + (c.cargo?.length || 0), 0) + ' inside', off: carriers.some(c => c.cargo?.length) ? '' : 'Nobody inside', act: { t: 'unload' } });
+    if (riders.length) out.push({ id: 'board', key: ck('board'), label: 'Get in', sub: 'Then click a carrier or bunker', off: '', on: !!aim && aim.k === 'board', act: { t: 'aim', aim: { k: 'board' } } });
+    if (carriers.length) out.push({ id: 'unload', key: ck('unload'), label: 'Unload all', sub: carriers.reduce((n, c) => n + (c.cargo?.length || 0), 0) + ' inside', off: carriers.some(c => c.cargo?.length) ? '' : 'Nobody inside', act: { t: 'unload' } });
   }
-  { let j = 0; const kinds = [...new Set(us.map(u => u.kind))];
-    for (const kind of kinds) for (const a of abilitiesOf(kind)) { if (j >= KEYS.abilities.length) break;
-      const { why } = casters(g, us, kind, a), many = kinds.length > 1 ? ' (' + UNIT[kind].name + ')' : '';
+  // With more than one kind picked, the abilities shown are the ones of the kind Tab has brought up (all of them until Tab is pressed).
+  { let j = 0; const all = [...new Set(us.map(u => u.kind))], kinds = sub && all.includes(sub) ? [sub] : all;
+    for (const kind of kinds) for (const a of abilitiesOf(kind)) { if (j >= 8) break; j++;
+      const { why } = casters(g, us, kind, a), many = all.length > 1 ? ' (' + UNIT[kind].name + ')' : '';
       const auto = a.autocast && hasAutocast() ? (us.some(u => u.kind === kind && !(u as any).autoOff?.[a.key]) ? 'Casts by itself · right click: off' : 'Right click: cast by itself') : '';
-      out.push({ id: `ab:${kind}:${a.key}`, key: KEYS.abilities[j++], label: a.name + many, sub: [auto, a.energy ? a.energy + ' energy' : '', a.cd ? a.cd + ' s' : '', auto ? '' : a.blurb || ''].filter(Boolean).join(' · '), off: why, icon: kind,
+      out.push({ id: `ab:${kind}:${a.key}`, key: '', label: a.name + many, sub: [auto, a.energy ? a.energy + ' energy' : '', a.cd ? a.cd + ' s' : '', auto ? '' : a.blurb || ''].filter(Boolean).join(' · '), off: why, icon: kind,
         on: !!aim && aim.k === 'ab' && aim.kind === kind && aim.key === a.key, act: { t: 'ability', kind, key: a.key } }); } }
   if (workers.length) {
-    out.push({ id: 'gather', key: KEYS.gather, label: 'Gather', sub: 'Then click a seam', off: '', on: lit('gather'), act: { t: 'aim', aim: { k: 'gather' } } });
-    out.push({ id: 'build', key: KEYS.build, label: fac(team) === 2 ? 'Root' : fac(team) ? 'Grow' : 'Build', sub: 'Pick a building, then a spot', off: '', act: { t: 'buildMenu' } });
+    out.push({ id: 'gather', key: ck('gather'), label: 'Gather', sub: 'Then click a seam', off: '', on: lit('gather'), act: { t: 'aim', aim: { k: 'gather' } } });
+    out.push({ id: 'build', key: ck('build'), label: fac(team) === 2 ? 'Root' : fac(team) ? 'Grow' : 'Build', sub: 'Pick a building, then a spot', off: '', act: { t: 'buildMenu' } });
   }
   return out;
 }

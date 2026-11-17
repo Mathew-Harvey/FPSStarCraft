@@ -235,3 +235,20 @@ army spend. Still over the line: Cantor 40% of Veyl army spend against the Gloam
 
 Also seen: a driven body with perfect aim is far stronger than its bot, which real players are not; the Gloam bot's Snappers come out two at
 a time and run at a driven Linesman pair after pair (Ironhold v Gloam driven rush: 2 of 6 over by minute 5 on map 0).
+
+## Round 5: the Veyl lean less on Cantors (2026-11-17, Mat: "Chase variety")
+
+Counted where the Veyl bot's Cantors came from (72 matches, `cwhy` in the review rows, `CANTOR_WHY` in veyl/conductor.ts): against Ironhold
+448 from a Brood Pit filling in for a body it could not pay Flux for, 209 from the rush answer, 106 from the army mix; against the Gloam 590,
+163 and 117. The fill-in ran whenever Cantors were under the 30% cap, so it kept them at the cap, and the rush answer pushed them past it.
+
+| 72 matches each (pairs 01,10,12,21; rows L/rush/c_*) | Ironhold v Veyl | Veyl v Gloam | Cantor share of Veyl army spend (v Ironhold / v Gloam) |
+|---|---|---|---|
+| before (`c_why`) | 17-17 | 20-16 | 35% / 40% |
+| fill-in past 900 ore under 25%, past 2500 always (`c_a`) | 19-17 | 19-17 | 33% / 38% |
+| same under 20%, past 1500 / 4000 (`c_b`) | 19-17 | 19-17 | 33% / 37% |
+| fill-in only while Cantors are under 20% (`c_u20`) | 17-19 | 21-15 | 21% / 34% |
+| **shipped: under 12%, or past 1200 ore under 20%, or past 2500 (`c_u12`)** | **18-17** | **19-17** | **under 19% (the Bell is top at 19%) / 29%** |
+
+With `VEYL_CANTOR` at the shipped numbers, Bells are 20% of Veyl army spend and Lancers 12%; the scripted Gloam all-in on the Veyl wins
+1 of 9 (none by minute 6).

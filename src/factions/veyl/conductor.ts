@@ -16,6 +16,11 @@ import { fieldsOf, inField, quicken, energyOf, unfolded } from './fields';
 
 /** Stream L round 4: the slow Flux bodies (Mute, Choirmaster, Warden) hold their price back, see the army mix below. Off: 0. */
 export const VEYL_LATE = { on: 1, army: 6, gap: .03 };
+/** When a Brood Pit puts out a Cantor in place of a body it could not pay Flux for (stream L round 5): past `ore` ore, while Cantors are under `over`
+ *  of the spend, and past `flood` ore whatever their share; below that, while their share is under `under` (1: under the 30% cap). */
+export const VEYL_CANTOR = { over: .2, ore: 1200, flood: 2500, under: .12 };
+/** Where each side's Cantors came from (how many): the rush answer, the mix, the Brood Pit's fallback. For tools/review.ts. */
+export const CANTOR_WHY: Record<number, { ans: number; mix: number; fb: number }> = {};
 /** Stream L cheese pass: an early swarm of small bodies counts by bodies too, and holds the Tender line (see the swarm rule below). Off: 0.
  *  On since round 4 (2026-11-17), with the Cantor-first guard off (guardG 0): once the Gloam bot expanded early, a scripted Gloam all-in
  *  won 7 of 9 on the Veyl; with this 2 of 9, and bot Veyl v Gloam 20 to 16, Ironhold v Veyl 18 to 18 (72). The guard too stopped the
@@ -170,7 +175,8 @@ export function conductor(D: Director, dt: number, V0: Side = D.vs) {
   const swamped = !!VEYL_EARLY.on && now < 420 && foeNear >= VEYL_EARLY.bodies && army.length < foeNear;
   const rushed = now < 720 && foes.filter(o => !o.air && Math.hypot(o.pos.x - HX, o.pos.z - HZ) < 45).length >= Math.max(3, army.length);
   // (whatever the army mix and its cap say: a rush at the door is answered first; in the guard, the Cantor is paid for before any building)
-  const answer = () => { for (const p of up('broodpit')) { quicken(g, p, T); if (p.queue.length < 2 && g.rate(p) > 0 && canPay(g, T, costOf('cantor')) && free >= 2 && g.train(p, 'cantor')) paid('cantor'); } };
+  const why = CANTOR_WHY[T] ??= { ans: 0, mix: 0, fb: 0 };
+  const answer = () => { for (const p of up('broodpit')) { quicken(g, p, T); if (p.queue.length < 2 && g.rate(p) > 0 && canPay(g, T, costOf('cantor')) && free >= 2 && g.train(p, 'cantor')) { paid('cantor'); why.ans++; } } };
   if (guard) answer();
   if ((!rushed && !swamped && !(guard && ore() < costOf('cantor')[0])) || !pits.length) step();
   if (rushed || swarm || swamped) answer();
@@ -241,12 +247,12 @@ export function conductor(D: Director, dt: number, V0: Side = D.vs) {
   // the deeper buildings pick first, so a Kiln or Skyloft is not left idle while every coin goes into Cantors
   for (const b of g.ownB(undefined, true, T).sort((a, c) => (RANK[a.kind] ?? 5) - (RANK[c.kind] ?? 5))) {
     if (b.queue.length >= 2 || !V_TRAINS[b.kind as VBKind] || g.rate(b) <= 0) continue; const list = V_TRAINS[b.kind as VBKind]!.filter(k => k !== 'tender');
-    const k = late && list.includes(late as VKind) ? late as VKind : pickKind(list, W, shareMix, isCapped); if (k && tryTrain(b, k)) continue;
+    const k = late && list.includes(late as VKind) ? late as VKind : pickKind(list, W, shareMix, isCapped); if (k && tryTrain(b, k)) { if (k === 'cantor') why.mix++; continue; }
     // short of Flux for what it wanted: a Brood Pit puts a Cantor out instead, while Cantors are under the cap. (Holding the price of the
     // wanted body back from the Pits instead kept Cantors near a fifth of the army, and the Veyl won 34 of 72 matches against 47.)
     // Ore piling up with no Flux to spend it on: Cantors up to a third of the spend past 900 ore, and past the cap altogether past 1500
     // (a Veyl mirror sat on 3000 to 4000 ore at 35 min with ten bodies a side and never ended: a cap is worth less than an army)
-    if (b.kind === 'broodpit' && k !== 'cantor' && (!isCapped('cantor') || (ore() > 900 && shareMix('cantor') < .34) || ore() > 1500)) tryTrain(b, 'cantor');
+    if (b.kind === 'broodpit' && k !== 'cantor' && ((VEYL_CANTOR.under >= 1 ? !isCapped('cantor') : shareMix('cantor') < VEYL_CANTOR.under) || (ore() > VEYL_CANTOR.ore && shareMix('cantor') < VEYL_CANTOR.over) || ore() > VEYL_CANTOR.flood) && tryTrain(b, 'cantor')) why.fb++;
   }
 
   // ---- Ferry drops: four blades flown to the enemy's ore line now and then

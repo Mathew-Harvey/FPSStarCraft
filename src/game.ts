@@ -17,7 +17,7 @@ import * as T from './terrain';
 import { seamsFor } from './teammaps';
 import { LOD } from './meshes';
 import { Intel } from './scout';
-import { isFoe, isOwn, Kind, BKind, UNIT, BLD, BUILDABLE, UPGRADES, TRAINS, UNIT_NEEDS, UpKey, Unit, Building, Prop, OreNode, Difficulty, DIFFS, OUTPOST, GATE, MAP, MAPS, ROAD, VHOME, FACTION, SIDE, setMap, veylPt, isUnit, isSoldier, isWorker, isFighter, foeOf, fac, MIRROR, atHome, endPt, swapEnd , STORY, turnOf, LAYOUT, OVERTIME, CHOIR_REACH, CLEAVE, turnPt, startXZ } from './data';
+import { VOICE_SIDE, isFoe, isOwn, Kind, BKind, UNIT, BLD, BUILDABLE, UPGRADES, TRAINS, UNIT_NEEDS, UpKey, Unit, Building, Prop, OreNode, Difficulty, DIFFS, OUTPOST, GATE, MAP, MAPS, ROAD, VHOME, FACTION, SIDE, setMap, veylPt, isUnit, isSoldier, isWorker, isFighter, foeOf, fac, MIRROR, atHome, endPt, swapEnd , STORY, turnOf, LAYOUT, OVERTIME, CHOIR_REACH, CLEAVE, turnPt, startXZ } from './data';
 import { Director } from './director';
 import { ENV, hourOf, matchHour, matchWeather, lampsBegin, lamp, flashLamp, lampsCommit, flicker, LAMP_ON } from './light';
 import type { Mission } from './campaign';
@@ -396,7 +396,7 @@ export class Game {
     if (!this.mission && !STORY.on) { if (chat && this.time - last < QUIET.chat) return true; if (!cls || chat) { const k = `${team}|${who}|${msg}`, t = this.saidAt.get(k); const w = `${team}|${who}`, tw = this.saidAt.get(w); if ((t !== undefined && this.time - t < QUIET.again) || (tw !== undefined && this.time - tw < QUIET.same)) return true; this.saidAt.set(k, this.time); this.saidAt.set(w, this.time); } }
     this.lineT[team] = this.time; return false;
   }
-  feed(who: string, msg: string, cls = '', team = -1) { if (this.hushed(who, msg, cls, team)) return; if (cls === 'chat') cls = ''; if (this.evq) { this.evq.push(['fd', who, msg, cls, this.feedTo, team]); return; } if (team >= 0 && team !== this.myTeam) return; this.hud.feed(who, msg, cls); if (!this.noRender) babble(who, msg.length); }
+  feed(who: string, msg: string, cls = '', team = -1) { if (this.hushed(who, msg, cls, team)) return; if (cls === 'chat') cls = ''; if (this.evq) { this.evq.push(['fd', who, msg, cls, this.feedTo, team]); return; } if (team >= 0 && team !== this.myTeam) return; this.hud.feed(who, msg, cls); if (!this.noRender) babble(who, msg.length, team >= 0 ? fac(team) : VOICE_SIDE[who] || 0); }
 
   // ------------------------------------------------------------ effects
   /** A hit's own look, for show only (src/net-look.ts defineFxLook): drawn here, or sent to every screen that can see it. */

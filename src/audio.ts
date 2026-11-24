@@ -318,7 +318,7 @@ export async function renderOffline(secs: number, play: () => void): Promise<Aud
   const m = oc.createGain(), warm = oc.createBiquadFilter(), soft = oc.createBiquadFilter(), comp = oc.createDynamicsCompressor();
   m.gain.value = .5; warm.type = 'lowshelf'; warm.frequency.value = 140; warm.gain.value = 3; soft.type = 'highshelf'; soft.frequency.value = 7000; soft.gain.value = -3;
   comp.threshold.value = -14; comp.ratio.value = 4; comp.knee.value = 12; m.connect(warm); warm.connect(soft); soft.connect(comp); comp.connect(oc.destination);
-  ctx = oc as unknown as AudioContext; master = m; level = 1; PAN = 0; outs.clear();
+  ctx = oc as unknown as AudioContext; master = m; level = 1; PAN = 0; outs.clear(); voiceT = 0;
   try { play(); } finally { ctx = keep.ctx; master = keep.master; level = keep.level; PAN = keep.PAN; outs.clear(); }
   return oc.startRendering();
 }
@@ -376,16 +376,37 @@ function tick() {
 }
 
 // ---------------------------------------------------------------- voices
-const VOICE: Record<string, [number, OscillatorType]> = { Quartermaster: [150, 'sawtooth'], Lookout: [290, 'square'], Alpha: [200, 'square'], 'Alpha Lead': [200, 'square'], Linesman: [230, 'square'], Breacher: [115, 'sawtooth'], Rigger: [330, 'triangle'] };
+/** Speakers with a pitch of their own, in hertz. Anyone else gets one from their name, inside their side's range, so every kind of body
+ *  has its own register and keeps it. Before the fun audit only seven Ironhold speakers had a voice: the Veyl and the Gloam were silent. */
+const VOICE: Record<string, number> = { Quartermaster: 150, Lookout: 290, Alpha: 200, 'Alpha Lead': 200, Linesman: 230, Breacher: 115, Rigger: 330, Signal: 0,
+  Conductor: 196, Watcher: 392, 'Chorus Lead': 294, Chorus: 262, 'Held Fifth': 220, Overgrowth: 70, Rootwatch: 150, 'Swarm Lead': 95, Swarm: 110 };
+/** The low and high end of each side's register for a speaker with no pitch of their own. */
+const RANGE = [[110, 340], [196, 523], [60, 190]];
+/** The Veyl sing on one scale (D minor pentatonic), so a line of theirs is a few notes of a tune, not a mutter. */
+const SCALE = [0, 3, 5, 7, 10, 12, 15];
+const pitchOf = (who: string, side: number) => { const v = VOICE[who]; if (v !== undefined) return v; let h = 0; for (let i = 0; i < who.length; i++) h = (h * 31 + who.charCodeAt(i)) >>> 0; const [lo, hi] = RANGE[side] || RANGE[0]; return lo + (h % 97) / 96 * (hi - lo); };
 let voiceT = 0;
-/** A few syllables of gibberish in the speaker's register, so lines in the feed feel spoken. */
-export function babble(who: string, len: number) {
-  const v = VOICE[who]; if (!ctx || !master || !v || !level || seat) return; const now = ctx.currentTime; if (now < voiceT) return;
-  const n = Math.max(3, Math.min(9, Math.round(len / 9))); let t = now + .02;
+/** A few syllables of gibberish in the speaker's register, so lines in the feed feel spoken. Each side speaks its own way: Ironhold in
+ *  short buzzed syllables, the Veyl in soft sung notes on their scale, the Gloam in low clicks and wet chirps that fall in pitch.
+ *  `side` is the speaker's faction (0 Ironhold, 1 Veyl, 2 Gloam). */
+export function babble(who: string, len: number, side = 0) {
+  const hz0 = pitchOf(who, side); if (!ctx || !master || !hz0 || !level || seat) return; const now = ctx.currentTime; if (now < voiceT) return;
+  const n = Math.max(3, Math.min(9, Math.round(len / (side === 1 ? 14 : 9)))); let t = now + .02; const out = master, R = Math.random;
+  const syl = (type: OscillatorType, f0: number, f1: number, d: number, peak: number, band: number, q: number, attack: number) => {
+    const o = ctx!.createOscillator(), g = ctx!.createGain(), f = ctx!.createBiquadFilter();
+    o.type = type; o.frequency.setValueAtTime(f0, t); o.frequency.linearRampToValueAtTime(Math.max(30, f1), t + d); f.type = 'bandpass'; f.frequency.value = band; f.Q.value = q;
+    g.gain.setValueAtTime(.0001, t); g.gain.exponentialRampToValueAtTime(peak, t + attack); g.gain.exponentialRampToValueAtTime(.0001, t + d); o.connect(f); f.connect(g); g.connect(out); o.start(t); o.stop(t + d + .03); };
   for (let i = 0; i < n; i++) {
-    const o = ctx.createOscillator(), g = ctx.createGain(), f = ctx.createBiquadFilter(), d = .05 + Math.random() * .05, hz = v[0] * (1 + (Math.random() - .4) * .5);
-    o.type = v[1]; o.frequency.setValueAtTime(hz, t); o.frequency.linearRampToValueAtTime(hz * (.85 + Math.random() * .3), t + d); f.type = 'bandpass'; f.frequency.value = 700 + Math.random() * 900; f.Q.value = 2;
-    g.gain.setValueAtTime(.0001, t); g.gain.exponentialRampToValueAtTime(.09, t + .012); g.gain.exponentialRampToValueAtTime(.0001, t + d); o.connect(f); f.connect(g); g.connect(master); o.start(t); o.stop(t + d + .03); t += d + .015 + (Math.random() < .2 ? .06 : 0);
+    if (side === 1) {   // Veyl: a sung note, soft start, a fifth above it very quietly; the last note of the line is held
+      const note = hz0 * Math.pow(2, SCALE[Math.floor(R() * SCALE.length)] / 12), d = (i === n - 1 ? .3 : .13) + R() * .06;
+      syl('sine', note, note * (R() < .3 ? 1.06 : 1), d, .07, note * 2, .7, .035); syl('triangle', note * 1.5, note * 1.5, d * .8, .018, note * 3, .7, .04); t += d * .82;
+    } else if (side === 2) {   // Gloam: a low wet chirp that falls, with a click on the front of some of them, in uneven bursts
+      const hz = hz0 * (1 + (R() - .5) * .5), d = .035 + R() * .05;
+      syl('sawtooth', hz * 2.2, hz * .7, d, .13, 300 + R() * 500, 3.5, .006); if (R() < .5) syl('square', 1400 + R() * 900, 500, .012, .035, 1800, 1.2, .002); t += d + (R() < .35 ? .09 + R() * .06 : .012);
+    } else {   // Ironhold: the buzzed syllables it always had; a low speaker gets a saw, a high one a square
+      const d = .05 + R() * .05, hz = hz0 * (1 + (R() - .4) * .5);
+      syl(hz0 < 170 ? 'sawtooth' : hz0 > 300 ? 'triangle' : 'square', hz, hz * (.85 + R() * .3), d, .09, 700 + R() * 900, 2, .012); t += d + .015 + (R() < .2 ? .06 : 0);
+    }
   }
   voiceT = t + .25;
 }

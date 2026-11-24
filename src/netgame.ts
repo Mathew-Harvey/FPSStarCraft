@@ -228,7 +228,7 @@ export function serverMove(g: Game, unit: Unit, m: any[]) {
 // ---------------------------------------------------------------- client: snapshot to world
 function event(g: Game, e: any[]) {
   const net = g.net!, k = e[0];
-  if (k === 'fd') { if (e[4] ? e[4] === net.id : e[3] === 'ch' || e[1] === 'Signal' || (e[5] >= 0 ? e[5] === g.myTeam : (VOICE_SIDE[e[1]] || 0) === fac(g.myTeam))) { g.hud.feed(e[1], e[2], e[3]); if (e[3] === 'ch') sfx.blip(); else babble(e[1], String(e[2]).length); } }
+  if (k === 'fd') { if (e[4] ? e[4] === net.id : e[3] === 'ch' || e[1] === 'Signal' || (e[5] >= 0 ? e[5] === g.myTeam : (VOICE_SIDE[e[1]] || 0) === fac(g.myTeam))) { g.hud.feed(e[1], e[2], e[3]); if (e[3] === 'ch') sfx.blip(); else babble(e[1], String(e[2]).length, e[5] >= 0 ? fac(e[5]) : VOICE_SIDE[e[1]] || 0); } }
   else if (k === 'sm') { g.seam = e[3] ? { x: e[1], z: e[2] } : null; if (e[3]) sfx.callout(); }
   else if (k === 'pg') { if ((g.teams[e[1]] || 0) !== g.myTeam) return; g.pings.push({ pid: e[1], x: e[2], z: e[3], t: 8 }); if (g.pings.length > 8) g.pings.shift(); sfx.callout(); }
   else if (k === 'nm') { g.names = e[1]; if (e[2]) g.teams = e[2]; }

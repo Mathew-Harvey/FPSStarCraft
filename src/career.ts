@@ -15,12 +15,13 @@ export const VARIANTS: { id: string; name: string; note: string }[] = [
   { id: 'short', name: 'Short shift', note: 'Overtime from minute 8, points at minute 20' },
   { id: 'noqm', name: 'No Quartermaster', note: 'You run the yard yourself' },
   { id: 'rich', name: 'Double ore', note: 'Every load banks twice. No records' },
+  { id: 'seam', name: 'Rich seam', note: 'Every 4 minutes, a seam to fight over' },
 ];
 /** The variants in force. The menu sets them before it makes a skirmish and clears them for everything else; no test or table tool sets them. */
-export const RULES = { short: false, noqm: false, rich: false };
+export const RULES = { short: false, noqm: false, rich: false, seam: false };
 /** Overtime as it is normally, and in a short shift. */
 const OT = { start: OVERTIME.start, limit: OVERTIME.limit }, SHORT = { start: 480, limit: 1200 };
-export function setRules(vars: string[]) { RULES.short = vars.includes('short'); RULES.noqm = vars.includes('noqm'); RULES.rich = vars.includes('rich'); Object.assign(OVERTIME, RULES.short ? SHORT : OT); }
+export function setRules(vars: string[]) { RULES.short = vars.includes('short'); RULES.noqm = vars.includes('noqm'); RULES.rich = vars.includes('rich'); RULES.seam = vars.includes('seam'); Object.assign(OVERTIME, RULES.short ? SHORT : OT); }
 /** The skirmish being played, set by the menu when it starts one against bots and cleared for everything else. */
 export interface Ctx { side: number; foe: number; map: number; diff: number; vars: string[] }
 export const CAREER: { ctx: Ctx | null } = { ctx: null };

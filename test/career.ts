@@ -6,6 +6,7 @@ import { initHeadless } from '../src/gfx';
 import { DIFFS, FACTION, MAP, OVERTIME, setMap, setSides, validMap } from '../src/data';
 import { CHALLENGES, RULES, VARIANTS, closeMatch, setRules, type Ctx, type Kept } from '../src/career';
 import { clearMatch } from '../src/core/sides';
+import { CONTEST } from '../src/contest';
 initHeadless();
 let fails = 0; const check = (ok: boolean, what: string) => { console.log(`${ok ? 'PASS' : 'FAIL'} ${what}`); if (!ok) fails++; };
 let seed = 7; Math.random = () => { seed = (seed * 16807) % 2147483647; return (seed - 1) / 2147483646; };
@@ -18,7 +19,7 @@ const run = (g: Game, secs: number) => { for (let i = 0; i < secs * 30 && g.phas
 const ctx = (over: Partial<Ctx> = {}): Ctx => ({ side: 0, foe: 1, map: 0, diff: 1, vars: [], ...over }), stat = (c: ReturnType<typeof closeMatch>, label: string) => c.you.find(s => s.label.startsWith(label))!;
 
 check(CHALLENGES.length === 30 && new Set(CHALLENGES.map(c => c.id)).size === 30 && [0, 1, 2].every(s => CHALLENGES.filter(c => c.side === s).length === 10), 'thirty challenges, ten for each side');
-check(VARIANTS.length === 4, 'four match variants');
+check(VARIANTS.length === 5, 'five match variants');
 
 // The count: kills, damage, streak, deaths, buildings lost and time.
 { const { g, H, O } = match(0, 1, [0]); const me = g.spawn(FACTION[H].lead, H, 62, 7); g.possess(me, true); run(g, 2); (g as any).safeT = 0;
@@ -63,6 +64,20 @@ check(VARIANTS.length === 4, 'four match variants');
   { const { g, H } = match(0, 1, [0]); const me = g.units.find(u => u.team === H)!; g.possess(me, true); run(g, 3); check(g.dir.side(H).auto === true, 'without the variant the Quartermaster runs'); }
   check(validMap(100) && validMap(211) && validMap(322), 'a hidden start is a valid map on Medium, Small and Large'); setMap(211); check(MAP.hid === true, 'and the map is marked hidden'); setMap(0);
 }
+// The rich seam (plan row 10): opens every four minutes, pays the side that holds it alone for a minute, and only when switched on.
+{ const { g } = match(0, 1, [0]); run(g, 250); check(!g.seam, 'with the variant off no seam opens'); }
+{ setRules(['seam']); const { g, H, O } = match(0, 1, [0]); g.human = g.human.map(() => true);   // nobody is a bot here, so nothing walks to the seam on its own
+  g.time = CONTEST.every - 1; run(g, 2); check(!!g.seam, 'with it on, a seam opens at minute four'); const S = g.seam!;
+  const p0 = g.purse[H], mine = g.spawn(FACTION[H].lead, H, S.x, S.z); mine.order = { type: 'guard', x: S.x, z: S.z, hold: true } as any; mine.hp = mine.maxHp = 99999;
+  run(g, 30); check(g.contest.holder === H && g.contest.held > 25 && g.purse[H] - p0 < 300, 'a fighter alone on it holds it, and nothing is paid before the minute');
+  const theirs = g.spawn(FACTION[O].worker, O, S.x + 3, S.z); run(g, 3); check(g.contest.holder === H, 'an enemy worker on it does not break the hold');
+  theirs.alive = false; const foe = g.spawn(FACTION[O].lead, O, S.x + 60, S.z); foe.hp = foe.maxHp = 99999; foe.pos.x = S.x + 5; foe.order = { type: 'guard', x: S.x + 5, z: S.z, hold: true } as any; (foe as any).cd = 9999; (mine as any).cd = 9999;
+  run(g, 2); check(g.contest.holder === -1 && g.contest.held === 0, 'an enemy fighter on it breaks the hold and the minute starts again');
+  foe.alive = false; const said: string[] = [], feed = g.feed.bind(g); g.feed = (w: string, m: string, c?: string, t?: number) => { said.push(m); feed(w, m, c, t); }; let paid = 0; for (let i = 0; i < (CONTEST.hold + 3) * 30 && g.seam; i++) { const b4 = g.purse[H]; run(g, 1 / 30); if (!g.seam) paid = g.purse[H] - b4; }
+  check(!g.seam && paid >= CONTEST.pay - 60 && said.some(m => m.includes('held the rich seam and banked')), `a full minute alone banks ${CONTEST.pay} ore and the seam closes (purse moved ${Math.round(paid)} on that step)`);
+  check(Math.abs(g.contest.next - g.time - CONTEST.every) < 5, 'the next one is four minutes later'); setRules([]); }
+{ setRules(['seam']); const { g, H, O } = match(0, 1, [0]); g.time = CONTEST.every - 1; run(g, 2); const S = g.seam!; for (let i = 0; i < 6; i++) g.spawn(FACTION[O].lead, O, 150 + i * 2, 20);
+  run(g, 27); check(g.army(O).filter(u => u.order.type === 'amove' && Math.hypot((u.order as any).x - S.x, (u.order as any).z - S.z) < 10).length >= 3, 'a bot side sends fighters to it'); setRules([]); }
 // A quieter radio (stage 3): repeats and idle chatter are dropped, alerts and teaching lines are not, and a side hears only its own lead.
 { const { g, H, O } = match(0, 2, [0]); const heard = () => { const n = g.evq!.filter(e => e[0] === 'fd').length; g.evq!.length = 0; return n; }; g.time = 100; heard();
   g.feed('Quartermaster', 'Stacking another Depot.', '', H); g.time += 60; g.feed('Quartermaster', 'Stacking another Depot.', '', H); check(heard() === 1, 'the same plain line a minute later is not said again');

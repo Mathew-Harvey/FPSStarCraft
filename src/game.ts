@@ -7,6 +7,7 @@ import * as MD from './models';
 import { sfx, drillSound, setMood, babble, heardAt } from './audio';
 import { tickSound } from './sound-abilities';
 import { tickOpening } from './opening';
+import { tickContest, newContest } from './contest';
 import { newTally, RULES } from './career';
 /** How long the radio waits: idle chatter after any line to that side, and the same plain line from the same speaker. Seconds. */
 export const QUIET = { chat: 30, again: 300, /** Two plain lines from the same speaker. */ same: 45 };
@@ -688,7 +689,7 @@ export class Game {
       for (const f of new Set([fac(SIDE.home), fac(SIDE.out), ...MATCH.teams.map(fac)])) factionRule(f).fx?.(this, dt);
       if (this.net) { netTick(this, dt); this.intel.update(dt); this.poseUnits(dt); this.updateProjs(dt); this.updateChunks(dt); this.updateWrecks(dt); this.updateFx(dt); } else {
       if (this.mission && this.endT <= 0) { this.mission.tick?.(this, this.ms, dt); if (this.ms.lose) { this.endT = 2.4; this.endWon = false; this.pipe.flash = 1; } else if (this.mission.objectives.every(o => o.done(this))) { this.endT = 2.4; this.endWon = true; this.pipe.flash = 1; } }
-      this.updateUnits(dt); this.updateBuildings(dt); this.updateProjs(dt); this.updateChunks(dt); this.updateWrecks(dt); this.dir.update(dt); this.intel.update(dt); tickOpening(this);
+      this.updateUnits(dt); this.updateBuildings(dt); this.updateProjs(dt); this.updateChunks(dt); this.updateWrecks(dt); this.dir.update(dt); this.intel.update(dt); tickOpening(this); tickContest(this, dt);
       this.updateFx(dt); }
     } else if (this.phase === 'cut') { const dt = Math.min(dtReal, .05); this.time += dt; if (this.cutSim) { this.updateUnits(dt); this.updateBuildings(dt); this.updateProjs(dt); this.updateChunks(dt); this.updateWrecks(dt); } this.updateFx(dt); }
     else { const live = !!this.net && (this.phase === 'paused' || this.phase === 'card'); /* an online match does not stop for a pause screen or a title card */ if (live) { netTick(this, dtReal); this.poseUnits(dtReal); this.updateProjs(dtReal); this.updateChunks(dtReal); this.updateWrecks(dtReal); } this.updateFx(this.phase === 'menu' || live ? dtReal : 0); }
@@ -724,6 +725,8 @@ export class Game {
   safeT = 0;
   /** The player's own part in this match, for the end screen and the records (src/career.ts). */
   tally = newTally();
+  /** The rich seam open now, if any, and the contest's own clock (src/contest.ts). A client is told the first by the host. */
+  seam: { x: number; z: number } | null = null; contest = newContest();
   /** What the opening has handed each side so far (src/opening.ts): bit 1 the free fighter, bit 2 the scout. */
   opened: Record<number, number> = {};
   respawn() {

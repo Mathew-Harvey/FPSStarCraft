@@ -17,7 +17,7 @@ try {
 
   const vars = await p.evaluate(() => { __ore.setFree(true); __ore.pickMap(0); const B = [...document.querySelectorAll('#vars button')]; B.find(x => x.dataset.v === 'short').click(); B.find(x => x.dataset.v === 'hid').click();
     return { n: B.length, on: B.filter(x => x.classList.contains('on')).map(x => x.dataset.v).join(','), hid: __ore.game.mapI >= 100, saved: JSON.parse(localStorage.getItem('ore-else')).vr.join(',') }; });
-  check(vars.n === 4 && vars.on === 'hid,short' && vars.saved === 'short,hid', `two variants switch on and are saved (${vars.on})`);
+  check(vars.n === 5 && vars.on === 'hid,short' && vars.saved === 'short,hid', `two variants switch on and are saved (${vars.on})`);
   check(vars.hid, 'a hidden start turns the Medium map behind the menu');
   const vast = await p.evaluate(() => { __ore.pickMap(30); const h = document.querySelector('#vars [data-v=hid]'); const r = { off: h.disabled, lit: h.classList.contains('on') }; __ore.pickMap(0); return r; });
   check(vast.off && !vast.lit, 'on Vast the hidden start button is off: Vast always has one');

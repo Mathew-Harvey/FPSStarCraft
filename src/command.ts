@@ -24,6 +24,11 @@ import { sfx, drillSound } from './audio';
 // Stream L cheese pass, Mat's pick 2026-11-15 (softened): 1.25 / .85 let a scripted driver beside the army win 83% against a bot (command view only 56%,
 // no bonus 53%); 1.15 / .92 gives 67%.
 export const LEAD = { reach: 30, dmg: 1.15, guard: .92 };
+/** The body a person drives, against a side nobody plays (a skirmish, a story job, a co-op match): its hits are worth `dmg` times and a bot's hit
+ *  on it lands for `guard` times. Neither applies when the other side has a person on it, so a match between people is untouched, and a bot
+ *  match has no driven body at all, so the balance tables do not move. Fun audit of 2026-11-24: with both at 1 a driven Linesman with perfect
+ *  aim died 6 to 9 times in a match, did 12 to 19% of its side's damage, and needed 40 rifle hits for one Cantor. */
+export const DRIVE = { dmg: 1.8, guard: .5, /** After a death the player goes to the nearest body, but one under this share of its health counts as this many metres further off, and the new body cannot be hurt for `safe` seconds. */ hurt: .5, far: 60, safe: 1.5 };
 /** The zoom: 0 is first person, `lift` and above is the command view, `map` and above is the whole map. */
 export const ZOOM = { lift: .12, map: .9, step: .1, near: .2, far: .8, /** how tall a slice of ground the view shows at its nearest and furthest, in metres */ h0: 13, h1: 105, fov: 22 };
 

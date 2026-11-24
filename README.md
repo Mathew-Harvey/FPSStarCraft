@@ -104,7 +104,9 @@ TypeScript and three.js, bundled by esbuild into one HTML file. No art assets: m
 
 The command view is for giving orders. First person is where fights are won. These rules keep it that way, and the numbers are in `LEAD` and `ZOOM` in `src/command.ts`:
 
-- **Leading in person.** Fighters the game is driving, within 30 m of a body one of their own side's players is driving, deal 25% more damage and take 15% less. A player in the command view leads nobody.
+- **Leading in person.** Fighters the game is driving, within 30 m of a body one of their own side's players is driving, deal 15% more damage and take 8% less. A player in the command view leads nobody.
+- **The body you drive.** Against a side nobody plays (a skirmish, a story job, a co-op match) the body a person drives deals 1.8 times its damage and takes half of what a bot's hit says (`DRIVE` in `src/command.ts`). When the other side has a person on it, neither applies. After a death you go to the nearest body with at least half its health, and it cannot be hurt for 1.5 seconds.
+- **The first minute.** In a one-on-one against bots, a side with a person in a body gets one fighter beside its first barracks the moment it is built, and one enemy worker walks down the road as a scout at about a minute and walks home (`src/opening.ts`). Bot matches and matches between people get neither. `node tools/run-ts.mjs test/drive.ts` checks all of this.
 - **The match does not wait.** Time runs at full speed (the `Tab` jump picker still slows it). The body you left carries on as ordinary crew offline, and stands where it is online.
 - **Some jobs stay on the ground.** Staking out a new building needs a worker body or the Quartermaster. Hand drilling and hand welding are first person only.
 - **You see what your crew sees.** From above, enemy bodies show only inside your crew's sight, enemy buildings only once somebody has laid eyes on them, and ground nobody has walked is dark. Enemy buildings come from the same scouting records as the small map (`src/scout.ts`), so on a Vast map the full map is framed round your own base until one of yours finds theirs, then it slides over to hold both.

@@ -6,6 +6,7 @@ import { Pipeline, ViewPipe, V3, M, G, R, mk, setLayer, L_FX, L_SELF, holoOK, ho
 import * as MD from './models';
 import { sfx, drillSound, setMood, babble, heardAt } from './audio';
 import { tickSound } from './sound-abilities';
+import { tickOpening } from './opening';
 import type { Hud } from './hud';
 import { Fog, SIGHT } from './fog';
 import * as T from './terrain';
@@ -22,7 +23,7 @@ import { unitRule, bldRule, factionRule, DEFAULTS, HIT_FILTERS, type Hit } from 
 import './factions';
 import { plainBody } from './core/plain';
 import { Stance } from './stance';
-import { Command, LEAD, ZOOM } from './command';
+import { Command, DRIVE, LEAD, ZOOM } from './command';
 import { levelMul, armourHit, canHit, LEVELS, catOf, inCat } from './core/combat';
 import { tickStatus, statusPace, canAct, soak, hasStatus } from './core/status';
 import { initEnergy, tickAbilities, useAbility, type Target } from './core/ability';
@@ -438,12 +439,14 @@ export class Game {
     amt = armourHit(this, t, amt, from);
     // Crew fighting beside a body somebody is driving hit harder and take less. A side led from the command view gets neither.
     if (this.leads.length) { if (from && isUnit(from) && this.led(from)) amt *= LEAD.dmg; if (u && this.led(u)) amt *= LEAD.guard; }
+    // The body a person drives hits harder and takes less against a side nobody plays (see DRIVE). Not on a client: the server works it out.
+    if (!this.net && from && isUnit(from) && from.team !== t.team) { if (this.driven(from) && !this.human[t.team]) amt *= DRIVE.dmg; else if (u && this.driven(u) && !this.human[from.team]) amt *= DRIVE.guard; }
     let warded = false;
     if (!u && !bldRule((t as Building).kind).ward) { const w = this.ward(t.pos, t.team); if (w) { amt *= .7; warded = true; if (this.time > this.wardFx) { this.wardFx = this.time + .35; this.tracer(V3(w.pos.x, 4.6, w.pos.z), V3(t.pos.x, (t as Building).h * .6, t.pos.z), beamMat, .22); this.puff(TMP.set(t.pos.x, (t as Building).h * .6, t.pos.z), 3, .7, M.cyan, .5); } } }
     const dealt = amt, shielded = (!!u && u.shield > 0) || warded;
     // A paid-for Veyl body shrugs off part of each hit (see vBoost), whether the AI or a player drives it: a driven body used to take hits at face
     // value and was weaker than the same kind under a bot. Its hits go through vMul the same way (stream C).
-    if (u && fac(u.team) === 1 && this.eco && !isWorker(u.kind)) amt /= this.vBoost.hp;
+    let lost = dealt; if (u && fac(u.team) === 1 && this.eco && !isWorker(u.kind)) { amt /= this.vBoost.hp; lost = dealt / this.vBoost.hp; }   // `lost` is what the number over its head says: what the hit really took off (fun audit: it read 6 while 4 came off)
     if (u && u.status) amt = soak(u, amt);
     if (u) { u.pop = 1; this.fx.hit(u, dealt, from, crit, shielded); if (u.shield > 0) { const a = Math.min(u.shield, amt); u.shield -= a; amt -= a; this.bubble(u); } }
     // A hit from a body somebody is driving lands with weight: the target is shoved back and loses a beat.
@@ -451,7 +454,7 @@ export class Game {
     t.hp -= amt;
     if (this.evq && u && u.pilot && from) this.evq.push(['ht', u.id, r1(from.pos.x), r1(from.pos.z)]);
     const head = V3(t.pos.x, u ? UNIT[u.kind].headY + .4 : (t as Building).h * .7, t.pos.z);
-    if (from === me && me && !this.quiet) this.hud.damage(head, (crit ? 'CRIT ' : '') + Math.max(1, Math.round(dealt)), crit ? 'crit' : shielded ? 'shield' : '');
+    if (from === me && me && !this.quiet) this.hud.damage(head, (crit ? 'CRIT ' : '') + Math.max(1, Math.round(lost)), crit ? 'crit' : shielded ? 'shield' : '');
     if (t === me && me) { this.shake = Math.min(1, this.shake + .45); let ang = 0; if (from) { const a = Math.atan2(from.pos.x - me.pos.x, from.pos.z - me.pos.z) - this.yaw; ang = Math.atan2(Math.sin(a), Math.cos(a)); } this.hud.hurt(from ? ang : null); sfx.hurt(); }
     if (u && from && isUnit(from) && u !== me && !u.target && !isWorker(u.kind) && canHit(u, from)) u.target = from;   // only at what it can hit (K): a Bloater shot from the ground hung over its shooter
     if (!u && from && isUnit(from) && t.team === SIDE.out && !this.eco) this.dir.alarm(from);
@@ -470,6 +473,8 @@ export class Game {
   }
   quiet = false; vAlertT = 0; huntT: Record<number, number> = {};
   /** True for a body the game is driving that has one of its own side's players on the ground within reach. */
+  /** Is a person driving this body right now (offline the player's own, on the server any piloted one)? */
+  driven(u: Unit) { return u.pilot ? true : u === this.me && !!this.human[u.team] && this.staticT <= 0; }
   led(u: Unit) { if (u.pilot || u === this.me && !this.cmd.on) return false; for (const l of this.leads) if (l !== u && l.team === u.team && Math.abs(l.pos.x - u.pos.x) < LEAD.reach && Math.hypot(l.pos.x - u.pos.x, l.pos.z - u.pos.z) < LEAD.reach) return true; return false; }
   /** How many of the player's fighters are close enough to get the bonus right now. */
   ledCount() { const me = this.me; if (!me || !me.alive || this.cmd.on) return 0; let n = 0; for (const u of this.units) if (u.alive && u !== me && u.team === me.team && !u.pilot && isFighter(u) && Math.hypot(u.pos.x - me.pos.x, u.pos.z - me.pos.z) < LEAD.reach) n++; return n; }
@@ -668,7 +673,7 @@ export class Game {
       for (const f of new Set([fac(SIDE.home), fac(SIDE.out), ...MATCH.teams.map(fac)])) factionRule(f).fx?.(this, dt);
       if (this.net) { netTick(this, dt); this.intel.update(dt); this.poseUnits(dt); this.updateProjs(dt); this.updateChunks(dt); this.updateWrecks(dt); this.updateFx(dt); } else {
       if (this.mission && this.endT <= 0) { this.mission.tick?.(this, this.ms, dt); if (this.ms.lose) { this.endT = 2.4; this.endWon = false; this.pipe.flash = 1; } else if (this.mission.objectives.every(o => o.done(this))) { this.endT = 2.4; this.endWon = true; this.pipe.flash = 1; } }
-      this.updateUnits(dt); this.updateBuildings(dt); this.updateProjs(dt); this.updateChunks(dt); this.updateWrecks(dt); this.dir.update(dt); this.intel.update(dt);
+      this.updateUnits(dt); this.updateBuildings(dt); this.updateProjs(dt); this.updateChunks(dt); this.updateWrecks(dt); this.dir.update(dt); this.intel.update(dt); tickOpening(this);
       this.updateFx(dt); }
     } else if (this.phase === 'cut') { const dt = Math.min(dtReal, .05); this.time += dt; if (this.cutSim) { this.updateUnits(dt); this.updateBuildings(dt); this.updateProjs(dt); this.updateChunks(dt); this.updateWrecks(dt); } this.updateFx(dt); }
     else { const live = !!this.net && (this.phase === 'paused' || this.phase === 'card'); /* an online match does not stop for a pause screen or a title card */ if (live) { netTick(this, dtReal); this.poseUnits(dtReal); this.updateProjs(dtReal); this.updateChunks(dtReal); this.updateWrecks(dtReal); } this.updateFx(this.phase === 'menu' || live ? dtReal : 0); }
@@ -702,12 +707,14 @@ export class Game {
   /** What this side has found of the map. */
   fog!: Fog;
   safeT = 0;
+  /** What the opening has handed each side so far (src/opening.ts): bit 1 the free fighter, bit 2 the scout. */
+  opened: Record<number, number> = {};
   respawn() {
-    const me = this.me!; let best: Unit | null = null, bd = 1e9; for (const u of this.mine()) { if (this.net && u.pilot && u.pilot !== this.net.id) continue; const d = u.pos.distanceTo(me.pos) + (isFighter(u) ? 0 : 25); if (d < bd) { bd = d; best = u; } }
+    const me = this.me!; let best: Unit | null = null, bd = 1e9; for (const u of this.mine()) { if (this.net && u.pilot && u.pilot !== this.net.id) continue; const d = u.pos.distanceTo(me.pos) + (isFighter(u) ? 0 : 25) + (u.hp + u.shield < (u.maxHp + u.maxShield) * DRIVE.hurt ? DRIVE.far : 0); if (d < bd) { bd = d; best = u; } }
     const F = FACTION[this.myTeam];
     if (!best && this.net) { if (this.ownB(F.hq, false, this.myTeam).length) { this.net.cmd('rs'); this.staticT = 1.2; } return; }
     if (!best && this.ownB(F.hq, false, this.myTeam).length) { best = this.spawn(F.worker, this.myTeam, ...this.hqSpot(this.myTeam)); this.safeT = 4; this.feed(F.voice, fac(this.myTeam) === 2 ? 'A fresh Grazer, wet from the Bud. Mind it.' : fac(this.myTeam) ? 'A fresh voice for you. Mind this one.' : 'Found you a fresh Rigger. Try to keep this one.', ''); }
-    if (best) { this.jumpCd = 0; this.possess(best, true); sfx.jump(); this.pipe.flash = .4; } else if (this.endT <= 0) this.end(false);
+    if (best) { this.jumpCd = 0; this.safeT = Math.max(this.safeT, DRIVE.safe); this.possess(best, true); sfx.jump(); this.pipe.flash = .4; } else if (this.endT <= 0) this.end(false);
   }
 
   // ------------------------------------------------------------ the player

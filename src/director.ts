@@ -1,5 +1,6 @@
 // The strategy layer: the Quartermaster who runs your economy, the Veyl raid planner,
 // and the squad's playbooks, callouts and chatter.
+import { RULES } from './career';
 import * as THREE from 'three';
 import { V3, R, M } from './gfx';
 import { sfx } from './audio';
@@ -163,6 +164,7 @@ export class Director implements Side {
   /** One squad or base order. In multiplayer the server runs this for whichever player sent it, with lead set to their body. */
   order(k: string, x = 0, z = 0, lead: Unit | null = this.g.me) {
     const g = this.g, s = this.side(lead ? lead.team : SIDE.home), v = fac(s.team) !== 0, squad = g.army(s.team).filter(u => u !== lead && !u.pilot), p = s.plan, who = v ? VG(s.team, 'Chorus Lead', 'Swarm Lead') : 'Alpha';
+    if (k === 'G' && RULES.noqm && g.human[s.team]) { this.say(v ? FACTION[s.team].voice : 'Quartermaster', v ? VG(s.team, 'Not this time. The Chorus is yours to tend.', 'Not this time. The swarm is yours to grow.') : 'Not this shift. You picked No Quartermaster, so you build it.', 'al', s.team); return; }
     if (k === 'G' && g.mission?.lockAuto) { this.say('Quartermaster', 'Quartermaster offline. Re-forecasting. Please hold.', 'al', s.team); return; }
     if (k === 'G') { s.auto = !s.auto; this.say(v ? FACTION[s.team].voice : 'Quartermaster', v ? (s.auto ? VG(s.team, 'I will tend the Chorus again.', 'The Overgrowth tends itself again.') : VG(s.team, 'The Chorus is yours to tend. I will listen.', 'The swarm is yours to grow. I will watch.')) : s.auto ? 'Back on the clock. I\'ll handle the building.' : 'Fine. You build it. I\'ll watch.', ''); }
     else if (k === 'V') {
@@ -222,7 +224,7 @@ export class Director implements Side {
     for (const s of order) {
       if (s === this.vs && !g.eco) { factionRule(s.team).classic?.(this, dt); continue; }
       const f = fac(s.team), home = s === this, foe = foeOf(s.team);
-      if (!g.human[s.team]) s.auto = true; if (s.callout) s.callout.t -= dt;
+      if (!g.human[s.team]) s.auto = true; else if (RULES.noqm) s.auto = false; if (s.callout) s.callout.t -= dt;
       // On a hidden map a side nobody plays picks its build plan for the match. A scout can read it off what gets built.
       if (MAP.hid && !s.docSet && now > 1) { s.docSet = true; if (!g.human[s.team] && (!g.mission || g.mission.plan !== undefined)) { s.doc = DOCTRINES[g.mission?.plan ?? g.docFix ?? Math.floor(Math.random() * DOCTRINES.length)]; s.nextPlan += s.doc.first; } }
       const hints = factionRule(s.team).hints || [];

@@ -1,4 +1,5 @@
 // Boot, input, the frame loop, and the menu screens.
+import { CAREER, CHALLENGES, VARIANTS, closeMatch, loadCareer, setRules, type Ctx } from './career';
 import { TER, MADE } from './terrain';
 import { openMaker } from './mapmaker';
 import { usePlan, planMap } from './mapcode';
@@ -14,7 +15,7 @@ import { Game } from './game';
 import { Hud } from './hud';
 import { initAudio, setVolume, setMusic, audioSeat, hush, soundsReady, sfx } from './audio';
 import { LocalMatch, SplitMode } from './split';
-import { MAPS, UNIT, BLD, UPGRADES, TRAINS, UNIT_NEEDS, DIFFS, Kind, BKind, mapCode, validMap, rollMap, baseOf, sizeOf, MAP, FACTION, SIDE, STORY, setSides, setSidesCode, setTeamGame, sidesCode, fac, foeOf, isWorker } from './data';
+import { TURNS, VAST, MAPS, UNIT, BLD, UPGRADES, TRAINS, UNIT_NEEDS, DIFFS, Kind, BKind, mapCode, validMap, rollMap, baseOf, sizeOf, MAP, FACTION, SIDE, STORY, setSides, setSidesCode, setTeamGame, sidesCode, fac, foeOf, isWorker } from './data';
 import { MISSIONS, STORY_JOBS, ACTS, missionSides, charterTeam, fromOldSave, Mission } from './campaign';
 import { CUTS, CutPlayer } from './cutscene';
 import { Net, Lobby } from './net';
@@ -187,9 +188,10 @@ const MP_AFTER = 14;
 let net: Net | null = null;
 /** Rebindable actions: [what the game code listens for, label]. A player's choice is stored as action code to physical key. */
 let gfxI = 0, cbOn = false, optsOpen = false, fpsOn = false, fpsN = 0, fpsT = 0, fpsWorst = 0;
+let vars: string[] = [];   // match variants switched on for skirmishes (src/career.ts)
 let diffI = 1, mapI = 0, sideI = 0, foeI = 0, sens = 1, vol = .5, mus = true, curX = .5, moved = false;
-try { const o = JSON.parse(localStorage.getItem('ore-else') || '{}'); if (o.d >= 0 && o.d < 3) diffI = o.d; if (o.side >= 0 && o.side < 3) sideI = o.side; if (o.vs >= 0 && o.vs < 3) foeI = o.vs; else if (sideI) foeI = 2; else if (o.foe === 1) foeI = 1; if (validMap(o.map)) mapI = o.map % 100; if (o.st >= 2 && o.st <= 5) { if (o.camp > 0) camp = Math.min(STORY_JOBS, o.st < 5 ? fromOldSave(o.camp, o.st) : o.camp); if (o.sd > 0) sideDone = o.sd | 0; if (o.ore > 0) STORY.oreTotal = o.ore; } else if (o.camp > 0) camp = [0, 1, 2, 3, 3, 8][Math.min(5, o.camp)]; if (o.mp) mpOpen = true; if (o.mode === 'skirm') mode = 'skirm'; if (o.tp === 'on' || o.tp === 'off') touchPref = o.tp; if (typeof o.name === 'string') pname = o.name.slice(0, 14); if (typeof o.srv === 'string') srv = o.srv.slice(0, 200); if (o.s > 0) sens = o.s; if (o.v >= 0) vol = o.v; if (o.m === false) mus = false; if (o.q >= 0 && o.q < 4) gfxI = o.q | 0; cbOn = !!o.cb; fpsOn = !!o.fps; splitSide = o.ss !== 0; if (o.side === 1) sideI = 1; loadKeys(o.k, o.kc, o.kl); } catch (e) { /* storage is optional */ }
-const save = () => { try { localStorage.setItem('ore-else', JSON.stringify({ d: diffI, map: mapI, camp, st: 5, sd: sideDone, ore: Math.floor(STORY.oreTotal), mp: mpOpen, mode: mode === 'multi' ? 'camp' : mode, name: pname, srv, s: sens, v: vol, m: mus, q: gfxI, cb: cbOn, fps: fpsOn, ss: splitSide ? 1 : 0, side: sideI, vs: foeI, k: KB.fp, kc: KB.cmd, kl: KB.layout, tp: touchPref })); } catch (e) { /* storage is optional */ } };
+try { const o = JSON.parse(localStorage.getItem('ore-else') || '{}'); if (o.d >= 0 && o.d < 3) diffI = o.d; if (Array.isArray(o.vr)) vars = VARIANTS.map(v => v.id).filter(id => o.vr.includes(id)); if (o.side >= 0 && o.side < 3) sideI = o.side; if (o.vs >= 0 && o.vs < 3) foeI = o.vs; else if (sideI) foeI = 2; else if (o.foe === 1) foeI = 1; if (validMap(o.map)) mapI = o.map % 100; if (o.st >= 2 && o.st <= 5) { if (o.camp > 0) camp = Math.min(STORY_JOBS, o.st < 5 ? fromOldSave(o.camp, o.st) : o.camp); if (o.sd > 0) sideDone = o.sd | 0; if (o.ore > 0) STORY.oreTotal = o.ore; } else if (o.camp > 0) camp = [0, 1, 2, 3, 3, 8][Math.min(5, o.camp)]; if (o.mp) mpOpen = true; if (o.mode === 'skirm') mode = 'skirm'; if (o.tp === 'on' || o.tp === 'off') touchPref = o.tp; if (typeof o.name === 'string') pname = o.name.slice(0, 14); if (typeof o.srv === 'string') srv = o.srv.slice(0, 200); if (o.s > 0) sens = o.s; if (o.v >= 0) vol = o.v; if (o.m === false) mus = false; if (o.q >= 0 && o.q < 4) gfxI = o.q | 0; cbOn = !!o.cb; fpsOn = !!o.fps; splitSide = o.ss !== 0; if (o.side === 1) sideI = 1; loadKeys(o.k, o.kc, o.kl); } catch (e) { /* storage is optional */ }
+const save = () => { try { localStorage.setItem('ore-else', JSON.stringify({ d: diffI, map: mapI, camp, st: 5, sd: sideDone, ore: Math.floor(STORY.oreTotal), mp: mpOpen, mode: mode === 'multi' ? 'camp' : mode, name: pname, srv, s: sens, v: vol, m: mus, q: gfxI, cb: cbOn, fps: fpsOn, ss: splitSide ? 1 : 0, side: sideI, vs: foeI, vr: vars, k: KB.fp, kc: KB.cmd, kl: KB.layout, tp: touchPref })); } catch (e) { /* storage is optional */ } };
 jobI = Math.min(camp, STORY_JOBS - 1);
 const jobOpen = (i: number) => i < STORY_JOBS ? i <= camp : camp >= (MISSIONS[i].opens || 0);
 const jobDone = (i: number) => i < STORY_JOBS ? i < camp : !!(sideDone & (1 << (i - STORY_JOBS)));
@@ -223,7 +225,12 @@ let builtTeam = 'null';
 const setWanted = () => { const tp = teamPlan(); if (!tp || !setTeamGame(tp)) setSides(...sidesWanted()); builtTeam = teamKey(); };
 const want = () => { setWanted(); STORY.charter = mode === 'skirm' ? -1 : charterTeam(MISSIONS[jobI]); return want0(); };
 /** The skirmish map with its turn: a Vast map is turned a new way for every new match (see rollMap). `__ore.turn` pins it, for tests and pictures. */
-let playMap = 0; const reroll = () => playMap = rollMap(mapI, (window as any).__ore?.turn | 0);
+/** A hidden start can be switched on for any size but Vast (which always has one), on the maps that can be turned, in a match of two sides. */
+const hidOK = () => sizeOf(mapI) !== VAST && validMap(mapI % 100 + 100) && teamI <= 0;
+/** The variants this match is played with: only a skirmish against bots on this screen has any. */
+const varsNow = (solo = true) => solo && mode === 'skirm' && !raidOn() ? vars.filter(v => v !== 'hid' || hidOK()) : [];
+let playMap = 0; const reroll = (solo = true) => { const v = varsNow(solo), turn = (window as any).__ore?.turn | 0; setRules(v); playMap = v.includes('hid') ? mapI % 100 + 100 * (turn >= 1 && turn <= TURNS ? turn : 1 + Math.floor(Math.random() * TURNS)) : rollMap(mapI, turn); };
+const ctxNow = (): Ctx => ({ side: sideI, foe: FOE_FAC[foeI], map: mapI, diff: diffI, vars: varsNow() });
 const want0 = () => mode !== 'skirm' ? { d: DIFFS[MISSIONS[jobI].diff], map: MISSIONS[jobI].map, m: MISSIONS[jobI], eco: false } : { d: DIFFS[diffI], map: playMap, m: null, eco: !raidOn() };
 reroll();
 let game = new Game(pipe, hud, want().d, want().map, want().m, null, want().eco); game.sens = sens;
@@ -283,7 +290,7 @@ document.addEventListener('pointerlockchange', () => { if (!locked() && live() &
 
 function fresh() { portraits(true); endSplit(); hush(); hud.reset(); reroll(); const w = want(); game.dispose(); game = new Game(pipe, hud, w.d, w.map, w.m, null, w.eco); game.sens = sens; ended = false; (window as any).__ore.game = game;
   artSoon(matchFacs(), () => { if (!$('menu').hidden && game.phase !== 'play' && !game.net && !split) fresh(); }); }   // the art for sides picked in the menu comes while the player looks
-function start() { if (!artGate(matchFacs(), () => { fresh(); start(); })) return; if (mode === 'skirm' && sideI) { startVeyl(); return; } if (mode !== 'skirm' && MISSIONS[jobI].out) { startStory(MISSIONS[jobI]); return; } if (sidesCode() !== wantCode() || builtTeam !== teamKey()) fresh(); initAudio(); setVolume(vol); setMusic(mus); { const w = want(); if (game.diff !== w.d || game.mapI !== w.map || game.mission !== w.m || game.time > 0) fresh(); } $('menu').hidden = true; $('pause').hidden = true; $('end').hidden = true; hud.show(true); game.phase = 'play'; game.introT = 1.8; lock(); }
+function start() { if (!artGate(matchFacs(), () => { fresh(); start(); })) return; if (mode === 'skirm' && sideI) { startVeyl(); return; } if (mode !== 'skirm' && MISSIONS[jobI].out) { startStory(MISSIONS[jobI]); return; } if (sidesCode() !== wantCode() || builtTeam !== teamKey()) fresh(); initAudio(); setVolume(vol); setMusic(mus); { const w = want(); if (game.diff !== w.d || game.mapI !== w.map || game.mission !== w.m || game.time > 0) fresh(); } CAREER.ctx = mode === 'skirm' && !raidOn() ? ctxNow() : null; $('menu').hidden = true; $('pause').hidden = true; $('end').hidden = true; hud.show(true); game.phase = 'play'; game.introT = 1.8; lock(); }
 /** The pause screen shows the whole tech tree: what is standing, what can be built next and what each building sells. */
 let treeF = -1;
 function showTree() {
@@ -388,7 +395,7 @@ function startSplit(how: SplitMode | boolean = splitMode) {
   portraits(true);
   { const sm = how === true ? 'versus' : how === false ? 'coop' : how; if (!artGate(sidesWanted(sm === 'versus'), () => startSplit(how))) return; }
   splitMode = how === true ? 'versus' : how === false ? 'coop' : how; splitVs = splitMode === 'versus'; setSides(...sidesWanted(splitVs)); STORY.charter = -1; initAudio(); setVolume(vol); setMusic(mus); mode = 'skirm'; hud.reset(); hud2.reset();
-  reroll(); const prev = split, m = split = new LocalMatch(playMap, diffI, 2, splitMode), mk = (i: number) => { const g = new Game(i ? view2 : view1, i ? hud2 : hud, DIFFS[diffI], playMap, null, m.seats[i], m.host.eco); g.sens = i ? 1 : sens; g.names = m.names; g.teams = m.teams; g.myTeam = m.teams[i + 1] ?? SIDE.home; g.phase = 'play'; g.introT = 1.8; return g; };
+  CAREER.ctx = null; reroll(false); const prev = split, m = split = new LocalMatch(playMap, diffI, 2, splitMode), mk = (i: number) => { const g = new Game(i ? view2 : view1, i ? hud2 : hud, DIFFS[diffI], playMap, null, m.seats[i], m.host.eco); g.sens = i ? 1 : sens; g.names = m.names; g.teams = m.teams; g.myTeam = m.teams[i + 1] ?? SIDE.home; g.phase = 'play'; g.introT = 1.8; return g; };
   const old = [game, game2, prev?.host]; game = mk(0); game2 = mk(1); game2.cmd.locked = true; for (const g of old) if (g && g !== game) g.dispose(); view1.time = view2.time = pipe.time; ended = false; (window as any).__ore.game = game;
   padTwo = pads().length > 0; p2Seen = false; p2Hint = 0; padHeld[0].clear(); padHeld[1].clear(); look2.clear(); p2Labels();
   $('game').classList.add('split'); $('game').classList.toggle('stack', !splitSide);
@@ -397,13 +404,13 @@ function startSplit(how: SplitMode | boolean = splitMode) {
 /** A skirmish as the Veyl: the Ironhold bots run on a local host, and this screen is its only seat. */
 function startVeyl() {
   portraits(true); endSplit(); splitMode = 'veyl'; splitVs = false; setWanted(); STORY.charter = -1; initAudio(); setVolume(vol); setMusic(mus); hush(); hud.reset();
-  reroll(); const m = split = new LocalMatch(playMap, diffI, 1, 'veyl'), old = game;
+  reroll(); CAREER.ctx = ctxNow(); const m = split = new LocalMatch(playMap, diffI, 1, 'veyl'), old = game;
   game = new Game(pipe, hud, DIFFS[diffI], playMap, null, m.seats[0], true); game.sens = sens; game.names = m.names; game.teams = m.teams; game.myTeam = SIDE.out; game.phase = 'play'; game.introT = 1.8; old.dispose(); ended = false; (window as any).__ore.game = game;
   $('menu').hidden = true; $('pause').hidden = true; $('end').hidden = true; hud.show(true); resize(); lock();
 }
 /** A story job played from the outpost end: the job's script runs on a hidden local host, and this screen is its one seat. */
 function startStory(mi: Mission) {
-  endSplit(); splitMode = 'veyl'; splitVs = false; want(); initAudio(); setVolume(vol); setMusic(mus); hush(); hud.reset();
+  CAREER.ctx = null; setRules([]); endSplit(); splitMode = 'veyl'; splitVs = false; want(); initAudio(); setVolume(vol); setMusic(mus); hush(); hud.reset();
   STORY.on = true; const m = split = new LocalMatch(mi.map, mi.diff, 1, 'veyl', mi), old = game;
   game = new Game(pipe, hud, DIFFS[mi.diff], mi.map, null, m.seats[0], true); STORY.on = false; game.story = mi; game.sens = sens; game.names = m.names; game.teams = m.teams; game.myTeam = SIDE.out; game.phase = 'play'; game.introT = 1.8; old.dispose(); ended = false; (window as any).__ore.game = game;
   $('menu').hidden = true; $('pause').hidden = true; $('end').hidden = true; hud.show(true); resize(); lock();
@@ -480,7 +487,11 @@ function showFront() {
   $('bcName').textContent = m.name; $('bcTeach').textContent = 'Teaches: ' + m.teaches;
   $('bcImg').style.setProperty('--jobHero', `var(--hero${m.side})`);
   $('bcGo').textContent = camp >= STORY_JOBS ? 'Replay' : camp ? 'Continue' : 'Start';
-  $('bcQuick').textContent = `${SIDE_LONG[sideI]} against ${SIDE_LONG[FOE_FAC[foeI]]}, ${onText('maps') || 'Needle\'s Eye'}, ${onText('sizes') || 'Medium'}, ${onText('diff') || DIFFS[diffI].name}.`;
+  $('bcQuick').textContent = `${SIDE_LONG[sideI]} against ${SIDE_LONG[FOE_FAC[foeI]]}, ${onText('maps') || 'Needle\'s Eye'}, ${onText('sizes') || 'Medium'}, ${onText('diff') || DIFFS[diffI].name}${varsNow().length ? ', ' + varsNow().map(v => VARIANTS.find(x => x.id === v)!.name.toLowerCase()).join(', ') : ''}.`;
+  { // Challenges: ten badges for the side picked, filled as they are met, and the next one to go for.
+    const done = loadCareer().done, mine = CHALLENGES.filter(c => c.side === sideI), next = mine.find(c => !done.includes(c.id));
+    $('bcChN').textContent = `${done.length} of ${CHALLENGES.length}`; $('bcBadges').innerHTML = mine.map(c => `<i class="${done.includes(c.id) ? 'on' : ''}" title="${c.name}: ${c.text}${done.includes(c.id) ? ' (done)' : ''}"></i>`).join('');
+    $('bcChNext').textContent = next ? `Next as ${SIDE_LONG[sideI]}: ${next.name}. ${next.text.replace(/ as (the )?\w+$/, '')}.` : `All ten done as ${SIDE_LONG[sideI]}.`; }
 }
 const goFront = (f: typeof front) => { front = f; showFront(); if (f === 'in') ($('modes').querySelector('button.on') as HTMLElement | null)?.focus({ preventScroll: true }); };
 const goIn = (m: string) => { const b = modeBtns.find(x => x.dataset.m === m); if (b) b.click(); goFront('in'); };
@@ -526,7 +537,7 @@ function showLobby(l: Lobby) {
 }
 /** A match starts on the server (or a replay starts in the page): the page's game becomes a copy of it. */
 function netBegin(n: Net, m: any) {
-    portraits(true); endSplit(); mode = 'multi'; hud.reset(); game.dispose(); usePlan(m.plan || null); setSidesCode(m.out ?? 1); setTeamGame(m.mt || null); STORY.charter = -1; game = new Game(pipe, hud, DIFFS[m.diff], m.map, null, n, !!m.eco); game.sens = sens; game.names = m.names; game.myTeam = (m.team ?? 0) >= 0 ? m.team ?? SIDE.home : SIDE.home; game.teams = m.teams || {}; if (m.ph) { game.applying = true; for (const r of m.ph) { const q = game.props[r[0]]; if (q && q.alive && q.hp > r[1]) game.damageProp(q, q.hp - r[1], null); } game.applying = false; } ended = false; (window as any).__ore.game = game;
+    CAREER.ctx = null; setRules([]); portraits(true); endSplit(); mode = 'multi'; hud.reset(); game.dispose(); usePlan(m.plan || null); setSidesCode(m.out ?? 1); setTeamGame(m.mt || null); STORY.charter = -1; game = new Game(pipe, hud, DIFFS[m.diff], m.map, null, n, !!m.eco); game.sens = sens; game.names = m.names; game.myTeam = (m.team ?? 0) >= 0 ? m.team ?? SIDE.home : SIDE.home; game.teams = m.teams || {}; if (m.ph) { game.applying = true; for (const r of m.ph) { const q = game.props[r[0]]; if (q && q.alive && q.hp > r[1]) game.damageProp(q, q.hp - r[1], null); } game.applying = false; } ended = false; (window as any).__ore.game = game;
     initAudio(); setVolume(vol); setMusic(mus); $('menu').hidden = true; $('pause').hidden = true; $('end').hidden = true; hud.show(true); game.phase = 'play'; game.introT = 1.8; if (!m.watch) lock(); /* a watcher keeps the mouse for the watching bar */}
 async function mpConnect(then: (n: Net) => void) {
   artSoon([0, 1, 2]);   // any side may be picked in a lobby: fetch every faction's art while the players gather
@@ -572,8 +583,11 @@ const showTeams = () => {
   teamRow.innerHTML = L.map((l, i) => `<button type="button" data-t="${i}" class="${i === teamI ? 'on' : ''}" aria-pressed="${i === teamI}">${l.name}<small>${say[l.name] || ''}</small></button>`).join('');
 };
 teamRow.addEventListener('click', e => { const b = (e.target as HTMLElement).closest('[data-t]') as HTMLElement | null; if (!b) return; teamI = +b.dataset.t!; showTeams(); showSide(); if (mode === 'skirm' && builtTeam !== teamKey()) fresh(); });
-const showMap = () => { showTeams(); mapBtns.forEach((b, i) => { const on = +(b.dataset.b ?? i) === baseOf(mapI); b.classList.toggle('on', on); b.setAttribute('aria-pressed', String(on)); }); sizeBtns.forEach(b => { const on = +(b.dataset.s || 0) === sizeOf(mapI); b.classList.toggle('on', on); b.setAttribute('aria-pressed', String(on)); }); };
+const showMap = () => { showTeams(); showVars(); mapBtns.forEach((b, i) => { const on = +(b.dataset.b ?? i) === baseOf(mapI); b.classList.toggle('on', on); b.setAttribute('aria-pressed', String(on)); }); sizeBtns.forEach(b => { const on = +(b.dataset.s || 0) === sizeOf(mapI); b.classList.toggle('on', on); b.setAttribute('aria-pressed', String(on)); }); };
 /** Picks a map, keeping the size; a number of 10 or more is a whole map code with its size. */
+const varBtns = Array.from($('vars').querySelectorAll('button')) as HTMLButtonElement[];
+const showVars = () => varBtns.forEach(b => { const id = b.dataset.v!, off = id === 'hid' && !hidOK(), on = vars.includes(id) && !off; b.disabled = off; b.classList.toggle('on', on); b.setAttribute('aria-pressed', String(on)); });
+varBtns.forEach(b => b.addEventListener('click', () => { const id = b.dataset.v!; vars = vars.includes(id) ? vars.filter(v => v !== id) : [...vars, id]; showVars(); save(); if (mode === 'skirm' && id === 'hid') fresh(); }));
 const useMap = (code: number) => { mode = 'skirm'; mapI = code % 100; showMap(); showMode(); save(); if (game.mapI % 100 !== mapI || game.mission) fresh(); };
 // Picking a map from the list puts any made map away; the map maker's Play button puts it back in use.
 const pickMap = (i: number) => { usePlan(null); showMade(); useMap(i >= 10 ? i : mapCode(i, sizeOf(mapI))); };
@@ -591,11 +605,11 @@ const matchCard = () => {
   if (mode !== 'skirm' || $('menu').hidden || !game || !game.buildings.length) return;
   // Playing the Veyl or the Gloam, you hold the far end (sidesWanted): the world behind the menu is built that way round already.
   const you = teamPlan() ? game.myTeam : sideI === 0 ? SIDE.home : SIDE.out, me = fac(you), foes = [...new Set(game.buildings.filter(b => b.team !== you && b.kind === FACTION[b.team].hq && !isFriend(b.team, you)).map(b => fac(b.team)))], foe = foes.length ? foes[0] : fac(foeOf(you));
-  const many = startsHere() > 2 && teamI > 0, key = [me, foe, MAP.name, mapI, game.props.length, game.buildings.length, diffI, raidOn(), many, Object.keys(hud.icons).length, Object.keys(hud.portraits).length].join('|'); if (key === mcKey) return; mcKey = key;
+  const many = startsHere() > 2 && teamI > 0, key = [me, foe, MAP.name, mapI, game.props.length, game.buildings.length, diffI, raidOn(), many, varsNow().join(), Object.keys(hud.icons).length, Object.keys(hud.portraits).length].join('|'); if (key === mcKey) return; mcKey = key;
   const side = (f: number, you: boolean) => `${emblem(f)}<b>${FACTION[f].name}</b><small>${you ? 'You' : raidOn() ? 'They only raid' : many ? 'and the rest' : 'Them'}</small>`;
   $('mcYou').innerHTML = side(me, true); $('mcYou').className = 'mc-side you'; $('mcFoe').innerHTML = side(foe, false); $('mcFoe').className = 'mc-side';
   $('mcTag').textContent = `${MAP.name} · ${['Medium', 'Small', 'Large', 'Vast'][sizeOf(mapI)] || ''}`;
-  $('mcLine').textContent = `${DIFFS[diffI].name}: ${DIFFS[diffI].blurb.toLowerCase()}. ${MAP.hid ? 'Their base is somewhere out there: send a scout to find it.' : 'Both bases are on the survey sheet from the start.'}`;
+  $('mcLine').textContent = `${DIFFS[diffI].name}: ${DIFFS[diffI].blurb.toLowerCase()}. ${MAP.hid ? 'Their base is somewhere out there: send a scout to find it.' : 'Both bases are on the survey sheet from the start.'}${varsNow().filter(v => v !== 'hid').length ? ' Variants: ' + varsNow().filter(v => v !== 'hid').map(v => VARIANTS.find(x => x.id === v)!.name).join(', ') + '.' : ''}`;
   hud.preview(game, mcMap, you);
   const crew = (Object.keys(UNIT) as Kind[]).filter(k => (UNIT[k].team ?? 0) === me && hud.portraits[k]);
   const pick = [...crew.filter(k => isWorker(k)).slice(0, 1), ...crew.filter(k => !isWorker(k))].slice(0, 5);
@@ -674,7 +688,7 @@ function frame(now: number) {
   else if (game.phase === 'over' && !ended && !game.story && split && splitMode === 'veyl' && GL) { $('endTitle').textContent = game.won ? 'The Gloam take the valley' : 'The swarm withers'; $('endTitle').className = 'logo sm'; $('endLine').textContent = game.won ? 'Every Headframe is chewed to scrap. The Bloom runs to the horizon.' : 'The last Mother Cap is mulch. The crew are already burning the carpet.'; }
   else if (game.phase === 'over' && !ended && !game.story && split && splitMode === 'veyl') { $('endTitle').textContent = game.won ? 'The Veyl take the valley' : 'The Chorus falls silent'; $('endTitle').className = 'logo sm'; $('endLine').textContent = game.won ? 'Every Headframe is down. The Ironhold dig somewhere else now.' : 'The last Choir Stone broke. The crew are already pricing the glass.'; }
   if (game.phase === 'over' && !ended && split && classic && splitVs && game2 && !game.story) { $('endTitle').textContent = game.won ? 'Ironhold holds the valley' : GL ? 'The Gloam take the valley' : 'The Veyl take the valley'; $('endTitle').className = 'logo sm'; $('endLine').textContent = game.won ? (GL ? 'Player one squashed every Mother Cap. Player two, the Bloom is drying out.' : 'Player one broke every Choir Stone. Player two, the singing has stopped.') : 'Player two broke the Headframe. Player one, the Charter will be billing your next of kin.'; }
-  if (game.phase === 'over' && !ended) { ended = true; const m = mode !== 'skirm' ? game.story : null; if (m && game.won) { const i = MISSIONS.indexOf(m); if (i < STORY_JOBS) { if (i >= camp) STORY.oreTotal += m.out ? game.stats.minedV : game.stats.mined; camp = Math.max(camp, i + 1); } else sideDone |= 1 << (i - STORY_JOBS); if (camp >= MP_AFTER) mpOpen = true; save(); } $('again').textContent = m ? (game.won ? (MISSIONS.indexOf(m) < STORY_JOBS - 1 ? 'Next job' : MISSIONS.indexOf(m) === STORY_JOBS - 1 ? 'Watch the ending' : 'Run it again') : 'Try that again') : split ? 'Another shift' : game.net ? 'Back to the lobby' : 'Another shift'; }
+  if (game.phase === 'over' && !ended) { ended = true; if (!game.story && !game2 && (CAREER.ctx || !game.net)) hud.showYou(closeMatch(game, CAREER.ctx)); const m = mode !== 'skirm' ? game.story : null; if (m && game.won) { const i = MISSIONS.indexOf(m); if (i < STORY_JOBS) { if (i >= camp) STORY.oreTotal += m.out ? game.stats.minedV : game.stats.mined; camp = Math.max(camp, i + 1); } else sideDone |= 1 << (i - STORY_JOBS); if (camp >= MP_AFTER) mpOpen = true; save(); } $('again').textContent = m ? (game.won ? (MISSIONS.indexOf(m) < STORY_JOBS - 1 ? 'Next job' : MISSIONS.indexOf(m) === STORY_JOBS - 1 ? 'Watch the ending' : 'Run it again') : 'Try that again') : split ? 'Another shift' : game.net ? 'Back to the lobby' : 'Another shift'; }
   // Drop the render resolution if the machine can't keep up, and bring it back if it can.
   // A machine that is far behind should not have to suffer fifty frames before the picture gets lighter, so very slow frames count for more.
   if (dt > .034) { slow += dt > .15 ? 10 : dt > .07 ? 3 : 1; fast = 0; } else if (dt < .02) { fast++; slow = Math.max(0, slow - 1); }

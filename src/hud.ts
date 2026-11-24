@@ -1,4 +1,5 @@
 // The heads-up display: plain HTML over the canvas, laid out in a 900-unit-tall space and scaled to fit.
+import type { Closed } from './career';
 import { drawMap as drawGround } from './terrain';
 import { sheetFurniture, drawSheet, type Sheet } from './mapsheet';
 import * as THREE from 'three';
@@ -85,7 +86,14 @@ export class Hud {
   ping(p: THREE.Vector3, text = 'Squad moving here') { this.pingPos.copy(p); this.pingT = 3; this.pingText = text; }
   private pingText = 'Squad moving here';
   titleCard(kind: string, name: string, quip: string) { const e = this.$('tcard'); if (!name) { e.hidden = true; return; } this.$('tcName').textContent = name; this.$('tcQuip').textContent = quip; this.$('tcSide').textContent = (UNIT[kind as Kind]?.team || 0) === 2 ? 'The Gloam · a mouth of the swarm' : UNIT[kind as Kind]?.team ? 'Veyl Chorus · a voice you borrow' : 'Ironhold Charter · now under your control'; const src = this.portraits[kind]; if (src) (this.$('tcImg') as HTMLImageElement).src = src; e.hidden = false; }
+  /** The player's own row on the end screen (src/career.ts). An empty row hides it. */
+  showYou(c: Closed | null) {
+    const box = this.$('endYou'); box.hidden = !c; if (!c) return;
+    this.$('endYouStats').innerHTML = c.you.map(s => `<div class="${s.fresh ? 'best' : ''}"><b>${s.n}</b><span>${s.label}</span>${s.was !== undefined ? `<small>${s.fresh ? 'was' : 'best'} ${s.was}</small>` : ''}</div>`).join('');
+    const e = this.$('endEarned'); e.hidden = !c.earned.length; e.textContent = c.earned.length ? `Challenge${c.earned.length > 1 ? 's' : ''} met: ${c.earned.map(x => x.name).join(', ')}. ${c.done} of ${c.of} done.` : '';
+  }
   showEnd(g: Game) {
+    this.showYou(null);
     this.$('endTip').hidden = true;
     this.$('endTitle').textContent = g.won ? (g.story ? 'Job done' : 'Paid in full') : 'Shift over'; this.$('endTitle').className = 'logo sm' + (g.won ? '' : ' bad');
     this.$('endLine').textContent = g.won && g.story ? g.story.outro : !g.won && g.story?.fail ? (typeof g.story.fail === 'function' ? g.story.fail(g) : g.story.fail) : g.won ? (fac(foeOf(g.myTeam)) === 0 ? 'The other crew\'s last Headframe is scrap. The Charter only needed one of you.' : fac(foeOf(g.myTeam)) === 2 ? 'Every Mother Cap is mulch and the green carpet is drying out. The Charter thanks you with a smaller invoice.' : 'Every Choir Stone is gravel. The Charter thanks you with a smaller invoice.') : g.story && fac(g.myTeam) === 1 ? 'Your last Choir Stone is gravel. The job is lost.' : g.story && fac(g.myTeam) === 2 ? 'Your last Mother Cap is mulch. The job is lost.' : 'The Headframe is scrap. The Charter will be billing your next of kin.';

@@ -7,6 +7,7 @@ import * as MD from './models';
 import { sfx, drillSound, setMood, babble, heardAt } from './audio';
 import { tickSound } from './sound-abilities';
 import { tickOpening } from './opening';
+import { newTally, RULES } from './career';
 import type { Hud } from './hud';
 import { Fog, SIGHT } from './fog';
 import * as T from './terrain';
@@ -307,7 +308,7 @@ export class Game {
   /** A side the bots run hits as hard as the shift says. A side somebody plays hits at full weight. */
   /** On Double shift a bot side playing against a person gets more out of each load of ore, the way the bot Chorus in an Ironhold skirmish sends bigger raids.
    *  Night is the even fight: the person's hero body against the bots' tougher AI-driven Veyl. */
-  oreK(team: number) { return this.eco && !this.human[team] && this.human[foeOf(team)] ? 1 + Math.max(0, this.diff.enemy - 1) : 1; }
+  oreK(team: number) { return (this.eco && !this.human[team] && this.human[foeOf(team)] ? 1 + Math.max(0, this.diff.enemy - 1) : 1) * (RULES.rich ? 2 : 1); }
   foeK(team: number) { return this.human[team] ? 1 : this.diff.enemy; }
   gunMul(team: number, cat?: string) { const m = levelMul(this, team, 'atk', cat); return fac(team) ? m : m * (this.eco ? this.foeK(team) : 1); }
   /** With a full economy the Veyl pay for every body, so each one the AI drives is worth more than a free raider: it takes less from each hit and hits harder. */
@@ -425,7 +426,7 @@ export class Game {
     if (from && from.team !== t.team && multi() && !isEnemy(from.team, t.team)) return;
     if (this.net) {   // multiplayer client: only the server changes health. Report what this player hit and show the number now.
       if (from !== this.me || !this.me || !t.alive || amt <= 0) return;
-      this.net.cmd('dm', t.id, Math.round(amt * 10) / 10, crit ? 1 : 0); if (isUnit(t)) { t.pop = 1; this.fx.hit(t, amt, from, crit, t.shield > 0); }
+      this.net.cmd('dm', t.id, Math.round(amt * 10) / 10, crit ? 1 : 0); this.tally.dealt += Math.min(amt, t.hp + (isUnit(t) ? t.shield : 0)); if (isUnit(t)) { t.pop = 1; this.fx.hit(t, amt, from, crit, t.shield > 0); }
       if (!this.quiet) this.hud.damage(V3(t.pos.x, isUnit(t) ? UNIT[t.kind].headY + .4 : t.h * .7, t.pos.z), (crit ? 'CRIT ' : '') + Math.max(1, Math.round(amt)), crit ? 'crit' : isUnit(t) && t.shield > 0 ? 'shield' : '');
       return;
     }
@@ -448,9 +449,10 @@ export class Game {
     // value and was weaker than the same kind under a bot. Its hits go through vMul the same way (stream C).
     let lost = dealt; if (u && fac(u.team) === 1 && this.eco && !isWorker(u.kind)) { amt /= this.vBoost.hp; lost = dealt / this.vBoost.hp; }   // `lost` is what the number over its head says: what the hit really took off (fun audit: it read 6 while 4 came off)
     if (u && u.status) amt = soak(u, amt);
-    if (u) { u.pop = 1; this.fx.hit(u, dealt, from, crit, shielded); if (u.shield > 0) { const a = Math.min(u.shield, amt); u.shield -= a; amt -= a; this.bubble(u); } }
+    let dealtSh = 0; if (u) { u.pop = 1; this.fx.hit(u, dealt, from, crit, shielded); if (u.shield > 0) { const a = Math.min(u.shield, amt); u.shield -= a; amt -= a; dealtSh = a; this.bubble(u); } }
     // A hit from a body somebody is driving lands with weight: the target is shoved back and loses a beat.
     if (u && !unitRule(u.kind).steady && !u.pilot && from && isUnit(from) && from.team !== u.team && (from === me || from.pilot) && dealt >= 5) { const sx = u.pos.x - from.pos.x, sz = u.pos.z - from.pos.z, sd = Math.hypot(sx, sz) || 1, k = unitRule(from.kind).shove ?? Math.min(10, dealt * .16); u.kx += sx / sd * k; u.kz += sz / sd * k; u.cd = Math.max(u.cd, Math.min(.5, dealt * .012)); }
+    { const took = Math.min(amt, Math.max(0, t.hp)) + (dealtSh || 0); if (from && from.team !== t.team) { if (isOwn(from.team, this.myTeam)) this.tally.side += took; if (from === me && me) this.tally.dealt += took; } }
     t.hp -= amt;
     if (this.evq && u && u.pilot && from) this.evq.push(['ht', u.id, r1(from.pos.x), r1(from.pos.z)]);
     const head = V3(t.pos.x, u ? UNIT[u.kind].headY + .4 : (t as Building).h * .7, t.pos.z);
@@ -497,12 +499,12 @@ export class Game {
     u.ring.visible = false; if (u.rig.flash) u.rig.flash.visible = false; this.bodyLayer(u, false);
     R(-1, 1); R(-1, 1);   // two draws the old fall used: kept so the match's seeded random numbers run exactly as before
     this.fx.kill(u, from);
-    if (u.team !== this.myTeam && from === this.me && this.me) { sfx.kill(); this.hud.hitmark(false, true); this.hitStop = unitRule(u.kind).koStop || unitRule(this.me.kind).killStop || .06; this.streak = this.time < this.streakT ? this.streak + 1 : 1; this.streakT = this.time + 4; if (this.streak >= 2) { this.hud.streak(['', '', 'DOUBLE KO!', 'TRIPLE!', 'OVERTIME!', 'RAMPAGE!'][Math.min(5, this.streak)]); sfx.streak(this.streak); } }
+    if (u.team !== this.myTeam && from === this.me && this.me) { sfx.kill(); this.hud.hitmark(false, true); this.hitStop = unitRule(u.kind).koStop || unitRule(this.me.kind).killStop || .06; this.streak = this.time < this.streakT ? this.streak + 1 : 1; this.streakT = this.time + 4; this.tally.kills++; this.tally.streak = Math.max(this.tally.streak, this.streak); if (this.streak >= 2) { this.hud.streak(['', '', 'DOUBLE KO!', 'TRIPLE!', 'OVERTIME!', 'RAMPAGE!'][Math.min(5, this.streak)]); sfx.streak(this.streak); } }
     if (away) { const kk = from ? from.kind : 'other'; this.stats.lostToV[kk] = (this.stats.lostToV[kk] || 0) + 1; }
     if (away) { this.stats.kills++; if (unitRule(u.kind).downed?.(this, u, v)) { /* the kind said its own line */ } else if (from && isUnit(from) && from.team !== u.team && from !== this.me && Math.random() < .12) this.dir.bark(from, 'kill'); if (this.eco && u !== this.me && isFighter(u) && Math.random() < .3) this.dir.bark(u, 'down'); }
     else { this.stats.lost++; { const kk = from ? from.kind : 'other'; this.stats.lostTo[kk] = (this.stats.lostTo[kk] || 0) + 1; } if (u !== this.me && isFighter(u) && Math.random() < .35) this.dir.bark(u, 'down'); if (this.eco && from && isUnit(from) && from.team !== u.team && from !== this.me && Math.random() < .12) this.dir.bark(from, 'kill'); }
     if (u.site) u.site.builder = null;
-    if (u === this.me) { this.staticT = 1.9; this.feed('Signal', 'Body lost. Finding you a new one.', 'al'); sfx.deny(); drillSound(false, false); }
+    if (u === this.me) { this.tally.deaths++; this.staticT = 1.9; this.feed('Signal', 'Body lost. Finding you a new one.', 'al'); sfx.deny(); drillSound(false, false); }
   }
   bldMat(b: Building, i: number) { const f = fac(b.team); return f === 2 ? (i % 3 ? M.gH : i % 2 ? M.gB : M.gS) : f === 1 ? (i % 3 ? M.indigo : i % 2 ? M.crys : M.indigoL) : (i % 3 === 0 ? M.rust : i % 3 === 1 ? M.steel : M.steelD); }
   /** A building passes a damage state: it sheds pieces, sags and leans a little more. */
@@ -547,6 +549,7 @@ export class Game {
   byPoints = false;
   fallA = -1; possT = -9;
   killBuilding(b: Building) {
+    if (b.alive && b.built && b.team === this.myTeam) this.tally.bLost++;
     if (b.cargo?.length) spill(this, b, null);
     // A site that falls before it is finished adds nothing to lostV: points count what stood.
     if (b.alive && b.built !== false) this.loseV(b, null); b.alive = false; if (b.holo) this.scene.remove(b.holo); const veyl = fac(b.team) !== 0, bad = b.team === this.myTeam, v = this.vol(b.pos);
@@ -662,7 +665,7 @@ export class Game {
       this.hitStop = Math.max(0, this.hitStop - dtReal); this.introT = Math.max(0, this.introT - dtReal);
       if (this.endT > 0) { this.endT -= dtReal; this.shake = Math.max(this.shake, .5 * this.endT / 2.4); if (this.endT <= 0) { this.end(this.endWon); P.clear(); return; } }
       const dt = this.net ? dtReal * this.net.speed /* lobby rules (K) */ : dtReal * (this.endT > 0 ? .22 : this.tab ? .25 : this.hitStop > 0 ? .12 : 1);
-      this.time += dt; this.safeT = Math.max(0, this.safeT - dt); this.jumpCd = Math.max(0, this.jumpCd - dtReal);
+      this.time += dt; if (this.me) { if (this.cmd.on) this.tally.aboveT += dt; else this.tally.bodyT += dt; } this.safeT = Math.max(0, this.safeT - dt); this.jumpCd = Math.max(0, this.jumpCd - dtReal);
       if (!this.net && this.fair && OVERTIME.limit > 0 && this.time >= OVERTIME.limit && this.endT <= 0 && this.phase === 'play') this.pointsWin();
       if (!this.net && !this.otSaid && this.overtime() > 0) { this.otSaid = true; this.feed('Signal', `Overtime. From here every building takes ${Math.round(OVERTIME.perMin * 100)}% more damage for each minute that passes, and every tower does that much less.`, 'al'); }
       if (this.staticT > 0) { this.staticT -= dtReal; if (this.staticT <= 0) this.respawn(); }
@@ -707,6 +710,8 @@ export class Game {
   /** What this side has found of the map. */
   fog!: Fog;
   safeT = 0;
+  /** The player's own part in this match, for the end screen and the records (src/career.ts). */
+  tally = newTally();
   /** What the opening has handed each side so far (src/opening.ts): bit 1 the free fighter, bit 2 the scout. */
   opened: Record<number, number> = {};
   respawn() {

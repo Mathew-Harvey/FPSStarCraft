@@ -4,7 +4,7 @@ import { DEATHS, playFxLook } from './net-look';
 import * as THREE from 'three';
 import { Pipeline, ViewPipe, V3, M, G, R, mk, setLayer, L_FX, L_SELF, holoOK, holoBad, ringMat, tracerMat, makeSky, heldMaterial, makeCone, CONEU, SHARED } from './gfx';
 import * as MD from './models';
-import { sfx, drillSound, setMood, babble, heardAt } from './audio';
+import { sfx, drillSound, setMood, setTheme, babble, heardAt } from './audio';
 import { tickSound } from './sound-abilities';
 import { tickOpening } from './opening';
 import { tickContest, newContest } from './contest';
@@ -1242,7 +1242,7 @@ export class Game {
     LOD.myTeam = this.myTeam; pipe.draw(this.scene, cam, above ? C.focus : me ? me.pos : V3(), span);
     this.hud.update(this, cam);
     // music follows how hot things are around the player
-    if (me) { let hot = this.time - me.lastHit < 6 ? 1 : 0; if (!hot) for (const u of this.units) if (u.team !== this.myTeam && u.alive && Math.abs(u.pos.x - me.pos.x) < 45 && Math.abs(u.pos.z - me.pos.z) < 45) { hot = 1; break; } this.mood += (hot - this.mood) * Math.min(1, dt * (hot ? 2 : .4)); setMood(this.phase === 'play' ? .25 + this.mood * .75 : .15); }
+    if (me) { let hot = this.time - me.lastHit < 6 ? 1 : 0; if (!hot) for (const u of this.units) if (u.team !== this.myTeam && u.alive && Math.abs(u.pos.x - me.pos.x) < 45 && Math.abs(u.pos.z - me.pos.z) < 45) { hot = 1; break; } this.mood += (hot - this.mood) * Math.min(1, dt * (hot ? 2 : .4)); setTheme(fac(this.myTeam)); setMood(this.phase === 'play' ? .25 + this.mood * .75 : .15); }
   }
   private lampDt = 0; private cones = new Map<Prop, THREE.Mesh>();
   /** Every lamp, fire and glowing thing near the camera, handed to the renderer for this frame. All for show. */

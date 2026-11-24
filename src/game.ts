@@ -8,6 +8,8 @@ import { sfx, drillSound, setMood, babble, heardAt } from './audio';
 import { tickSound } from './sound-abilities';
 import { tickOpening } from './opening';
 import { newTally, RULES } from './career';
+/** How long the radio waits: idle chatter after any line to that side, and the same plain line from the same speaker. Seconds. */
+export const QUIET = { chat: 30, again: 300, /** Two plain lines from the same speaker. */ same: 45 };
 import type { Hud } from './hud';
 import { Fog, SIGHT } from './fog';
 import * as T from './terrain';
@@ -383,7 +385,17 @@ export class Game {
   }
   vol(p: THREE.Vector3) { heardAt(p.x, p.z); const d = this.me ? p.distanceTo(this.me.pos) : 50; return Math.max(0, 1 - d / 90) ** 2; }
   /** A line in the message feed. `team` keeps a side's own talk (its brain, its hints, its chatter) to the players on that side. */
-  feed(who: string, msg: string, cls = '', team = -1) { if (this.evq) { this.evq.push(['fd', who, msg, cls, this.feedTo, team]); return; } if (team >= 0 && team !== this.myTeam) return; this.hud.feed(who, msg, cls); if (!this.noRender) babble(who, msg.length); }
+  /** Fewer lines on the radio (fun audit: 68 lines in a 12 minute skirmish, and the ones that mattered were hard to pick out). Outside the
+   *  story, a plain line is dropped when the same speaker said the same words to the same side in the last five minutes or any plain line in the last 45 seconds, and idle squad
+   *  chatter ('chat') is dropped when anything was said to that side in the last half minute. Alerts and teaching lines always go out.
+   *  Nothing here draws from the dice, so a bot match plays out the same. */
+  private saidAt = new Map<string, number>(); private lineT: Record<number, number> = {};
+  private hushed(who: string, msg: string, cls: string, team: number) {
+    const last = Math.max(this.lineT[team] ?? -99, this.lineT[-1] ?? -99), chat = cls === 'chat';
+    if (!this.mission && !STORY.on) { if (chat && this.time - last < QUIET.chat) return true; if (!cls || chat) { const k = `${team}|${who}|${msg}`, t = this.saidAt.get(k); const w = `${team}|${who}`, tw = this.saidAt.get(w); if ((t !== undefined && this.time - t < QUIET.again) || (tw !== undefined && this.time - tw < QUIET.same)) return true; this.saidAt.set(k, this.time); this.saidAt.set(w, this.time); } }
+    this.lineT[team] = this.time; return false;
+  }
+  feed(who: string, msg: string, cls = '', team = -1) { if (this.hushed(who, msg, cls, team)) return; if (cls === 'chat') cls = ''; if (this.evq) { this.evq.push(['fd', who, msg, cls, this.feedTo, team]); return; } if (team >= 0 && team !== this.myTeam) return; this.hud.feed(who, msg, cls); if (!this.noRender) babble(who, msg.length); }
 
   // ------------------------------------------------------------ effects
   /** A hit's own look, for show only (src/net-look.ts defineFxLook): drawn here, or sent to every screen that can see it. */

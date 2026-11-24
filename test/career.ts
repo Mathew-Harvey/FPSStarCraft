@@ -63,4 +63,14 @@ check(VARIANTS.length === 4, 'four match variants');
   { const { g, H } = match(0, 1, [0]); const me = g.units.find(u => u.team === H)!; g.possess(me, true); run(g, 3); check(g.dir.side(H).auto === true, 'without the variant the Quartermaster runs'); }
   check(validMap(100) && validMap(211) && validMap(322), 'a hidden start is a valid map on Medium, Small and Large'); setMap(211); check(MAP.hid === true, 'and the map is marked hidden'); setMap(0);
 }
+// A quieter radio (stage 3): repeats and idle chatter are dropped, alerts and teaching lines are not, and a side hears only its own lead.
+{ const { g, H, O } = match(0, 2, [0]); const heard = () => { const n = g.evq!.filter(e => e[0] === 'fd').length; g.evq!.length = 0; return n; }; g.time = 100; heard();
+  g.feed('Quartermaster', 'Stacking another Depot.', '', H); g.time += 60; g.feed('Quartermaster', 'Stacking another Depot.', '', H); check(heard() === 1, 'the same plain line a minute later is not said again');
+  g.time += 300; g.feed('Quartermaster', 'Stacking another Depot.', '', H); check(heard() === 1, 'five minutes later it is');
+  g.feed('Quartermaster', 'Something else.', '', H); check(heard() === 0, 'a second plain line from the same speaker inside 45 seconds is dropped');
+  g.feed('Lookout', 'On the road!', 'al', H); g.feed('Lookout', 'On the road!', 'al', H); g.feed('Quartermaster', 'Press E.', 'in', H); check(heard() === 3, 'alerts and teaching lines always go out');
+  g.feed('Linesman', 'Boots full of sand.', 'chat', H); check(heard() === 0, 'idle chatter waits when something was said in the last half minute');
+  g.time += 31; g.feed('Linesman', 'Boots full of sand.', 'chat', H); const e = g.evq!.find(x => x[0] === 'fd'); check(!!e && e[3] === '', 'and is said, as a plain line, once the radio has been quiet'); heard();
+  g.time += 50; g.feed('Snapper', 'We are many.', 'chat', O); g.feed('Linesman', 'Sand again.', 'chat', H); check(heard() === 2, 'a line to the other side does not hush ours');
+  g.time = 400; g.dir.bark(g.spawn('snapper', O, 60, 7), 'down'); const b = g.evq!.find(x => x[0] === 'fd'); check(!b || b[5] === O, 'a bark goes to the side whose body it was'); }
 console.log(fails ? `${fails} FAILED` : 'all passed'); process.exit(fails ? 1 : 0);

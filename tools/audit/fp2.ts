@@ -6,6 +6,7 @@ import { DRIVE } from '../../src/command';
 //   mode bot:  no player at all, both sides bots (the baseline).
 //   mode cmd:  a player who never drives a body (command view hands-off: the side runs itself, the LEAD bonus never applies).
 //   mode lead: the script drives a fighter that stays with the army and shoots whatever is in reach (LEAD on for the crew round it).
+//   mode boss: a player who never drives a body but gives orders from above every 2 s (pulls hurt bodies home, focuses fire).
 //   mode rush: the script drives a body straight at the far base from the first second and shoots its way in (the opening check:
 //              no opening should win by minute 6 against a bot that scouts).
 //   me, foe: factions 0 Ironhold, 1 Veyl, 2 Gloam. Prints one JSON line a match.
@@ -55,7 +56,7 @@ for (const seed0 of o.seeds || [1]) {
   for (const u of g.units) u.pilot = 0;
   for (const u of g.units) { u.pos.x += (Math.random() - .5) * 4; u.pos.z += (Math.random() - .5) * 4; } g.dir.qmT = Math.random(); g.dir.vs.qmT = Math.random();
   const player = mode !== 'bot', drive = mode === 'lead' || mode === 'rush' || mode === 'harass' || mode === 'snipe';
-  let tk = 0;
+  let tk = 0; const ORDERS = { pull: 0, focus: 0 };
   g.human = g.human.map((_, t) => player && t === H); g.me = null;
   let ALL = 0, TOOK = 0, dealtU = 0, KILLS = 0, dealt = 0, deaths = 0, ledSum = 0, ledN = 0, last: any = null, stuck = 0, strafe = 0, px = 0, pz = 0;
   const was = Game.prototype.damage; (g as any).damage = function (t: any, amt: number, from: any, ...r: any[]) { const h0 = t.hp + (t.shield || 0); const res = (was as any).call(this, t, amt, from, ...r); const dd = Math.max(0, h0 - (t.hp + (t.shield || 0))); if (t.team !== H) { ALL += dd; if (from && from === g.me) { dealt += dd; if ('pilot' in t) dealtU += dd; } } else if (t === g.me) TOOK += dd; return res; };
@@ -72,6 +73,14 @@ for (const seed0 of o.seeds || [1]) {
     if (++tk % 90 === 0 && (mode === 'allin' || mode === 'hqsnipe' || mode === 'turtle')) { const f = hq(), ids = g.army(H).filter(u => !u.pilot && u !== g.me).map(u => u.id);
       const home = g.buildings.find(b => b.alive && b.team === H && b.kind === FACTION[H].hq);
       if (mode === 'allin' && f) g.dir.command(H, ids, 'm', f.pos.x, f.pos.z); else if (mode === 'hqsnipe' && f) g.dir.command(H, ids, 'a', 0, 0, f.id); else if (mode === 'turtle' && home) g.dir.command(H, ids, 'm', home.pos.x + (f ? Math.sign(f.pos.x - home.pos.x) * 14 : 0), home.pos.z + (f ? Math.sign(f.pos.z - home.pos.z) * 14 : 0)); }
+    // boss (fun audit, stage 3): a commander who never drives a body but works from above every 2 s, the way a player in the command view
+    // would: bodies under 35% health with an enemy fighter inside 30 m are walked home without fighting, and where three or more of ours
+    // are in a fight they are all put on the enemy fighter there with the least health left.
+    if (tk % 60 === 0 && mode === 'boss') { const D = (a: any, b: any) => Math.hypot(a.pos.x - b.pos.x, a.pos.z - b.pos.z), army = g.army(H).filter(u => !u.pilot), ff = g.units.filter(u => u.alive && u.team === O && isFighter(u) && !(u as any).cloak && !(u as any).dug && !(u as any).inside);
+      const home = g.buildings.find(b => b.alive && b.team === H && b.kind === FACTION[H].hq), hurt = army.filter(u => u.hp + u.shield < (u.maxHp + u.maxShield) * .35 && ff.some(f => D(u, f) < 30) && (!home || D(u, home) > 25));
+      if (hurt.length && home) ORDERS.pull += g.dir.command(H, hurt.map(u => u.id), 'v', home.pos.x, home.pos.z) ? 1 : 0;
+      const fit = army.filter(u => !hurt.includes(u)), prey = ff.filter(f => fit.filter(u => D(u, f) < 22).length >= 3).sort((x, y) => x.hp + x.shield - y.hp - y.shield)[0];
+      if (prey) ORDERS.focus += g.dir.command(H, fit.filter(u => D(u, prey) < 24).map(u => u.id), 'a', 0, 0, prey.id) ? 1 : 0; }
     if (!drive || (g as any).staticT > 0) return;   // the driven body just died: the game hands the player a new one when the static clears
     // Only fighters are driven: with none out yet (or after the driven one dies and the game drops the player into a worker) the worker goes
     // back to its job and the script waits for the next fighter.
@@ -109,6 +118,6 @@ for (const seed0 of o.seeds || [1]) {
   const win = g.winners.length ? (g.winners.includes(H) ? 0 : 1) : g.phase === 'over' ? (g.won ? 0 : 1) : -1;
   if (o.debug) console.error("end", g.phase, g.won, g.hqs(H).length, g.hqs(O).length, g.units.filter(u => u.alive && u.team === H).length);
   console.log(JSON.stringify({ mode: o.tag || mode, me: o.me ?? 0, foe: o.foe ?? 1, map, seed: seed0, win, min: Math.round(g.time / 6) / 10, points: g.byPoints,
-    ...(drive ? { dealt: Math.round(dealt), dealtU: Math.round(dealtU), all: Math.round(ALL), took: Math.round(TOOK), deaths, led: +(ledSum / Math.max(1, ledN)).toFixed(2) } : {}), secs: Math.round((Date.now() - t0) / 1000) }));
+    ...(mode === 'boss' ? { orders: ORDERS } : {}), lostU: g.stats.lost, killsU: g.stats.kills, ...(drive ? { dealt: Math.round(dealt), dealtU: Math.round(dealtU), all: Math.round(ALL), took: Math.round(TOOK), deaths, led: +(ledSum / Math.max(1, ledN)).toFixed(2) } : {}), secs: Math.round((Date.now() - t0) / 1000) }));
   g.dispose?.(); clearMatch();
 }

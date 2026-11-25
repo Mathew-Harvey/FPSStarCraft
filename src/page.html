@@ -79,6 +79,7 @@
       <aside class="board">
         <div class="bcard"><h4>Next job <i id="bcAct"></i></h4><div class="bimg" id="bcImg"><b id="bcName"></b></div><p id="bcTeach"></p><button type="button" class="go sm" id="bcGo">Continue</button></div>
         <div class="bcard"><h4>Quick match <i>your last setup</i></h4><p id="bcQuick"></p><button type="button" class="go sm alt" id="bcQGo">Clock in</button></div>
+        <div class="bcard"><h4>Challenges <i id="bcChN"></i></h4><div class="badges" id="bcBadges"></div><p id="bcChNext"></p></div>
       </aside>
       <div class="herotag"><b id="htName"></b><span id="htSide"></span></div>
       <div class="pbar"><span class="pb-name" id="pbName"></span><div class="pb-sides" id="pbSides" role="group" aria-label="Your side"><span>Your side</span><button type="button" data-side="0" title="Ironhold"></button><button type="button" data-side="1" title="Veyl"></button><button type="button" data-side="2" title="Gloam"></button></div></div>
@@ -149,6 +150,15 @@
               <button type="button" data-s="2">Large<small>A long way out, seven fields</small></button>
               <button type="button" data-s="3">Vast<small>Ten fields. Find them first</small></button>
               </div>
+              <div class="diff" id="vars" role="group" aria-label="Match variants">
+              <button type="button" data-v="hid" aria-pressed="false">Hidden start<small>You are not told where they are</small></button>
+              <button type="button" data-v="short" aria-pressed="false">Short shift<small>Overtime at minute 8, points at 20</small></button>
+              <button type="button" data-v="noqm" aria-pressed="false">No Quartermaster<small>You run the yard yourself</small></button>
+              <button type="button" data-v="rich" aria-pressed="false">Double ore<small>Every load banks twice. No records</small></button>
+              <button type="button" data-v="seam" aria-pressed="false">Rich seam<small>Every 4 minutes, a seam to fight over</small></button>
+              </div>
+            </div>
+            <div class="row">
               <div class="diff" id="maker"><button type="button" id="makerBtn">Map maker<small id="makerNote">Lay out your own map and share it as a code</small></button></div>
             </div>
           </section>
@@ -322,6 +332,7 @@
         <h2 class="logo sm" id="endTitle">Shift over</h2>
         <p class="tagline" id="endLine"></p>
         <div class="stats" id="endStats"></div>
+        <div class="you" id="endYou" hidden><h3>Your own shift</h3><div class="stats sm" id="endYouStats"></div><p class="earned" id="endEarned" hidden></p></div>
         <div class="endtip" id="endTip" hidden><img id="endTipImg" alt=""><p><b id="endTipHead">Foreman's note</b><span id="endTipText"></span></p></div>
         <div class="row"><button class="go" id="again">Another shift</button><button type="button" class="mini-btn" id="toMenu">Back to the menu</button></div>
       </div>

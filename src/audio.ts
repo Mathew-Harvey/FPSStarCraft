@@ -318,7 +318,7 @@ export async function renderOffline(secs: number, play: () => void): Promise<Aud
   const m = oc.createGain(), warm = oc.createBiquadFilter(), soft = oc.createBiquadFilter(), comp = oc.createDynamicsCompressor();
   m.gain.value = .5; warm.type = 'lowshelf'; warm.frequency.value = 140; warm.gain.value = 3; soft.type = 'highshelf'; soft.frequency.value = 7000; soft.gain.value = -3;
   comp.threshold.value = -14; comp.ratio.value = 4; comp.knee.value = 12; m.connect(warm); warm.connect(soft); soft.connect(comp); comp.connect(oc.destination);
-  ctx = oc as unknown as AudioContext; master = m; level = 1; PAN = 0; outs.clear();
+  ctx = oc as unknown as AudioContext; master = m; level = 1; PAN = 0; outs.clear(); voiceT = 0;
   try { play(); } finally { ctx = keep.ctx; master = keep.master; level = keep.level; PAN = keep.PAN; outs.clear(); }
   return oc.startRendering();
 }
@@ -358,34 +358,113 @@ function drum(t: number, freq: number, dur: number, peak: number, type: BiquadFi
   if (!ctx || !music || !noiseBuf) return; const s = ctx.createBufferSource(), f = ctx.createBiquadFilter(), g = ctx.createGain();
   s.buffer = noiseBuf; f.type = type; f.frequency.value = freq; g.gain.setValueAtTime(peak, t); g.gain.exponentialRampToValueAtTime(.0001, t + dur); s.connect(f); f.connect(g); g.connect(music); s.start(t, Math.random() * .5, dur + .02);
 }
+/** Which side's theme plays: 0 Ironhold, 1 Veyl, 2 Gloam. The game sets it to the side the first player runs. */
+let theme = 0;
+export function setTheme(side: number) { if (!seat && level) theme = side === 1 || side === 2 ? side : 0; }
+const semi = (n: number) => Math.pow(2, n / 12);
+/** Seconds per step for each side, calm then fight, and how many steps make a bar. The Gloam count in sixes. */
+export const THEMES = [{ name: 'Ironhold', spb: [60 / 96 / 4, 60 / 118 / 4], bar: 16 }, { name: 'Veyl', spb: [60 / 72 / 4, 60 / 104 / 4], bar: 16 }, { name: 'Gloam', spb: [.2, .135], bar: 12 }];
+/** Ironhold: a dusty saw bass and a twangy square lead when calm, a drum kit and a driving bass in a fight. */
+function ironStep(t: number, st: number, heat: number, spb: number) {
+  const hot = heat > .55, i = st % 16, bar = Math.floor(st / 16), root = ROOTS[bar % 4];
+  const b = BASS[i]; if (b >= 0 && (hot || i % 4 === 0 || i === 10)) voice(t, root * semi(b), hot ? spb * 1.6 : spb * 3.5, hot ? .3 : .2, 'sawtooth', hot ? 900 : 420);
+  if (i === 0 && bar % 2 === 0) { voice(t, root * 2 * semi(7), spb * 30, .035, 'sawtooth', 700); voice(t, root * 2 * semi(3), spb * 30, .03, 'triangle', 900); }
+  if (!hot && (i % 4 === 2 || i === 15) && (bar + i) % 3 !== 0) voice(t, root * 4 * semi(LEAD[(st * 5 + bar * 3) % 8]), spb * 3, .05, 'square', 1500);
+  if (hot) { if (i % 8 === 0 || i === 10) { voice(t, 110, .16, .5, 'sine', 400); drum(t, 200, .1, .25, 'lowpass'); } if (i % 8 === 4) drum(t, 1800, .14, .22, 'bandpass'); if (i % 2 === 0) drum(t, 7000, .03, .07 + (i % 4 === 2 ? .05 : 0), 'highpass'); if (heat > .8 && i % 4 === 3) voice(t, root * 4 * semi(LEAD[(st + bar) % 8]), spb * 1.5, .05, 'square', 2200); }
+  else if (i % 8 === 4) drum(t, 5000, .05, .04, 'highpass');
+}
+/** The Veyl: bells on D minor pentatonic over two held notes a fifth apart. No kit: a fight adds a low pulse, a soft hand drum on a
+ *  three-three-two count and a faster, higher run of the same bells. The tune is eight bars long. */
+const V_ROOT = [73.42, 73.42, 98, 65.41, 73.42, 87.31, 98, 73.42], V_SC = [0, 3, 5, 7, 10, 12, 15, 17, 19, 22, 24];
+const V_TUNE = [4, 5, 7, 5, 4, 3, 5, 4, 2, 3, 4, 5, 7, 8, 7, 5, 4, 5, 7, 8, 9, 8, 7, 5, 4, 3, 2, 3, 4, 2, 1, 0];
+function veylBell(t: number, f: number, dur: number, peak: number) { voice(t, f, dur, peak, 'sine', 5000); voice(t, f * 2.005, dur * .5, peak * .3, 'sine', 6000); voice(t, f * 3.01, dur * .22, peak * .12, 'sine', 7000); }
+function veylStep(t: number, st: number, heat: number, spb: number) {
+  const hot = heat > .55, i = st % 16, bar = Math.floor(st / 16), root = V_ROOT[bar % 8], D = 146.83;
+  if (i === 0) { voice(t, root * 2, spb * 17, .055, 'sine', 900); voice(t, root * 3, spb * 17, .035, 'sine', 1200); if (bar % 2 === 0) voice(t, root * 4, spb * 33, .02, 'triangle', 1400); }
+  if (!hot) {
+    if (i === 0 || i === 6 || i === 10) { const n = V_TUNE[((bar % 8) * 4 + (i === 0 ? 0 : i === 6 ? 1 : 2)) % 32]; veylBell(t, D * 2 * semi(V_SC[n]), spb * 9, .075); }
+    if (i === 14 && bar % 2 === 1) veylBell(t, D * 2 * semi(V_SC[V_TUNE[((bar % 8) * 4 + 3) % 32]]), spb * 6, .05);
+    if (i === 0) voice(t, root, spb * 14, .16, 'sine', 300);
+    if (i === 8 && bar % 4 === 3) veylBell(t, D * 4 * semi(V_SC[(bar * 3) % 5]), spb * 12, .03);
+  } else {
+    if (i % 2 === 0) voice(t, root * (i % 8 === 6 ? semi(7) : 1), spb * 1.8, .2, 'triangle', 700);
+    if (i === 0 || i === 6 || i === 12) { voice(t, i ? 98 : 82, .22, .3, 'sine', 300); drum(t, 260, .09, .12, 'lowpass'); }
+    if (i === 3 || i === 9 || i === 14) drum(t, 900, .07, .09, 'bandpass');
+    if (i % 2 === 1) drum(t, 9000, .025, .035, 'highpass');
+    if (i % 2 === 0 || (heat > .8 && i % 4 === 3)) { const n = V_TUNE[((bar % 8) * 4 + (i >> 2)) % 32] + [0, 2, 1, 2, 0, 2, 3, 2][(i >> 1) % 8]; veylBell(t, D * 2 * semi(V_SC[Math.min(10, n)]), spb * 3.5, .095); }
+  }
+}
+/** The Gloam: low, in sixes. A saw bass that leans up a half step and back, a swell three whole steps above it, and clicks that
+ *  never land twice in the same place. A fight adds toms on every third step, a click on every step and a harsh high figure. */
+const G_ROOT = [55, 55, 58.27, 55, 55, 51.91, 58.27, 55], G_BASS = [0, -1, 0, 0, -1, 1, 0, -1, 0, 6, -1, 1];
+function gloamStep(t: number, st: number, heat: number, spb: number) {
+  const hot = heat > .55, i = st % 12, bar = Math.floor(st / 12), root = G_ROOT[bar % 8];
+  if (!hot) {
+    if (i === 0) { voice(t, root, spb * 7, .17, 'sawtooth', 800); voice(t, root * 2.012, spb * 7, .1, 'sawtooth', 700); }
+    if (i === 7) voice(t, root * semi(bar % 4 === 3 ? 1 : 0), spb * 4.5, .14, 'sawtooth', 700);
+    if (i === 9 && bar % 2 === 1) { voice(t, root * 4 * semi(6), spb * 8, .06, 'sawtooth', 1200); voice(t, root * 4 * semi(6) * 1.017, spb * 8, .05, 'sawtooth', 1200); }
+    if (i === 3 && bar % 4 === 0) voice(t, root * 8 * semi(1), spb * 10, .03, 'triangle', 1800);
+    if ((st * 7 + bar * 3) % 5 === 0) drum(t, 6000 + (st % 3) * 1500, .016, .05, 'highpass');
+    if (i === 6 && bar % 2 === 0) { voice(t, 62, .3, .22, 'sine', 300); drum(t, 140, .14, .1, 'lowpass'); }
+  } else {
+    const b = G_BASS[i]; if (b >= 0) { voice(t, root * semi(b), spb * 1.5, .22, 'sawtooth', 1400); if (i % 6 === 0) voice(t, root * 2.012 * semi(b), spb * 1.5, .12, 'sawtooth', 1200); }
+    if (i % 3 === 0) { const big = i % 6 === 0; voice(t, big ? 68 : 92, .2, big ? .4 : .26, 'sine', 300); drum(t, big ? 150 : 240, .12, big ? .24 : .14, 'lowpass'); }
+    drum(t, 5200, .018, i % 3 === 2 ? .085 : .04, 'highpass');
+    if (i === 10 && bar % 2 === 1) drum(t, 1400, .12, .16, 'bandpass');
+    if (i === 0) { const f = root * 4 * semi(bar % 4 === 2 ? 1 : 0); voice(t, f, spb * 5, .075, 'sawtooth', 1800); voice(t, f * 1.015, spb * 5, .065, 'sawtooth', 1800); voice(t, f * semi(3), spb * 5, .05, 'sawtooth', 1600); }
+    if (heat > .8 && i % 3 === 2) voice(t, root * 8 * semi([0, 1, 6, 1][(bar + (i > 6 ? 1 : 0)) % 4]), spb * 1.1, .045, 'square', 2600);
+  }
+}
+const STEPS = [ironStep, veylStep, gloamStep];
 function tick() {
   if (!ctx || !music || ctx.state !== 'running') return; const now = ctx.currentTime;
   moodNow += (mood - moodNow) * .12; music.gain.setTargetAtTime(mood > .05 && musicOn ? .5 : .0001, now, .4);
   if (nextT < now) nextT = now + .05;
   while (nextT < now + .25) {
-    const hot = moodNow > .55, spb = 60 / (hot ? 118 : 96) / 4, i = step % 16, bar = Math.floor(step / 16), root = ROOTS[bar % 4] * 1, t = nextT, semi = (n: number) => Math.pow(2, n / 12);
-    if (moodNow > .05) {
-      const b = BASS[i]; if (b >= 0 && (hot || i % 4 === 0 || i === 10)) voice(t, root * semi(b), hot ? spb * 1.6 : spb * 3.5, hot ? .3 : .2, 'sawtooth', hot ? 900 : 420);
-      if (i === 0 && bar % 2 === 0) { voice(t, root * 2 * semi(7), spb * 30, .035, 'sawtooth', 700); voice(t, root * 2 * semi(3), spb * 30, .03, 'triangle', 900); }
-      if (!hot && (i % 4 === 2 || i === 15) && (bar + i) % 3 !== 0) voice(t, root * 4 * semi(LEAD[(step * 5 + bar * 3) % 8]), spb * 3, .05, 'square', 1500);
-      if (hot) { if (i % 8 === 0 || i === 10) { voice(t, 110, .16, .5, 'sine', 400); drum(t, 200, .1, .25, 'lowpass'); } if (i % 8 === 4) drum(t, 1800, .14, .22, 'bandpass'); if (i % 2 === 0) drum(t, 7000, .03, .07 + (i % 4 === 2 ? .05 : 0), 'highpass'); if (moodNow > .8 && i % 4 === 3) voice(t, root * 4 * semi(LEAD[(step + bar) % 8]), spb * 1.5, .05, 'square', 2200); }
-      else if (i % 8 === 4) drum(t, 5000, .05, .04, 'highpass');
-    }
+    const spb = THEMES[theme].spb[moodNow > .55 ? 1 : 0];
+    if (moodNow > .05) STEPS[theme](nextT, step, moodNow, spb);
     step++; nextT += spb;
   }
 }
+/** Plays a side's theme from the start for a number of seconds at one heat (.25 calm, 1 a full fight), for the offline render. */
+export function playTheme(side: number, heat: number, secs: number) {
+  if (!ctx || !master) return; const keep = music, spb = THEMES[side].spb[heat > .55 ? 1 : 0];
+  music = ctx.createGain(); music.gain.value = .5; music.connect(master);
+  try { for (let st = 0, t = .05; t < secs - .3; st++, t += spb) STEPS[side](t, st, heat, spb); } finally { music = keep; }
+}
 
 // ---------------------------------------------------------------- voices
-const VOICE: Record<string, [number, OscillatorType]> = { Quartermaster: [150, 'sawtooth'], Lookout: [290, 'square'], Alpha: [200, 'square'], 'Alpha Lead': [200, 'square'], Linesman: [230, 'square'], Breacher: [115, 'sawtooth'], Rigger: [330, 'triangle'] };
+/** Speakers with a pitch of their own, in hertz. Anyone else gets one from their name, inside their side's range, so every kind of body
+ *  has its own register and keeps it. Before the fun audit only seven Ironhold speakers had a voice: the Veyl and the Gloam were silent. */
+const VOICE: Record<string, number> = { Quartermaster: 150, Lookout: 290, Alpha: 200, 'Alpha Lead': 200, Linesman: 230, Breacher: 115, Rigger: 330, Signal: 0,
+  Conductor: 196, Watcher: 392, 'Chorus Lead': 294, Chorus: 262, 'Held Fifth': 220, Overgrowth: 70, Rootwatch: 150, 'Swarm Lead': 95, Swarm: 110 };
+/** The low and high end of each side's register for a speaker with no pitch of their own. */
+const RANGE = [[110, 340], [196, 523], [60, 190]];
+/** The Veyl sing on one scale (D minor pentatonic), so a line of theirs is a few notes of a tune, not a mutter. */
+const SCALE = [0, 3, 5, 7, 10, 12, 15];
+const pitchOf = (who: string, side: number) => { const v = VOICE[who]; if (v !== undefined) return v; let h = 0; for (let i = 0; i < who.length; i++) h = (h * 31 + who.charCodeAt(i)) >>> 0; const [lo, hi] = RANGE[side] || RANGE[0]; return lo + (h % 97) / 96 * (hi - lo); };
 let voiceT = 0;
-/** A few syllables of gibberish in the speaker's register, so lines in the feed feel spoken. */
-export function babble(who: string, len: number) {
-  const v = VOICE[who]; if (!ctx || !master || !v || !level || seat) return; const now = ctx.currentTime; if (now < voiceT) return;
-  const n = Math.max(3, Math.min(9, Math.round(len / 9))); let t = now + .02;
+/** A few syllables of gibberish in the speaker's register, so lines in the feed feel spoken. Each side speaks its own way: Ironhold in
+ *  short buzzed syllables, the Veyl in soft sung notes on their scale, the Gloam in low clicks and wet chirps that fall in pitch.
+ *  `side` is the speaker's faction (0 Ironhold, 1 Veyl, 2 Gloam). */
+export function babble(who: string, len: number, side = 0) {
+  const hz0 = pitchOf(who, side); if (!ctx || !master || !hz0 || !level || seat) return; const now = ctx.currentTime; if (now < voiceT) return;
+  const n = Math.max(3, Math.min(9, Math.round(len / (side === 1 ? 14 : 9)))); let t = now + .02; const out = master, R = Math.random;
+  const syl = (type: OscillatorType, f0: number, f1: number, d: number, peak: number, band: number, q: number, attack: number) => {
+    const o = ctx!.createOscillator(), g = ctx!.createGain(), f = ctx!.createBiquadFilter();
+    o.type = type; o.frequency.setValueAtTime(f0, t); o.frequency.linearRampToValueAtTime(Math.max(30, f1), t + d); f.type = 'bandpass'; f.frequency.value = band; f.Q.value = q;
+    g.gain.setValueAtTime(.0001, t); g.gain.exponentialRampToValueAtTime(peak, t + attack); g.gain.exponentialRampToValueAtTime(.0001, t + d); o.connect(f); f.connect(g); g.connect(out); o.start(t); o.stop(t + d + .03); };
   for (let i = 0; i < n; i++) {
-    const o = ctx.createOscillator(), g = ctx.createGain(), f = ctx.createBiquadFilter(), d = .05 + Math.random() * .05, hz = v[0] * (1 + (Math.random() - .4) * .5);
-    o.type = v[1]; o.frequency.setValueAtTime(hz, t); o.frequency.linearRampToValueAtTime(hz * (.85 + Math.random() * .3), t + d); f.type = 'bandpass'; f.frequency.value = 700 + Math.random() * 900; f.Q.value = 2;
-    g.gain.setValueAtTime(.0001, t); g.gain.exponentialRampToValueAtTime(.09, t + .012); g.gain.exponentialRampToValueAtTime(.0001, t + d); o.connect(f); f.connect(g); g.connect(master); o.start(t); o.stop(t + d + .03); t += d + .015 + (Math.random() < .2 ? .06 : 0);
+    if (side === 1) {   // Veyl: a sung note, soft start, a fifth above it very quietly; the last note of the line is held
+      const note = hz0 * Math.pow(2, SCALE[Math.floor(R() * SCALE.length)] / 12), d = (i === n - 1 ? .3 : .13) + R() * .06;
+      syl('sine', note, note * (R() < .3 ? 1.06 : 1), d, .07, note * 2, .7, .035); syl('triangle', note * 1.5, note * 1.5, d * .8, .018, note * 3, .7, .04); t += d * .82;
+    } else if (side === 2) {   // Gloam: a low wet chirp that falls, with a click on the front of some of them, in uneven bursts
+      const hz = hz0 * (1 + (R() - .5) * .5), d = .035 + R() * .05;
+      syl('sawtooth', hz * 2.2, hz * .7, d, .13, 300 + R() * 500, 3.5, .006); if (R() < .5) syl('square', 1400 + R() * 900, 500, .012, .035, 1800, 1.2, .002); t += d + (R() < .35 ? .09 + R() * .06 : .012);
+    } else {   // Ironhold: the buzzed syllables it always had; a low speaker gets a saw, a high one a square
+      const d = .05 + R() * .05, hz = hz0 * (1 + (R() - .4) * .5);
+      syl(hz0 < 170 ? 'sawtooth' : hz0 > 300 ? 'triangle' : 'square', hz, hz * (.85 + R() * .3), d, .09, 700 + R() * 900, 2, .012); t += d + .015 + (R() < .2 ? .06 : 0);
+    }
   }
   voiceT = t + .25;
 }

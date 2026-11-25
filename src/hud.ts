@@ -1,4 +1,5 @@
 // The heads-up display: plain HTML over the canvas, laid out in a 900-unit-tall space and scaled to fit.
+import type { Closed } from './career';
 import { drawMap as drawGround } from './terrain';
 import { sheetFurniture, drawSheet, type Sheet } from './mapsheet';
 import * as THREE from 'three';
@@ -85,7 +86,14 @@ export class Hud {
   ping(p: THREE.Vector3, text = 'Squad moving here') { this.pingPos.copy(p); this.pingT = 3; this.pingText = text; }
   private pingText = 'Squad moving here';
   titleCard(kind: string, name: string, quip: string) { const e = this.$('tcard'); if (!name) { e.hidden = true; return; } this.$('tcName').textContent = name; this.$('tcQuip').textContent = quip; this.$('tcSide').textContent = (UNIT[kind as Kind]?.team || 0) === 2 ? 'The Gloam · a mouth of the swarm' : UNIT[kind as Kind]?.team ? 'Veyl Chorus · a voice you borrow' : 'Ironhold Charter · now under your control'; const src = this.portraits[kind]; if (src) (this.$('tcImg') as HTMLImageElement).src = src; e.hidden = false; }
+  /** The player's own row on the end screen (src/career.ts). An empty row hides it. */
+  showYou(c: Closed | null) {
+    const box = this.$('endYou'); box.hidden = !c; if (!c) return;
+    this.$('endYouStats').innerHTML = c.you.map(s => `<div class="${s.fresh ? 'best' : ''}"><b>${s.n}</b><span>${s.label}</span>${s.was !== undefined ? `<small>${s.fresh ? 'was' : 'best'} ${s.was}</small>` : ''}</div>`).join('');
+    const e = this.$('endEarned'); e.hidden = !c.earned.length; e.textContent = c.earned.length ? `Challenge${c.earned.length > 1 ? 's' : ''} met: ${c.earned.map(x => x.name).join(', ')}. ${c.done} of ${c.of} done.` : '';
+  }
   showEnd(g: Game) {
+    this.showYou(null);
     this.$('endTip').hidden = true;
     this.$('endTitle').textContent = g.won ? (g.story ? 'Job done' : 'Paid in full') : 'Shift over'; this.$('endTitle').className = 'logo sm' + (g.won ? '' : ' bad');
     this.$('endLine').textContent = g.won && g.story ? g.story.outro : !g.won && g.story?.fail ? (typeof g.story.fail === 'function' ? g.story.fail(g) : g.story.fail) : g.won ? (fac(foeOf(g.myTeam)) === 0 ? 'The other crew\'s last Headframe is scrap. The Charter only needed one of you.' : fac(foeOf(g.myTeam)) === 2 ? 'Every Mother Cap is mulch and the green carpet is drying out. The Charter thanks you with a smaller invoice.' : 'Every Choir Stone is gravel. The Charter thanks you with a smaller invoice.') : g.story && fac(g.myTeam) === 1 ? 'Your last Choir Stone is gravel. The job is lost.' : g.story && fac(g.myTeam) === 2 ? 'Your last Mother Cap is mulch. The job is lost.' : 'The Headframe is scrap. The Charter will be billing your next of kin.';
@@ -182,6 +190,7 @@ export class Hud {
     // A label over a body or building is kept out of the corners the HUD uses: the purse, clock and goal list top right (down to 400) and
     // the minimap top left (down to 240), so a building near the top of the screen does not write over them.
     const lab = (p: THREE.Vector3, y: number, html: string) => { if (li >= this.labs.length) return; const q = new THREE.Vector3(p.x, y, p.z); if (!this.project(q, cam)) return; const l = this.labs[li]; l.hidden = false; const lx = Math.max(150, Math.min(this.W - 150, V.x)); l.style.transform = `translate(${lx.toFixed(1)}px,${Math.max(lx > this.W - 400 ? 400 : lx < 330 ? 240 : 130, V.y).toFixed(1)}px)`; const k = 'l' + li; if (this.cache.get(k) !== html) { this.cache.set(k, html); l.firstElementChild!.innerHTML = html; } li++; };
+    if (g.seam) lab(V.set(g.seam.x, 0, g.seam.z).clone(), 3, `<div class="mark ping out">Rich seam · ${Math.round(Math.hypot(g.seam.x - me.pos.x, g.seam.z - me.pos.z))}m</div>`);
     for (const p of g.pings) lab(V.set(p.x, 0, p.z).clone(), 2.2, `<div class="mark ping out">${g.names[p.pid] || 'Ping'} · ${Math.round(Math.hypot(p.x - me.pos.x, p.z - me.pos.z))}m</div>`);
     for (const u of g.units as Unit[]) {
       if (!u.alive || u === me && !tab && !cv || !u.obj.visible) continue; const d = u.pos.distanceTo(ref), sel = cv && C.sel.has(u);
@@ -383,6 +392,7 @@ export class Hud {
     // Their buildings are drawn as your side last saw them: a new one shows when somebody looks at it, and a fallen one stays until somebody looks again.
     for (const r of I.seen[mi].values()) { const B = BLD[r.kind], w = Math.max(5, B.hx * 2 * k), h = Math.max(5, B.hz * 2 * k); if (pic('b:' + r.kind, X(r.x), Z(r.z), bSize(r.kind, B.hx, B.hz), 0, r.kind === 'reedgate' ? '#c58bff' : '#35e0c8')) continue; c.fillStyle = r.kind === 'reedgate' ? '#c58bff' : '#35e0c8'; c.fillRect(X(r.x) - w / 2, Z(r.z) - h / 2, w, h); c.strokeRect(X(r.x) - w / 2, Z(r.z) - h / 2, w, h); }
     for (const u of g.units) { if (!u.alive || (u === g.me && !g.cmd.on) || (u.team !== g.myTeam && !isFriend(u.team, g.myTeam) && !fog.sees(u.pos.x, u.pos.z))) continue; const foeU = u.team !== g.myTeam, ally = foeU && isFriend(u.team, g.myTeam); const ucol = ally ? FRIEND : foeU ? (u.kind === 'tender' ? '#c58bff' : this.cb ? '#ff9d1a' : '#ff4f9a') : isWorker(u.kind) ? (this.cb ? '#4da3ff' : '#8be04e') : '#f4ead2'; if (u.inside) continue; if (pic(u.kind, X(u.pos.x), Z(u.pos.z), uSize(u.kind), -u.yaw, ucol)) continue; c.fillStyle = ucol; c.beginPath(); c.arc(X(u.pos.x), Z(u.pos.z), u.kind === 'warden' ? 5 : foeU ? 2.6 : 2.2, 0, 7); c.fill(); c.strokeStyle = '#0e0d14'; c.lineWidth = big ? .5 : .9; c.stroke(); }
+    if (g.seam) { c.strokeStyle = '#5dff7a'; c.lineWidth = 3; c.beginPath(); c.arc(X(g.seam.x), Z(g.seam.z), 6 + g.time % 1 * 6, 0, 7); c.stroke(); c.fillStyle = '#5dff7a'; c.beginPath(); c.arc(X(g.seam.x), Z(g.seam.z), 3, 0, 7); c.fill(); }
     for (const p of g.pings) { c.strokeStyle = '#ffc21a'; c.lineWidth = 2.5; c.beginPath(); c.arc(X(p.x), Z(p.z), 4 + (8 - p.t) % 1 * 7, 0, 7); c.stroke(); }
     for (const u of g.units) if (u.alive && u.pilot && u !== g.me && u.team === g.myTeam) { c.fillStyle = '#ffc21a'; c.strokeStyle = '#0e0d14'; c.lineWidth = 1.5; c.beginPath(); c.arc(X(u.pos.x), Z(u.pos.z), 3.6, 0, 7); c.fill(); c.stroke(); }
     const D = g.dir; if (g.myTeam === SIDE.home && !g.eco && (D.raidIn < 15 || D.raidLive) && g.stones().length && Math.floor(performance.now() / 300) % 2) { c.fillStyle = '#ff4b3a'; c.strokeStyle = '#0e0d14'; c.lineWidth = 2; c.beginPath(); { const n = NORTH_PATH.length, p = D.raidDir === 'north' ? [(NORTH_PATH[n - 1][0] + NORTH_PATH[n - 2][0]) / 2, (NORTH_PATH[n - 1][1] + NORTH_PATH[n - 2][1]) / 2] : roadPt(62), a = Math.atan2(-p[1], -p[0]); c.moveTo(X(p[0]) + Math.cos(a) * 9, Z(p[1]) + Math.sin(a) * 9); c.lineTo(X(p[0]) + Math.cos(a + 2.4) * 8, Z(p[1]) + Math.sin(a + 2.4) * 8); c.lineTo(X(p[0]) + Math.cos(a - 2.4) * 8, Z(p[1]) + Math.sin(a - 2.4) * 8); } c.closePath(); c.fill(); c.stroke(); }

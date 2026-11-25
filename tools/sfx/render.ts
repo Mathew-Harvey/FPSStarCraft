@@ -1,6 +1,6 @@
 // Renders every sound the game can make to a WAV, through the game's own mix, so they can be measured (tools/sfx/audit.py)
 // and looked at without ears. Built and driven by tools/sfx/render.mjs.
-import { initAudio, sets, soundsReady, renderOffline, kit } from '../../src/audio';
+import { initAudio, sets, soundsReady, renderOffline, kit, babble, playTheme, THEMES } from '../../src/audio';
 import { CAST, lowNote } from '../../src/sound-abilities';
 type Job = [string, number, () => void];
 const jobs: Job[] = [];
@@ -9,6 +9,10 @@ for (const k of Object.keys(sets.sampled)) jobs.push(['ui-' + k, k === 'win' || 
 for (const k of Object.keys(CAST)) jobs.push(['ab-' + k, 3.2, () => CAST[k](1)]);
 jobs.push(['ab-player.lownote', 3.2, () => lowNote(1)]);
 for (const k of ['brew', 'buzz', 'veylhum', 'engine_low', 'engine_small', 'rotor', 'crickets', 'swamp']) jobs.push(['loop-' + k, 2.5, () => kit.S(k, .4, { jit: 0 })]);
+// One spoken line for a few speakers of each side (0 Ironhold, 1 Veyl, 2 Gloam), so the voices can be measured and heard on the board.
+for (const [who, side] of [['Quartermaster', 0], ['Lookout', 0], ['Linesman', 0], ['Breacher', 0], ['Conductor', 1], ['Watcher', 1], ['Cantor', 1], ['Lancer', 1], ['Overgrowth', 2], ['Rootwatch', 2], ['Snapper', 2], ['Mulcher', 2]] as [string, number][]) jobs.push([`voice-${side}-${who.toLowerCase()}`, 2.2, () => babble(who, 60, side)]);
+// Each side's theme, calm and in a fight, 24 seconds each.
+for (let s = 0; s < 3; s++) for (const [nm, heat] of [['calm', .25], ['fight', 1]] as [string, number][]) jobs.push([`music-${s}-${THEMES[s].name.toLowerCase()}-${nm}`, 24, () => playTheme(s, heat, 24)]);
 const b64 = (f: Float32Array) => { const u = new Uint8Array(f.buffer); let s = ''; for (let i = 0; i < u.length; i += 8192) s += String.fromCharCode(...u.subarray(i, i + 8192)); return btoa(s); };
 (window as any).renderAll = async (only?: string) => {
   initAudio(); for (let i = 0; i < 100 && !soundsReady(); i++) await new Promise(r => setTimeout(r, 100));
